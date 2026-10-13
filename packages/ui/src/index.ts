@@ -32,6 +32,8 @@ export type {
   FormModel,
   FormSectionModel,
 } from './form.ts'
+export { renderMeter } from './meter.ts'
+export type { MeterModel, MeterSegment } from './meter.ts'
 
 /**
  * Mount the Web UI. The scaffold renders nothing so the bundle stays loadable;

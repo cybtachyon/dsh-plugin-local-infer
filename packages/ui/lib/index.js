@@ -17,6 +17,7 @@ export const inject = ['localInfer'];
  * in Phase 8; the model is pure data the renderer tests assert on directly.
  */
 export { GENERAL_GROUP, controlFor, renderForm, resolveValue, } from "./form.js";
+export { renderMeter } from "./meter.js";
 /**
  * Mount the Web UI. The scaffold renders nothing so the bundle stays loadable;
  * the panel wiring lands in Phase 8.

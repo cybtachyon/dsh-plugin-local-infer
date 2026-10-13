@@ -7,18 +7,34 @@
  */
 
 export type { Config } from './config.ts'
-export type { GpuProfile, HardwareProfile } from './hardware.ts'
+export {
+  detectHardware,
+  parseNvidiaSmiGpu,
+} from './hardware.ts'
+export type {
+  GpuProfile,
+  GpuProbe,
+  HardwareProfile,
+  HardwareProbes,
+} from './hardware.ts'
 export type {
   ConstraintResult,
   EnumOption,
   ParameterForm,
   ParameterSpec,
 } from './parameter.ts'
+export {
+  estimateVram,
+  KV_PAGE_TOKENS,
+  pageRoundUp,
+  TIGHT_HEADROOM_BYTES,
+} from './estimator.ts'
 export type {
   EstimateContext,
   SpeculationTerms,
   VramBreakdown,
   VramContribution,
+  VramEstimate,
   VramModel,
   VramVerdict,
 } from './estimator.ts'

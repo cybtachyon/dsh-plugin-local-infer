@@ -18,6 +18,7 @@ export const inject = ['localInfer'];
  */
 export { CTX_OPTIONS, HYPERQWEN_PARAMETERS, KV_OPTIONS, SPEC_OPTIONS as HYPERQWEN_SPEC_OPTIONS, } from "./hyperqwen.js";
 export { DEVICE_PROFILE_OPTIONS, KV_DTYPE_OPTIONS, NINFER_PARAMETERS, SPEC_OPTIONS as NINFER_SPEC_OPTIONS, } from "./ninfer.js";
+export { NINFER_VRAM_MODELS, ninferVramModel } from "./vram.js";
 /**
  * Mount the providers. The scaffold registers nothing so the bundle stays
  * loadable; the body is where the adapter, preset, and guideline registrations

@@ -19,6 +19,8 @@ export declare const inject: string[];
  */
 export { GENERAL_GROUP, controlFor, renderForm, resolveValue, } from './form.ts';
 export type { FormControl, FormFieldModel, FormModel, FormSectionModel, } from './form.ts';
+export { renderMeter } from './meter.ts';
+export type { MeterModel, MeterSegment } from './meter.ts';
 /**
  * Mount the Web UI. The scaffold renders nothing so the bundle stays loadable;
  * the panel wiring lands in Phase 8.

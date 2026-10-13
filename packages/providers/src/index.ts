@@ -32,6 +32,7 @@ export {
   NINFER_PARAMETERS,
   SPEC_OPTIONS as NINFER_SPEC_OPTIONS,
 } from './ninfer.ts'
+export { NINFER_VRAM_MODELS, ninferVramModel } from './vram.ts'
 
 /**
  * Mount the providers. The scaffold registers nothing so the bundle stays

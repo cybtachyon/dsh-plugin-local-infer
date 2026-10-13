@@ -10,8 +10,9 @@ import type {
   LaunchPlan,
   ParameterSpec,
   Preset,
+  VramModel,
 } from '@dsh/dsh-plugin-local-infer/core'
-import LocalInfer, { LocalInferError } from '../src/index.ts'
+import LocalInfer, { LocalInferError, runHardwareProbes } from '../src/index.ts'
 
 const HW: HardwareProfile = { dockerAvailable: false, wsl2: false, os: 'linux', cpuThreads: 4 }
 
@@ -53,6 +54,29 @@ function guideline(id: string): Guideline {
     level: 'warn',
     message: 'a warning',
     when: () => true,
+  }
+}
+
+function vramModel(id: string): VramModel {
+  return {
+    id,
+    source: 'measured',
+    weightsBytes: 17093490688,
+    workspaceBytes: 159981568,
+    nativeMaxContext: 262144,
+    seqFixedBytes: 166438656,
+    seqPerToken: 0.0625,
+    kvBytesPerToken: { int8: 33792 },
+    speculation: {
+      none: {
+        kvRatio: 1,
+        kvExtraPerToken: 0,
+        graphBytes: () => 12582912,
+        seqFixedBytes: 166438656,
+        seqPerToken: 0.0625,
+        weightsGiB: 15.92,
+      },
+    },
   }
 }
 
@@ -120,12 +144,9 @@ describe('ctx.localInfer scaffold', () => {
     expect(() => ctx.localInfer.registerEngine(new StubAdapter('ninfer'))).not.toThrow()
   })
 
-  it('fails loudly on the orchestration entry points until a later phase fills them', async () => {
+  it('fails loudly on the orchestration entry points a later phase fills in', async () => {
     const ctx = await seam()
     const plan: LaunchPlan = { kind: 'process', port: 8080, healthUrl: 'http://127.0.0.1:8080/health' }
-    await expect(ctx.localInfer.estimate({}, HW)).rejects.toThrow(
-      expect.objectContaining<LocalInferError>({ code: 'LOCAL_INFER_NOT_IMPLEMENTED' }),
-    )
     await expect(ctx.localInfer.guidelines({}, HW)).rejects.toThrow(
       expect.objectContaining<LocalInferError>({ code: 'LOCAL_INFER_NOT_IMPLEMENTED' }),
     )
@@ -144,5 +165,62 @@ describe('ctx.localInfer scaffold', () => {
     await expect(ctx.localInfer.registerModel(plan)).rejects.toThrow(
       expect.objectContaining<LocalInferError>({ code: 'LOCAL_INFER_NOT_IMPLEMENTED' }),
     )
+  })
+
+  it('registers a VramModel keyed by id and rejects duplicates and empty ids', async () => {
+    const ctx = await seam()
+    ctx.localInfer.registerVramModel(vramModel('qwen3-27b'))
+    expect(ctx.localInfer.registeredVramModels().map(model => model.id)).toEqual(['qwen3-27b'])
+    expect(() => ctx.localInfer.registerVramModel(vramModel('qwen3-27b')))
+      .toThrow(expect.objectContaining<LocalInferError>({ code: 'LOCAL_INFER_CONFLICT' }))
+    expect(() => ctx.localInfer.registerVramModel(vramModel('  ')))
+      .toThrow(expect.objectContaining<LocalInferError>({ code: 'LOCAL_INFER_INVALID_MODEL' }))
+    // The disposer releases the id, proving the reservation was made.
+    const dispose = ctx.localInfer.registerVramModel(vramModel('qwen3-35b'))
+    dispose()
+    expect(ctx.localInfer.registeredVramModels()).toHaveLength(1)
+  })
+
+  it('estimates a config against the registered model and the detected hardware', async () => {
+    const ctx = await seam()
+    ctx.localInfer.registerVramModel(vramModel('qwen3-27b'))
+    const result = await ctx.localInfer.estimate(
+      { model: 'qwen3-27b', kvDtype: 'int8', maxContext: 262144 },
+      { ...HW, gpu: { name: 'NVIDIA GeForce RTX 3090', vramGiB: 24, sm: 86 } },
+    )
+    // The engine's own refusal figure for this config: KV + sequence state +
+    // workspace + graph, on top of the resident weights.
+    expect(result.breakdown.kv + result.breakdown.overhead + result.breakdown.workspace)
+      .toBe(9197389568)
+    expect(result.source).toBe('measured')
+    expect(result.verdict.status).toBe('over')
+  })
+
+  it('estimates not-measured when no VramModel is registered, and falls back to a single model', async () => {
+    const ctx = await seam()
+    const empty = await ctx.localInfer.estimate({ model: 'qwen3-27b', kvDtype: 'int8' }, HW)
+    expect(empty.verdict.status).toBe('not-measured')
+    expect(empty.source).toBe('not-measured')
+
+    ctx.localInfer.registerVramModel(vramModel('qwen3-27b'))
+    // No model named in the config: the single registered model is used.
+    const unnamed = await ctx.localInfer.estimate({ kvDtype: 'int8', maxContext: 4096 }, HW)
+    expect(unnamed.source).toBe('measured')
+    // A model id no provider registered stays not-measured.
+    const unknown = await ctx.localInfer.estimate({ model: 'qwen3-99b', kvDtype: 'int8' }, HW)
+    expect(unknown.verdict.status).toBe('not-measured')
+  })
+
+  it('detects the host hardware from the live probes', async () => {
+    const ctx = await seam()
+    const profile = await ctx.localInfer.detectHardware()
+    expect(profile.os).toBe('linux')
+    expect(profile.cpuThreads).toBeGreaterThan(0)
+    expect(typeof profile.dockerAvailable).toBe('boolean')
+    expect(typeof profile.wsl2).toBe('boolean')
+    // The probe results feed the same pure mapping the core suite pins.
+    const probes = await runHardwareProbes()
+    expect(probes.os).toBe('linux')
+    expect(probes.cpuThreads).toBe(profile.cpuThreads)
   })
 })

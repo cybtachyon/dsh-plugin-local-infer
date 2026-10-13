@@ -5,5 +5,7 @@
  * engine, model, or rule is data and a thin subclass, never a core rewire.
  * @module @dsh/dsh-plugin-local-infer/core
  */
+export { detectHardware, parseNvidiaSmiGpu, } from "./hardware.js";
+export { estimateVram, KV_PAGE_TOKENS, pageRoundUp, TIGHT_HEADROOM_BYTES, } from "./estimator.js";
 export { EngineAdapter } from "./adapter.js";
 //# sourceMappingURL=index.js.map

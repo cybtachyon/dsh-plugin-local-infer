@@ -6,9 +6,11 @@
  * @module @dsh/dsh-plugin-local-infer/core
  */
 export type { Config } from './config.ts';
-export type { GpuProfile, HardwareProfile } from './hardware.ts';
+export { detectHardware, parseNvidiaSmiGpu, } from './hardware.ts';
+export type { GpuProfile, GpuProbe, HardwareProfile, HardwareProbes, } from './hardware.ts';
 export type { ConstraintResult, EnumOption, ParameterForm, ParameterSpec, } from './parameter.ts';
-export type { EstimateContext, SpeculationTerms, VramBreakdown, VramContribution, VramModel, VramVerdict, } from './estimator.ts';
+export { estimateVram, KV_PAGE_TOKENS, pageRoundUp, TIGHT_HEADROOM_BYTES, } from './estimator.ts';
+export type { EstimateContext, SpeculationTerms, VramBreakdown, VramContribution, VramEstimate, VramModel, VramVerdict, } from './estimator.ts';
 export { EngineAdapter } from './adapter.ts';
 export type { DeployResult, HealthResult, LaunchPlan } from './adapter.ts';
 export type { Guideline, GuidelineResult } from './guideline.ts';
