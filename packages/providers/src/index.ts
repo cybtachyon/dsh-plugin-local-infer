@@ -16,6 +16,24 @@ export const name = 'local-infer-providers'
 export const inject = ['localInfer']
 
 /**
+ * The engine parameter surfaces, re-exported for the UI form renderer and the
+ * Phase 5 adapters. NInfer's surface is CLI flags (`toArgv`); Hyper-Qwen's is
+ * `.env` keys (`toEnv`).
+ */
+export {
+  CTX_OPTIONS,
+  HYPERQWEN_PARAMETERS,
+  KV_OPTIONS,
+  SPEC_OPTIONS as HYPERQWEN_SPEC_OPTIONS,
+} from './hyperqwen.ts'
+export {
+  DEVICE_PROFILE_OPTIONS,
+  KV_DTYPE_OPTIONS,
+  NINFER_PARAMETERS,
+  SPEC_OPTIONS as NINFER_SPEC_OPTIONS,
+} from './ninfer.ts'
+
+/**
  * Mount the providers. The scaffold registers nothing so the bundle stays
  * loadable; the body is where the adapter, preset, and guideline registrations
  * land in later phases.

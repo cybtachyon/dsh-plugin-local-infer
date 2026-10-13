@@ -16,6 +16,24 @@ export const name = 'local-infer-ui'
 export const inject = ['localInfer']
 
 /**
+ * The form-type-aware render model: `renderForm` maps a `ParameterSpec` list
+ * and a `Config` to the sections and fields the panel draws. The panel lands
+ * in Phase 8; the model is pure data the renderer tests assert on directly.
+ */
+export {
+  GENERAL_GROUP,
+  controlFor,
+  renderForm,
+  resolveValue,
+} from './form.ts'
+export type {
+  FormControl,
+  FormFieldModel,
+  FormModel,
+  FormSectionModel,
+} from './form.ts'
+
+/**
  * Mount the Web UI. The scaffold renders nothing so the bundle stays loadable;
  * the panel wiring lands in Phase 8.
  */
