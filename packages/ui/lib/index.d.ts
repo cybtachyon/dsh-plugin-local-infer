@@ -22,8 +22,10 @@ export type { FormControl, FormFieldModel, FormModel, FormSectionModel, } from '
 export { renderMeter } from './meter.ts';
 export type { MeterModel, MeterSegment } from './meter.ts';
 /**
- * Mount the Web UI. The scaffold renders nothing so the bundle stays loadable;
- * the panel wiring lands in Phase 8.
+ * Mount the Web UI. The browser card (dsh/client.js) registers into the
+ * Plugins page's `plugins.bundle.config` slot and talks to the settings route
+ * below; the route is registered only where a webServer exists, so a headless
+ * profile keeps the service and tools untouched.
  */
 export declare function apply(ctx: Context): void;
 declare const plugin: {

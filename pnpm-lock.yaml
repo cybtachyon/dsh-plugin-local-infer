@@ -257,6 +257,9 @@ importers:
       '@dsh/dsh-plugin-local-infer-core':
         specifier: workspace:^
         version: link:../core
+      '@dsh/dsh-plugin-local-infer-providers':
+        specifier: workspace:^
+        version: link:../providers
       '@dsh/dsh-plugin-local-infer-service':
         specifier: workspace:^
         version: link:../service

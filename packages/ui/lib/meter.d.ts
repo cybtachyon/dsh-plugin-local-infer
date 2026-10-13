@@ -41,5 +41,5 @@ export interface MeterModel {
  * overrides the model's source label, so the meter never shows a measured or
  * estimated badge on a number it could not price.
  */
-export declare function renderMeter(breakdown: VramBreakdown, verdict: VramVerdict, vramGiB: number, source: 'measured' | 'estimated'): MeterModel;
+export declare function renderMeter(breakdown: VramBreakdown, verdict: VramVerdict, vramGiB: number, source: 'measured' | 'estimated' | 'not-measured'): MeterModel;
 //# sourceMappingURL=meter.d.ts.map

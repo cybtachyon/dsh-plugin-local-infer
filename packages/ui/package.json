@@ -30,7 +30,8 @@
   },
   "dependencies": {
     "@dsh/dsh-plugin-local-infer-core": "workspace:^",
-    "@dsh/dsh-plugin-local-infer-service": "workspace:^"
+    "@dsh/dsh-plugin-local-infer-service": "workspace:^",
+    "@dsh/dsh-plugin-local-infer-providers": "workspace:^"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.1"

@@ -9,6 +9,7 @@
  * controls, and register confirmation into one panel.
  * @module @dsh/dsh-plugin-local-infer/ui
  */
+import { registerLocalInferRoute } from "./route.js";
 export const name = 'local-infer-ui';
 export const inject = ['localInfer'];
 /**
@@ -19,12 +20,23 @@ export const inject = ['localInfer'];
 export { GENERAL_GROUP, controlFor, renderForm, resolveValue, } from "./form.js";
 export { renderMeter } from "./meter.js";
 /**
- * Mount the Web UI. The scaffold renders nothing so the bundle stays loadable;
- * the panel wiring lands in Phase 8.
+ * Mount the Web UI. The browser card (dsh/client.js) registers into the
+ * Plugins page's `plugins.bundle.config` slot and talks to the settings route
+ * below; the route is registered only where a webServer exists, so a headless
+ * profile keeps the service and tools untouched.
  */
 export function apply(ctx) {
-    // The UI injects its panel, meter, and lifecycle controls here.
-    void ctx;
+    const localInfer = ctx.localInfer;
+    if (typeof ctx.inject === 'function') {
+        ctx.inject(['webServer'], (scope) => {
+            try {
+                registerLocalInferRoute(scope, localInfer);
+            }
+            catch (error) {
+                console.error(`[local-infer] settings route skipped: ${error}`);
+            }
+        });
+    }
 }
 const plugin = { name, inject, apply };
 export default plugin;

@@ -30,6 +30,10 @@ export interface LocalInferService {
     registerPreset(preset: Preset): () => void;
     registerGuideline(guideline: Guideline): () => void;
     registerVramModel(model: VramModel): () => void;
+    registeredEngines(): readonly EngineAdapter[];
+    registeredPresets(): readonly Preset[];
+    registeredGuidelines(): readonly Guideline[];
+    registeredVramModels(): readonly VramModel[];
     estimate(config: Config, hw: HardwareProfile): Promise<EstimateResult>;
     detectHardware(): Promise<HardwareProfile>;
     guidelines(config: Config, hw: HardwareProfile): Promise<GuidelineResult[]>;

@@ -20,10 +20,12 @@ export declare const inject: string[];
 export { CTX_OPTIONS, HYPERQWEN_PARAMETERS, KV_OPTIONS, SPEC_OPTIONS as HYPERQWEN_SPEC_OPTIONS, } from './hyperqwen.ts';
 export { DEVICE_PROFILE_OPTIONS, KV_DTYPE_OPTIONS, NINFER_PARAMETERS, SPEC_OPTIONS as NINFER_SPEC_OPTIONS, } from './ninfer.ts';
 export { NINFER_VRAM_MODELS, ninferVramModel } from './vram.ts';
+export { ENGINES } from './engines.ts';
+export type { EngineInfo } from './engines.ts';
 /**
- * Mount the providers. The scaffold registers nothing so the bundle stays
- * loadable; the body is where the adapter, preset, and guideline registrations
- * land in later phases.
+ * Mount the providers. The NInfer measured VramModels register here so the
+ * service's estimate prices a named model; the engine adapters, presets, and
+ * guidelines land in later phases.
  */
 export declare function apply(ctx: Context): void;
 declare const plugin: {

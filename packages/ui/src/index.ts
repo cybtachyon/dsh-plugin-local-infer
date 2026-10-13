@@ -11,6 +11,8 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { registerLocalInferRoute } from './route.ts'
+import type { WebServerService } from './route.ts'
 
 export const name = 'local-infer-ui'
 export const inject = ['localInfer']
@@ -36,12 +38,22 @@ export { renderMeter } from './meter.ts'
 export type { MeterModel, MeterSegment } from './meter.ts'
 
 /**
- * Mount the Web UI. The scaffold renders nothing so the bundle stays loadable;
- * the panel wiring lands in Phase 8.
+ * Mount the Web UI. The browser card (dsh/client.js) registers into the
+ * Plugins page's `plugins.bundle.config` slot and talks to the settings route
+ * below; the route is registered only where a webServer exists, so a headless
+ * profile keeps the service and tools untouched.
  */
 export function apply(ctx: Context): void {
-  // The UI injects its panel, meter, and lifecycle controls here.
-  void ctx
+  const localInfer = ctx.localInfer
+  if (typeof ctx.inject === 'function') {
+    ctx.inject(['webServer'], (scope) => {
+      try {
+        registerLocalInferRoute(scope as Context & { webServer: WebServerService }, localInfer)
+      } catch (error) {
+        console.error(`[local-infer] settings route skipped: ${error}`)
+      }
+    })
+  }
 }
 
 const plugin = { name, inject, apply }

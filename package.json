@@ -27,9 +27,15 @@
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": []
     }
   },
   "exports": {
+    "./client": "./dsh/client.js",
     "./core": {
       "types": "./packages/core/lib/index.d.ts",
       "default": "./packages/core/lib/index.js"
@@ -54,6 +60,7 @@
   },
   "files": [
     "cordis.patch.yml",
+    "dsh/client.js",
     "packages/core/package.json",
     "packages/core/lib/**/*.js",
     "packages/core/lib/**/*.d.ts",

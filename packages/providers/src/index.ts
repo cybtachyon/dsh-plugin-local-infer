@@ -11,6 +11,10 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+// The service's `declare module` adds `localInfer` to the cordis Context; the
+// type import loads that augmentation without a runtime edge.
+import type { LocalInferService } from '@dsh/dsh-plugin-local-infer/service'
+import { NINFER_VRAM_MODELS } from './vram.ts'
 
 export const name = 'local-infer-providers'
 export const inject = ['localInfer']
@@ -33,15 +37,19 @@ export {
   SPEC_OPTIONS as NINFER_SPEC_OPTIONS,
 } from './ninfer.ts'
 export { NINFER_VRAM_MODELS, ninferVramModel } from './vram.ts'
+export { ENGINES } from './engines.ts'
+export type { EngineInfo } from './engines.ts'
 
 /**
- * Mount the providers. The scaffold registers nothing so the bundle stays
- * loadable; the body is where the adapter, preset, and guideline registrations
- * land in later phases.
+ * Mount the providers. The NInfer measured VramModels register here so the
+ * service's estimate prices a named model; the engine adapters, presets, and
+ * guidelines land in later phases.
  */
 export function apply(ctx: Context): void {
-  // Providers register their engines, presets, and guidelines here.
-  void ctx
+  const localInfer: LocalInferService = ctx.localInfer
+  for (const model of NINFER_VRAM_MODELS) {
+    localInfer.registerVramModel(model)
+  }
 }
 
 const plugin = { name, inject, apply }

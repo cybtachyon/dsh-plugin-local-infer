@@ -52,7 +52,7 @@ export function renderMeter(
   breakdown: VramBreakdown,
   verdict: VramVerdict,
   vramGiB: number,
-  source: 'measured' | 'estimated',
+  source: 'measured' | 'estimated' | 'not-measured',
 ): MeterModel {
   const cardBytes = vramGiB * 1024 * 1024 * 1024
   const percentOf = (bytes: number): number =>
