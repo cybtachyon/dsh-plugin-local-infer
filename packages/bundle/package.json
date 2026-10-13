@@ -1,0 +1,32 @@
+{
+  "name": "@dsh/dsh-plugin-local-infer-bundle",
+  "version": "0.1.0",
+  "description": "Installable meta-package for the dsh local-inference plugin: no source, just the cordis.patch.yml that wires the service, providers, tool, and ui into one profile layer",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "local-inference",
+    "bundle"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "cordis.patch.yml"
+  ],
+  "dependencies": {
+    "@dsh/dsh-plugin-local-infer-service": "workspace:^",
+    "@dsh/dsh-plugin-local-infer-providers": "workspace:^",
+    "@dsh/dsh-plugin-local-infer-tool": "workspace:^",
+    "@dsh/dsh-plugin-local-infer-ui": "workspace:^"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  }
+}

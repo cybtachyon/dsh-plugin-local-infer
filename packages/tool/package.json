@@ -1,0 +1,41 @@
+{
+  "name": "@dsh/dsh-plugin-local-infer-tool",
+  "version": "0.1.0",
+  "description": "Model-facing tools for the dsh local-inference plugin: local_infer_estimate, local_infer_launch, local_infer_status, and local_infer_register, each on its own timeout budget, plus the system-prompt section that tells the agent when to use them",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "local-inference",
+    "llm-tools",
+    "agent-tools"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@dsh/dsh-plugin-local-infer-core": "workspace:^",
+    "@dsh/dsh-plugin-local-infer-service": "workspace:^"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  }
+}

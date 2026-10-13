@@ -266,3 +266,6 @@ Network Trash Folder
 Temporary Items
 .apdisk
 
+
+# TypeScript build output
+lib/

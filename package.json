@@ -1,19 +1,59 @@
 {
-  "name": "dsh-local-inference",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "name": "@dsh/dsh-plugin-local-infer",
+  "version": "0.1.0",
+  "description": "DeepSeek Harness plugin that manages local inference engines (llama.cpp, NInfer, Hyper-Qwen, Strata): configure, size, launch, and publish a local engine as a DSH model. Installable bundle that mounts the localInfer service, engine providers, model-facing tools, and the Web UI as one profile layer.",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "deepseek",
+    "cordis",
+    "cordis-plugin",
+    "local-inference",
+    "llama.cpp",
+    "ninfer",
+    "vllm",
+    "llm",
+    "vram",
+    "ai-agent"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "packageManager": "pnpm@12.11.2",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "cordis.patch.yml"
+  ],
+  "dependencies": {
+    "@dsh/dsh-plugin-local-infer-service": "workspace:^",
+    "@dsh/dsh-plugin-local-infer-providers": "workspace:^",
+    "@dsh/dsh-plugin-local-infer-tool": "workspace:^",
+    "@dsh/dsh-plugin-local-infer-ui": "workspace:^"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint .",
+    "clean": "tsc -b --clean"
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/node": "^22.10.0",
+    "@vitest/coverage-v8": "^5.0.4",
     "eslint": "^10.12.0",
-    "typescript": "^7.0.2",
+    "typescript": "^5.9.0",
     "typescript-eslint": "^8.71.2",
+    "vite-tsconfig-paths": "^5.1.4",
     "vitest": "^5.0.4"
   }
 }

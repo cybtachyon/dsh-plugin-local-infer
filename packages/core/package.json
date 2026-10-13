@@ -1,0 +1,31 @@
+{
+  "name": "@dsh/dsh-plugin-local-infer-core",
+  "version": "0.1.0",
+  "description": "Pure, framework-free domain model for the dsh local-inference plugin: ParameterSpec, HardwareProfile, EngineAdapter, VramEstimator, GuidelineEngine, DefaultsResolver, DshModelRegistrar, and SystemDepProvisioner primitives shared by every engine and model",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "local-inference",
+    "vram",
+    "domain-model"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  // The repo root is the installable bundle: it ships only cordis.patch.yml, no TypeScript.
+  "files": [],
+  "references": [
+    { "path": "./packages/core" },
+    { "path": "./packages/service" },
+    { "path": "./packages/providers" },
+    { "path": "./packages/tool" },
+    { "path": "./packages/ui" }
+  ]
+}

@@ -608,3 +608,16 @@ src/dsh-plugin-local-infer/
     ui/          # form, VRAM meter, warnings, lifecycle
     bundle/      # installable patch layer
 ```
+
+---
+
+## Status
+
+### Phase 0 — Scaffold (complete)
+
+- **Workspace.** pnpm workspace over `packages/{core,service,providers,tool,ui,bundle}`. Root `package.json` is the installable bundle (`dsh.bundle.patch` → `./cordis.patch.yml`, deps on the four TS packages). Added `pnpm-workspace.yaml`, `tsconfig.base.json` (paths facade for vite-tsconfig-paths), root `tsconfig.json` (project references), `vitest.config.ts`, and `eslint.config.mjs` (underscore-arg ignore). `mise.toml` pins pnpm 12.11.2; TypeScript aligned to 5.9 to satisfy `typescript-eslint`.
+- **`core`.** Pure, framework-free §3 domain model: `ParameterSpec` + the closed `form` union, `HardwareProfile`, `VramModel`/`VramBreakdown`/`VramVerdict`/`SpeculationTerms`, the `EngineAdapter` abstract base (`LaunchPlan`/`HealthResult`/`DeployResult`), `Guideline`/`GuidelineResult`, `Preset`/`DefaultsResolver`, `DshModelRegistrar`, and `SystemDep`/`SystemDepProvisioner`.
+- **`service`.** `ctx.localInfer` (`LocalInfer` `Service` + `declare module`): engine/preset/guideline registries (order-independent, duplicate-id conflict, `ctx.effect`-based disposers) plus the orchestration entry points (`estimate`, `guidelines`, `deps`, `installString`, `runInstall`, `launch`, `registerModel`), which fail loudly with `LOCAL_INFER_NOT_IMPLEMENTED` until Phases 2–8 fill them in.
+- **`providers` / `tool` / `ui`.** No-op object-plugin placeholders that `inject` `localInfer` so the bundle loads empty; the registration bodies land in Phases 5/7/8.
+- **`bundle`.** No-source meta-package carrying `cordis.patch.yml` (four insert rows) and `dsh.bundle.patch`.
+- **Gates green.** `tsc -b` clean; `vitest run` 18/18 across 6 files, including the Phase 0 exit smoke test (`new Context(); ctx.plugin(...)` for the service alone and for all four bundle rows together); `npx eslint` clean.

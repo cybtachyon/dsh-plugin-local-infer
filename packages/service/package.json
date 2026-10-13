@@ -1,0 +1,41 @@
+{
+  "name": "@dsh/dsh-plugin-local-infer-service",
+  "version": "0.1.0",
+  "description": "Service Definition for the dsh local-inference capability seam (ctx.localInfer): the engine, preset, and guideline registries plus the orchestration entry points (estimate, guidelines, deps, installString, runInstall, launch, registerModel). Carries no store of its own.",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cordis",
+    "cordis-plugin",
+    "local-inference",
+    "service"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/**/*.js",
+    "lib/**/*.d.ts"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@dsh/dsh-plugin-local-infer-core": "workspace:^"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.1"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1"
+  }
+}
