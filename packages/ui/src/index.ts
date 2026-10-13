@@ -7,7 +7,7 @@
  * In the scaffold this plugin is a no-op placeholder that injects the seam so
  * the bundle loads with no UI. Phase 8 wires the meter, warnings, lifecycle
  * controls, and register confirmation into one panel.
- * @module @dsh/dsh-plugin-local-infer-ui
+ * @module @dsh/dsh-plugin-local-infer/ui
  */
 
 import type { Context } from '@deepseek-ai/cordis'

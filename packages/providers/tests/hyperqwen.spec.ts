@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { CTX_OPTIONS, HYPERQWEN_PARAMETERS, KV_OPTIONS } from '../src/hyperqwen.ts'
-import type { ParameterSpec } from '@dsh/dsh-plugin-local-infer-core'
+import type { ParameterSpec } from '@dsh/dsh-plugin-local-infer/core'
 
 const IS_STYLE = /^\s*(is|it is|this is|are|was|were)\s/i
 

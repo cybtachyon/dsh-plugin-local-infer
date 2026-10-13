@@ -10,7 +10,7 @@
  * entry points are declared here and filled in by later phases; in the
  * scaffold they fail loudly with `LOCAL_INFER_NOT_IMPLEMENTED` rather than
  * returning a silent default.
- * @module @dsh/dsh-plugin-local-infer-service
+ * @module @dsh/dsh-plugin-local-infer/service
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
@@ -25,7 +25,7 @@ import type {
   Preset,
   RegisterResult,
   SystemDep,
-} from '@dsh/dsh-plugin-local-infer-core'
+} from '@dsh/dsh-plugin-local-infer/core'
 import type { EstimateResult, LaunchResult, LocalInferService } from './types.ts'
 
 export type { EstimateResult, LaunchResult, LocalInferService } from './types.ts'

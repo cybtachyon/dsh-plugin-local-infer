@@ -11,7 +11,7 @@ import type {
   SystemDep,
   VramBreakdown,
   VramVerdict,
-} from '@dsh/dsh-plugin-local-infer-core'
+} from '@dsh/dsh-plugin-local-infer/core'
 
 /**
  * EstimateResult is the answer to an estimate call: the full VRAM breakdown

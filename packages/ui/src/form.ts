@@ -3,7 +3,7 @@
  * `group`, and a field per `ParameterSpec`. The model is pure data, so the
  * panel (Phase 8) renders it without touching the domain model, and the
  * mapping from `form` kind to control kind stays unit-testable here.
- * @module @dsh/dsh-plugin-local-infer-ui/form
+ * @module @dsh/dsh-plugin-local-infer/ui/form
  */
 
 import type {
@@ -11,7 +11,7 @@ import type {
   EnumOption,
   ParameterForm,
   ParameterSpec,
-} from '@dsh/dsh-plugin-local-infer-core'
+} from '@dsh/dsh-plugin-local-infer/core'
 
 /**
  * The control kinds the panel switches on: checkbox, dropdown, slider plus

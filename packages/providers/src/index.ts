@@ -7,7 +7,7 @@
  * In the scaffold this plugin is a no-op placeholder that injects the seam so
  * the bundle loads with zero providers. Phase 5 fills in the adapter
  * registrations and Phase 7 the preset and guideline data.
- * @module @dsh/dsh-plugin-local-infer-providers
+ * @module @dsh/dsh-plugin-local-infer/providers
  */
 
 import type { Context } from '@deepseek-ai/cordis'

@@ -29,14 +29,49 @@
       "patch": "./cordis.patch.yml"
     }
   },
+  "exports": {
+    "./core": {
+      "types": "./packages/core/lib/index.d.ts",
+      "default": "./packages/core/lib/index.js"
+    },
+    "./service": {
+      "types": "./packages/service/lib/index.d.ts",
+      "default": "./packages/service/lib/index.js"
+    },
+    "./providers": {
+      "types": "./packages/providers/lib/index.d.ts",
+      "default": "./packages/providers/lib/index.js"
+    },
+    "./tool": {
+      "types": "./packages/tool/lib/index.d.ts",
+      "default": "./packages/tool/lib/index.js"
+    },
+    "./ui": {
+      "types": "./packages/ui/lib/index.d.ts",
+      "default": "./packages/ui/lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
   "files": [
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "packages/core/package.json",
+    "packages/core/lib/**/*.js",
+    "packages/core/lib/**/*.d.ts",
+    "packages/service/package.json",
+    "packages/service/lib/**/*.js",
+    "packages/service/lib/**/*.d.ts",
+    "packages/providers/package.json",
+    "packages/providers/lib/**/*.js",
+    "packages/providers/lib/**/*.d.ts",
+    "packages/tool/package.json",
+    "packages/tool/lib/**/*.js",
+    "packages/tool/lib/**/*.d.ts",
+    "packages/ui/package.json",
+    "packages/ui/lib/**/*.js",
+    "packages/ui/lib/**/*.d.ts"
   ],
-  "dependencies": {
-    "@dsh/dsh-plugin-local-infer-service": "workspace:^",
-    "@dsh/dsh-plugin-local-infer-providers": "workspace:^",
-    "@dsh/dsh-plugin-local-infer-tool": "workspace:^",
-    "@dsh/dsh-plugin-local-infer-ui": "workspace:^"
+  "peerDependencies": {
+    "@deepseek-ai/cordis": ">=4.0.1"
   },
   "scripts": {
     "build": "tsc -b",

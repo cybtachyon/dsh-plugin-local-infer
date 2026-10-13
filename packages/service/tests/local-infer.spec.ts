@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { EngineAdapter } from '@dsh/dsh-plugin-local-infer-core'
+import { EngineAdapter } from '@dsh/dsh-plugin-local-infer/core'
 import type {
   Config,
   DeployResult,
@@ -10,7 +10,7 @@ import type {
   LaunchPlan,
   ParameterSpec,
   Preset,
-} from '@dsh/dsh-plugin-local-infer-core'
+} from '@dsh/dsh-plugin-local-infer/core'
 import LocalInfer, { LocalInferError } from '../src/index.ts'
 
 const HW: HardwareProfile = { dockerAvailable: false, wsl2: false, os: 'linux', cpuThreads: 4 }

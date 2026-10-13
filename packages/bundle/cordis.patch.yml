@@ -9,20 +9,20 @@
     # registries, and the orchestration entry points. Carries no store of its
     # own.
     - id: local-infer-service
-      name: '@dsh/dsh-plugin-local-infer-service'
+      name: '@dsh/dsh-plugin-local-infer/service'
 
     # Service Providers: the concrete engine adapters, the NInfer VramModel,
     # the built-in presets, the built-in guidelines, and the per-OS SystemDep
     # install command data.
     - id: local-infer-providers
-      name: '@dsh/dsh-plugin-local-infer-providers'
+      name: '@dsh/dsh-plugin-local-infer/providers'
 
     # Consumer: the model-facing local_infer_* tools and their system-prompt
     # section.
     - id: local-infer-tool
-      name: '@dsh/dsh-plugin-local-infer-tool'
+      name: '@dsh/dsh-plugin-local-infer/tool'
 
     # Web UI: the parameter form, the VRAM meter, the red-warning banner, the
     # engine lifecycle controls, and the register-as-model confirmation.
     - id: local-infer-ui
-      name: '@dsh/dsh-plugin-local-infer-ui'
+      name: '@dsh/dsh-plugin-local-infer/ui'

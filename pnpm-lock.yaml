@@ -166,18 +166,9 @@ importers:
 
   .:
     dependencies:
-      '@dsh/dsh-plugin-local-infer-providers':
-        specifier: workspace:^
-        version: link:packages/providers
-      '@dsh/dsh-plugin-local-infer-service':
-        specifier: workspace:^
-        version: link:packages/service
-      '@dsh/dsh-plugin-local-infer-tool':
-        specifier: workspace:^
-        version: link:packages/tool
-      '@dsh/dsh-plugin-local-infer-ui':
-        specifier: workspace:^
-        version: link:packages/ui
+      '@deepseek-ai/cordis':
+        specifier: '>=4.0.1'
+        version: 4.0.4
     devDependencies:
       '@eslint/js':
         specifier: ^10.0.1
