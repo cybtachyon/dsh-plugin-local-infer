@@ -79,6 +79,8 @@ export interface LocalInferSummary {
     modelFiles: string[];
     showHelp: boolean;
     providers: ProviderSummaryEntry[];
+    logPath: string;
+    lastLogs: string;
 }
 /**
  * ProviderSummaryEntry is the card-facing view of one saved provider config:
@@ -165,6 +167,8 @@ export interface StoredConfig {
     platform: Record<string, StoredPlatformConfig>;
     showHelp: boolean;
     providers: StoredProviderConfig[];
+    logPath: string;
+    lastLogs: string;
 }
 /**
  * readConfig reads the stored engine, config, trust gate, and per-engine
@@ -178,7 +182,7 @@ export declare function readConfig(): StoredConfig;
  * writeConfig persists the engine, config, trust gate, per-engine platform
  * configs, and the help toggle, creating the directory tree on first write.
  */
-export declare function writeConfig(engine: string, config: Config, allowRunDeps: boolean, platform?: Record<string, StoredPlatformConfig>, showHelp?: boolean, providers?: StoredProviderConfig[]): void;
+export declare function writeConfig(engine: string, config: Config, allowRunDeps: boolean, platform?: Record<string, StoredPlatformConfig>, showHelp?: boolean, providers?: StoredProviderConfig[], logPath?: string, lastLogs?: string): void;
 /**
  * buildSummary assembles the card's read model for one engine and config: the
  * static engine and model lists, the detected hardware, the form model the
@@ -278,6 +282,14 @@ export interface LaunchRequest {
  * broken step when the engine does not come up.
  */
 export declare function launchEngine(localInfer: LocalInferService, request: LaunchRequest): Promise<LaunchResult>;
+/**
+ * persistLaunchLogs stores a launch's captured output as the last run and
+ * writes it to the configured log file. The log file is only written when the
+ * run produced output and the log location is set; the last-run logs are always
+ * persisted (an empty string clears a stale run) so the card's Logs section
+ * shows the previous run after a reload.
+ */
+export declare function persistLaunchLogs(result: LaunchResult, engineId: string, config: Config): void;
 /**
  * stopEngine renders the same plan and runs the service's stop entry point, so
  * the stop step targets the exact container or process the launch started.

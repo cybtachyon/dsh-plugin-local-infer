@@ -42,11 +42,13 @@ import type {
 // local-path or pnpm-linked install of this repo would fail the import.
 import {
   checkDeps,
+  DEFAULT_LOG_PATH_TEMPLATE,
   hfDownloadCommand,
   modelArtifactPath,
   modelEntriesForEngine,
   providerIdFor,
   renderInstallString,
+  resolveLogPath,
 } from '../../core/lib/index.js'
 import {
   defaultModelFor,
@@ -137,6 +139,11 @@ export interface LocalInferSummary {
   // card renders these as collapsed entries at the top of the panel, each
   // with its Edit and Delete controls.
   providers: ProviderSummaryEntry[]
+  // The log-file location template the card's log-location field edits, and
+  // the last run's captured log output the card's Logs section shows. A launch
+  // overwrites lastLogs and writes the engine's output to the resolved path.
+  logPath: string
+  lastLogs: string
 }
 
 /**
@@ -243,6 +250,13 @@ export interface StoredConfig {
   // predates the key carries an empty list, so a first Save adds the first
   // provider entry rather than overwriting a missing one.
   providers: StoredProviderConfig[]
+  // The log-file location template the card's log-location field edits. The
+  // launch step resolves its placeholders (engine, model slug, timestamp) and
+  // writes the engine's output there. The default is the plugin's log dir.
+  logPath: string
+  // The last run's captured log output, kept so the card's Logs section shows
+  // the previous run after a reload. A launch overwrites it with the new run.
+  lastLogs: string
 }
 
 /**
@@ -262,6 +276,8 @@ export function readConfig(): StoredConfig {
       platform: {},
       showHelp: true,
       providers: [],
+      logPath: DEFAULT_LOG_PATH_TEMPLATE,
+      lastLogs: '',
     }
   }
   try {
@@ -272,6 +288,8 @@ export function readConfig(): StoredConfig {
       platform?: unknown
       showHelp?: unknown
       providers?: unknown
+      logPath?: unknown
+      lastLogs?: unknown
     }
     return {
       engine: typeof parsed.engine === 'string' ? parsed.engine : 'ninfer',
@@ -282,6 +300,12 @@ export function readConfig(): StoredConfig {
       // descriptions visible, the default the card draws on first open.
       showHelp: typeof parsed.showHelp === 'boolean' ? parsed.showHelp : true,
       providers: parseProviders(parsed.providers),
+      // A file that predates the key reads as the plugin's default log dir,
+      // and the last-run logs start empty until a launch fills them.
+      logPath: typeof parsed.logPath === 'string' && parsed.logPath !== ''
+        ? parsed.logPath
+        : DEFAULT_LOG_PATH_TEMPLATE,
+      lastLogs: typeof parsed.lastLogs === 'string' ? parsed.lastLogs : '',
     }
   } catch {
     return {
@@ -291,6 +315,8 @@ export function readConfig(): StoredConfig {
       platform: {},
       showHelp: true,
       providers: [],
+      logPath: DEFAULT_LOG_PATH_TEMPLATE,
+      lastLogs: '',
     }
   }
 }
@@ -339,6 +365,8 @@ export function writeConfig(
   platform?: Record<string, StoredPlatformConfig>,
   showHelp?: boolean,
   providers?: StoredProviderConfig[],
+  logPath?: string,
+  lastLogs?: string,
 ): void {
   const path = localInferConfigPath()
   mkdirSync(dirname(path), { recursive: true })
@@ -352,6 +380,8 @@ export function writeConfig(
         platform: platform ?? {},
         showHelp: showHelp ?? true,
         providers: providers ?? [],
+        logPath: logPath ?? DEFAULT_LOG_PATH_TEMPLATE,
+        lastLogs: lastLogs ?? '',
       },
       null,
       2,
@@ -525,6 +555,8 @@ export async function buildSummary(
     modelFiles,
     showHelp: stored.showHelp,
     providers,
+    logPath: stored.logPath,
+    lastLogs: stored.lastLogs,
   }
 }
 
@@ -772,7 +804,47 @@ export async function launchEngine(
   if (request.platform !== undefined) {
     setPlatformConfig(localInfer, engineId, request.platform)
   }
-  return localInfer.launch(adapter.renderLaunch(config, hardware))
+  const result = await localInfer.launch(adapter.renderLaunch(config, hardware))
+  persistLaunchLogs(result, engineId, config)
+  return result
+}
+
+/**
+ * persistLaunchLogs stores a launch's captured output as the last run and
+ * writes it to the configured log file. The log file is only written when the
+ * run produced output and the log location is set; the last-run logs are always
+ * persisted (an empty string clears a stale run) so the card's Logs section
+ * shows the previous run after a reload.
+ */
+export function persistLaunchLogs(
+  result: LaunchResult,
+  engineId: string,
+  config: Config,
+): void {
+  const stored = readConfig()
+  const logs = result.logs ?? ''
+  writeConfig(
+    stored.engine,
+    stored.config,
+    stored.allowRunDeps,
+    stored.platform,
+    stored.showHelp,
+    stored.providers,
+    stored.logPath,
+    logs,
+  )
+  if (logs === '') {
+    return
+  }
+  const modelId = typeof config.model === 'string' ? config.model : undefined
+  const logPath = resolveLogPath(stored.logPath, engineId, modelId, new Date(), homedir())
+  try {
+    mkdirSync(dirname(logPath), { recursive: true })
+    writeFileSync(logPath, logs)
+  } catch {
+    // A log file that cannot be written (a read-only dir, a bad path) must not
+    // fail the launch; the in-memory last-run logs still reach the card.
+  }
 }
 
 /**
@@ -975,6 +1047,9 @@ export function registerLocalInferRoute(
           // The provider id to update. Absent means a new provider entry,
           // which the route mints an id for and prepends to the list.
           id?: unknown
+          // The log-file location template the card's log-location field edits.
+          // Absent keeps the stored template (or the plugin default).
+          logPath?: unknown
         }
         const engine = typeof body.engine === 'string' ? body.engine : 'ninfer'
         const config = body.config && typeof body.config === 'object' ? (body.config as Config) : {}
@@ -983,6 +1058,12 @@ export function registerLocalInferRoute(
         // A body that predates the key keeps the descriptions visible.
         const showHelp = typeof body.showHelp === 'boolean' ? body.showHelp : true
         const providerId = typeof body.id === 'string' && body.id.trim() !== '' ? body.id : undefined
+        // A body that omits the log location (or sends a blank one) keeps the
+        // stored template, so an unsaved edit never wipes a custom path.
+        const logPath =
+          typeof body.logPath === 'string' && body.logPath !== ''
+            ? body.logPath
+            : readConfig().logPath
         // Save upserts a provider entry: an id updates the stored entry in
         // place, an absent id mints a new id and prepends the entry, so a Save
         // always adds (or refreshes) a card entry at the top of the list. The
@@ -999,7 +1080,7 @@ export function registerLocalInferRoute(
           providerId !== undefined
             ? stored.providers.map((entry) => (entry.id === providerId ? provider : entry))
             : [provider, ...stored.providers]
-        writeConfig(engine, config, allowRunDeps, platform, showHelp, providers)
+        writeConfig(engine, config, allowRunDeps, platform, showHelp, providers, logPath)
         // Re-sync the service registry with the saved platform map, so the next
         // launch reads the platform config the user just saved.
         syncPlatformConfigs(localInfer, {
@@ -1009,6 +1090,8 @@ export function registerLocalInferRoute(
           platform,
           showHelp,
           providers,
+          logPath,
+          lastLogs: stored.lastLogs,
         })
         send(200, await buildSummary(localInfer, { engine, config }))
       } catch (error) {
@@ -1060,6 +1143,8 @@ export function registerLocalInferRoute(
           stored.platform,
           stored.showHelp,
           providers,
+          stored.logPath,
+          stored.lastLogs,
         )
         syncPlatformConfigs(localInfer, stored)
         send(200, await buildSummary(localInfer))

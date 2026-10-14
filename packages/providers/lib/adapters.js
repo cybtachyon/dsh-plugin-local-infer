@@ -105,13 +105,28 @@ export const nodeLifecycleHost = {
             env: { ...process.env, ...env },
             cwd,
             detached: true,
-            stdio: 'ignore',
+            // Pipe the child's stdout and stderr so the launch step can surface the
+            // engine's log output in the card and write it to the configured log
+            // file; stdin stays ignored.
+            stdio: ['ignore', 'pipe', 'pipe'],
         });
         child.unref();
+        // Accumulate the child's output into a single string the handle exposes.
+        // The cap keeps a chatty engine from growing the host's memory without
+        // bound; the tail is what the log file and the card keep.
+        let logs = '';
+        const append = (chunk) => {
+            logs = (logs + chunk.toString('utf8')).slice(-65536);
+        };
+        child.stdout?.on('data', append);
+        child.stderr?.on('data', append);
         return {
             pid: child.pid ?? -1,
             kill: () => {
                 child.kill('SIGTERM');
+            },
+            get logs() {
+                return logs;
             },
         };
     },
@@ -292,7 +307,7 @@ export class NInferAdapter extends EngineAdapter {
                 return download;
             const handle = this.host.spawn(plan.argv ?? [], plan.env ?? {}, engineDir);
             this.children.set(this.planKey(plan), handle);
-            return { ok: true };
+            return { ok: true, handle };
         }
         if (plan.kind === 'docker') {
             const pull = await this.host.run(`docker pull ${NINFER_DOCKER_IMAGE}`);
@@ -301,7 +316,7 @@ export class NInferAdapter extends EngineAdapter {
             }
             const handle = this.host.spawn(plan.argv ?? [], plan.env ?? {});
             this.children.set(this.planKey(plan), handle);
-            return { ok: true };
+            return { ok: true, handle };
         }
         // NInfer renders process and docker plans; a compose plan is a no-op.
         return { ok: true };

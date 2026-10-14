@@ -128,6 +128,11 @@ window.__ModuleLoader__.load({
         statusStopped: 'stopped',
         statusUnsure: 'status unknown',
         registerNeedsSave: 'Save the Provider configuration before registering with DSH.',
+        logs: 'Logs',
+        logLocation: 'Log location',
+        entryLaunch: 'Launch',
+        entryStop: 'Stop',
+        entryLogs: 'Logs',
       },
       zh: {
         section: '引擎设置',
@@ -222,6 +227,11 @@ window.__ModuleLoader__.load({
         statusStopped: '已停止',
         statusUnsure: '状态未知',
         registerNeedsSave: '注册到 DSH 之前请先保存该提供方配置。',
+        logs: '日志',
+        logLocation: '日志位置',
+        entryLaunch: '启动',
+        entryStop: '停止',
+        entryLogs: '日志',
       },
     };
 
@@ -729,6 +739,68 @@ window.__ModuleLoader__.load({
 
     // The provider list: the saved provider entries the summary carries, each
     // a collapsed card with a status dot (green running, red stopped, yellow
+    // The per-entry Launch control: a card entry's own lifecycle button, shown
+    // alongside its Edit and Delete controls. Idle reads as a Launch button
+    // that starts the entry's engine; a launch in flight shows a disabled
+    // control with the Throbber inside; a healthy engine reads as an enabled
+    // Stop; a launch that timed out reads as a red Logs control that opens the
+    // entry for editing, the same action as Edit.
+    function renderEntryLaunchButton(react, primitives, provider, opts) {
+      var state = (opts.launchState || {})[provider.id];
+      if (state !== undefined && state.status === 'launching') {
+        return react.createElement(
+          'button',
+          {
+            type: 'button',
+            disabled: true,
+            style: Object.assign(
+              { display: 'inline-flex', alignItems: 'center', gap: 4, opacity: 0.7 },
+              GHOST_BUTTON,
+            ),
+            'aria-label': opts.launchingLabel,
+          },
+          renderThrobber(react, primitives),
+          react.createElement('span', null, opts.launchingLabel),
+        );
+      }
+      if (state !== undefined && state.status === 'running') {
+        return renderButton(
+          react,
+          primitives,
+          'ghost',
+          { onClick: function () { opts.onStopEntry(provider); } },
+          opts.stopLabel,
+        );
+      }
+      if (state !== undefined && state.status === 'failed') {
+        // A launch that timed out: a red Logs control that opens the entry for
+        // editing, the same action as the Edit control.
+        return react.createElement(
+          'button',
+          {
+            type: 'button',
+            onClick: function () {
+              opts.onEdit(provider);
+            },
+            style: Object.assign(
+              { color: 'var(--dsw-alias-label-error, #ff3b30)' },
+              GHOST_BUTTON,
+            ),
+            'aria-label': opts.logsLabel,
+          },
+          opts.logsLabel,
+        );
+      }
+      // Idle: a plain Launch control that starts the entry's own engine.
+      return renderButton(
+        react,
+        primitives,
+        'ghost',
+        { onClick: function () { opts.onLaunchEntry(provider); } },
+        opts.launchLabel,
+      );
+    }
+
     // unsure), an "Engine: Model" title, and Edit/Delete controls. A New
     // provider button resets the form to a fresh entry. The list sits above
     // the editing form, so a provider's full config form stays the single
@@ -802,6 +874,7 @@ window.__ModuleLoader__.load({
             },
             opts.deleteLabel,
           ),
+          renderEntryLaunchButton(react, primitives, provider, opts),
         );
       });
       return react.createElement(
@@ -828,6 +901,27 @@ window.__ModuleLoader__.load({
         },
         opts.label,
       );
+    }
+
+    // The DSH Throbber (a spinner) the per-entry Launch button shows while a
+    // launch is in flight, with a CSS border-spin as the fallback a host
+    // without the seed keeps.
+    function renderThrobber(react, primitives) {
+      if (primitives && typeof primitives.Throbber === 'function') {
+        return react.createElement(primitives.Throbber, { size: 'sm' });
+      }
+      return react.createElement('span', {
+        style: {
+          display: 'inline-block',
+          width: 12,
+          height: 12,
+          border: '2px solid rgba(127,127,127,0.3)',
+          borderTopColor: 'var(--dsw-alias-label-primary, #1d1d1f)',
+          borderRadius: '50%',
+          animation: 'dsh-local-infer-spin 0.8s linear infinite',
+        },
+        'aria-hidden': 'true',
+      });
     }
 
     // One rendered field: the control the `control` model names, greyed out
@@ -1317,6 +1411,14 @@ window.__ModuleLoader__.load({
         // later "New provider" click restores the in-progress values the form
         // held before the edit, not the edited provider's.
         var cachedDraftState = react.useState(null);
+        // The log-file location the card's log-location field edits. Seeded
+        // from the summary's stored template on load; a Save persists it.
+        var logPathState = react.useState('');
+        // The per-entry launch state: a map from provider id to the entry's
+        // lifecycle ('launching', 'running', 'failed') and the start time a
+        // launch began, so a card entry can show its Throbber, Stop, or red
+        // Logs control. Absent entries read as idle (a plain Launch button).
+        var entryLaunchState = react.useState({});
         var data = dataState[0];
         var draft = draftState[0];
         var note = noteState[0];
@@ -1340,6 +1442,8 @@ window.__ModuleLoader__.load({
         var deletingProviderId = deletingProviderIdState[0];
         var providerFormMode = providerFormModeState[0];
         var cachedDraft = cachedDraftState[0];
+        var logPath = logPathState[0];
+        var entryLaunch = entryLaunchState[0];
         // The no-entries case forces the form into new-provider mode on
         // render: with nothing stored, the form is where the first provider
         // is entered, and the "New provider" control reads as plain text.
@@ -1393,6 +1497,11 @@ window.__ModuleLoader__.load({
                 // The stored preference wins over the default; a summary that
                 // predates the key keeps the descriptions visible.
                 helpState[1](next.showHelp !== false);
+                // Seed the log-location field from the stored template, so the
+                // card shows the path the last launch wrote to.
+                if (typeof next.logPath === 'string' && next.logPath !== '') {
+                  logPathState[1](next.logPath);
+                }
               })
               .catch((error) => {
                 noteState[1](t.loadFailed + ': ' + (error && error.message ? error.message : ''));
@@ -1649,6 +1758,7 @@ window.__ModuleLoader__.load({
               allowRunDeps: deps !== null && deps.runAllowed === true,
               platform: draft.platform || {},
               showHelp: help,
+              logPath: logPath,
             }),
           })
             .then((response) =>
@@ -1679,7 +1789,7 @@ window.__ModuleLoader__.load({
               noteState[1](t.saveFailed + ': ' + (error && error.message ? error.message : ''));
               savingState[1](false);
             });
-        }, [draft, saving, deps, t, help, editingProviderId]);
+        }, [draft, saving, deps, t, help, editingProviderId, logPath]);
 
         var discard = react.useCallback(() => {
           noteState[1]('');
@@ -2050,6 +2160,77 @@ window.__ModuleLoader__.load({
             });
         }, [draft, stopping, t]);
 
+        // The per-entry launch: a card entry's own Launch control drives its
+        // own engine, not the form's draft. It records a start time and the
+        // 'launching' state (the Throbber), then reads the launch result's
+        // healthy flag: a 200 before the route's health-poll timeout reads as
+        // 'running' (the control becomes Stop), a timeout reads as 'failed'
+        // (the control becomes a red Logs that opens the entry for editing).
+        var onLaunchEntry = react.useCallback(
+          (provider) => {
+            var state = entryLaunch[provider.id];
+            if (state !== undefined && state.status === 'launching') {
+              return;
+            }
+            entryLaunchState[1]((current) =>
+              Object.assign({}, current, {
+                [provider.id]: { status: 'launching', startTime: Date.now() },
+              }),
+            );
+            fetch('/local-infer/launch', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                engine: provider.engine,
+                config: provider.config || {},
+                platform: provider.platform ? { [provider.engine]: provider.platform } : {},
+              }),
+            })
+              .then((response) => response.json().then((body) => ({ ok: response.ok, body: body })))
+              .then(({ ok, body }) => {
+                var nextStatus = ok && body.healthy ? 'running' : 'failed';
+                entryLaunchState[1]((current) =>
+                  Object.assign({}, current, {
+                    [provider.id]: { status: nextStatus, startTime: Date.now() },
+                  }),
+                );
+              })
+              .catch(() => {
+                entryLaunchState[1]((current) =>
+                  Object.assign({}, current, {
+                    [provider.id]: { status: 'failed', startTime: Date.now() },
+                  }),
+                );
+              });
+          },
+          [entryLaunch],
+        );
+
+        var onStopEntry = react.useCallback(
+          (provider) => {
+            fetch('/local-infer/stop', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                engine: provider.engine,
+                config: provider.config || {},
+                platform: provider.platform ? { [provider.engine]: provider.platform } : {},
+              }),
+            })
+              .then(() => {
+                entryLaunchState[1]((current) => {
+                  var next = Object.assign({}, current);
+                  delete next[provider.id];
+                  return next;
+                });
+              })
+              .catch(() => {
+                /* a stop that fails leaves the entry in its last state */
+              });
+          },
+          [],
+        );
+
         if (view === 'summary') {
           return t.subtitle;
         }
@@ -2073,6 +2254,13 @@ window.__ModuleLoader__.load({
         return react.createElement(
           'div',
           { style: CARD_STYLE },
+          // The keyframes the Throbber fallback spinner animates with. Injected
+          // once per card so a host without the DSH seed still shows a spin.
+          react.createElement(
+            'style',
+            null,
+            '@keyframes dsh-local-infer-spin { to { transform: rotate(360deg); } }',
+          ),
           // The card header: the section title plus the circular "?" button
           // that shows or hides the per-field descriptions. The preference
           // persists through the save route, so it survives a reload.
@@ -2118,6 +2306,13 @@ window.__ModuleLoader__.load({
                 statusUnsure: t.statusUnsure,
                 editLabel: t.edit,
                 deleteLabel: t.delete,
+                launchState: entryLaunch,
+                onLaunchEntry: onLaunchEntry,
+                onStopEntry: onStopEntry,
+                launchLabel: t.entryLaunch,
+                stopLabel: t.entryStop,
+                logsLabel: t.entryLogs,
+                launchingLabel: t.launching,
               })
             : null,
           // The provider form: the Engine/Model config the card prices. It is
@@ -2456,6 +2651,42 @@ window.__ModuleLoader__.load({
               depsNote: depsNote,
             },
             primitives,
+          ),
+          // The Logs section: the last run's captured output in a fixed-height
+          // read-only text area (a launch fills it; the card never edits it),
+          // and the log-file location the launch writes to. The location field
+          // edits the template the route resolves and writes on the next run.
+          react.createElement(
+            'div',
+            { style: { marginTop: 8 } },
+            react.createElement('div', { style: LABEL_STYLE }, t.logs),
+            react.createElement('textarea', {
+              style: {
+                width: '100%',
+                height: 96,
+                resize: 'none',
+                fontFamily: 'monospace',
+                fontSize: 11,
+                padding: 6,
+                border: '1px solid rgba(127,127,127,0.25)',
+                borderRadius: 6,
+                color: 'inherit',
+                background: 'transparent',
+              },
+              value: data.lastLogs || '',
+              readOnly: true,
+              'aria-label': t.logs,
+            }),
+            react.createElement(
+              'div',
+              { style: ROW_STYLE },
+              react.createElement('label', { style: LABEL_STYLE }, t.logLocation),
+              react.createElement('input', {
+                style: INPUT_STYLE,
+                value: logPath,
+                onChange: (event) => logPathState[1](event.target.value),
+              }),
+            ),
           ),
           // The engine lifecycle row: Launch runs the deploy and the health
           // poll through the /local-infer/launch route, and Stop signals the

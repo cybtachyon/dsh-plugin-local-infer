@@ -1,6 +1,6 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type {
   Config,
@@ -21,6 +21,7 @@ import type {
   VramModel,
   VramVerdict,
 } from '@dsh/dsh-plugin-local-infer/core'
+import { DEFAULT_LOG_PATH_TEMPLATE, resolveLogPath } from '@dsh/dsh-plugin-local-infer/core'
 import type {
   DownloadResult,
   LaunchResult,
@@ -294,6 +295,8 @@ describe('local-infer route read model', () => {
       platform: {},
       showHelp: true,
       providers: [],
+      logPath: DEFAULT_LOG_PATH_TEMPLATE,
+      lastLogs: '',
     })
   })
 
@@ -307,6 +310,8 @@ describe('local-infer route read model', () => {
       platform: {},
       showHelp: true,
       providers: [],
+      logPath: DEFAULT_LOG_PATH_TEMPLATE,
+      lastLogs: '',
     })
   })
 
@@ -430,6 +435,34 @@ describe('launch and stop route helpers', () => {
     const result = await launchEngine(service, { engine: 'ninfer', config: { port: 18020 } })
     expect(result.healthy).toBe(true)
     expect(result.plan.engineId).toBe('ninfer')
+  })
+
+  it('persists the launch logs as the last run and writes the log file', async () => {
+    const service = stubService([], {
+      launchResult: {
+        plan: { engineId: 'ninfer', kind: 'process', port: 18020, healthUrl: 'http://127.0.0.1:18020/health' },
+        healthy: true,
+        logs: 'engine booted\nlistening on 18020',
+      },
+    })
+    await launchEngine(service, { engine: 'ninfer', config: { port: 18020, model: 'qwen3-8-27b' } })
+    // The last run is persisted, so the card's Logs section shows it after a
+    // reload, and the resolved log file carries the same output.
+    expect(readConfig().lastLogs).toBe('engine booted\nlistening on 18020')
+    const logFile = resolveLogPath(
+      readConfig().logPath,
+      'ninfer',
+      'qwen3-8-27b',
+      new Date(),
+      process.env.HOME ?? '',
+    )
+    // The exact timestamp the launch resolved is not known from here, so
+    // assert the directory the file lands in holds a matching log.
+    const dir = dirname(logFile)
+    const entries = existsSync(dir) ? readdirSync(dir) : []
+    expect(entries.some((name) => name.startsWith('ninfer-qwen3-8-27b-') && name.endsWith('.log'))).toBe(
+      true,
+    )
   })
 
   it('renders the plan and calls the service stop entry point with it', async () => {

@@ -9,6 +9,7 @@ export { detectHardware, parseNvidiaSmiGpu, } from "./hardware.js";
 export { DEFAULT_OS_RESERVE_MIB, estimateVram, KV_PAGE_TOKENS, pageRoundUp, TIGHT_HEADROOM_BYTES, } from "./estimator.js";
 export { GPU_USAGE_BUSY_THRESHOLD, matchLaunchSignature, parseNvidiaSmiGpuUsage, resolveOsReserve, } from "./reserve.js";
 export { computeProviderStatuses, isGpuBusy, } from "./status.js";
+export { DEFAULT_LOG_PATH_TEMPLATE, LOG_TEMPLATE_ENGINE, LOG_TEMPLATE_HOME, LOG_TEMPLATE_MODEL, LOG_TEMPLATE_TIMESTAMP, formatLogTimestamp, resolveLogPath, slugifyModelName, } from "./logs.js";
 export { EngineAdapter } from "./adapter.js";
 export { constraintId, evaluateGuidelines, modelGuidelines } from "./guideline.js";
 export { hardwareClass, presetFromFetch, resolveDefaults, WILDCARD_HARDWARE_CLASS, } from "./defaults.js";

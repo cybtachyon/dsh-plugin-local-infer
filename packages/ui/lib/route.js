@@ -20,7 +20,7 @@ import { dirname, join } from 'node:path';
 // Relative, not the root package subpath: a self-referencing bare specifier
 // only resolves when the package sits inside a node_modules tree, so a
 // local-path or pnpm-linked install of this repo would fail the import.
-import { checkDeps, hfDownloadCommand, modelArtifactPath, modelEntriesForEngine, providerIdFor, renderInstallString, } from '../../core/lib/index.js';
+import { checkDeps, DEFAULT_LOG_PATH_TEMPLATE, hfDownloadCommand, modelArtifactPath, modelEntriesForEngine, providerIdFor, renderInstallString, resolveLogPath, } from '../../core/lib/index.js';
 import { defaultModelFor, defaultModelsForEngine, ENGINES, } from '../../providers/lib/index.js';
 import { renderDeps } from "./deps.js";
 import { renderForm } from "./form.js";
@@ -50,6 +50,8 @@ export function readConfig() {
             platform: {},
             showHelp: true,
             providers: [],
+            logPath: DEFAULT_LOG_PATH_TEMPLATE,
+            lastLogs: '',
         };
     }
     try {
@@ -63,6 +65,12 @@ export function readConfig() {
             // descriptions visible, the default the card draws on first open.
             showHelp: typeof parsed.showHelp === 'boolean' ? parsed.showHelp : true,
             providers: parseProviders(parsed.providers),
+            // A file that predates the key reads as the plugin's default log dir,
+            // and the last-run logs start empty until a launch fills them.
+            logPath: typeof parsed.logPath === 'string' && parsed.logPath !== ''
+                ? parsed.logPath
+                : DEFAULT_LOG_PATH_TEMPLATE,
+            lastLogs: typeof parsed.lastLogs === 'string' ? parsed.lastLogs : '',
         };
     }
     catch {
@@ -73,6 +81,8 @@ export function readConfig() {
             platform: {},
             showHelp: true,
             providers: [],
+            logPath: DEFAULT_LOG_PATH_TEMPLATE,
+            lastLogs: '',
         };
     }
 }
@@ -113,7 +123,7 @@ function newProviderId() {
  * writeConfig persists the engine, config, trust gate, per-engine platform
  * configs, and the help toggle, creating the directory tree on first write.
  */
-export function writeConfig(engine, config, allowRunDeps, platform, showHelp, providers) {
+export function writeConfig(engine, config, allowRunDeps, platform, showHelp, providers, logPath, lastLogs) {
     const path = localInferConfigPath();
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, JSON.stringify({
@@ -123,6 +133,8 @@ export function writeConfig(engine, config, allowRunDeps, platform, showHelp, pr
         platform: platform ?? {},
         showHelp: showHelp ?? true,
         providers: providers ?? [],
+        logPath: logPath ?? DEFAULT_LOG_PATH_TEMPLATE,
+        lastLogs: lastLogs ?? '',
     }, null, 2));
 }
 /**
@@ -277,6 +289,8 @@ export async function buildSummary(localInfer, request) {
         modelFiles,
         showHelp: stored.showHelp,
         providers,
+        logPath: stored.logPath,
+        lastLogs: stored.lastLogs,
     };
 }
 /**
@@ -451,7 +465,34 @@ export async function launchEngine(localInfer, request) {
     if (request.platform !== undefined) {
         setPlatformConfig(localInfer, engineId, request.platform);
     }
-    return localInfer.launch(adapter.renderLaunch(config, hardware));
+    const result = await localInfer.launch(adapter.renderLaunch(config, hardware));
+    persistLaunchLogs(result, engineId, config);
+    return result;
+}
+/**
+ * persistLaunchLogs stores a launch's captured output as the last run and
+ * writes it to the configured log file. The log file is only written when the
+ * run produced output and the log location is set; the last-run logs are always
+ * persisted (an empty string clears a stale run) so the card's Logs section
+ * shows the previous run after a reload.
+ */
+export function persistLaunchLogs(result, engineId, config) {
+    const stored = readConfig();
+    const logs = result.logs ?? '';
+    writeConfig(stored.engine, stored.config, stored.allowRunDeps, stored.platform, stored.showHelp, stored.providers, stored.logPath, logs);
+    if (logs === '') {
+        return;
+    }
+    const modelId = typeof config.model === 'string' ? config.model : undefined;
+    const logPath = resolveLogPath(stored.logPath, engineId, modelId, new Date(), homedir());
+    try {
+        mkdirSync(dirname(logPath), { recursive: true });
+        writeFileSync(logPath, logs);
+    }
+    catch {
+        // A log file that cannot be written (a read-only dir, a bad path) must not
+        // fail the launch; the in-memory last-run logs still reach the card.
+    }
 }
 /**
  * stopEngine renders the same plan and runs the service's stop entry point, so
@@ -618,6 +659,11 @@ export function registerLocalInferRoute(scope, localInfer) {
                 // A body that predates the key keeps the descriptions visible.
                 const showHelp = typeof body.showHelp === 'boolean' ? body.showHelp : true;
                 const providerId = typeof body.id === 'string' && body.id.trim() !== '' ? body.id : undefined;
+                // A body that omits the log location (or sends a blank one) keeps the
+                // stored template, so an unsaved edit never wipes a custom path.
+                const logPath = typeof body.logPath === 'string' && body.logPath !== ''
+                    ? body.logPath
+                    : readConfig().logPath;
                 // Save upserts a provider entry: an id updates the stored entry in
                 // place, an absent id mints a new id and prepends the entry, so a Save
                 // always adds (or refreshes) a card entry at the top of the list. The
@@ -633,7 +679,7 @@ export function registerLocalInferRoute(scope, localInfer) {
                 const providers = providerId !== undefined
                     ? stored.providers.map((entry) => (entry.id === providerId ? provider : entry))
                     : [provider, ...stored.providers];
-                writeConfig(engine, config, allowRunDeps, platform, showHelp, providers);
+                writeConfig(engine, config, allowRunDeps, platform, showHelp, providers, logPath);
                 // Re-sync the service registry with the saved platform map, so the next
                 // launch reads the platform config the user just saved.
                 syncPlatformConfigs(localInfer, {
@@ -643,6 +689,8 @@ export function registerLocalInferRoute(scope, localInfer) {
                     platform,
                     showHelp,
                     providers,
+                    logPath,
+                    lastLogs: stored.lastLogs,
                 });
                 send(200, await buildSummary(localInfer, { engine, config }));
             }
@@ -687,7 +735,7 @@ export function registerLocalInferRoute(scope, localInfer) {
                 // a launch never reads a platform config the user just removed.
                 const stored = readConfig();
                 const providers = stored.providers.filter((entry) => entry.id !== id);
-                writeConfig(stored.engine, stored.config, stored.allowRunDeps, stored.platform, stored.showHelp, providers);
+                writeConfig(stored.engine, stored.config, stored.allowRunDeps, stored.platform, stored.showHelp, providers, stored.logPath, stored.lastLogs);
                 syncPlatformConfigs(localInfer, stored);
                 send(200, await buildSummary(localInfer));
             }

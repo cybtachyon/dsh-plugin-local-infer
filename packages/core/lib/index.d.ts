@@ -15,6 +15,7 @@ export { GPU_USAGE_BUSY_THRESHOLD, matchLaunchSignature, parseNvidiaSmiGpuUsage,
 export type { EngineLaunchSignature, GpuUsageProbe, ProcessLine, ReserveResolution, ReserveSource, } from './reserve.ts';
 export { computeProviderStatuses, isGpuBusy, } from './status.ts';
 export type { ProviderRef, ProviderStatus, ProviderStatusInput, RunningEngineRef, } from './status.ts';
+export { DEFAULT_LOG_PATH_TEMPLATE, LOG_TEMPLATE_ENGINE, LOG_TEMPLATE_HOME, LOG_TEMPLATE_MODEL, LOG_TEMPLATE_TIMESTAMP, formatLogTimestamp, resolveLogPath, slugifyModelName, } from './logs.ts';
 export { EngineAdapter } from './adapter.ts';
 export type { DeployResult, EnginePlatformConfig, FetchResult, HealthCheckOptions, HealthResult, LaunchPlan, LifecycleHost, ProcessHandle, } from './adapter.ts';
 export { constraintId, evaluateGuidelines, modelGuidelines } from './guideline.ts';

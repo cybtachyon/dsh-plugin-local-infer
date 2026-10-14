@@ -44,11 +44,16 @@ export interface EnginePlatformConfig {
 /**
  * ProcessHandle is the handle to a spawned engine process: its pid and a kill
  * the stop step calls. A docker run and a compose up spawn a process the host
- * tracks; a local engine spawn is the process the adapter owns.
+ * tracks; a local engine spawn is the process the adapter owns. `logs`, when
+ * the host captures the child's stdout and stderr, is the accumulated output
+ * the launch step surfaces in the card's Logs section and writes to the log
+ * file. A host that does not capture streams (a container it cannot read)
+ * omits it.
  */
 export interface ProcessHandle {
   pid: number
   kill(): void
+  logs?: string
 }
 
 /**
@@ -94,11 +99,15 @@ export interface HealthResult {
 
 /**
  * DeployResult reports whether a build-or-pull succeeded, with a detail for the
- * UI.
+ * UI. `handle` is the spawned engine process when the deploy step started one
+ * locally: the service reads its accumulated `logs` after the health poll, so
+ * the launch result carries the engine's output for the card's Logs section and
+ * the log file. A deploy that only pulls an image omits it.
  */
 export interface DeployResult {
   ok: boolean
   detail?: string
+  handle?: ProcessHandle
 }
 
 /**

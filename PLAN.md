@@ -588,6 +588,17 @@ green, `npx eslint` clean).
   it would let the plugin detect a foreign process that reuses a port, and survive a host restart
   by re-scanning the process table. The port key is the current stand-in.
 
+ - **Launch logs.** The `nodeLifecycleHost` spawns the engine with piped stdout and stderr and
+  accumulates them into the `ProcessHandle.logs` getter (capped to the last 64 KiB so a chatty
+  engine cannot grow host memory without bound). The adapter's `deploy` returns that handle in
+  the `DeployResult`, and the service `launch` reads the handle's logs after the health poll so
+  the `LaunchResult` carries the output. The route persists it as `lastLogs` (shown in the card's
+  fixed-height Logs section after a reload) and writes it to the configured log file, resolved
+  from the `logPath` template (`core/logs.ts`: `{{engine}}`, the slugified model name, and a
+  `YYMMDDHHMMSS###` timestamp). Each provider entry also carries its own Launch control: a
+  Throbber while the launch is in flight, a Stop once the health poll reports 200, and a red Logs
+  control (which opens the entry for editing) when the poll times out.
+
 ### Phase 6 — DSH model registration
 - `DshModelRegistrar`: on a passing health check, upsert the `dsh-llm-pi-ai` provider + model
   (and optional `agent-default-model`) through the settings seam; idempotent; removable on stop.

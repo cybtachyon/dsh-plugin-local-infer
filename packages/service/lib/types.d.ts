@@ -39,12 +39,16 @@ export interface ProviderStatusOptions {
 }
 /**
  * LaunchResult is the answer to a launch call: the plan that was started,
- * whether the health check passed, and a detail for the UI.
+ * whether the health check passed, a detail for the UI, and the engine's
+ * captured log output (stdout and stderr) when the deploy step read it. The
+ * route persists the logs as the last run and writes them to the configured
+ * log file, so the card's Logs section shows the run even after a reload.
  */
 export interface LaunchResult {
     plan: LaunchPlan;
     healthy: boolean;
     detail?: string;
+    logs?: string;
 }
 /**
  * LaunchOptions tunes the launch health poll: the interval between attempts

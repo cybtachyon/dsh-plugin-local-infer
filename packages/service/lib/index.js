@@ -400,6 +400,13 @@ export class LocalInfer extends Service {
         if (health.detail !== undefined) {
             launchResult.detail = health.detail;
         }
+        // Read the engine's captured output after the health poll, so the result
+        // carries the log lines the engine printed while it came up. The route
+        // persists these as the last run and writes them to the configured file.
+        const handleLogs = deployResult.handle?.logs;
+        if (handleLogs !== undefined && handleLogs !== '') {
+            launchResult.logs = handleLogs;
+        }
         return launchResult;
     }
     /**

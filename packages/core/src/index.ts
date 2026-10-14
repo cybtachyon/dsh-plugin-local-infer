@@ -64,6 +64,16 @@ export type {
   ProviderStatusInput,
   RunningEngineRef,
 } from './status.ts'
+export {
+  DEFAULT_LOG_PATH_TEMPLATE,
+  LOG_TEMPLATE_ENGINE,
+  LOG_TEMPLATE_HOME,
+  LOG_TEMPLATE_MODEL,
+  LOG_TEMPLATE_TIMESTAMP,
+  formatLogTimestamp,
+  resolveLogPath,
+  slugifyModelName,
+} from './logs.ts'
 export { EngineAdapter } from './adapter.ts'
 export type {
   DeployResult,

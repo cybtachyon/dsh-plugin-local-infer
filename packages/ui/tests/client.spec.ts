@@ -244,4 +244,19 @@ describe('dsh/client.js browser carrier', () => {
     expect(source).toContain('dirty && help')
     expect(source).toContain('registering || dirty')
   })
+
+  it('pins the Logs section and the per-entry Launch control', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // The card shows the last run's logs in a fixed-height text area plus a
+    // log-location field, and each provider entry carries its own Launch
+    // control: a Throbber while launching, Stop when healthy, a red Logs that
+    // opens the entry for editing when the launch times out.
+    expect(source).toContain('lastLogs')
+    expect(source).toContain('logPath')
+    expect(source).toContain('renderEntryLaunchButton')
+    expect(source).toContain('renderThrobber')
+    expect(source).toContain('onLaunchEntry')
+    expect(source).toContain('onStopEntry')
+    expect(source).toContain('entryLaunchState')
+  })
 })
