@@ -790,6 +790,13 @@ Plugins page:
   painted the dropdowns and text fields as white blocks on the dark Plugins page. It now
   uses the tertiary fill token with a neutral fallback, so the card reads the same in light
   and dark.
+- **The native dropdown list follows the device color scheme.** The open option list of a
+  `select` is browser chrome, not card styling: without a `color-scheme` declaration the
+  browser renders it with its light scheme (dark text on a white list) even on a dark
+  device, the unreadable dropdown the dark-mode Plugins page showed. The inputs, the
+  combo's `datalist` input, and the sliders now declare `color-scheme: light dark`, so
+  the popups render dark-on-light in light mode and light-on-dark in dark mode, matching
+  the device setting the host theme follows.
 - **The spec gate message names the fix.** `draftTokens` and `lmHeadDraft` greyed out with
   "spec must be mtp, dflash, or dflash2", a constraint statement. The shared
   `SPEC_GATE_MESSAGE` now reads "Pick a speculation backend first (mtp, dflash, or

@@ -129,6 +129,14 @@ window.__ModuleLoader__.load({
     // painted the dropdowns and text fields as white blocks on the dark
     // Plugins page. The tertiary fill token reads as a subtle field in both
     // themes, and the neutral fallback keeps a host without the token usable.
+    //
+    // colorScheme is what makes the *native popups* readable: the closed
+    // select we style, but the open option list is browser chrome. Without
+    // a color-scheme declaration the browser renders that list with its
+    // light scheme (dark text on white) even on a dark device, which is the
+    // unreadable dropdown the dark-mode Plugins page showed. 'light dark'
+    // hands the popup to the device setting: dark list, light text, in dark
+    // mode; light in light mode.
     var INPUT_STYLE = {
       flex: 1,
       minWidth: 0,
@@ -138,6 +146,7 @@ window.__ModuleLoader__.load({
       background: 'var(--dsw-alias-background-tertiary, rgba(128,128,128,0.12))',
       color: 'inherit',
       font: 'inherit',
+      colorScheme: 'light dark',
     };
     var SECTION_STYLE = {
         marginTop: 8,
@@ -254,7 +263,13 @@ window.__ModuleLoader__.load({
           react.createElement('input',
             Object.assign(
               {
-                style: { flex: 1, accentColor: 'var(--dsw-alias-accent, #0a84ff)' },
+                // colorScheme keeps the native slider UI on the device
+                // scheme, the same reason the inputs carry it.
+                style: {
+                  flex: 1,
+                  accentColor: 'var(--dsw-alias-accent, #0a84ff)',
+                  colorScheme: 'light dark',
+                },
                 disabled: field.disabled,
               },
               {
