@@ -21,7 +21,8 @@ editing of `cordis.patch.yml`.
 - A live VRAM estimation meter driven by the current parameter values.
 - Human-readable, behavior-first descriptions for every parameter.
 - Form-type-aware rendering: booleans as checkboxes, enums as dropdowns, numbers as sliders/
-  number inputs, strings as text.
+  number inputs, strings as text, and known-options fields (the chat template) as a dropdown +
+  free-text combo.
 - A hardware-aware guideline engine that raises red warnings on parameter values and on the
   presence of parameters the hardware cannot support.
 - Engine adapters for both **docker** and **locally-built** engines, including tools like
@@ -30,6 +31,8 @@ editing of `cordis.patch.yml`.
   copy/paste, or a Play/Run (sudo) one-click, that gates the "Get" button until the host deps
   (docker, CUDA toolkit, ffmpeg, HF CLI, ...) are satisfied.
 - Deep DSH integration: a confirmed-working engine is added as a DSH model automatically.
+- Directory and repo fields that drive deploy: a global Model Directory picker, and
+  per-engine Engine Directory and Engine Fork (Git Repo) fields (§3.10).
 - Sane defaults for common platform/hardware combinations, sourced through the **mod-search
   skill**.
 
@@ -86,6 +89,7 @@ interface ParameterSpec {
     | { kind: 'number'; min?: number; max?: number; step?: number; unit?: string } // → slider + number
     | { kind: 'text'; placeholder?: string }    // → text input
     | { kind: 'path' }                         // → directory/file picker
+    | { kind: 'combo'; options: ComboOption[] } // → dropdown + free-text combo
   defaultValue?: unknown
   group?: string             // section in the form, e.g. "Memory", "Speculation", "Sampling"
   // The relationships (the point of the design):
@@ -99,11 +103,13 @@ interface ParameterSpec {
 ```
 
 `EnumOption` carries `value`, `label`, and a free-form `note` (the KV-format tradeoff text, e.g.
-"rk4v4: the context choice, 31% smaller than rk8v4"). `ConstraintResult` is
+"rk4v4: the context choice, 31% smaller than rk8v4"). `ComboOption` carries `value`, `label`,
+and an optional `source` tag ('engine' | 'popular' | 'added') so the dropdown can group and
+order its entries. `ConstraintResult` is
 `{ ok: true } | { ok: false; severity: 'warn' | 'error'; message: string }`.
 
 The **form-type awareness** requirement is satisfied entirely by `form`: the renderer switches
-on `form.kind` (checkbox / dropdown / slider / text / picker). The **human-readable description**
+on `form.kind` (checkbox / dropdown / slider / text / picker / combo). The **human-readable description**
 requirement is the `description` field, written to explain the effect ("raising this shrinks the
 KV cache and lets a longer context fit" not "the KV data type").
 
@@ -265,7 +271,7 @@ data, not code):
 | `vision`                       | boolean                                           | "Accept image/video input. Adds the vision tower to resident memory."                            | adds workspace                                                      |
 | `structuredOutput`             | boolean                                           | "Constrain the final answer with a JSON grammar."                                                | per-lane mask plane                                                 |
 | `deviceProfile`                | enum (auto, calibrate, off)                       | "Which kernel schedule to use; auto calibrates once on an unknown GPU."                          | none                                                                |
-| `chatTemplate`                 | path                                              | "Jinja chat template to override the artifact's built-in one."                                   | none                                                                |
+| `chatTemplate`                 | combo (engine templates + popular, e.g. Froggeric22) | "Jinja chat template to override the artifact's built-in one. Pick a known template from the dropdown or type a custom path." | none |
 
 Hyper-Qwen's surface maps the same concepts onto env keys (`SPEC`, `DFLASH_TOKENS`, `CTX`, `KV`,
 `GPU_UTIL`, `MAX_LEN`, `MAX_SEQS`, `VISION`, `VLLM_WSL2_ENABLE_PIN_MEMORY`, ...). The point of the
@@ -354,6 +360,46 @@ The detection probes are the same kind of heuristics as the hardware detector (�
 docker`, `nvcc --version`, `hf --version`, `cmake --version`. An unknown state degrades to
 "missing" so the user can still copy/paste and re-check.
 
+### 3.10 Engine platform config and directory fields
+
+Three path/repo fields sit around the engine surface: one is global to the plugin, two belong
+to the engine platform config (the config the user adds for a specific engine, e.g. NInfer),
+and the chat template field (§3.7) becomes a combo control.
+
+| Field              | Scope                  | Control            | Purpose                                                                  | Example                                |
+|--------------------|------------------------|--------------------|--------------------------------------------------------------------------|----------------------------------------|
+| `modelDirectory`   | plugin global (`Config`) | DSH directory picker | Where models are downloaded (the `hf` CLI target directory, §3.9).       | `/home/derek/src/hf-models`            |
+| `engineDirectory`  | engine platform config | DSH directory picker | Where the engine platform lives locally (checkout / build location).    | `/home/derek/src/ninfer`               |
+| `engineFork`       | engine platform config | text field         | The git repo that overrides the engine platform fork for this config.    | `https://github.com/iamwavecut/ninfer-all` |
+
+```ts
+interface EnginePlatformConfig {
+  engineId: string            // which adapter, e.g. "ninfer"
+  engineDirectory?: string    // "Engine Directory": local location of the engine platform
+  engineFork?: string         // "Engine Fork (Git Repo)": git repo that overrides the default upstream
+}
+```
+
+The global `Config` (§5) carries `modelDirectory` as the "Model Directory" directory picker,
+and `EnginePlatformConfig` is validated by the same schemastery `z` schema. The deploy step
+(§3.3 `deploy`) consumes both:
+
+- **`engineFork`.** When set, `deploy` clones that repo (instead of the engine's default
+  upstream) for this config. When unset, the adapter's default source is used.
+- **`engineDirectory`.** When set, `deploy` uses it as the checkout/build location (clone,
+  build, or pull into it). When unset, the adapter picks a default (a managed cache dir).
+- **`modelDirectory`.** The model download step (the `hf` CLI in §3.9) targets this directory,
+  and the `LaunchPlan` references the model by its path under it.
+
+**Chat template combo.** The `chatTemplate` spec switches from a bare `path` picker to the
+`combo` form kind (§3.1): a dropdown + free-text control. The dropdown is populated, in
+order, with (1) templates the engine provides (the artifact's built-in chat templates,
+surfaced by the adapter), (2) popular templates the plugin ships as data (Froggeric22 from
+`https://huggingface.co/froggeric/Qwen-Fixed-Chat-Templates`), and (3) templates the user has
+previously added, persisted with the plugin state so they can be re-selected without
+retyping. The free-text field accepts any value (a local path or an HF repo reference), and a
+typed value is promoted into the previously-added list on save.
+
 ---
 
 ## 4. The logical relationships (the heart of the design)
@@ -429,14 +475,18 @@ Five packages under `packages/*`, plus the installable bundle.
 ```
 
 **Key service shape** (mirrors `ctx.codegraph`): `ctx.localInfer` exposes `registerEngine`,
-`registerPreset`, `registerGuideline`, `estimate(config, hw)`, `guidelines(config, hw)`,
-`deps(engine, buildMode, hw)`, `installString(engine, buildMode, hw)`, `runInstall(engine,
-buildMode, hw)`, `launch(plan)`, `registerModel(plan)`. Provider selection follows the codegraph
+`registerPreset`, `registerGuideline`, `registerEnginePlatformConfig(config)`,
+`estimate(config, hw)`, `guidelines(config, hw)`, `deps(engine, buildMode, hw)`,
+`installString(engine, buildMode, hw)`, `runInstall(engine, buildMode, hw)`, `launch(plan)`,
+`registerModel(plan)`. `registerEnginePlatformConfig` stores the per-engine
+`EnginePlatformConfig` (§3.10); `launch` resolves it against the global `modelDirectory` to
+produce the clone/build/download plan. Provider selection follows the codegraph
 "exactly one claimant" rule: a model is served by the one engine that claims it; zero or several
 claimants fail loudly.
 
 **Config** (schemastery `z`, like codegraph's `Config`): caps and budgets, e.g.
-`maxConcurrentEngines`, `healthPollMs`, `healthMaxAttempts`, `reserveGiB`, `defaultsSource:
+`maxConcurrentEngines`, `healthPollMs`, `healthMaxAttempts`, `reserveGiB`, `modelDirectory:
+string` (the "Model Directory" DSH directory picker, §3.10), `defaultsSource:
 'builtin' | 'modsearch'`, `autoRegister: boolean`, `allowRunDeps: boolean` (gates the Play/Run
 arrow), `sudoPrompt: 'terminal' | 'inline'`.
 
@@ -455,6 +505,9 @@ arrow), `sudoPrompt: 'terminal' | 'inline'`.
 | **Form-type awareness (checkbox / dropdown / …)**                         | `ParameterSpec.form` (§3.1); `packages/ui` switches on `form.kind`.                                                                                                    |
 | **Deep DSH integration (auto-add as model when confirmed working)**       | `DshModelRegistrar` (§3.8) triggered by a passing `healthCheck`; writes the `dsh-llm-pi-ai` provider via the settings seam.                                            |
 | **Sane defaults for common platform/hardware combos, mod-search sourced** | `DefaultsResolver` (§3.6): built-in measured presets + mod-search-sourced presets keyed by hardware class.                                                             |
+| **Model Directory** (global DSH directory picker for the model download dir) | `Config.modelDirectory` (§3.10, §5); the model download step in `deploy` (§3.3) targets it.                                                                              |
+| **Engine Directory + Engine Fork (Git Repo)** (per engine platform config) | `EnginePlatformConfig` (§3.10); `deploy` clones the fork (or the default upstream) into the engine directory.                                                          |
+| **Chat template dropdown + free-text combo** (engine templates, popular templates like Froggeric22, previously added) | `combo` form kind (§3.1) + the template option sources (§3.10); `packages/ui` renders the dropdown + free-text control.         |
 
 ---
 
@@ -472,8 +525,12 @@ green, `npx eslint` clean).
 
 ### Phase 1 — Parameter model + form rendering
 - `ParameterSpec`, `form` union, `EnumOption`; the NInfer + Hyper-Qwen `ParameterSpec` data.
-- `packages/ui` form renderer: checkbox / dropdown / slider / text / picker, grouped by
-  `group`, each field with its `description`.
+- `packages/ui` form renderer: checkbox / dropdown / slider / text / picker / combo
+  (dropdown + free text), grouped by `group`, each field with its `description`. The combo
+  control serves the `chatTemplate` spec: the dropdown lists engine-provided templates, the
+  popular templates shipped as data (Froggeric22 from
+  `https://huggingface.co/froggeric/Qwen-Fixed-Chat-Templates`), and previously added
+  templates (persisted), and the free-text field accepts a custom path or HF repo reference.
 - **Relationship established:** parameter → form + description.
 - **Exit.** A NInfer parameter form renders with correct control types and behavior-first
   descriptions; a lint rule rejects "is"-style descriptions.
@@ -509,6 +566,10 @@ green, `npx eslint` clean).
 - `EngineAdapter` base; `NInferAdapter` (docker `ghcr.io/.../ninfer serve` **and** local
   cmake → `ninfer-serve`); `HyperQwenAdapter` (compose profiles). `renderLaunch`, `deploy`,
   `healthCheck` (poll `/health` until 200, mirroring `qwen-ninfer`), `stop`.
+- Engine platform config (§3.10): `registerEnginePlatformConfig` stores the Engine Directory
+  and Engine Fork (Git Repo) for the config; `deploy` clones the fork (or the default
+  upstream) into the engine directory and downloads the model into the global
+  `modelDirectory` (the Model Directory picker).
 - **Relationship established:** engine + params → launch plan → deploy → health.
 - **Exit.** On a machine with NInfer, the plugin builds-or-pulls, downloads the model, starts the
   engine, and reports healthy; same for the docker path. NInfer exercises *both* paths.
