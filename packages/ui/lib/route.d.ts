@@ -1,10 +1,12 @@
 /**
  * The webServer route the Web card talks to. GET /local-infer/summary returns
  * the engine list, the detected hardware, the form model for the selected
- * engine, and the VRAM meter model for the current config; POST /local-infer/
- * save persists the config. The values live in ~/.dsh/local-infer/config.json,
- * shared with the CLI, so the browser never sees a secret it did not store.
- * The route is held by an effect, so it goes when the plugin does.
+ * engine, the VRAM meter model for the current config, and the guideline
+ * warning model the banner and inline red warnings render from; POST
+ * /local-infer/save persists the config. The values live in
+ * ~/.dsh/local-infer/config.json, shared with the CLI, so the browser never
+ * sees a secret it did not store. The route is held by an effect, so it goes
+ * when the plugin does.
  * @module @dsh/dsh-plugin-local-infer/ui/route
  */
 import type { Context } from '@deepseek-ai/cordis';
@@ -12,6 +14,7 @@ import type { Config, HardwareProfile, VramVerdict } from '@dsh/dsh-plugin-local
 import type { LocalInferService } from '@dsh/dsh-plugin-local-infer/service';
 import type { FormModel } from './form.ts';
 import type { MeterModel } from './meter.ts';
+import type { WarningsModel } from './warnings.ts';
 /**
  * The webServer service is dsh-specific and absent from the cordis Context
  * type, so the route narrows the scoped context to the two members it needs.
@@ -36,9 +39,10 @@ interface OutgoingLike {
 /**
  * LocalInferSummary is the JSON the card renders: the engine list, the model
  * list, the detected hardware, the form model for the selected engine, the
- * meter model for the current config, the verdict the banner renders, and the
- * config the form edits. Every field is plain data, so it crosses the socket
- * without a function left behind.
+ * meter model for the current config, the verdict the banner renders, the
+ * guideline warning model the red banner and inline warnings render from,
+ * and the config the form edits. Every field is plain data, so it crosses
+ * the socket without a function left behind.
  */
 export interface LocalInferSummary {
     engines: {
@@ -58,6 +62,7 @@ export interface LocalInferSummary {
     formModel: FormModel;
     meterModel: MeterModel;
     verdict: VramVerdict;
+    warningsModel: WarningsModel;
     config: Config;
 }
 /**
@@ -83,9 +88,11 @@ export declare function writeConfig(engine: string, config: Config): void;
 /**
  * buildSummary assembles the card's read model for one engine and config: the
  * static engine and model lists, the detected hardware, the form model the
- * selected engine's parameter surface renders to, and the meter model the
- * service's estimate prices. The estimate is the single source the meter and
- * the banner agree on.
+ * selected engine's parameter surface renders to, the meter model the
+ * service's estimate prices, and the warning model the service's guideline
+ * engine fires. The estimate is the single source the meter and the verdict
+ * banner agree on, and the guideline results are the single source the red
+ * banner and the inline warnings agree on.
  */
 export declare function buildSummary(localInfer: LocalInferService, request?: {
     engine?: string;

@@ -1,10 +1,12 @@
 /**
  * The webServer route the Web card talks to. GET /local-infer/summary returns
  * the engine list, the detected hardware, the form model for the selected
- * engine, and the VRAM meter model for the current config; POST /local-infer/
- * save persists the config. The values live in ~/.dsh/local-infer/config.json,
- * shared with the CLI, so the browser never sees a secret it did not store.
- * The route is held by an effect, so it goes when the plugin does.
+ * engine, the VRAM meter model for the current config, and the guideline
+ * warning model the banner and inline red warnings render from; POST
+ * /local-infer/save persists the config. The values live in
+ * ~/.dsh/local-infer/config.json, shared with the CLI, so the browser never
+ * sees a secret it did not store. The route is held by an effect, so it goes
+ * when the plugin does.
  * @module @dsh/dsh-plugin-local-infer/ui/route
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -16,6 +18,7 @@ import { dirname, join } from 'node:path';
 import { ENGINES } from '../../providers/lib/index.js';
 import { renderForm } from "./form.js";
 import { renderMeter } from "./meter.js";
+import { renderWarnings } from "./warnings.js";
 /**
  * The config file the route owns. It sits under the dsh home so a web user and
  * a CLI user share one file, the way modsearch shares ~/.modsearch.
@@ -56,9 +59,11 @@ export function writeConfig(engine, config) {
 /**
  * buildSummary assembles the card's read model for one engine and config: the
  * static engine and model lists, the detected hardware, the form model the
- * selected engine's parameter surface renders to, and the meter model the
- * service's estimate prices. The estimate is the single source the meter and
- * the banner agree on.
+ * selected engine's parameter surface renders to, the meter model the
+ * service's estimate prices, and the warning model the service's guideline
+ * engine fires. The estimate is the single source the meter and the verdict
+ * banner agree on, and the guideline results are the single source the red
+ * banner and the inline warnings agree on.
  */
 export async function buildSummary(localInfer, request) {
     const stored = readConfig();
@@ -68,6 +73,7 @@ export async function buildSummary(localInfer, request) {
     const engine = ENGINES.find((entry) => entry.id === engineId) ?? ENGINES[0];
     const hardware = await localInfer.detectHardware();
     const estimate = await localInfer.estimate(config, hardware);
+    const guidelineResults = await localInfer.guidelines(config, hardware);
     return {
         engines: ENGINES.map((entry) => ({ id: entry.id, label: entry.label, supports: entry.supports })),
         models: localInfer.registeredVramModels().map((model) => ({ id: model.id, source: model.source })),
@@ -76,6 +82,7 @@ export async function buildSummary(localInfer, request) {
         formModel: renderForm(engine.parameters, config),
         meterModel: renderMeter(estimate.breakdown, estimate.verdict, hardware.gpu?.vramGiB ?? 0, estimate.source),
         verdict: estimate.verdict,
+        warningsModel: renderWarnings(guidelineResults),
         config,
     };
 }
