@@ -12,6 +12,15 @@
 - Read class methods and properties with the `codegraph` tool before writing 
   code e.g., `codegraph explain FileName`.
 - Use Vitest tests to answer questions, verify code, and test functionality.
+- Sub-packages import each other by relative path
+  (`../../core/lib/index.js`). A self-referencing bare specifier
+  (`@dsh/dsh-plugin-local-infer/core`) only resolves when the package has a
+  self-link inside a `node_modules` tree, so it fails on local/pnpm installs.
+- A bundle with a client half needs a bare-package carrier row: a no-op
+  `dsh/host.js` module, a root `.` export, and a bundle row named after the
+  bare package. The client-module scan keys `dsh.client` on a bare
+  package-root entry, never a subpath, so without it the browser card DSH UI is
+  never loaded.
 
 # Code Style
 - Follow [Typescript Do's and Don'ts](https://www.typescriptlang.org/docs/handbook/declaration-files/do-s-and-don-ts.html)
