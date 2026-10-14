@@ -7,6 +7,7 @@
  */
 
 import type {
+  ComboOption,
   Config,
   EnumOption,
   ParameterForm,
@@ -15,9 +16,10 @@ import type {
 
 /**
  * The control kinds the panel switches on: checkbox, dropdown, slider plus
- * number input, text, and a directory/file picker. The mapping from
- * `ParameterForm` to a control is the form-type awareness the plan requires;
- * a new form kind is a new control, never a new renderer branch per engine.
+ * number input, text, a directory/file picker, and a dropdown plus free-text
+ * combo. The mapping from `ParameterForm` to a control is the form-type
+ * awareness the plan requires; a new form kind is a new control, never a new
+ * renderer branch per engine.
  */
 export type FormControl =
   | { kind: 'checkbox' }
@@ -25,6 +27,7 @@ export type FormControl =
   | { kind: 'slider'; min?: number; max?: number; step?: number; unit?: string }
   | { kind: 'text'; placeholder?: string }
   | { kind: 'picker' }
+  | { kind: 'combo'; options: readonly ComboOption[] }
 
 /**
  * One rendered field. `value` resolves the config value over the spec
@@ -89,6 +92,8 @@ export function controlFor(form: ParameterForm): FormControl {
       }
     case 'path':
       return { kind: 'picker' }
+    case 'combo':
+      return { kind: 'combo', options: form.options }
   }
 }
 

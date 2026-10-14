@@ -13,6 +13,19 @@ export interface EnumOption {
 }
 
 /**
+ * ComboOption is one known choice in a combo form (dropdown plus free text).
+ * `source` tags where the option came from ('engine' | 'popular' | 'added'),
+ * so the renderer can group and order its entries, and 'added' marks the
+ * user-typed values the plugin persists for re-selection.
+ */
+export interface ComboOption {
+  value: string
+  label: string
+  note?: string
+  source?: 'engine' | 'popular' | 'added'
+}
+
+/**
  * ConstraintResult is the answer to a parameter's hardwareConstraint probe:
  * ok, or a severity and a human-readable message naming the fix.
  */
@@ -22,7 +35,8 @@ export type ConstraintResult =
 
 /**
  * ParameterForm is the closed union of control kinds the renderer switches on:
- * checkbox, dropdown, slider plus number, text, and a directory/file picker.
+ * checkbox, dropdown, slider plus number, text, a directory/file picker, and a
+ * dropdown plus free-text combo for known-options fields (the chat template).
  */
 export type ParameterForm =
   | { kind: 'boolean' }
@@ -30,6 +44,7 @@ export type ParameterForm =
   | { kind: 'number'; min?: number; max?: number; step?: number; unit?: string }
   | { kind: 'text'; placeholder?: string }
   | { kind: 'path' }
+  | { kind: 'combo'; options: ComboOption[] }
 
 /**
  * ParameterSpec is the unit of parameter management: a declarative description

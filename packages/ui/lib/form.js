@@ -35,6 +35,8 @@ export function controlFor(form) {
             };
         case 'path':
             return { kind: 'picker' };
+        case 'combo':
+            return { kind: 'combo', options: form.options };
     }
 }
 /**

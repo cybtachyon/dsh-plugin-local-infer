@@ -18,6 +18,7 @@ export type {
   HardwareProbes,
 } from './hardware.ts'
 export type {
+  ComboOption,
   ConstraintResult,
   EnumOption,
   ParameterForm,

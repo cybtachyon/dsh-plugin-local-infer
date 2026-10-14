@@ -7,6 +7,7 @@ import {
 } from '../src/form.ts'
 import { NINFER_PARAMETERS } from '@dsh/dsh-plugin-local-infer/providers'
 import type {
+  ComboOption,
   Config,
   EnumOption,
   ParameterSpec,
@@ -15,6 +16,10 @@ import type {
 const ENUM_OPTIONS: EnumOption[] = [
   { value: 'a', label: 'A' },
   { value: 'b', label: 'B' },
+]
+
+const COMBO_OPTIONS: ComboOption[] = [
+  { value: 'froggeric/Qwen-Fixed-Chat-Templates', label: 'Froggeric22', source: 'popular' },
 ]
 
 function spec(partial: Partial<ParameterSpec> & Pick<ParameterSpec, 'key' | 'label' | 'description' | 'form'>): ParameterSpec {
@@ -35,6 +40,10 @@ describe('controlFor', () => {
     expect(controlFor({ kind: 'number' })).toEqual({ kind: 'slider' })
     expect(controlFor({ kind: 'text', placeholder: 'type here' }).placeholder).toBe('type here')
     expect(controlFor({ kind: 'path' })).toEqual({ kind: 'picker' })
+    expect(controlFor({ kind: 'combo', options: COMBO_OPTIONS })).toEqual({
+      kind: 'combo',
+      options: COMBO_OPTIONS,
+    })
   })
 
   it('leaves optional slider bounds off the control when the spec omits them', () => {

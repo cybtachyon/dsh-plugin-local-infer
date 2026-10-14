@@ -55,15 +55,19 @@ describe('core domain model', () => {
     await expect(adapter.stop(PLAN)).resolves.toBeUndefined()
   })
 
-  it('keeps the form union closed to the five control kinds', () => {
+  it('keeps the form union closed to the six control kinds', () => {
     const forms: ParameterForm[] = [
       { kind: 'boolean' },
       { kind: 'enum', options: [{ value: 'rk4v4', label: 'RK 4/4', note: '31% smaller than rk8v4' }] },
       { kind: 'number', min: 0, max: 8, step: 1 },
       { kind: 'text', placeholder: 'path to a template' },
       { kind: 'path' },
+      {
+        kind: 'combo',
+        options: [{ value: 'froggeric/Qwen-Fixed-Chat-Templates', label: 'Froggeric22', source: 'popular' }],
+      },
     ]
-    expect(forms.map(form => form.kind)).toEqual(['boolean', 'enum', 'number', 'text', 'path'])
+    expect(forms.map(form => form.kind)).toEqual(['boolean', 'enum', 'number', 'text', 'path', 'combo'])
   })
 
   it('accepts a behavior-first spec with a vram contribution and a constraint', () => {

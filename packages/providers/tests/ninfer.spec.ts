@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CHAT_TEMPLATE_OPTIONS,
   DEVICE_PROFILE_OPTIONS,
   KV_DTYPE_OPTIONS,
   NINFER_PARAMETERS,
+  SPEC_GATE_MESSAGE,
   SPEC_OPTIONS,
 } from '../src/ninfer.ts'
 import type { ParameterSpec } from '@dsh/dsh-plugin-local-infer/core'
@@ -54,7 +56,9 @@ describe('NInfer parameter surface', () => {
     expect(kindFor('gdnStateFp16')).toBe('boolean')
     expect(kindFor('vision')).toBe('boolean')
     expect(kindFor('lmHeadDraft')).toBe('boolean')
-    expect(kindFor('chatTemplate')).toBe('path')
+    // The plan's current direction: the chat template is a dropdown plus
+    // free-text combo, not a bare path picker.
+    expect(kindFor('chatTemplate')).toBe('combo')
   })
 
   it('spells the CLI flags the launcher script passes', () => {
@@ -97,10 +101,21 @@ describe('NInfer parameter surface', () => {
     const gated = NINFER_PARAMETERS.filter((spec) => spec.key === 'draftTokens' || spec.key === 'lmHeadDraft')
     expect(gated).toHaveLength(2)
     for (const spec of gated) {
-      expect(spec.requires!({ spec: 'none' })).toBe('spec must be mtp, dflash, or dflash2')
+      // The gate message names the fix, not just the constraint, so the
+      // disabled field tells the user the next click.
+      expect(spec.requires!({ spec: 'none' })).toBe(SPEC_GATE_MESSAGE)
+      expect(SPEC_GATE_MESSAGE).toBe('Pick a speculation backend first (mtp, dflash, or dflash2)')
       expect(spec.requires!({ spec: 'mtp' })).toBeNull()
       expect(spec.requires!({ spec: 'dflash2' })).toBeNull()
     }
+  })
+
+  it('ships the popular chat template as combo data with its source tag', () => {
+    expect(CHAT_TEMPLATE_OPTIONS).toHaveLength(1)
+    const option = CHAT_TEMPLATE_OPTIONS[0]!
+    expect(option.value).toBe('froggeric/Qwen-Fixed-Chat-Templates')
+    expect(option.source).toBe('popular')
+    expect(option.label).toContain('Froggeric22')
   })
 
   it('lists the KV, spec, and device-profile options the docs name', () => {

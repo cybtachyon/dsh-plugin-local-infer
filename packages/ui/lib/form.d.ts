@@ -5,12 +5,13 @@
  * mapping from `form` kind to control kind stays unit-testable here.
  * @module @dsh/dsh-plugin-local-infer/ui/form
  */
-import type { Config, EnumOption, ParameterForm, ParameterSpec } from '@dsh/dsh-plugin-local-infer/core';
+import type { ComboOption, Config, EnumOption, ParameterForm, ParameterSpec } from '@dsh/dsh-plugin-local-infer/core';
 /**
  * The control kinds the panel switches on: checkbox, dropdown, slider plus
- * number input, text, and a directory/file picker. The mapping from
- * `ParameterForm` to a control is the form-type awareness the plan requires;
- * a new form kind is a new control, never a new renderer branch per engine.
+ * number input, text, a directory/file picker, and a dropdown plus free-text
+ * combo. The mapping from `ParameterForm` to a control is the form-type
+ * awareness the plan requires; a new form kind is a new control, never a new
+ * renderer branch per engine.
  */
 export type FormControl = {
     kind: 'checkbox';
@@ -28,6 +29,9 @@ export type FormControl = {
     placeholder?: string;
 } | {
     kind: 'picker';
+} | {
+    kind: 'combo';
+    options: readonly ComboOption[];
 };
 /**
  * One rendered field. `value` resolves the config value over the spec

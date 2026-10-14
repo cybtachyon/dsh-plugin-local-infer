@@ -11,6 +11,7 @@
  */
 
 import type {
+  ComboOption,
   Config,
   EnumOption,
   HardwareProfile,
@@ -56,6 +57,28 @@ export const DEVICE_PROFILE_OPTIONS: readonly EnumOption[] = [
   { value: 'calibrate', label: 'calibrate', note: 'measure the routes anew on this GPU' },
   { value: 'off', label: 'off', note: 'keep the compiled routes as-is' },
 ] as const
+
+/**
+ * The chat templates the combo control offers as known choices. The plan
+ * ships the popular templates as data, tagged with their source, and the
+ * free-text half of the control accepts any local path or HF repo reference.
+ */
+export const CHAT_TEMPLATE_OPTIONS: readonly ComboOption[] = [
+  {
+    value: 'froggeric/Qwen-Fixed-Chat-Templates',
+    label: 'Froggeric22 (Qwen fixed chat templates)',
+    note: 'popular template set from https://huggingface.co/froggeric/Qwen-Fixed-Chat-Templates',
+    source: 'popular',
+  },
+] as const
+
+/**
+ * The speculation gate message the form shows while draftTokens and
+ * lmHeadDraft are greyed out. It names the fix (pick a backend) and the
+ * backends that unlock the fields, so a first-time user knows the next
+ * click, not just the constraint.
+ */
+export const SPEC_GATE_MESSAGE = 'Pick a speculation backend first (mtp, dflash, or dflash2)'
 
 /**
  * The NInfer `ParameterSpec` surface, in form order. The `group` field is the
@@ -161,7 +184,7 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: 3,
     group: 'Speculation',
     requires: (config: Config) =>
-      config.spec && config.spec !== 'none' ? null : 'spec must be mtp, dflash, or dflash2',
+      config.spec && config.spec !== 'none' ? null : SPEC_GATE_MESSAGE,
     toArgv: (value) => ['--draft-tokens', String(value)],
   },
   {
@@ -173,7 +196,7 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: false,
     group: 'Speculation',
     requires: (config: Config) =>
-      config.spec && config.spec !== 'none' ? null : 'spec must be mtp, dflash, or dflash2',
+      config.spec && config.spec !== 'none' ? null : SPEC_GATE_MESSAGE,
     toArgv: (value) => (value === true ? ['--lm-head-draft'] : []),
   },
   {
@@ -239,8 +262,8 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     key: 'chatTemplate',
     label: 'Chat template',
     description:
-      'The Jinja chat template that overrides the artifact built-in one. Changes take effect after a restart.',
-    form: { kind: 'path' },
+      'Overrides the artifact built-in Jinja chat template. Pick a known template from the dropdown or type a custom path. Changes take effect after a restart.',
+    form: { kind: 'combo', options: [...CHAT_TEMPLATE_OPTIONS] },
     group: 'Engine',
     toArgv: (value) => (value ? ['--chat-template', String(value)] : []),
   },
