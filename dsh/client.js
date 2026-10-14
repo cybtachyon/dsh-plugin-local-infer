@@ -11,9 +11,14 @@
 // it did not store.
 //
 // Hand-written in the lazy-CJS bundle protocol (window.__ModuleLoader__.load
-// with a factory returning cordis-plugin exports), so no build step and no
-// imports from dsh client packages: the same zero-dependency stance as the
-// host half. React comes from the browser module table.
+// with a factory returning cordis-plugin exports), so no build step. React and
+// @deepseek-ai/dsh-client-ui-primitives come from the shell's frozen platform
+// module table (PLATFORM_MODULES), the same baseline every dynamic bundle
+// resolves against, so the card draws the DSH selector menus, buttons,
+// checkboxes, and state dots its host Settings pages use. No
+// dsh.client.external declaration is needed for a baseline seed. Hosts whose
+// table predates the primitives seed keep the native controls through the
+// require fallback in mountCard.
 window.__ModuleLoader__.load({
   id: '@dsh/dsh-plugin-local-infer',
   factory: (require) => {
@@ -186,10 +191,15 @@ window.__ModuleLoader__.load({
       reserve: '#1c1c1c',
     };
 
+    // The card frame reads the DSH settings-card tokens the Plugins page
+    // cards use (0.5px stroke, xl radius, the settings-card fill), so the
+    // bundle's config card sits in the page with the inventory cards. The
+    // legacy tokens stay as fallbacks for a host without the settings-card
+    // family.
     var CARD_STYLE = {
-      border: '1px solid var(--dsw-alias-border-secondary, rgba(128,128,128,0.24))',
-      borderRadius: 12,
-      background: 'var(--dsw-alias-background-secondary, rgba(128,128,128,0.06))',
+      border: '0.5px solid var(--dsw-alias-settings-card-stroke, var(--dsw-alias-border-secondary, rgba(128,128,128,0.24)))',
+      borderRadius: 'var(--dsw-radius-xl, 12px)',
+      background: 'var(--dsw-alias-settings-card-fill, var(--dsw-alias-background-secondary, rgba(128,128,128,0.06)))',
       padding: 16,
       display: 'flex',
       flexDirection: 'column',
@@ -203,10 +213,10 @@ window.__ModuleLoader__.load({
       flex: 'none',
       color: 'var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))',
     };
-    // The input background follows the host theme: a solid #fff fallback
-    // painted the dropdowns and text fields as white blocks on the dark
-    // Plugins page. The tertiary fill token reads as a subtle field in both
-    // themes, and the neutral fallback keeps a host without the token usable.
+    // The input reads the DSH Input atom's field tokens (the 32px layer-1
+    // field with the l4 hairline), so the text rows sit in the page with the
+    // host's own inputs. The legacy tokens stay as fallbacks for a host
+    // without the layer-1 family.
     //
     // colorScheme is what makes the *native popups* readable: the closed
     // select we style, but the open option list is browser chrome. Without
@@ -218,12 +228,14 @@ window.__ModuleLoader__.load({
     var INPUT_STYLE = {
       flex: 1,
       minWidth: 0,
-      padding: '4px 8px',
-      borderRadius: 6,
-      border: '1px solid var(--dsw-alias-border-secondary, rgba(128,128,128,0.24))',
-      background: 'var(--dsw-alias-background-tertiary, rgba(128,128,128,0.12))',
-      color: 'inherit',
+      height: 32,
+      padding: '0 8px',
+      borderRadius: 'var(--dsw-radius-md, 8px)',
+      border: '0.5px solid var(--dsw-alias-border-l4, var(--dsw-alias-border-secondary, rgba(128,128,128,0.24)))',
+      background: 'var(--dsw-alias-bg-layer-1, var(--dsw-alias-background-tertiary, rgba(128,128,128,0.12)))',
+      color: 'var(--dsw-alias-label-primary, inherit)',
       font: 'inherit',
+      fontSize: 14,
       colorScheme: 'light dark',
     };
     var SECTION_STYLE = {
@@ -297,19 +309,14 @@ window.__ModuleLoader__.load({
     });
     // The deps panel. The install block is a copy/paste target, so it gets a
     // monospace pre with its own copy button; the dep rows read their status
-    // from a colored glyph, not a word, so a long list stays scannable.
+    // from a state dot (the DSH StateDot, or its glyph fallback), not a word,
+    // so a long list stays scannable.
     var DEPS_ROW_STYLE = {
       display: 'flex',
       alignItems: 'baseline',
       gap: 6,
       fontSize: 12,
       marginTop: 2,
-    };
-    var DEPS_STATUS_COLOR = {
-      satisfied: '#34c38f',
-      missing: 'var(--dsw-alias-label-warning, #ff9f0a)',
-      failed: 'var(--dsw-alias-label-error, #ff3b30)',
-      installing: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))',
     };
     var INSTALL_BLOCK_STYLE = {
       margin: '8px 0',
@@ -390,12 +397,14 @@ window.__ModuleLoader__.load({
           style: {
             width: 88,
             flex: 'none',
-            padding: '4px 8px',
-            borderRadius: 6,
-            border: '1px solid var(--dsw-alias-border-secondary, rgba(128,128,128,0.24))',
-            background: 'var(--dsw-alias-background-tertiary, rgba(128,128,128,0.12))',
-            color: 'inherit',
+            height: 32,
+            padding: '0 8px',
+            borderRadius: 'var(--dsw-radius-md, 8px)',
+            border: '0.5px solid var(--dsw-alias-border-l4, var(--dsw-alias-border-secondary, rgba(128,128,128,0.24)))',
+            background: 'var(--dsw-alias-bg-layer-1, var(--dsw-alias-background-tertiary, rgba(128,128,128,0.12)))',
+            color: 'var(--dsw-alias-label-primary, inherit)',
             font: 'inherit',
+            fontSize: 14,
             colorScheme: 'light dark',
             opacity: field.disabled ? 0.5 : 1,
           },
@@ -432,10 +441,192 @@ window.__ModuleLoader__.load({
       );
     }
 
+    // The DSH selector pill the Settings (General) rows use: a 36px platform
+    // fill, radius md, the primary label, the interactive hover, and the
+    // focus ring. The Menu list itself carries the host's own CSS, so the
+    // pill is the only chrome the card adds.
+    var STYLE_ELEMENT_ID = 'dsh-local-infer-styles';
+    function injectStyles() {
+      if (typeof document === 'undefined' || document.getElementById(STYLE_ELEMENT_ID)) {
+        return;
+      }
+      var style = document.createElement('style');
+      style.id = STYLE_ELEMENT_ID;
+      style.textContent = [
+        '.dsh-li-selector{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border:none;border-radius:var(--dsw-radius-md,8px);background:var(--dsw-alias-bg-module-platform,var(--dsw-alias-background-tertiary,rgba(128,128,128,0.12)));font:inherit;font-size:14px;line-height:22px;color:var(--dsw-alias-label-primary,rgba(0,0,0,0.85));cursor:pointer}',
+        '.dsh-li-selector:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,0.16))}',
+        '.dsh-li-selector:focus-visible{outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary,#0a84ff));outline-offset:2px}',
+        '.dsh-li-selector:disabled{opacity:0.5;cursor:default}',
+        '.dsh-li-selector-chevron{flex:none;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,0.8))}',
+      ].join('\n');
+      document.head.appendChild(style);
+    }
+
+    // The DSH-style dropdown: the selector pill anchor plus the host's Menu
+    // (the same component the Settings (General) language row opens), portaled
+    // to document.body so the card's overflow never crops the list. Defined at
+    // factory level, like NumberField, so React keeps one hook state per
+    // field instead of remounting on every render.
+    function SelectPill(props) {
+      var react = props.react;
+      var openState = react.useState(false);
+      var open = openState[0];
+      var setOpen = openState[1];
+      var pill = react.createElement(
+        'button',
+        {
+          type: 'button',
+          className: 'dsh-li-selector',
+          disabled: props.disabled,
+          'aria-haspopup': 'menu',
+          'aria-expanded': open,
+          onClick: () => {
+            if (!props.disabled) {
+              setOpen(!open);
+            }
+          },
+        },
+        props.label,
+        props.Chevron
+          ? react.createElement(props.Chevron, { className: 'dsh-li-selector-chevron' })
+          : null,
+      );
+      return react.createElement(
+        props.Menu,
+        {
+          open: open,
+          onClose: () => {
+            setOpen(false);
+          },
+          items: props.items,
+          selectedId: props.selectedId,
+          onSelect: (id) => {
+            props.onSelect(id);
+            setOpen(false);
+          },
+          align: 'end',
+          portal: true,
+          anchor: pill,
+        },
+      );
+    }
+
+    // One dropdown field. The DSH Menu pill when the host seeds the
+    // primitives, the native select it replaces otherwise. `items` are
+    // {id, label} rows; `value` is the selected id; `onSelect` receives the
+    // chosen id (an empty id clears the value, the native fallback's ''
+    // option behavior).
+    function renderSelect(react, primitives, opts) {
+      if (primitives && typeof primitives.Menu === 'function') {
+        injectStyles();
+        return react.createElement(SelectPill, {
+          react: react,
+          Menu: primitives.Menu,
+          Chevron: primitives.IconChevronDownOutlineRegular,
+          label: opts.label,
+          items: opts.items,
+          selectedId: opts.value,
+          onSelect: opts.onSelect,
+          disabled: opts.disabled === true,
+        });
+      }
+      return react.createElement(
+        'select',
+        Object.assign(
+          {
+            style: INPUT_STYLE,
+            value: opts.value,
+            disabled: opts.disabled === true,
+            onChange: (event) => opts.onSelect(event.target.value),
+          },
+          opts.disabled === true ? { opacity: 0.5 } : {},
+        ),
+        opts.items.map((item) =>
+          react.createElement('option', { key: item.id, value: item.id }, item.label),
+        ),
+      );
+    }
+
+    // The DSH Button atom (the --dsw-alias-button-* token families) with the
+    // card's inline buttons as the fallback a host without the seed keeps.
+    // size stays the compact sm control: the card is a 28px context.
+    function renderButton(react, primitives, variant, buttonProps, children) {
+      if (primitives && typeof primitives.Button === 'function') {
+        return react.createElement(
+          primitives.Button,
+          Object.assign({ variant: variant, size: 'sm', type: 'button' }, buttonProps),
+          children,
+        );
+      }
+      return react.createElement(
+        'button',
+        Object.assign(
+          {
+            type: 'button',
+            style: variant === 'primary' ? PRIMARY_BUTTON : GHOST_BUTTON,
+          },
+          buttonProps,
+        ),
+        children,
+      );
+    }
+
+    // The DSH Checkbox atom (a native input with its visible label) with the
+    // card's inline label as the fallback.
+    function renderCheckbox(react, primitives, checkboxProps) {
+      if (primitives && typeof primitives.Checkbox === 'function') {
+        return react.createElement(primitives.Checkbox, checkboxProps);
+      }
+      return react.createElement(
+        'label',
+        {
+          style: {
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: 12,
+            cursor: 'pointer',
+          },
+        },
+        react.createElement('input', {
+          type: 'checkbox',
+          checked: checkboxProps.checked,
+          disabled: checkboxProps.disabled,
+          onChange: (event) => checkboxProps.onChange(event.target.checked),
+        }),
+        checkboxProps.label,
+      );
+    }
+
+    // The DSH StateDot semantics (green done, amber warning, red error, the
+    // spinner ongoing) for the dep rows, with the card's colored glyphs as
+    // the fallback.
+    function renderStateDot(react, primitives, state) {
+      if (primitives && typeof primitives.StateDot === 'function') {
+        return react.createElement(primitives.StateDot, { state: state });
+      }
+      var glyph = { done: '✓', warning: '○', error: '✗', ongoing: '…', idle: '○' };
+      var color = {
+        done: '#34c38f',
+        warning: 'var(--dsw-alias-label-warning, #ff9f0a)',
+        error: 'var(--dsw-alias-label-error, #ff3b30)',
+        ongoing: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))',
+        idle: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))',
+      };
+      return react.createElement(
+        'span',
+        {
+          style: { color: color[state] || 'inherit', width: 12, flex: 'none' },
+          'aria-hidden': 'true',
+        },
+        glyph[state] || '○',
+      );
+    }
+
     // One rendered field: the control the `control` model names, greyed out
     // with its reason while `disabled` is set, and the inline guideline
     // warnings anchored to the field's key beneath it.
-    function renderField(react, field, onValue, inlineWarnings) {
+    function renderField(react, field, onValue, inlineWarnings, primitives) {
       var value = field.value;
       var common = {
         key: field.key,
@@ -445,30 +636,39 @@ window.__ModuleLoader__.load({
       var control = field.control;
       var input;
       if (control.kind === 'checkbox') {
-        input = react.createElement(
-          'input',
-          Object.assign({}, common, {
-            type: 'checkbox',
-            checked: value === true,
-            onChange: (event) => onValue(field.key, event.target.checked),
-          }),
-        );
+        // The checkbox is a bare native control, not a field: it keeps the
+        // browser's box size (the 32px input style would stretch it).
+        input = react.createElement('input', {
+          key: field.key,
+          type: 'checkbox',
+          checked: value === true,
+          disabled: field.disabled,
+          style: {
+            accentColor: 'var(--dsw-alias-accent, #0a84ff)',
+            colorScheme: 'light dark',
+            opacity: field.disabled ? 0.5 : 1,
+          },
+          onChange: (event) => onValue(field.key, event.target.checked),
+        });
       } else if (control.kind === 'dropdown') {
-        input = react.createElement(
-          'select',
-          Object.assign({}, common, {
-            value: value === undefined || value === null ? '' : String(value),
-            onChange: (event) => onValue(field.key, event.target.value),
-          }),
-          react.createElement('option', { value: '' }, '—'),
-          (control.options || []).map((option) =>
-            react.createElement(
-              'option',
-              { key: option.value, value: option.value },
-              option.note ? option.label + ' · ' + option.note : option.label,
-            ),
-          ),
+        // The enum options plus the '' row the native select cleared with:
+        // the pill's first menu row, the one an empty value selects.
+        var dropdownItems = [{ id: '', label: '—' }].concat(
+          (control.options || []).map((option) => ({
+            id: String(option.value),
+            label: option.note ? option.label + ' · ' + option.note : option.label,
+          })),
         );
+        var dropdownValue = value === undefined || value === null ? '' : String(value);
+        var dropdownLabel =
+          (dropdownItems.find((item) => item.id === dropdownValue) || {}).label || '—';
+        input = renderSelect(react, primitives, {
+          value: dropdownValue,
+          label: dropdownLabel,
+          items: dropdownItems,
+          onSelect: (id) => onValue(field.key, id === '' ? undefined : id),
+          disabled: field.disabled,
+        });
       } else if (control.kind === 'slider') {
         // The readout is a number input, not a label: type a value or use
         // the spin buttons, and the slider and the estimate follow. The
@@ -682,26 +882,24 @@ window.__ModuleLoader__.load({
     // and the "Get" gate that stays disabled until every dep reports
     // satisfied. The actions ride in as callbacks so the panel stays a pure
     // draw of the deps model the /local-infer/deps route returns.
-    function renderDepsPanel(react, deps, t, actions) {
+    function renderDepsPanel(react, deps, t, actions, primitives) {
       if (deps === null || deps === undefined) {
         return null;
       }
-      var glyph = { satisfied: '✓', missing: '○', failed: '✗', installing: '…' };
+      // The dep status onto the DSH state semantics the inventory cards use:
+      // a satisfied dep is done, a missing one asks attention, a failed one
+      // is an error, and an install in flight is the ongoing spinner.
+      var stateForStatus = {
+        satisfied: 'done',
+        missing: 'warning',
+        failed: 'error',
+        installing: 'ongoing',
+      };
       var rows = (deps.deps || []).map((dep) =>
         react.createElement(
           'div',
           { key: dep.id, style: DEPS_ROW_STYLE },
-          react.createElement(
-            'span',
-            {
-              style: {
-                color: DEPS_STATUS_COLOR[dep.status] || 'inherit',
-                width: 12,
-                flex: 'none',
-              },
-            },
-            glyph[dep.status] || '○',
-          ),
+          renderStateDot(react, primitives, stateForStatus[dep.status] || 'idle'),
           react.createElement('span', { style: { fontWeight: 600 } }, dep.id),
           react.createElement(
             'span',
@@ -746,13 +944,11 @@ window.__ModuleLoader__.load({
               'div',
               null,
               react.createElement('pre', { style: INSTALL_BLOCK_STYLE }, deps.installString),
-              react.createElement(
-                'button',
-                {
-                  type: 'button',
-                  style: GHOST_BUTTON,
-                  onClick: actions.onCopy,
-                },
+              renderButton(
+                react,
+                primitives,
+                'ghost',
+                { onClick: actions.onCopy },
                 actions.copyNote ? actions.copyNote : t.copy,
               ),
             )
@@ -760,44 +956,25 @@ window.__ModuleLoader__.load({
         react.createElement(
           'div',
           { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 } },
-          react.createElement(
-            'label',
-            {
-              style: {
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                fontSize: 12,
-                cursor: 'pointer',
-              },
-            },
-            react.createElement('input', {
-              type: 'checkbox',
-              checked: deps.runAllowed === true,
-              onChange: (event) => actions.onAllowRun(event.target.checked),
-            }),
-            t.allowRun,
-          ),
+          renderCheckbox(react, primitives, {
+            checked: deps.runAllowed === true,
+            onChange: actions.onAllowRun,
+            label: t.allowRun,
+          }),
           deps.runAllowed && !deps.allSatisfied
-            ? react.createElement(
-                'button',
-                {
-                  type: 'button',
-                  style: GHOST_BUTTON,
-                  onClick: actions.onRun,
-                  disabled: actions.installing,
-                },
+            ? renderButton(
+                react,
+                primitives,
+                'ghost',
+                { onClick: actions.onRun, disabled: actions.installing },
                 actions.installing ? t.running : '▶ ' + t.run,
               )
             : null,
-          react.createElement(
-            'button',
-            {
-              type: 'button',
-              style: PRIMARY_BUTTON,
-              onClick: actions.onGet,
-              disabled: !deps.allSatisfied,
-            },
+          renderButton(
+            react,
+            primitives,
+            'primary',
+            { onClick: actions.onGet, disabled: !deps.allSatisfied },
             t.get,
           ),
         ),
@@ -819,7 +996,7 @@ window.__ModuleLoader__.load({
 
     // The card. It owns its draft and validation display; the page draws the
     // title, icon, and crumb, and the form drops its staged edits when left.
-    function ConfigCard(react, localeRef) {
+    function ConfigCard(react, localeRef, primitives) {
       var subscribeLocale = (onChange) => {
         var locale = localeRef && localeRef.current;
         return locale ? locale.subscribe(onChange) : () => {};
@@ -1368,37 +1545,42 @@ window.__ModuleLoader__.load({
             'div',
             { style: ROW_STYLE },
             react.createElement('label', { style: LABEL_STYLE }, t.engine),
-            react.createElement(
-              'select',
-              {
-                style: INPUT_STYLE,
-                value: draft.engine,
-                onChange: (event) => onEngine(event.target.value),
-              },
-              (data.engines || []).map((engine) =>
-                react.createElement('option', { key: engine.id, value: engine.id }, engine.label),
-              ),
-            ),
+            renderSelect(react, primitives, {
+              value: draft.engine,
+              label:
+                (
+                  (data.engines || []).find((entry) => entry.id === draft.engine) ||
+                  {}
+                ).label || draft.engine,
+              items: (data.engines || []).map((engine) => ({
+                id: engine.id,
+                label: engine.label,
+              })),
+              onSelect: (id) => onEngine(id),
+            }),
           ),
           (data.models || []).length > 0
             ? react.createElement(
                 'div',
                 { style: ROW_STYLE },
                 react.createElement('label', { style: LABEL_STYLE }, t.model),
-                react.createElement(
-                  'select',
-                  {
-                    style: INPUT_STYLE,
-                    value:
-                      draft.config && typeof draft.config.model === 'string' ? draft.config.model : '',
-                    onChange: (event) =>
-                      onValue('model', event.target.value === '' ? undefined : event.target.value),
-                  },
-                  react.createElement('option', { value: '' }, t.modelAuto),
-                  data.models.map((model) =>
-                    react.createElement('option', { key: model.id, value: model.id }, model.id),
-                  ),
-                ),
+                (() => {
+                  var modelValue =
+                    draft.config && typeof draft.config.model === 'string'
+                      ? draft.config.model
+                      : '';
+                  var modelItems = [{ id: '', label: t.modelAuto }].concat(
+                    data.models.map((model) => ({ id: model.id, label: model.id })),
+                  );
+                  return renderSelect(react, primitives, {
+                    value: modelValue,
+                    label:
+                      (modelItems.find((item) => item.id === modelValue) || {}).label ||
+                      t.modelAuto,
+                    items: modelItems,
+                    onSelect: (id) => onValue('model', id === '' ? undefined : id),
+                  });
+                })(),
               )
             : null,
           (() => {
@@ -1415,26 +1597,22 @@ window.__ModuleLoader__.load({
               typeof draft.config.buildMode === 'string'
                 ? draft.config.buildMode
                 : buildModes[0] || 'local';
+            var buildItems = buildModes.map((mode) => ({
+              id: mode,
+              label: mode === 'local' ? t.buildLocal : t.buildDocker,
+            }));
             return buildModes.length > 0
               ? react.createElement(
                   'div',
                   { style: ROW_STYLE },
                   react.createElement('label', { style: LABEL_STYLE }, t.build),
-                  react.createElement(
-                    'select',
-                    {
-                      style: INPUT_STYLE,
-                      value: buildMode,
-                      onChange: (event) => onValue('buildMode', event.target.value),
-                    },
-                    buildModes.map((mode) =>
-                      react.createElement(
-                        'option',
-                        { key: mode, value: mode },
-                        mode === 'local' ? t.buildLocal : t.buildDocker,
-                      ),
-                    ),
-                  ),
+                  renderSelect(react, primitives, {
+                    value: buildMode,
+                    label:
+                      (buildItems.find((item) => item.id === buildMode) || {}).label || buildMode,
+                    items: buildItems,
+                    onSelect: (id) => onValue('buildMode', id),
+                  }),
                 )
               : null;
           })(),
@@ -1537,6 +1715,7 @@ window.__ModuleLoader__.load({
                       field,
                       onValue,
                       inlineWarnings[field.key],
+                      primitives,
                     ),
                   ),
                 ),
@@ -1593,15 +1772,21 @@ window.__ModuleLoader__.load({
                 (data.verdict.status === 'over' ? t.over : t.tight) + ': ' + data.verdict.detail,
               )
             : null,
-          renderDepsPanel(react, deps, t, {
-            onCopy: onCopy,
-            onAllowRun: onAllowRun,
-            onRun: onRun,
-            onGet: onGet,
-            installing: installing,
-            copyNote: copyNote,
-            depsNote: depsNote,
-          }),
+          renderDepsPanel(
+            react,
+            deps,
+            t,
+            {
+              onCopy: onCopy,
+              onAllowRun: onAllowRun,
+              onRun: onRun,
+              onGet: onGet,
+              installing: installing,
+              copyNote: copyNote,
+              depsNote: depsNote,
+            },
+            primitives,
+          ),
           // The engine lifecycle row: Launch runs the deploy and the health
           // poll through the /local-infer/launch route, and Stop signals the
           // tracked process or container through /local-infer/stop. Launch
@@ -1612,25 +1797,22 @@ window.__ModuleLoader__.load({
           react.createElement(
             'div',
             { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 } },
-            react.createElement(
-              'button',
+            renderButton(
+              react,
+              primitives,
+              'primary',
               {
-                type: 'button',
-                style: PRIMARY_BUTTON,
                 onClick: onLaunch,
                 disabled:
                   launching || stopping || (deps !== null && deps.allSatisfied !== true),
               },
               launching ? t.launching : t.launch,
             ),
-            react.createElement(
-              'button',
-              {
-                type: 'button',
-                style: GHOST_BUTTON,
-                onClick: onStop,
-                disabled: stopping || launching,
-              },
+            renderButton(
+              react,
+              primitives,
+              'ghost',
+              { onClick: onStop, disabled: stopping || launching },
               stopping ? t.stopping : t.stop,
             ),
           ),
@@ -1644,32 +1826,23 @@ window.__ModuleLoader__.load({
           react.createElement(
             'div',
             { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 } },
-            react.createElement(
-              'button',
-              { type: 'button', style: GHOST_BUTTON, onClick: onRegister, disabled: registering },
+            renderButton(
+              react,
+              primitives,
+              'ghost',
+              { onClick: onRegister, disabled: registering },
               t.register,
             ),
-            react.createElement(
-              'label',
-              {
-                style: {
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  fontSize: 12,
-                  cursor: 'pointer',
-                },
-              },
-              react.createElement('input', {
-                type: 'checkbox',
-                checked: agentDefault,
-                onChange: (event) => agentDefaultState[1](event.target.checked),
-              }),
-              t.registerDefault,
-            ),
-            react.createElement(
-              'button',
-              { type: 'button', style: GHOST_BUTTON, onClick: onUnregister, disabled: removing },
+            renderCheckbox(react, primitives, {
+              checked: agentDefault,
+              onChange: (next) => agentDefaultState[1](next),
+              label: t.registerDefault,
+            }),
+            renderButton(
+              react,
+              primitives,
+              'ghost',
+              { onClick: onUnregister, disabled: removing },
               t.unregister,
             ),
           ),
@@ -1679,10 +1852,12 @@ window.__ModuleLoader__.load({
           react.createElement(
             'div',
             { style: FOOTER_STYLE },
-            react.createElement('button', { type: 'button', style: GHOST_BUTTON, onClick: discard }, t.discard),
-            react.createElement(
-              'button',
-              { type: 'button', style: PRIMARY_BUTTON, onClick: save, disabled: saving },
+            renderButton(react, primitives, 'ghost', { onClick: discard }, t.discard),
+            renderButton(
+              react,
+              primitives,
+              'primary',
+              { onClick: save, disabled: saving },
               saving ? t.saving : t.save,
             ),
           ),
@@ -1740,7 +1915,21 @@ window.__ModuleLoader__.load({
         console.error(`[local-infer] settings card skipped: ${error}`);
         return;
       }
-      var Card = ConfigCard(react, localeRef);
+      // The shell seeds the primitives into the frozen platform module table,
+      // so the require resolves on every host that serves this page. A host
+      // whose table predates the seed (or a loader that cannot materialize
+      // it) keeps the native controls: a missing seed is a fallback, not an
+      // error, so the card still renders.
+      var primitives;
+      try {
+        primitives = require('@deepseek-ai/dsh-client-ui-primitives');
+      } catch {
+        primitives = null;
+      }
+      if (primitives && typeof primitives.Menu !== 'function') {
+        primitives = null;
+      }
+      var Card = ConfigCard(react, localeRef, primitives);
       // slots.inject waits until a slot is declared, so each host fills the one
       // it has and the other wait never fires: from dsh 0.1.6-alpha.2 on hosts
       // declare the Plugins page's, older ones only the Settings one.

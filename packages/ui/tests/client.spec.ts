@@ -51,14 +51,65 @@ const reactStub = {
   createElement: () => null,
 }
 
-function loadPlugin(): { apply: (ctx: unknown) => void; inject: unknown } {
+// The DSH primitives seed the shell puts in the frozen platform module table.
+// The card draws its menus, buttons, checkboxes, and state dots from this
+// module; the stub names the members the card touches so a renamed export
+// fails the mount, and a loader that throws for it exercises the native
+// fallback.
+const primitivesStub = {
+  Menu: () => null,
+  Button: () => null,
+  Checkbox: () => null,
+  StateDot: () => null,
+  IconChevronDownOutlineRegular: () => null,
+}
+
+function loadPlugin(options?: { primitives?: unknown; required?: string[] }): {
+  apply: (ctx: unknown) => void
+  inject: unknown
+} {
+  const required: string[] = options?.required ?? []
   const plugin = loaded!.factory((name: string) => {
     if (name === 'react') {
       return reactStub
     }
+    if (name === '@deepseek-ai/dsh-client-ui-primitives') {
+      required.push(name)
+      if (options?.primitives === undefined) {
+        return primitivesStub
+      }
+      if (options.primitives instanceof Error) {
+        throw options.primitives
+      }
+      return options.primitives
+    }
     throw new Error(`unexpected require of ${name}`)
   })
   return plugin as { apply: (ctx: unknown) => void; inject: unknown }
+}
+
+function mountScope() {
+  const slotNames: string[] = []
+  const scope = {
+    locale: undefined,
+    effect: (disposer: () => void) => {
+      disposer()
+    },
+    slots: {
+      inject: (name: string) => {
+        slotNames.push(name)
+      },
+      register: () => undefined,
+    },
+  }
+  return {
+    slotNames,
+    ctx: {
+      inject: (_names: string[], fn: (scope: unknown) => void) => {
+        fn(scope)
+      },
+    },
+  }
 }
 
 describe('dsh/client.js browser carrier', () => {
@@ -84,7 +135,9 @@ describe('dsh/client.js browser carrier', () => {
     const injected: string[][] = []
     const scope = {
       locale: undefined,
-      effect: (disposer: () => void) => disposer(),
+      effect: (disposer: () => void) => {
+        disposer()
+      },
       slots: {
         inject: (_name: string) => {
           /* the 404 probe skips the mount, so no slot registration happens */
@@ -106,25 +159,27 @@ describe('dsh/client.js browser carrier', () => {
   })
 
   it('mounts the card and registers both slots when the route probe succeeds', async () => {
-    const slotNames: string[] = []
-    const scope = {
-      locale: undefined,
-      effect: (disposer: () => void) => disposer(),
-      slots: {
-        inject: (name: string) => {
-          slotNames.push(name)
-        },
-        register: () => undefined,
-      },
-    }
-    const ctx = {
-      inject: (_names: string[], fn: (scope: unknown) => void) => {
-        fn(scope)
-      },
-    }
+    const { slotNames, ctx } = mountScope()
     stubFetch(200)
     loadPlugin().apply(ctx)
     // The mount runs in a microtask after the probe resolves.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(slotNames).toEqual(['plugins.bundle.config', 'settings.plugin.item'])
+  })
+
+  it('requires the DSH primitives seed so the card draws the host controls', async () => {
+    const required: string[] = []
+    const { ctx } = mountScope()
+    stubFetch(200)
+    loadPlugin({ required }).apply(ctx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(required).toEqual(['@deepseek-ai/dsh-client-ui-primitives'])
+  })
+
+  it('keeps the card mounted when the primitives seed is absent', async () => {
+    const { slotNames, ctx } = mountScope()
+    stubFetch(200)
+    loadPlugin({ primitives: new Error('seed absent') }).apply(ctx)
     await new Promise((resolve) => setTimeout(resolve, 0))
     expect(slotNames).toEqual(['plugins.bundle.config', 'settings.plugin.item'])
   })
