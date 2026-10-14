@@ -202,7 +202,13 @@ describe('estimateVram verdicts', () => {
   it('reports tight when the headroom falls under half a GiB', () => {
     // 27B bf16 at 127,000 tokens on a 24 GiB card: the page-rounded KV cache
     // leaves about 11 MiB of headroom, well under the 0.5 GiB tight line.
-    const estimate = estimateVram(model27b(), { kvDtype: 'bf16', maxContext: 127000 }, HW_3090)
+    // The test pins the tight line, not the reserve, so it opts out of the
+    // 3 GiB default explicitly.
+    const estimate = estimateVram(
+      model27b(),
+      { kvDtype: 'bf16', maxContext: 127000, reserveMiB: 0 },
+      HW_3090,
+    )
     expect(estimate.verdict.status).toBe('tight')
     expect(estimate.verdict.detail).toContain('to spare')
   })
@@ -239,7 +245,14 @@ describe('estimateVram largest-fitting-context', () => {
   })
 
   it('caps at the model native limit when the budget would buy more', () => {
-    const estimate = estimateVram(model35b(), { kvDtype: 'int8', maxContext: 32768 }, HW_3090)
+    // The test pins the native cap, not the reserve, so it opts out of the
+    // 3 GiB default explicitly: with the default the 35B budget no longer
+    // buys the full 262144.
+    const estimate = estimateVram(
+      model35b(),
+      { kvDtype: 'int8', maxContext: 32768, reserveMiB: 0 },
+      HW_3090,
+    )
     expect(estimate.breakdown.largestFittingContext).toBe(262144)
   })
 
@@ -260,6 +273,20 @@ describe('estimateVram largest-fitting-context', () => {
 })
 
 describe('estimateVram config plumbing', () => {
+  it('defaults the OS reserve to 3 GiB when the config names none', () => {
+    const model = model27b()
+    const estimate = estimateVram(model, { kvDtype: 'int8', maxContext: 4096 }, HW_3090)
+    expect(estimate.breakdown.reserve).toBe(3 * 1024 * 1024 * 1024)
+    expect(estimate.breakdown.usable).toBe((24 * 1024 - 3 * 1024) * 1024 * 1024)
+    // An explicit zero still opts out of the default.
+    const optedOut = estimateVram(
+      model,
+      { kvDtype: 'int8', maxContext: 4096, reserveMiB: 0 },
+      HW_3090,
+    )
+    expect(optedOut.breakdown.reserve).toBe(0)
+  })
+
   it('reads the OS reserve from reserveGiB and reserveMiB', () => {
     const model = model35b()
     const viaGiB = estimateVram(model, { kvDtype: 'int8', maxContext: 4096, reserveGiB: 1.5 }, HW_3090)

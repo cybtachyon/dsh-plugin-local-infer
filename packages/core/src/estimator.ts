@@ -154,8 +154,15 @@ function fmtGiB(bytes: number): string {
 }
 
 /**
+ * The OS-reserve budget the estimator prices when the config names none:
+ * 3 GiB, the working-set floor the desktop keeps on a GPU card. An explicit
+ * config value (reserveMiB or reserveGiB) always wins over the default.
+ */
+export const DEFAULT_OS_RESERVE_MIB = 3 * 1024
+
+/**
  * resolveReserveMiB reads the OS-reserve budget from the config: an explicit
- * MiB value, else a GiB value converted to MiB, else no reserve.
+ * MiB value, else a GiB value converted to MiB, else the 3 GiB default.
  */
 function resolveReserveMiB(config: Config): number {
   if (typeof config.reserveMiB === 'number' && Number.isFinite(config.reserveMiB)) {
@@ -164,7 +171,7 @@ function resolveReserveMiB(config: Config): number {
   if (typeof config.reserveGiB === 'number' && Number.isFinite(config.reserveGiB)) {
     return config.reserveGiB * 1024
   }
-  return 0
+  return DEFAULT_OS_RESERVE_MIB
 }
 
 /**

@@ -99,13 +99,17 @@ window.__ModuleLoader__.load({
 
     // The meter's segment palette. The bar reads against the full card the way
     // the NInfer calculator draws it, with the OS reserve at the far end.
+    // The reserve is dark, not light: it is the card's own budget floor, not
+    // free space, and a light swatch read as "free" next to the free segment.
+    // The dark fill keeps its identity in both themes, and the hatch lines
+    // stay a lighter dark gray so the texture survives dark mode.
     var SEGMENT_COLORS = {
       weights: '#4f8ff7',
       kv: '#34c38f',
       overhead: '#f7b84f',
       workspace: '#b07ff7',
       free: '#d9d9d9',
-      reserve: '#bdbdbd',
+      reserve: '#1c1c1c',
     };
 
     var CARD_STYLE = {
@@ -519,7 +523,7 @@ window.__ModuleLoader__.load({
                       SEGMENT_COLORS.reserve +
                       ', ' +
                       SEGMENT_COLORS.reserve +
-                      ' 4px, #9e9e9e 4px, #9e9e9e 8px)'
+                      ' 4px, #4d4d4d 4px, #4d4d4d 8px)'
                     : SEGMENT_COLORS[segment.key] || '#ccc',
               },
             },

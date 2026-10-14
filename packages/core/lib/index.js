@@ -6,7 +6,7 @@
  * @module @dsh/dsh-plugin-local-infer/core
  */
 export { detectHardware, parseNvidiaSmiGpu, } from "./hardware.js";
-export { estimateVram, KV_PAGE_TOKENS, pageRoundUp, TIGHT_HEADROOM_BYTES, } from "./estimator.js";
+export { DEFAULT_OS_RESERVE_MIB, estimateVram, KV_PAGE_TOKENS, pageRoundUp, TIGHT_HEADROOM_BYTES, } from "./estimator.js";
 export { EngineAdapter } from "./adapter.js";
 export { constraintId, evaluateGuidelines, modelGuidelines } from "./guideline.js";
 //# sourceMappingURL=index.js.map

@@ -25,6 +25,7 @@ export type {
   ParameterSpec,
 } from './parameter.ts'
 export {
+  DEFAULT_OS_RESERVE_MIB,
   estimateVram,
   KV_PAGE_TOKENS,
   pageRoundUp,

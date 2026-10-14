@@ -108,6 +108,12 @@ export declare const TIGHT_HEADROOM_BYTES: number;
  */
 export declare function pageRoundUp(tokens: number): number;
 /**
+ * The OS-reserve budget the estimator prices when the config names none:
+ * 3 GiB, the working-set floor the desktop keeps on a GPU card. An explicit
+ * config value (reserveMiB or reserveGiB) always wins over the default.
+ */
+export declare const DEFAULT_OS_RESERVE_MIB: number;
+/**
  * estimateVram prices a config against a VramModel and a HardwareProfile. It
  * is a pure function, so the meter, the guidelines, and the DSH contextWindow
  * all derive from the same arithmetic and cannot disagree. The formula mirrors

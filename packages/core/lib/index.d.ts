@@ -9,7 +9,7 @@ export type { Config } from './config.ts';
 export { detectHardware, parseNvidiaSmiGpu, } from './hardware.ts';
 export type { GpuProfile, GpuProbe, HardwareProfile, HardwareProbes, } from './hardware.ts';
 export type { ComboOption, ConstraintResult, EnumOption, ParameterForm, ParameterSpec, } from './parameter.ts';
-export { estimateVram, KV_PAGE_TOKENS, pageRoundUp, TIGHT_HEADROOM_BYTES, } from './estimator.ts';
+export { DEFAULT_OS_RESERVE_MIB, estimateVram, KV_PAGE_TOKENS, pageRoundUp, TIGHT_HEADROOM_BYTES, } from './estimator.ts';
 export type { EstimateContext, SpeculationTerms, VramBreakdown, VramContribution, VramEstimate, VramModel, VramVerdict, } from './estimator.ts';
 export { EngineAdapter } from './adapter.ts';
 export type { DeployResult, HealthResult, LaunchPlan } from './adapter.ts';
