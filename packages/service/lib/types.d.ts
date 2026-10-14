@@ -1,4 +1,4 @@
-import type { Config, EngineAdapter, EngineDepPlan, Guideline, GuidelineResult, HardwareProfile, InstallResult, LaunchPlan, Preset, RegisterResult, SystemDep, VramBreakdown, VramModel, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
+import type { Config, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, HardwareProfile, InstallResult, LaunchPlan, Preset, RegisterResult, SystemDep, VramBreakdown, VramModel, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
 /**
  * EstimateResult is the answer to an estimate call: the full VRAM breakdown,
  * the one-word verdict the meter renders, and the source the numbers came
@@ -19,6 +19,15 @@ export interface LaunchResult {
     detail?: string;
 }
 /**
+ * LaunchOptions tunes the launch health poll: the interval between attempts
+ * and the attempt cap. The service passes the config's healthPollMs and
+ * healthMaxAttempts through; an absent option keeps the adapter's default.
+ */
+export interface LaunchOptions {
+    pollMs?: number;
+    maxAttempts?: number;
+}
+/**
  * LocalInferService is the surface the service publishes on ctx.localInfer.
  * Providers register engines, presets, and guidelines against the registries;
  * consumers (the tool package, the UI) call the orchestration entry points.
@@ -31,18 +40,21 @@ export interface LocalInferService {
     registerGuideline(guideline: Guideline): () => void;
     registerVramModel(model: VramModel): () => void;
     registerDepPlan(engineId: string, plan: EngineDepPlan): () => void;
+    registerEnginePlatformConfig(config: EnginePlatformConfig): () => void;
     registeredEngines(): readonly EngineAdapter[];
     registeredPresets(): readonly Preset[];
     registeredGuidelines(): readonly Guideline[];
     registeredVramModels(): readonly VramModel[];
     registeredDepPlans(): ReadonlyMap<string, EngineDepPlan>;
+    enginePlatformConfig(engineId: string): EnginePlatformConfig | undefined;
     estimate(config: Config, hw: HardwareProfile): Promise<EstimateResult>;
     detectHardware(): Promise<HardwareProfile>;
     guidelines(config: Config, hw: HardwareProfile): Promise<GuidelineResult[]>;
     deps(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<readonly SystemDep[]>;
     installString(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<string>;
     runInstall(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<InstallResult>;
-    launch(plan: LaunchPlan): Promise<LaunchResult>;
+    launch(plan: LaunchPlan, options?: LaunchOptions): Promise<LaunchResult>;
+    stop(plan: LaunchPlan): Promise<void>;
     registerModel(plan: LaunchPlan): Promise<RegisterResult>;
 }
 //# sourceMappingURL=types.d.ts.map

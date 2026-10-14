@@ -11,7 +11,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import type { Config, HardwareProfile, InstallResult, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
-import type { LocalInferService } from '@dsh/dsh-plugin-local-infer/service';
+import type { LaunchResult, LocalInferService } from '@dsh/dsh-plugin-local-infer/service';
 import type { EngineInfo } from '../../providers/lib/index.js';
 import type { DepsModel } from './deps.ts';
 import type { FormModel } from './form.ts';
@@ -151,11 +151,32 @@ export interface InstallResponse {
  */
 export declare function runInstallFor(localInfer: LocalInferService, request: DepsRequest): Promise<InstallResponse>;
 /**
- * registerLocalInferRoute registers the summary, save, deps, and install
- * routes on the web server and holds them by an effect, so a bundle switch
- * off removes them before the next switch on re-registers. The scoped context
- * carries the webServer; the localInfer service is passed in because the
- * scope only injects what it names.
+ * LaunchRequest is the query the card sends for the launch and stop routes: the
+ * engine and the config the plan renders from. Absent values fall back to the
+ * stored config, the same rule the summary route applies.
+ */
+export interface LaunchRequest {
+    engine?: string;
+    config?: Config;
+}
+/**
+ * launchEngine renders the plan the registered adapter produces for the config
+ * and the detected hardware, then runs the service's launch entry point
+ * (deploy, then the health poll). The detail the launch returns names the
+ * broken step when the engine does not come up.
+ */
+export declare function launchEngine(localInfer: LocalInferService, request: LaunchRequest): Promise<LaunchResult>;
+/**
+ * stopEngine renders the same plan and runs the service's stop entry point, so
+ * the stop step targets the exact container or process the launch started.
+ */
+export declare function stopEngine(localInfer: LocalInferService, request: LaunchRequest): Promise<void>;
+/**
+ * registerLocalInferRoute registers the summary, save, deps, install, launch,
+ * and stop routes on the web server and holds them by an effect, so a bundle
+ * switch off removes them before the next switch on re-registers. The scoped
+ * context carries the webServer; the localInfer service is passed in because
+ * the scope only injects what it names.
  */
 export declare function registerLocalInferRoute(scope: Context & {
     webServer: WebServerService;

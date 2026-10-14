@@ -24,13 +24,17 @@ export { BUILTIN_GUIDELINES, HOST_STATE_IMAGE_BYTES } from './guidelines.ts';
 export { ENGINES } from './engines.ts';
 export type { EngineInfo } from './engines.ts';
 export { ENGINE_DEP_PLANS, SYSTEM_DEPS } from './deps.ts';
+export { HyperQwenAdapter, NINFER_DOCKER_IMAGE, NINFER_MODEL_ARTIFACTS, NInferAdapter, envFromSpecs, flagsFromSpecs, nodeLifecycleHost, pollHealth, } from './adapters.ts';
+export type { NInferModelArtifact } from './adapters.ts';
 /**
  * Mount the providers. The NInfer measured VramModels register here so the
  * service's estimate prices a named model; the built-in hardware guidelines
  * register so the guideline engine warns on docker, host RAM, and WSL2
  * before the engine boots; the per-engine dep plans register so the deps,
  * installString, and runInstall entry points resolve a plan for every engine
- * the card offers. The engine adapters and presets land in later phases.
+ * the card offers; and the engine adapters register so the launch, stop, and
+ * register entry points route a plan to the adapter that rendered it. The
+ * preset data lands in Phase 7.
  */
 export declare function apply(ctx: Context): void;
 declare const plugin: {

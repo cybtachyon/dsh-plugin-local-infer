@@ -20,7 +20,7 @@ import type {
   InstallResult,
   VramVerdict,
 } from '@dsh/dsh-plugin-local-infer/core'
-import type { LocalInferService } from '@dsh/dsh-plugin-local-infer/service'
+import type { LaunchResult, LocalInferService } from '@dsh/dsh-plugin-local-infer/service'
 // Relative, not the root package subpath: a self-referencing bare specifier
 // only resolves when the package sits inside a node_modules tree, so a
 // local-path or pnpm-linked install of this repo would fail the import.
@@ -276,11 +276,67 @@ export async function runInstallFor(
 }
 
 /**
- * registerLocalInferRoute registers the summary, save, deps, and install
- * routes on the web server and holds them by an effect, so a bundle switch
- * off removes them before the next switch on re-registers. The scoped context
- * carries the webServer; the localInfer service is passed in because the
- * scope only injects what it names.
+ * LaunchRequest is the query the card sends for the launch and stop routes: the
+ * engine and the config the plan renders from. Absent values fall back to the
+ * stored config, the same rule the summary route applies.
+ */
+export interface LaunchRequest {
+  engine?: string
+  config?: Config
+}
+
+/**
+ * resolveAdapter picks the registered engine adapter an engine id routes to. A
+ * card that names an engine no adapter serves gets a 404, not a blank panel.
+ */
+function resolveAdapter(localInfer: LocalInferService, engineId: string) {
+  const adapter = localInfer.registeredEngines().find((engine) => engine.id === engineId)
+  if (adapter === undefined) {
+    throw new RouteError(404, `no engine adapter is registered for "${engineId}"`)
+  }
+  return adapter
+}
+
+/**
+ * launchEngine renders the plan the registered adapter produces for the config
+ * and the detected hardware, then runs the service's launch entry point
+ * (deploy, then the health poll). The detail the launch returns names the
+ * broken step when the engine does not come up.
+ */
+export async function launchEngine(
+  localInfer: LocalInferService,
+  request: LaunchRequest,
+): Promise<LaunchResult> {
+  const stored = readConfig()
+  const engineId = request.engine ?? stored.engine
+  const config = request.config ?? stored.config
+  const adapter = resolveAdapter(localInfer, engineId)
+  const hardware = await localInfer.detectHardware()
+  return localInfer.launch(adapter.renderLaunch(config, hardware))
+}
+
+/**
+ * stopEngine renders the same plan and runs the service's stop entry point, so
+ * the stop step targets the exact container or process the launch started.
+ */
+export async function stopEngine(
+  localInfer: LocalInferService,
+  request: LaunchRequest,
+): Promise<void> {
+  const stored = readConfig()
+  const engineId = request.engine ?? stored.engine
+  const config = request.config ?? stored.config
+  const adapter = resolveAdapter(localInfer, engineId)
+  const hardware = await localInfer.detectHardware()
+  await localInfer.stop(adapter.renderLaunch(config, hardware))
+}
+
+/**
+ * registerLocalInferRoute registers the summary, save, deps, install, launch,
+ * and stop routes on the web server and holds them by an effect, so a bundle
+ * switch off removes them before the next switch on re-registers. The scoped
+ * context carries the webServer; the localInfer service is passed in because
+ * the scope only injects what it names.
  */
 export function registerLocalInferRoute(
   scope: Context & { webServer: WebServerService },
@@ -459,17 +515,118 @@ export function registerLocalInferRoute(
     },
   }
 
+  // The launch and stop routes share a POST body parser: the engine and config
+  // the plan renders from, falling back to the stored config per key.
+  const launchRequestFromBody = (body: {
+    engine?: unknown
+    config?: unknown
+  }): LaunchRequest => {
+    const request: LaunchRequest = {}
+    if (typeof body.engine === 'string') {
+      request.engine = body.engine
+    }
+    if (body.config && typeof body.config === 'object') {
+      request.config = body.config as Config
+    }
+    return request
+  }
+
+  const launch = {
+    name: 'local-infer-launch',
+    kind: 'exact' as const,
+    path: '/local-infer/launch',
+    handler: async (req: IncomingLike, res: OutgoingLike) => {
+      const send = (status: number, body: unknown) => {
+        res.writeHead(status, { 'content-type': 'application/json' })
+        res.end(JSON.stringify(body))
+      }
+      if (req.method !== 'POST') {
+        res.writeHead(405).end()
+        return
+      }
+      try {
+        const chunks: Buffer[] = []
+        let total = 0
+        for await (const chunk of req) {
+          total += chunk.length
+          if (total > 64 * 1024) {
+            send(413, { error: 'launch payload too large' })
+            req.destroy()
+            return
+          }
+          chunks.push(chunk)
+        }
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
+          engine?: unknown
+          config?: unknown
+        }
+        send(200, await launchEngine(localInfer, launchRequestFromBody(body)))
+      } catch (error) {
+        if (error instanceof RouteError) {
+          send(error.status, { error: error.message })
+          return
+        }
+        send(500, { error: String((error as Error)?.message ?? error) })
+      }
+    },
+  }
+
+  const stop = {
+    name: 'local-infer-stop',
+    kind: 'exact' as const,
+    path: '/local-infer/stop',
+    handler: async (req: IncomingLike, res: OutgoingLike) => {
+      const send = (status: number, body: unknown) => {
+        res.writeHead(status, { 'content-type': 'application/json' })
+        res.end(JSON.stringify(body))
+      }
+      if (req.method !== 'POST') {
+        res.writeHead(405).end()
+        return
+      }
+      try {
+        const chunks: Buffer[] = []
+        let total = 0
+        for await (const chunk of req) {
+          total += chunk.length
+          if (total > 64 * 1024) {
+            send(413, { error: 'stop payload too large' })
+            req.destroy()
+            return
+          }
+          chunks.push(chunk)
+        }
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
+          engine?: unknown
+          config?: unknown
+        }
+        await stopEngine(localInfer, launchRequestFromBody(body))
+        send(200, { stopped: true })
+      } catch (error) {
+        if (error instanceof RouteError) {
+          send(error.status, { error: error.message })
+          return
+        }
+        send(500, { error: String((error as Error)?.message ?? error) })
+      }
+    },
+  }
+
   scope.effect(
     () => {
       const disposeSummary = scope.webServer.register(route)
       const disposeSave = scope.webServer.register(save)
       const disposeDeps = scope.webServer.register(deps)
       const disposeInstall = scope.webServer.register(install)
+      const disposeLaunch = scope.webServer.register(launch)
+      const disposeStop = scope.webServer.register(stop)
       return () => {
         disposeSummary()
         disposeSave()
         disposeDeps()
         disposeInstall()
+        disposeLaunch()
+        disposeStop()
       }
     },
     'local-infer: settings routes',

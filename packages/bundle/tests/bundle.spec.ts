@@ -19,7 +19,11 @@ describe('local-infer bundle', () => {
     await ctx.plugin(localInferTool)
     await ctx.plugin(localInferUi)
     expect(ctx.localInfer).toBeInstanceOf(LocalInfer)
-    expect(ctx.localInfer.registeredEngines()).toEqual([])
+    // The providers row registers the NInfer and Hyper-Qwen engine adapters.
+    expect(ctx.localInfer.registeredEngines().map((engine) => engine.id)).toEqual([
+      'ninfer',
+      'hyperqwen',
+    ])
     expect(ctx.localInfer.registeredPresets()).toEqual([])
     // The providers row registers the built-in hardware guidelines.
     expect(ctx.localInfer.registeredGuidelines().map((guideline) => guideline.id)).toEqual([

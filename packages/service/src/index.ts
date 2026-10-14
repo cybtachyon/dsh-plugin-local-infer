@@ -9,8 +9,9 @@
  * the entry points. Registration is order-independent and a duplicate id is a
  * loud conflict, so hot-reload order never changes routing. `estimate` is
  * filled in by Phase 2 over the core estimator, `guidelines` by Phase 3 over
- * the core guideline engine, and `deps`, `installString`, and `runInstall` by
- * Phase 4 over the core provisioner. The remaining entry points fail loudly
+ * the core guideline engine, `deps`, `installString`, and `runInstall` by
+ * Phase 4 over the core provisioner, and `launch` and `stop` by Phase 5 over
+ * the registered engine adapters. The remaining entry points fail loudly
  * with `LOCAL_INFER_NOT_IMPLEMENTED` until later phases fill them in.
  * @module @dsh/dsh-plugin-local-infer/service
  */
@@ -36,6 +37,7 @@ import type {
   Config,
   EngineAdapter,
   EngineDepPlan,
+  EnginePlatformConfig,
   Guideline,
   GuidelineResult,
   GpuProbe,
@@ -49,9 +51,14 @@ import type {
   SystemDep,
   VramModel,
 } from '@dsh/dsh-plugin-local-infer/core'
-import type { EstimateResult, LaunchResult, LocalInferService } from './types.ts'
+import type {
+  EstimateResult,
+  LaunchOptions,
+  LaunchResult,
+  LocalInferService,
+} from './types.ts'
 
-export type { EstimateResult, LaunchResult, LocalInferService } from './types.ts'
+export type { EstimateResult, LaunchOptions, LaunchResult, LocalInferService } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -93,6 +100,7 @@ export class LocalInfer extends Service implements LocalInferService {
   private readonly guidelineRegistry = new Map<string, Guideline>()
   private readonly vramModelRegistry = new Map<string, VramModel>()
   private readonly depPlanRegistry = new Map<string, EngineDepPlan>()
+  private readonly platformConfigRegistry = new Map<string, EnginePlatformConfig>()
 
   constructor(ctx: Context) {
     super(ctx, 'localInfer')
@@ -208,6 +216,37 @@ export class LocalInfer extends Service implements LocalInferService {
     return this.depPlanRegistry
   }
 
+  /**
+   * registerEnginePlatformConfig stores the per-engine platform config (the
+   * Engine Directory and Engine Fork the user adds for a specific engine). The
+   * launch and deploy steps resolve it against the global modelDirectory to
+   * produce the clone/build/download plan. A duplicate id replaces the stored
+   * config, because a user editing the fields for an engine re-saves the whole
+   * config rather than reserving a second slot.
+   */
+  registerEnginePlatformConfig(config: EnginePlatformConfig): () => void {
+    const id = config.engineId
+    if (id.trim() === '') {
+      throw new LocalInferError(
+        'an engine platform config id must be a non-empty string',
+        'LOCAL_INFER_INVALID_ENGINE',
+      )
+    }
+    this.platformConfigRegistry.set(id, config)
+    return () => {
+      this.platformConfigRegistry.delete(id)
+    }
+  }
+
+  /**
+   * enginePlatformConfig reads the stored platform config for an engine id, or
+   * undefined when none is stored, which the deploy step reads as "use the
+   * adapter's default source and a managed cache directory".
+   */
+  enginePlatformConfig(engineId: string): EnginePlatformConfig | undefined {
+    return this.platformConfigRegistry.get(engineId)
+  }
+
   async estimate(config: Config, hw: HardwareProfile): Promise<EstimateResult> {
     const model = this.resolveVramModel(config)
     const estimate = estimateVram(model, config, hw)
@@ -283,8 +322,54 @@ export class LocalInfer extends Service implements LocalInferService {
     return runInstall(deps, hw, shellRunCommand)
   }
 
-  async launch(_plan: LaunchPlan): Promise<LaunchResult> {
-    return this.notImplemented('launch')
+  /**
+   * launch is the lifecycle entry point: it resolves the adapter that rendered
+   * the plan (by the plan's engineId), runs the adapter's deploy step (build
+   * or pull, download the model, start the engine) with the stored platform
+   * config, then polls the health URL until the engine reports 200. A deploy
+   * failure or a health timeout reads as not-healthy with the detail, so the
+   * UI shows the broken step rather than a blank panel.
+   */
+  async launch(plan: LaunchPlan, options?: LaunchOptions): Promise<LaunchResult> {
+    const adapter = this.engineRegistry.get(plan.engineId)
+    if (adapter === undefined) {
+      throw new LocalInferError(
+        `no engine adapter is registered for "${plan.engineId}"`,
+        'LOCAL_INFER_INVALID_ENGINE',
+      )
+    }
+    const platform = this.platformConfigRegistry.get(plan.engineId)
+    const deployResult = await adapter.deploy(plan, platform)
+    if (!deployResult.ok) {
+      // exactOptionalPropertyTypes: only write the detail key when it is present.
+      const result: LaunchResult = { plan, healthy: false }
+      if (deployResult.detail !== undefined) {
+        result.detail = deployResult.detail
+      }
+      return result
+    }
+    const health = await adapter.healthCheck(plan, options)
+    const launchResult: LaunchResult = { plan, healthy: health.healthy }
+    if (health.detail !== undefined) {
+      launchResult.detail = health.detail
+    }
+    return launchResult
+  }
+
+  /**
+   * stop signals the engine a launch started: it resolves the adapter by the
+   * plan's engineId and runs the adapter's stop step (kill the tracked process,
+   * stop the named container, or compose down).
+   */
+  async stop(plan: LaunchPlan): Promise<void> {
+    const adapter = this.engineRegistry.get(plan.engineId)
+    if (adapter === undefined) {
+      throw new LocalInferError(
+        `no engine adapter is registered for "${plan.engineId}"`,
+        'LOCAL_INFER_INVALID_ENGINE',
+      )
+    }
+    await adapter.stop(plan)
   }
 
   async registerModel(_plan: LaunchPlan): Promise<RegisterResult> {

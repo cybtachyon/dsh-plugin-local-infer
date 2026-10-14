@@ -5,6 +5,7 @@ import type {
   Config,
   DeployResult,
   EngineDepPlan,
+  EnginePlatformConfig,
   Guideline,
   HardwareProfile,
   HealthResult,
@@ -179,12 +180,27 @@ describe('ctx.localInfer scaffold', () => {
     expect(() => ctx.localInfer.registerEngine(new StubAdapter('ninfer'))).not.toThrow()
   })
 
-  it('fails loudly on the launch and register entry points a later phase fills in', async () => {
+  it('fails loudly on a launch for an engine no adapter serves', async () => {
     const ctx = await seam()
-    const plan: LaunchPlan = { kind: 'process', port: 8080, healthUrl: 'http://127.0.0.1:8080/health' }
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      port: 8080,
+      healthUrl: 'http://127.0.0.1:8080/health',
+    }
     await expect(ctx.localInfer.launch(plan)).rejects.toThrow(
-      expect.objectContaining<LocalInferError>({ code: 'LOCAL_INFER_NOT_IMPLEMENTED' }),
+      expect.objectContaining<LocalInferError>({ code: 'LOCAL_INFER_INVALID_ENGINE' }),
     )
+  })
+
+  it('fails loudly on the register entry point a later phase fills in', async () => {
+    const ctx = await seam()
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      port: 8080,
+      healthUrl: 'http://127.0.0.1:8080/health',
+    }
     await expect(ctx.localInfer.registerModel(plan)).rejects.toThrow(
       expect.objectContaining<LocalInferError>({ code: 'LOCAL_INFER_NOT_IMPLEMENTED' }),
     )
@@ -459,6 +475,98 @@ describe('ctx.localInfer dep provisioning', () => {
     const probes = await runHardwareProbes()
     expect(probes.packageManager === undefined || probes.packageManager === null || typeof probes.packageManager === 'string').toBe(
       true,
+    )
+  })
+})
+
+describe('ctx.localInfer launch and stop (Phase 5)', () => {
+  function plan(engineId: string): LaunchPlan {
+    return { engineId, kind: 'process', port: 8080, healthUrl: 'http://127.0.0.1:8080/health' }
+  }
+
+  it('launches through a registered adapter and reports the health answer', async () => {
+    const ctx = await seam()
+    class LaunchingAdapter extends StubAdapter {
+      async healthCheck(_p: LaunchPlan): Promise<HealthResult> {
+        return { healthy: true, status: 200 }
+      }
+    }
+    ctx.localInfer.registerEngine(new LaunchingAdapter('ninfer'))
+    const result = await ctx.localInfer.launch(plan('ninfer'))
+    expect(result.healthy).toBe(true)
+    expect(result.plan.engineId).toBe('ninfer')
+  })
+
+  it('reports a deploy failure as not-healthy with the detail', async () => {
+    const ctx = await seam()
+    class FailingAdapter extends StubAdapter {
+      async deploy(_p: LaunchPlan): Promise<DeployResult> {
+        return { ok: false, detail: 'build failed' }
+      }
+    }
+    ctx.localInfer.registerEngine(new FailingAdapter('ninfer'))
+    const result = await ctx.localInfer.launch(plan('ninfer'))
+    expect(result.healthy).toBe(false)
+    expect(result.detail).toBe('build failed')
+  })
+
+  it('passes the stored platform config to the adapter deploy step', async () => {
+    const ctx = await seam()
+    let seenPlatform: EnginePlatformConfig | undefined
+    class PlatformAdapter extends StubAdapter {
+      async deploy(_p: LaunchPlan, platform?: EnginePlatformConfig): Promise<DeployResult> {
+        seenPlatform = platform
+        return { ok: true }
+      }
+      async healthCheck(_p: LaunchPlan): Promise<HealthResult> {
+        return { healthy: true }
+      }
+    }
+    ctx.localInfer.registerEngine(new PlatformAdapter('ninfer'))
+    ctx.localInfer.registerEnginePlatformConfig({
+      engineId: 'ninfer',
+      engineDirectory: '/home/derek/src/ninfer',
+      engineFork: 'https://github.com/iamwavecut/ninfer-all',
+    })
+    await ctx.localInfer.launch(plan('ninfer'))
+    expect(seenPlatform).toEqual({
+      engineId: 'ninfer',
+      engineDirectory: '/home/derek/src/ninfer',
+      engineFork: 'https://github.com/iamwavecut/ninfer-all',
+    })
+  })
+
+  it('stops through the registered adapter', async () => {
+    const ctx = await seam()
+    let stopped = false
+    class StoppingAdapter extends StubAdapter {
+      async stop(_p: LaunchPlan): Promise<void> {
+        stopped = true
+      }
+    }
+    ctx.localInfer.registerEngine(new StoppingAdapter('ninfer'))
+    await ctx.localInfer.stop(plan('ninfer'))
+    expect(stopped).toBe(true)
+  })
+
+  it('registers an engine platform config keyed by engine id and releases it', async () => {
+    const ctx = await seam()
+    const dispose = ctx.localInfer.registerEnginePlatformConfig({
+      engineId: 'ninfer',
+      engineDirectory: '/x',
+    })
+    expect(ctx.localInfer.enginePlatformConfig('ninfer')).toEqual({
+      engineId: 'ninfer',
+      engineDirectory: '/x',
+    })
+    dispose()
+    expect(ctx.localInfer.enginePlatformConfig('ninfer')).toBeUndefined()
+  })
+
+  it('rejects an empty platform config id', async () => {
+    const ctx = await seam()
+    expect(() => ctx.localInfer.registerEnginePlatformConfig({ engineId: '  ' })).toThrow(
+      expect.objectContaining<LocalInferError>({ code: 'LOCAL_INFER_INVALID_ENGINE' }),
     )
   })
 })

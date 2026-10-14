@@ -9,15 +9,16 @@
  * the entry points. Registration is order-independent and a duplicate id is a
  * loud conflict, so hot-reload order never changes routing. `estimate` is
  * filled in by Phase 2 over the core estimator, `guidelines` by Phase 3 over
- * the core guideline engine, and `deps`, `installString`, and `runInstall` by
- * Phase 4 over the core provisioner. The remaining entry points fail loudly
+ * the core guideline engine, `deps`, `installString`, and `runInstall` by
+ * Phase 4 over the core provisioner, and `launch` and `stop` by Phase 5 over
+ * the registered engine adapters. The remaining entry points fail loudly
  * with `LOCAL_INFER_NOT_IMPLEMENTED` until later phases fill them in.
  * @module @dsh/dsh-plugin-local-infer/service
  */
 import { Context, Service } from '@deepseek-ai/cordis';
-import type { Config, EngineAdapter, EngineDepPlan, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, Preset, RegisterResult, SystemDep, VramModel } from '@dsh/dsh-plugin-local-infer/core';
-import type { EstimateResult, LaunchResult, LocalInferService } from './types.ts';
-export type { EstimateResult, LaunchResult, LocalInferService } from './types.ts';
+import type { Config, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, Preset, RegisterResult, SystemDep, VramModel } from '@dsh/dsh-plugin-local-infer/core';
+import type { EstimateResult, LaunchOptions, LaunchResult, LocalInferService } from './types.ts';
+export type { EstimateResult, LaunchOptions, LaunchResult, LocalInferService } from './types.ts';
 declare module '@deepseek-ai/cordis' {
     interface Context {
         localInfer: LocalInferService;
@@ -44,6 +45,7 @@ export declare class LocalInfer extends Service implements LocalInferService {
     private readonly guidelineRegistry;
     private readonly vramModelRegistry;
     private readonly depPlanRegistry;
+    private readonly platformConfigRegistry;
     constructor(ctx: Context);
     registerEngine(adapter: EngineAdapter): () => void;
     registerPreset(preset: Preset): () => void;
@@ -61,6 +63,21 @@ export declare class LocalInfer extends Service implements LocalInferService {
      */
     registerDepPlan(engineId: string, plan: EngineDepPlan): () => void;
     registeredDepPlans(): ReadonlyMap<string, EngineDepPlan>;
+    /**
+     * registerEnginePlatformConfig stores the per-engine platform config (the
+     * Engine Directory and Engine Fork the user adds for a specific engine). The
+     * launch and deploy steps resolve it against the global modelDirectory to
+     * produce the clone/build/download plan. A duplicate id replaces the stored
+     * config, because a user editing the fields for an engine re-saves the whole
+     * config rather than reserving a second slot.
+     */
+    registerEnginePlatformConfig(config: EnginePlatformConfig): () => void;
+    /**
+     * enginePlatformConfig reads the stored platform config for an engine id, or
+     * undefined when none is stored, which the deploy step reads as "use the
+     * adapter's default source and a managed cache directory".
+     */
+    enginePlatformConfig(engineId: string): EnginePlatformConfig | undefined;
     estimate(config: Config, hw: HardwareProfile): Promise<EstimateResult>;
     /**
      * detectHardware runs the host probes (nvidia-smi, docker, WSL2, OS, CPU,
@@ -97,7 +114,21 @@ export declare class LocalInfer extends Service implements LocalInferService {
      * per-command exit, so a failure names the command that broke.
      */
     runInstall(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<InstallResult>;
-    launch(_plan: LaunchPlan): Promise<LaunchResult>;
+    /**
+     * launch is the lifecycle entry point: it resolves the adapter that rendered
+     * the plan (by the plan's engineId), runs the adapter's deploy step (build
+     * or pull, download the model, start the engine) with the stored platform
+     * config, then polls the health URL until the engine reports 200. A deploy
+     * failure or a health timeout reads as not-healthy with the detail, so the
+     * UI shows the broken step rather than a blank panel.
+     */
+    launch(plan: LaunchPlan, options?: LaunchOptions): Promise<LaunchResult>;
+    /**
+     * stop signals the engine a launch started: it resolves the adapter by the
+     * plan's engineId and runs the adapter's stop step (kill the tracked process,
+     * stop the named container, or compose down).
+     */
+    stop(plan: LaunchPlan): Promise<void>;
     registerModel(_plan: LaunchPlan): Promise<RegisterResult>;
     /**
      * Picks the VramModel an estimate prices against: the one the config names

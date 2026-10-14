@@ -9,6 +9,7 @@
  * Phase 7.
  * @module @dsh/dsh-plugin-local-infer/providers
  */
+import { HyperQwenAdapter, NInferAdapter } from "./adapters.js";
 import { ENGINE_DEP_PLANS } from "./deps.js";
 import { BUILTIN_GUIDELINES } from "./guidelines.js";
 import { NINFER_VRAM_MODELS } from "./vram.js";
@@ -25,13 +26,16 @@ export { NINFER_VRAM_MODELS, ninferVramModel } from "./vram.js";
 export { BUILTIN_GUIDELINES, HOST_STATE_IMAGE_BYTES } from "./guidelines.js";
 export { ENGINES } from "./engines.js";
 export { ENGINE_DEP_PLANS, SYSTEM_DEPS } from "./deps.js";
+export { HyperQwenAdapter, NINFER_DOCKER_IMAGE, NINFER_MODEL_ARTIFACTS, NInferAdapter, envFromSpecs, flagsFromSpecs, nodeLifecycleHost, pollHealth, } from "./adapters.js";
 /**
  * Mount the providers. The NInfer measured VramModels register here so the
  * service's estimate prices a named model; the built-in hardware guidelines
  * register so the guideline engine warns on docker, host RAM, and WSL2
  * before the engine boots; the per-engine dep plans register so the deps,
  * installString, and runInstall entry points resolve a plan for every engine
- * the card offers. The engine adapters and presets land in later phases.
+ * the card offers; and the engine adapters register so the launch, stop, and
+ * register entry points route a plan to the adapter that rendered it. The
+ * preset data lands in Phase 7.
  */
 export function apply(ctx) {
     const localInfer = ctx.localInfer;
@@ -44,6 +48,8 @@ export function apply(ctx) {
     for (const [engineId, plan] of Object.entries(ENGINE_DEP_PLANS)) {
         localInfer.registerDepPlan(engineId, plan);
     }
+    localInfer.registerEngine(new NInferAdapter());
+    localInfer.registerEngine(new HyperQwenAdapter());
 }
 const plugin = { name, inject, apply };
 export default plugin;

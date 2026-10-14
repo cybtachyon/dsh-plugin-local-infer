@@ -4,23 +4,27 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type {
   Config,
+  EngineAdapter,
   GuidelineResult,
   HardwareProfile,
   InstallResult,
+  LaunchPlan,
   SystemDep,
   VramBreakdown,
   VramVerdict,
 } from '@dsh/dsh-plugin-local-infer/core'
-import type { LocalInferService } from '@dsh/dsh-plugin-local-infer/service'
+import type { LaunchResult, LocalInferService } from '@dsh/dsh-plugin-local-infer/service'
 import {
   buildDeps,
   buildSummary,
+  launchEngine,
   localInferConfigPath,
   readConfig,
   registerLocalInferRoute,
   resolveBuildMode,
   RouteError,
   runInstallFor,
+  stopEngine,
   writeConfig,
 } from '../src/route.ts'
 import type { EngineInfo } from '@dsh/dsh-plugin-local-infer/providers'
@@ -67,21 +71,56 @@ const TEST_DEP: SystemDep = {
   install: { apt: { commands: ['sudo apt install cmake'] } },
 }
 
+/**
+ * A fake engine adapter the launch and stop route tests register: it renders a
+ * fixed process plan and reports a healthy launch, so the route's plan render
+ * and the service call are the only things under test.
+ */
+function fakeAdapter(id: string): EngineAdapter {
+  return {
+    id,
+    supports: { docker: true, local: true },
+    parameters: () => [],
+    renderLaunch: (_config: Config, _hw: HardwareProfile): LaunchPlan => ({
+      engineId: id,
+      kind: 'process',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }),
+    healthCheck: async () => ({ healthy: true }),
+    deploy: async () => ({ ok: true }),
+    stop: async () => {
+      /* the route test asserts the service stop call, not the adapter */
+    },
+  } as unknown as EngineAdapter
+}
+
 function stubService(
   guidelines: GuidelineResult[],
-  extras: { deps?: readonly SystemDep[]; installResult?: InstallResult } = {},
+  extras: {
+    deps?: readonly SystemDep[]
+    installResult?: InstallResult
+    engines?: readonly EngineAdapter[]
+    launchResult?: LaunchResult
+  } = {},
 ): LocalInferService {
   return {
     detectHardware: async () => HW,
     estimate: async () => ({ breakdown: BREAKDOWN, verdict: FITS, source: 'measured' }),
     guidelines: async () => guidelines,
     registeredVramModels: () => [],
+    registeredEngines: () => (extras.engines ?? [fakeAdapter('ninfer'), fakeAdapter('hyperqwen')]),
     deps: async () => (extras.deps ?? []),
     runInstall: async () =>
       extras.installResult ?? {
         ok: true,
         results: (extras.deps ?? []).map((dep) => ({ id: dep.id, status: 'satisfied' as const })),
       },
+    launch: async (plan: LaunchPlan): Promise<LaunchResult> =>
+      extras.launchResult ?? { plan, healthy: true },
+    stop: async () => {
+      /* the route test asserts the call, not the effect */
+    },
   } as unknown as LocalInferService
 }
 
@@ -221,6 +260,46 @@ describe('deps panel read model', () => {
   })
 })
 
+describe('launch and stop route helpers', () => {
+  let home: string
+
+  beforeAll(() => {
+    home = mkdtempSync(join(tmpdir(), 'local-infer-launch-'))
+    process.env.HOME = home
+  })
+
+  afterAll(() => {
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  it('renders the plan through the registered adapter and returns the launch answer', async () => {
+    const service = stubService([], {
+      launchResult: { plan: { engineId: 'ninfer', kind: 'process', port: 18020, healthUrl: 'http://127.0.0.1:18020/health' }, healthy: true },
+    })
+    const result = await launchEngine(service, { engine: 'ninfer', config: { port: 18020 } })
+    expect(result.healthy).toBe(true)
+    expect(result.plan.engineId).toBe('ninfer')
+  })
+
+  it('renders the plan and calls the service stop entry point with it', async () => {
+    let stoppedPlan: LaunchPlan | undefined
+    const service = stubService([], { engines: [fakeAdapter('ninfer')] })
+    service.stop = async (plan: LaunchPlan) => {
+      stoppedPlan = plan
+    }
+    await stopEngine(service, { engine: 'ninfer', config: {} })
+    expect(stoppedPlan?.engineId).toBe('ninfer')
+    expect(stoppedPlan?.kind).toBe('process')
+  })
+
+  it('refuses to launch an engine no adapter serves with a 404', async () => {
+    const service = stubService([], { engines: [] })
+    await expect(launchEngine(service, { engine: 'strata' })).rejects.toThrow(
+      expect.objectContaining<RouteError>({ status: 404 }),
+    )
+  })
+})
+
 describe('route handlers over a fake web server', () => {
   let home: string
 
@@ -303,6 +382,8 @@ describe('route handlers over a fake web server', () => {
       '/local-infer/save',
       '/local-infer/deps',
       '/local-infer/install',
+      '/local-infer/launch',
+      '/local-infer/stop',
     ])
 
     const depsRoute = routes.find((route) => route.path === '/local-infer/deps')
@@ -344,10 +425,15 @@ describe('route handlers over a fake web server', () => {
     const routes = registeredRoutes(stubService([]))
     for (const route of routes) {
       const res = fakeRes()
-      // Each route takes one method; the wrong one is its complement.
-      if (route.path === '/local-infer/save') {
-        await route.handler(fakeReq('GET', route.path), res)
-      } else if (route.path === '/local-infer/install') {
+      // Each route takes one method; the wrong one is its complement. The
+      // save, install, launch, and stop routes take a POST, so a GET is wrong;
+      // the summary and deps routes take a GET, so a POST is wrong.
+      if (
+        route.path === '/local-infer/save' ||
+        route.path === '/local-infer/install' ||
+        route.path === '/local-infer/launch' ||
+        route.path === '/local-infer/stop'
+      ) {
         await route.handler(fakeReq('GET', route.path), res)
       } else {
         await route.handler(fakeReq('POST', route.path, '{}'), res)

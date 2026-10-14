@@ -41,7 +41,16 @@ export type {
   VramVerdict,
 } from './estimator.ts'
 export { EngineAdapter } from './adapter.ts'
-export type { DeployResult, HealthResult, LaunchPlan } from './adapter.ts'
+export type {
+  DeployResult,
+  EnginePlatformConfig,
+  FetchResult,
+  HealthCheckOptions,
+  HealthResult,
+  LaunchPlan,
+  LifecycleHost,
+  ProcessHandle,
+} from './adapter.ts'
 export { constraintId, evaluateGuidelines, modelGuidelines } from './guideline.ts'
 export type { Guideline, GuidelineLevel, GuidelineResult } from './guideline.ts'
 export type {

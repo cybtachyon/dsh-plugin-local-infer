@@ -14,7 +14,11 @@ describe('local-infer-providers scaffold', () => {
     const ctx = new Context()
     await ctx.plugin(LocalInfer)
     await ctx.plugin(localInferProviders)
-    expect(ctx.localInfer.registeredEngines()).toEqual([])
+    // The providers row registers the NInfer and Hyper-Qwen engine adapters.
+    expect(ctx.localInfer.registeredEngines().map((engine) => engine.id)).toEqual([
+      'ninfer',
+      'hyperqwen',
+    ])
     expect(ctx.localInfer.registeredPresets()).toEqual([])
     expect(ctx.localInfer.registeredGuidelines().map((guideline) => guideline.id)).toEqual([
       'docker-not-installed',

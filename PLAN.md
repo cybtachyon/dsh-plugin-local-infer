@@ -823,6 +823,56 @@ src/dsh-plugin-local-infer/
   the route suite (the deps read model, the 409 gate, the re-checked install
   response); `npx eslint` clean.
 
+### Phase 5 — Engine adapters + lifecycle (docker + local) (complete)
+
+- **`core`: the lifecycle types.** `LaunchPlan` stamps the `engineId` that
+  rendered it (so the service routes launch, stop, and register to the right
+  adapter) plus the compose `profile`, the docker `containerName`, and the
+  `modelId`/`modelDirectory` the deploy step's model download targets.
+  `EnginePlatformConfig` (§3.10) carries the per-engine `engineDirectory` and
+  `engineFork`. `LifecycleHost` (`run`/`spawn`/`fetch`) and `ProcessHandle` are
+  the injectable execution surface the adapters drive their steps through, so
+  the tests stub the host and never run a real build, docker, or network in CI.
+  `EngineAdapter.deploy` takes the platform config and `healthCheck` takes poll
+  options; `parameters()` reads a readonly spec surface.
+- **`providers`: the concrete adapters.** `NInferAdapter` (the canonical
+  both-capable engine) renders a local `ninfer-serve` process plan or a
+  `docker run` of `ghcr.io/iamwavecut/ninfer-all` from the same `NINFER_PARAMETERS`
+  surface (`flagsFromSpecs` spells the config onto the CLI), and its `deploy`
+  clones the `engineFork` into the `engineDirectory`, builds with cmake,
+  downloads the model into the `modelDirectory` via the `hf` CLI, and starts the
+  engine; `healthCheck` polls the health URL (the `pollHealth` loop the
+  `qwen-ninfer` launcher mirrors); `stop` stops the named container and signals
+  the tracked process. `HyperQwenAdapter` renders a compose plan (the compose
+  file, the profile, and the `.env` the `HYPERQWEN_PARAMETERS` surface maps via
+  `envFromSpecs`) and deploys with `docker compose up` / stops with `down`.
+  `NINFER_MODEL_ARTIFACTS` is the per-model deploy data (the `.ninfer` artifact,
+  the HF repo, and the `--model-id` alias), so adding a model is a data edit.
+  The providers `apply` registers both adapters with the seam.
+- **`service`: the lifecycle entry points.** `registerEnginePlatformConfig`
+  stores the per-engine `EnginePlatformConfig` (replacing on re-save) and
+  `enginePlatformConfig` reads it back. `launch` resolves the adapter by the
+  plan's `engineId`, runs the adapter's `deploy` with the stored platform config,
+  then polls the health check, and returns the `LaunchResult` (a deploy failure
+  or a health timeout reads as not-healthy with the detail). `stop` resolves the
+  adapter and runs its stop step. An engine no adapter serves fails loudly with
+  `LOCAL_INFER_INVALID_ENGINE`.
+- **`ui`: the launch and stop routes.** `POST /local-infer/launch` and
+  `POST /local-infer/stop` render the plan through the registered adapter and
+  the detected hardware, then call the service entry points, so the card's
+  lifecycle controls (Phase 8) have a host surface to talk to. A 404 names an
+  engine no adapter serves.
+- **Relationship established.** engine + params → launch plan → deploy → health,
+  with the platform config (Engine Directory / Engine Fork) and the global
+  Model Directory driving the clone/build/download plan.
+- **Gates green.** `tsc -b` clean; `vitest run` 194/194 across 21 files,
+  including the adapter suite (the local/docker/compose plan rendering, the
+  clone/build/download/spawn deploy steps, the health poll, the stop, and the
+  spec flag/env helpers over a stub host), the service suite (the launch and
+  stop routing, the deploy-failure and platform-config pass-through, and the
+  platform config registration), and the route suite (the launch and stop
+  helpers and handlers over a fake web server); `npx eslint` clean.
+
 ### Phase 8 (first draft) — Web card + settings route (in progress)
 
 The plan's panel landed as a working first draft out of phase order, because a card on the
@@ -933,8 +983,10 @@ Plugins page:
   remaining data edits). The renderer draws it as a native `input` + `datalist`, so the
   known options suggest and any path or HF repo reference types.
 - **Remaining against the plan's direction.** The directory fields (§3.10 `modelDirectory`,
-  `engineDirectory`, `engineFork`), the engine- and user-added combo option sources, the
-  Phase 5 lifecycle controls (build / deploy / stop), and the Phase 6 register-as-model
-  confirmation are not built yet; the card today is the configure-and-size surface with the
-  Phase 4 system-dependency panel (its `Save` persists the config and the `allowRunDeps`
-  trust gate the later phases will consume).
+  `engineDirectory`, `engineFork`), the engine- and user-added combo option sources, and the
+  Phase 6 register-as-model confirmation are not built yet. The Phase 5 host-side lifecycle
+  (the `launch` and `stop` service entry points and the `POST /local-infer/launch` and
+  `POST /local-infer/stop` routes) is built; the card's build / deploy / stop controls that
+  call them are the remaining Phase 8 surface. The card today is the configure-and-size
+  surface with the Phase 4 system-dependency panel (its `Save` persists the config and the
+  `allowRunDeps` trust gate the later phases will consume).
