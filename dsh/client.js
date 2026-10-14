@@ -51,6 +51,9 @@ window.__ModuleLoader__.load({
         cardTotal: 'card',
         over: 'Over budget',
         tight: 'Fits tightly',
+        guidelineOne: 'hardware guideline',
+        guidelineMany: 'hardware guidelines',
+        fired: 'fired',
       },
       zh: {
         section: '引擎设置',
@@ -76,6 +79,9 @@ window.__ModuleLoader__.load({
         cardTotal: '显存',
         over: '超出预算',
         tight: '勉强可容纳',
+        guidelineOne: '硬件准则',
+        guidelineMany: '硬件准则',
+        fired: '触发',
       },
     };
 
@@ -117,13 +123,17 @@ window.__ModuleLoader__.load({
       flex: 'none',
       color: 'var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))',
     };
+    // The input background follows the host theme: a solid #fff fallback
+    // painted the dropdowns and text fields as white blocks on the dark
+    // Plugins page. The tertiary fill token reads as a subtle field in both
+    // themes, and the neutral fallback keeps a host without the token usable.
     var INPUT_STYLE = {
       flex: 1,
       minWidth: 0,
       padding: '4px 8px',
       borderRadius: 6,
       border: '1px solid var(--dsw-alias-border-secondary, rgba(128,128,128,0.24))',
-      background: 'var(--dsw-alias-background-primary, #fff)',
+      background: 'var(--dsw-alias-background-tertiary, rgba(128,128,128,0.12))',
       color: 'inherit',
       font: 'inherit',
     };
@@ -148,6 +158,37 @@ window.__ModuleLoader__.load({
           ? 'var(--dsw-alias-label-error, #ff3b30)'
           : 'var(--dsw-alias-label-warning, #ff9f0a)',
     });
+    // The guideline warning banner. The tone follows the worst level the
+    // warning model carries: red for an error, amber for a warning, neutral
+    // for info, the same contract the warnings render model tests pin.
+    var WARNING_BANNER_STYLE = (tone) => ({
+      padding: '8px 12px',
+      borderRadius: 8,
+      fontSize: 12,
+      lineHeight: 1.5,
+      background:
+        tone === 'red'
+          ? 'var(--dsw-alias-fill-error, rgba(255,59,48,0.12))'
+          : tone === 'amber'
+            ? 'var(--dsw-alias-fill-warning, rgba(255,159,10,0.12))'
+            : 'var(--dsw-alias-fill-quaternary, rgba(128,128,128,0.08))',
+      color:
+        tone === 'red'
+          ? 'var(--dsw-alias-label-error, #ff3b30)'
+          : tone === 'amber'
+            ? 'var(--dsw-alias-label-warning, #ff9f0a)'
+            : 'inherit',
+    });
+    var INLINE_WARNING_STYLE = (tone) => ({
+      fontSize: 11,
+      marginTop: 2,
+      color:
+        tone === 'red'
+          ? 'var(--dsw-alias-label-error, #ff3b30)'
+          : tone === 'amber'
+            ? 'var(--dsw-alias-label-warning, #ff9f0a)'
+            : 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))',
+    });
     var FOOTER_STYLE = { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 };
     var BUTTON_BASE = {
       padding: '5px 14px',
@@ -167,8 +208,9 @@ window.__ModuleLoader__.load({
     });
 
     // One rendered field: the control the `control` model names, greyed out
-    // with its reason while `disabled` is set.
-    function renderField(react, field, onValue) {
+    // with its reason while `disabled` is set, and the inline guideline
+    // warnings anchored to the field's key beneath it.
+    function renderField(react, field, onValue, inlineWarnings) {
       var value = field.value;
       var common = {
         key: field.key,
@@ -236,6 +278,36 @@ window.__ModuleLoader__.load({
             numeric !== undefined ? String(numeric) + (control.unit ? ' ' + control.unit : '') : '—',
           ),
         );
+      } else if (control.kind === 'combo') {
+        // Dropdown plus free text as one native control: the datalist suggests
+        // the known options and the input accepts any value, a local path or
+        // an HF repo reference.
+        var listId = 'local-infer-combo-' + field.key;
+        input = react.createElement(
+          'div',
+          { style: { flex: 1, minWidth: 0 } },
+          react.createElement(
+            'input',
+            Object.assign({}, common, {
+              type: 'text',
+              list: listId,
+              value: value === undefined || value === null ? '' : String(value),
+              placeholder: 'known template, path, or HF repo',
+              onChange: (event) => onValue(field.key, event.target.value),
+            }),
+          ),
+          react.createElement(
+            'datalist',
+            { id: listId },
+            (control.options || []).map((option) =>
+              react.createElement(
+                'option',
+                { key: option.value, value: option.value },
+                option.note ? option.label + ' · ' + option.note : option.label,
+              ),
+            ),
+          ),
+        );
       } else {
         // text and picker both render a free-text input; the browser has no
         // native directory picker, so the path is typed.
@@ -251,21 +323,32 @@ window.__ModuleLoader__.load({
       }
       return react.createElement(
         'div',
-        { key: field.key, style: Object.assign({}, ROW_STYLE, { marginTop: 6 }) },
-        react.createElement('label', { style: LABEL_STYLE }, field.label),
-        input,
-        field.disabled && field.disabledReason
-          ? react.createElement(
-              'span',
-              {
-                style: {
-                  fontSize: 11,
-                  color: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))',
+        { key: field.key, style: { marginTop: 6 } },
+        react.createElement(
+          'div',
+          { style: ROW_STYLE },
+          react.createElement('label', { style: LABEL_STYLE }, field.label),
+          input,
+          field.disabled && field.disabledReason
+            ? react.createElement(
+                'span',
+                {
+                  style: {
+                    fontSize: 11,
+                    color: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))',
+                  },
                 },
-              },
-              field.disabledReason,
-            )
-          : null,
+                field.disabledReason,
+              )
+            : null,
+        ),
+        (inlineWarnings || []).map((warning) =>
+          react.createElement(
+            'div',
+            { key: warning.id, style: INLINE_WARNING_STYLE(warning.tone) },
+            warning.message,
+          ),
+        ),
       );
     }
 
@@ -374,11 +457,15 @@ window.__ModuleLoader__.load({
         var dataState = react.useState(null);
         var draftState = react.useState(null);
         var noteState = react.useState('');
-        var statusState = react.useState('idle');
+        // The primary button is an action, not a status readout. The label
+        // stays "Save" and the in-progress state shows as "Saving..."; a
+        // state word on the button (the old "Idle" label) read as a dead
+        // control and hid the one thing the card offers.
+        var savingState = react.useState(false);
         var data = dataState[0];
         var draft = draftState[0];
         var note = noteState[0];
-        var status = statusState[0];
+        var saving = savingState[0];
         var timerRef = react.useRef(null);
 
         var fetchSummary = react.useCallback(
@@ -423,6 +510,7 @@ window.__ModuleLoader__.load({
         // per tick.
         var onValue = react.useCallback(
           (key, value) => {
+            noteState[1]('');
             draftState[1]((current) => {
               var config = Object.assign({}, current.config);
               config[key] = value;
@@ -441,6 +529,7 @@ window.__ModuleLoader__.load({
 
         var onEngine = react.useCallback(
           (engine) => {
+            noteState[1]('');
             draftState[1]((_current) => {
               var next = { engine: engine, config: {} };
               if (timerRef.current) {
@@ -456,10 +545,10 @@ window.__ModuleLoader__.load({
         );
 
         var save = react.useCallback(() => {
-          if (draft === null) {
+          if (draft === null || saving) {
             return;
           }
-          statusState[1](t.saving);
+          savingState[1](true);
           fetch('/local-infer/save', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -477,13 +566,13 @@ window.__ModuleLoader__.load({
               dataState[1](next);
               draftState[1]({ engine: next.engineId, config: next.config });
               noteState[1](t.saved);
-              statusState[1](t.saved);
+              savingState[1](false);
             })
             .catch((error) => {
               noteState[1](t.saveFailed + ': ' + (error && error.message ? error.message : ''));
-              statusState[1](t.saveFailed);
+              savingState[1](false);
             });
-        }, [draft, t]);
+        }, [draft, saving, t]);
 
         var discard = react.useCallback(() => {
           noteState[1]('');
@@ -504,6 +593,11 @@ window.__ModuleLoader__.load({
 
         var formModel = data.formModel || { sections: [] };
         var hasFields = formModel.sections.some((section) => section.fields.length > 0);
+        var inlineWarnings =
+          data.warningsModel && data.warningsModel.inline
+            ? data.warningsModel.inline
+            : {};
+        var banner = data.warningsModel && data.warningsModel.banner;
 
         return react.createElement(
           'div',
@@ -552,10 +646,43 @@ window.__ModuleLoader__.load({
                   'div',
                   { key: section.group },
                   react.createElement('div', { style: SECTION_STYLE }, section.group),
-                  section.fields.map((field) => renderField(react, field, onValue)),
+                  section.fields.map((field) =>
+                    renderField(
+                      react,
+                      field,
+                      onValue,
+                      inlineWarnings[field.key],
+                    ),
+                  ),
                 ),
               )
             : react.createElement('div', { style: { fontSize: 12, opacity: 0.7 } }, t.noParameters),
+          banner && banner.visible
+            ? react.createElement(
+                'div',
+                {
+                  style: WARNING_BANNER_STYLE(
+                    banner.level === 'error'
+                      ? 'red'
+                      : banner.level === 'warn'
+                        ? 'amber'
+                        : 'neutral',
+                  ),
+                },
+                react.createElement(
+                  'div',
+                  { style: { fontWeight: 600, marginBottom: 4 } },
+                  banner.count +
+                    ' ' +
+                    (banner.count === 1 ? t.guidelineOne : t.guidelineMany) +
+                    ' ' +
+                    t.fired,
+                ),
+                banner.warnings.map((warning) =>
+                  react.createElement('div', { key: warning.id }, warning.message),
+                ),
+              )
+            : null,
           renderMeter(react, data.meterModel, t),
           data.verdict && (data.verdict.status === 'over' || data.verdict.status === 'tight')
             ? react.createElement(
@@ -570,8 +697,8 @@ window.__ModuleLoader__.load({
             react.createElement('button', { type: 'button', style: GHOST_BUTTON, onClick: discard }, t.discard),
             react.createElement(
               'button',
-              { type: 'button', style: PRIMARY_BUTTON, onClick: save, disabled: status !== 'idle' },
-              status,
+              { type: 'button', style: PRIMARY_BUTTON, onClick: save, disabled: saving },
+              saving ? t.saving : t.save,
             ),
           ),
           note ? react.createElement('div', { style: { fontSize: 12 } }, note) : null,
