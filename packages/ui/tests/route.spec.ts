@@ -9,22 +9,32 @@ import type {
   HardwareProfile,
   InstallResult,
   LaunchPlan,
+  ModelRow,
+  RegisterResult,
   SystemDep,
   VramBreakdown,
+  VramModel,
   VramVerdict,
 } from '@dsh/dsh-plugin-local-infer/core'
-import type { LaunchResult, LocalInferService } from '@dsh/dsh-plugin-local-infer/service'
+import type {
+  LaunchResult,
+  LocalInferService,
+  RegisterModelOptions,
+} from '@dsh/dsh-plugin-local-infer/service'
 import {
   buildDeps,
   buildSummary,
   launchEngine,
   localInferConfigPath,
   readConfig,
+  registerFor,
   registerLocalInferRoute,
   resolveBuildMode,
+  resolveContextWindow,
   RouteError,
   runInstallFor,
   stopEngine,
+  unregisterFor,
   writeConfig,
 } from '../src/route.ts'
 import type { EngineInfo } from '@dsh/dsh-plugin-local-infer/providers'
@@ -72,11 +82,16 @@ const TEST_DEP: SystemDep = {
 }
 
 /**
- * A fake engine adapter the launch and stop route tests register: it renders a
- * fixed process plan and reports a healthy launch, so the route's plan render
- * and the service call are the only things under test.
+ * A fake engine adapter the launch, stop, and register route tests register:
+ * it renders a fixed process plan and reports a healthy launch, so the
+ * route's plan render and the service call are the only things under test.
+ * The optional modelRef stands in for the adapter's model seam, so the
+ * register route's model-row resolution is the thing under test.
  */
-function fakeAdapter(id: string): EngineAdapter {
+function fakeAdapter(
+  id: string,
+  modelRef?: { id: string; name: string },
+): EngineAdapter {
   return {
     id,
     supports: { docker: true, local: true },
@@ -92,6 +107,7 @@ function fakeAdapter(id: string): EngineAdapter {
     stop: async () => {
       /* the route test asserts the service stop call, not the adapter */
     },
+    modelRef: modelRef === undefined ? undefined : () => modelRef,
   } as unknown as EngineAdapter
 }
 
@@ -102,13 +118,17 @@ function stubService(
     installResult?: InstallResult
     engines?: readonly EngineAdapter[]
     launchResult?: LaunchResult
+    registerResult?: RegisterResult
+    onRegister?: (args: { plan: LaunchPlan; model: ModelRow; options?: RegisterModelOptions }) => void
+    onRemove?: (args: { providerId: string; modelId: string }) => void
+    models?: readonly VramModel[]
   } = {},
 ): LocalInferService {
   return {
     detectHardware: async () => HW,
     estimate: async () => ({ breakdown: BREAKDOWN, verdict: FITS, source: 'measured' }),
     guidelines: async () => guidelines,
-    registeredVramModels: () => [],
+    registeredVramModels: () => (extras.models ?? []),
     registeredEngines: () => (extras.engines ?? [fakeAdapter('ninfer'), fakeAdapter('hyperqwen')]),
     deps: async () => (extras.deps ?? []),
     runInstall: async () =>
@@ -120,6 +140,29 @@ function stubService(
       extras.launchResult ?? { plan, healthy: true },
     stop: async () => {
       /* the route test asserts the call, not the effect */
+    },
+    registerModel: async (
+      plan: LaunchPlan,
+      model: ModelRow,
+      options?: RegisterModelOptions,
+    ): Promise<RegisterResult> => {
+      extras.onRegister?.({ plan, model, options })
+      return (
+        extras.registerResult ?? {
+          ok: true,
+          entry: {
+            providerId: 'ninfer-local',
+            modelId: model.id,
+            name: model.name,
+            contextWindow: model.contextWindow,
+            baseURL: `http://127.0.0.1:${plan.port}/v1`,
+            apiKeyEnv: 'NINFER_LOCAL_API_KEY',
+          },
+        }
+      )
+    },
+    removeModel: async (providerId: string, modelId: string): Promise<void> => {
+      extras.onRemove?.({ providerId, modelId })
     },
   } as unknown as LocalInferService
 }
@@ -300,6 +343,111 @@ describe('launch and stop route helpers', () => {
   })
 })
 
+describe('register and unregister route helpers', () => {
+  let home: string
+
+  beforeAll(() => {
+    home = mkdtempSync(join(tmpdir(), 'local-infer-register-'))
+    process.env.HOME = home
+  })
+
+  afterAll(() => {
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  it('resolves the model row through the adapter seam and passes the options through', async () => {
+    let seen: { plan: LaunchPlan; model: ModelRow; options?: RegisterModelOptions } | undefined
+    const service = stubService([], {
+      engines: [fakeAdapter('ninfer', { id: 'Qwen3.8-27B', name: 'Qwen3.8-27B' })],
+      onRegister: (args) => {
+        seen = args
+      },
+    })
+    const result = await registerFor(service, {
+      engine: 'ninfer',
+      config: { maxContext: 32768 },
+      agentDefault: true,
+    })
+    expect(result.ok).toBe(true)
+    expect(seen?.model).toEqual({ id: 'Qwen3.8-27B', name: 'Qwen3.8-27B', contextWindow: 32768 })
+    expect(seen?.options).toEqual({ agentDefault: true })
+    expect(seen?.plan.engineId).toBe('ninfer')
+  })
+
+  it('falls back to the plan model id when the adapter declares no modelRef', async () => {
+    let seen: { plan: LaunchPlan; model: ModelRow; options?: RegisterModelOptions } | undefined
+    const service = stubService([], {
+      engines: [fakeAdapter('ninfer')],
+      onRegister: (args) => {
+        seen = args
+      },
+    })
+    // The fake adapter renders a plan without a modelId and declares no
+    // modelRef, so the engine id is the published model id.
+    await registerFor(service, { engine: 'ninfer', config: {} })
+    expect(seen?.model?.id).toBe('ninfer')
+    expect(seen?.model?.name).toBe('ninfer')
+    expect(seen?.options).toBeUndefined()
+  })
+
+  it('unregisters the provider and model the register step resolved', async () => {
+    let seen: { providerId: string; modelId: string } | undefined
+    const service = stubService([], {
+      engines: [fakeAdapter('ninfer', { id: 'Qwen3.8-27B', name: 'Qwen3.8-27B' })],
+      onRemove: (args) => {
+        seen = args
+      },
+    })
+    const result = await unregisterFor(service, { engine: 'ninfer', config: {} })
+    expect(result).toEqual({ removed: true })
+    expect(seen).toEqual({ providerId: 'ninfer-local', modelId: 'Qwen3.8-27B' })
+  })
+
+  it('refuses to register an engine no adapter serves with a 404', async () => {
+    const service = stubService([], { engines: [] })
+    await expect(registerFor(service, { engine: 'strata' })).rejects.toThrow(
+      expect.objectContaining<RouteError>({ status: 404 }),
+    )
+  })
+})
+
+describe('resolveContextWindow', () => {
+  const MODELS: VramModel[] = [
+    {
+      id: 'qwen3-27b',
+      source: 'measured',
+      weightsBytes: 1,
+      workspaceBytes: 1,
+      nativeMaxContext: 262144,
+      seqFixedBytes: 1,
+      seqPerToken: 1,
+      kvBytesPerToken: { int8: 1 },
+    },
+  ]
+
+  it('honors a configured maxContext', () => {
+    expect(resolveContextWindow({ maxContext: 131072 }, MODELS)).toBe(131072)
+    // A non-positive or non-number value falls through to the model ceiling.
+    expect(resolveContextWindow({ maxContext: 0 }, MODELS)).toBe(262144)
+    expect(resolveContextWindow({ maxContext: '131072' }, MODELS)).toBe(262144)
+  })
+
+  it('reads the named model ceiling when the config names a model', () => {
+    expect(resolveContextWindow({ model: 'qwen3-27b' }, MODELS)).toBe(262144)
+    // A model no provider registered reads the spec default.
+    expect(resolveContextWindow({ model: 'qwen3-99b' }, MODELS)).toBe(32768)
+  })
+
+  it('reads the single registered model ceiling when the config names none', () => {
+    expect(resolveContextWindow({}, MODELS)).toBe(262144)
+  })
+
+  it('reads the spec default when no model resolves', () => {
+    expect(resolveContextWindow({ model: 'qwen3-99b' }, [])).toBe(32768)
+    expect(resolveContextWindow({}, [])).toBe(32768)
+  })
+})
+
 describe('route handlers over a fake web server', () => {
   let home: string
 
@@ -384,6 +532,8 @@ describe('route handlers over a fake web server', () => {
       '/local-infer/install',
       '/local-infer/launch',
       '/local-infer/stop',
+      '/local-infer/register',
+      '/local-infer/unregister',
     ])
 
     const depsRoute = routes.find((route) => route.path === '/local-infer/deps')
@@ -421,18 +571,61 @@ describe('route handlers over a fake web server', () => {
     expect(body.deps.allSatisfied).toBe(true)
   })
 
+  it('serves the register and unregister routes through to the service', async () => {
+    let removed: { providerId: string; modelId: string } | undefined
+    const service = stubService(
+      [],
+      {
+        engines: [fakeAdapter('ninfer', { id: 'Qwen3.8-27B', name: 'Qwen3.8-27B' })],
+        onRemove: (args) => {
+          removed = args
+        },
+      },
+    )
+    const routes = registeredRoutes(service)
+
+    const registerRoute = routes.find((route) => route.path === '/local-infer/register')
+    const registerRes = fakeRes()
+    await registerRoute?.handler(
+      fakeReq(
+        'POST',
+        '/local-infer/register',
+        JSON.stringify({ engine: 'ninfer', config: { maxContext: 32768 }, agentDefault: true }),
+      ),
+      registerRes,
+    )
+    expect(registerRes.status).toBe(200)
+    const registerBody = JSON.parse(registerRes.body)
+    expect(registerBody.ok).toBe(true)
+    expect(registerBody.entry.modelId).toBe('Qwen3.8-27B')
+    expect(registerBody.entry.baseURL).toBe('http://127.0.0.1:18020/v1')
+
+    const unregisterRoute = routes.find((route) => route.path === '/local-infer/unregister')
+    const unregisterRes = fakeRes()
+    await unregisterRoute?.handler(
+      fakeReq('POST', '/local-infer/unregister', JSON.stringify({ engine: 'ninfer' })),
+      unregisterRes,
+    )
+    expect(unregisterRes.status).toBe(200)
+    expect(JSON.parse(unregisterRes.body)).toEqual({ removed: true })
+    expect(removed).toEqual({ providerId: 'ninfer-local', modelId: 'Qwen3.8-27B' })
+  })
+
   it('answers 405 for the wrong method on every route', async () => {
     const routes = registeredRoutes(stubService([]))
     for (const route of routes) {
       const res = fakeRes()
       // Each route takes one method; the wrong one is its complement. The
-      // save, install, launch, and stop routes take a POST, so a GET is wrong;
-      // the summary and deps routes take a GET, so a POST is wrong.
+      // save, install, launch, stop, register, and unregister routes take a
+      // POST, so a GET is wrong; the summary and deps routes take a GET, so a
+      // POST is wrong.
       if (
         route.path === '/local-infer/save' ||
         route.path === '/local-infer/install' ||
         route.path === '/local-infer/launch' ||
-        route.path === '/local-infer/stop'
+        route.path === '/local-infer/stop' ||
+        route.path === '/local-infer/register' ||
+        route.path === '/local-infer/unregister'
       ) {
         await route.handler(fakeReq('GET', route.path), res)
       } else {

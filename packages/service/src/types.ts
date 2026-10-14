@@ -8,8 +8,10 @@ import type {
   HardwareProfile,
   InstallResult,
   LaunchPlan,
+  ModelRow,
   Preset,
   RegisterResult,
+  SettingsOp,
   SystemDep,
   VramBreakdown,
   VramModel,
@@ -48,6 +50,43 @@ export interface LaunchOptions {
 }
 
 /**
+ * RegisterModelOptions tunes the model registration: agentDefault points the
+ * agent default model at the registered provider and model, so a new agent
+ * session starts from the local engine.
+ */
+export interface RegisterModelOptions {
+  agentDefault?: boolean
+}
+
+/**
+ * SettingsNamespaceDescriptor is the structural view of one profile plugin
+ * entry the registrar reads: its namespace key, the resolved section value,
+ * and the revision the write hands back as the conflict guard.
+ */
+export interface SettingsNamespaceDescriptor {
+  ns: string
+  revision: number
+  value: unknown
+}
+
+/**
+ * SettingsForms is the structural view of the dsh settings service the
+ * registrar writes through (the same seam the Web UI's settings controller
+ * exposes): describe reads the entries, and mutate applies path-addressed
+ * edits with a revision guard, so a stale write is refused rather than
+ * overwriting a concurrent change. The service package stays free of a
+ * dsh-settings import, so the seam is declared structurally here.
+ */
+export interface SettingsForms {
+  describe(options?: { redactSecrets?: boolean }): readonly SettingsNamespaceDescriptor[]
+  mutate(
+    ns: string,
+    ops: readonly SettingsOp[],
+    expectedRevision?: number,
+  ): Promise<void>
+}
+
+/**
  * LocalInferService is the surface the service publishes on ctx.localInfer.
  * Providers register engines, presets, and guidelines against the registries;
  * consumers (the tool package, the UI) call the orchestration entry points.
@@ -77,5 +116,10 @@ export interface LocalInferService {
   runInstall(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<InstallResult>
   launch(plan: LaunchPlan, options?: LaunchOptions): Promise<LaunchResult>
   stop(plan: LaunchPlan): Promise<void>
-  registerModel(plan: LaunchPlan): Promise<RegisterResult>
+  registerModel(
+    plan: LaunchPlan,
+    model: ModelRow,
+    options?: RegisterModelOptions,
+  ): Promise<RegisterResult>
+  removeModel(providerId: string, modelId: string): Promise<void>
 }

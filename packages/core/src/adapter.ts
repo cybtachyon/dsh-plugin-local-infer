@@ -125,4 +125,13 @@ export abstract class EngineAdapter {
    * for the engine id when the adapter declares none.
    */
   systemDeps?(buildMode: 'docker' | 'local', hw: HardwareProfile): readonly SystemDep[]
+
+  /**
+   * Optional: the model the engine serves under a config: the id the engine
+   * advertises on its OpenAI endpoint and the display name the registrar
+   * publishes. The registrar's model row must match the id the engine serves,
+   * so a chat turn routes to the right model. An adapter without per-model
+   * data omits it, and the route falls back to the plan's model id.
+   */
+  modelRef?(config: Config): { id: string; name: string } | undefined
 }

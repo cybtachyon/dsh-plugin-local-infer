@@ -70,6 +70,13 @@ window.__ModuleLoader__.load({
         allowRun: 'Allow one-click install (sudo)',
         depsSatisfied: 'All dependencies satisfied.',
         installRejected: 'one-click install is not allowed; copy the install string instead',
+        register: 'Register',
+        registerDefault: 'Set as default model',
+        unregister: 'Remove',
+        registered: 'registered',
+        registerFailed: 'register failed',
+        unregistered: 'removed',
+        unregisterFailed: 'remove failed',
       },
       zh: {
         section: '引擎设置',
@@ -114,6 +121,13 @@ window.__ModuleLoader__.load({
         allowRun: '允许一键安装 (sudo)',
         depsSatisfied: '所有依赖已满足。',
         installRejected: '未允许一键安装；请复制安装命令。',
+        register: '注册',
+        registerDefault: '设为默认模型',
+        unregister: '移除',
+        registered: '已注册',
+        registerFailed: '注册失败',
+        unregistered: '已移除',
+        unregisterFailed: '移除失败',
       },
     };
 
@@ -808,6 +822,14 @@ window.__ModuleLoader__.load({
         var installingState = react.useState(false);
         var depsNoteState = react.useState('');
         var copyNoteState = react.useState('');
+        // The DSH model registration state. The register and remove actions
+        // talk to the /local-infer/register and /local-infer/unregister
+        // routes, which upsert the provider entry through the settings seam
+        // on the host, so the card only reports the answer it got back.
+        var registeringState = react.useState(false);
+        var removingState = react.useState(false);
+        var registerNoteState = react.useState('');
+        var agentDefaultState = react.useState(false);
         var data = dataState[0];
         var draft = draftState[0];
         var note = noteState[0];
@@ -816,6 +838,10 @@ window.__ModuleLoader__.load({
         var installing = installingState[0];
         var depsNote = depsNoteState[0];
         var copyNote = copyNoteState[0];
+        var registering = registeringState[0];
+        var removing = removingState[0];
+        var registerNote = registerNoteState[0];
+        var agentDefault = agentDefaultState[0];
         var timerRef = react.useRef(null);
 
         var fetchSummary = react.useCallback(
@@ -1085,6 +1111,78 @@ window.__ModuleLoader__.load({
           depsNoteState[1](t.depsSatisfied);
         }, [deps, draft, t, fetchDeps]);
 
+        var onRegister = react.useCallback(() => {
+          if (draft === null || registering) {
+            return;
+          }
+          registeringState[1](true);
+          registerNoteState[1]('');
+          fetch('/local-infer/register', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              engine: draft.engine,
+              config: draft.config,
+              agentDefault: agentDefault,
+            }),
+          })
+            .then((response) => response.json().then((body) => ({ ok: response.ok, body: body })))
+            .then(({ ok, body }) => {
+              if (ok && body.entry) {
+                registerNoteState[1](
+                  t.registered +
+                    ' ' +
+                    body.entry.modelId +
+                    ' as ' +
+                    body.entry.providerId,
+                );
+              } else {
+                registerNoteState[1](
+                  t.registerFailed + (body.error ? ': ' + body.error : ''),
+                );
+              }
+            })
+            .catch((error) => {
+              registerNoteState[1](
+                t.registerFailed + (error && error.message ? ': ' + error.message : ''),
+              );
+            })
+            .then(() => {
+              registeringState[1](false);
+            });
+        }, [draft, agentDefault, registering, t]);
+
+        var onUnregister = react.useCallback(() => {
+          if (draft === null || removing) {
+            return;
+          }
+          removingState[1](true);
+          registerNoteState[1]('');
+          fetch('/local-infer/unregister', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ engine: draft.engine, config: draft.config }),
+          })
+            .then((response) => response.json().then((body) => ({ ok: response.ok, body: body })))
+            .then(({ ok, body }) => {
+              if (ok) {
+                registerNoteState[1](t.unregistered);
+              } else {
+                registerNoteState[1](
+                  t.unregisterFailed + (body.error ? ': ' + body.error : ''),
+                );
+              }
+            })
+            .catch((error) => {
+              registerNoteState[1](
+                t.unregisterFailed + (error && error.message ? ': ' + error.message : ''),
+              );
+            })
+            .then(() => {
+              removingState[1](false);
+            });
+        }, [draft, removing, t]);
+
         if (view === 'summary') {
           return t.subtitle;
         }
@@ -1260,6 +1358,45 @@ window.__ModuleLoader__.load({
             copyNote: copyNote,
             depsNote: depsNote,
           }),
+          // The DSH model row: Register publishes the engine as a DSH model
+          // through the settings seam, the checkbox opts the new session
+          // default in, and Remove pulls the entry back. The note reports the
+          // answer the route returned, so a refused write names its reason.
+          react.createElement(
+            'div',
+            { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 } },
+            react.createElement(
+              'button',
+              { type: 'button', style: GHOST_BUTTON, onClick: onRegister, disabled: registering },
+              t.register,
+            ),
+            react.createElement(
+              'label',
+              {
+                style: {
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontSize: 12,
+                  cursor: 'pointer',
+                },
+              },
+              react.createElement('input', {
+                type: 'checkbox',
+                checked: agentDefault,
+                onChange: (event) => agentDefaultState[1](event.target.checked),
+              }),
+              t.registerDefault,
+            ),
+            react.createElement(
+              'button',
+              { type: 'button', style: GHOST_BUTTON, onClick: onUnregister, disabled: removing },
+              t.unregister,
+            ),
+          ),
+          registerNote
+            ? react.createElement('div', { style: { fontSize: 12 } }, registerNote)
+            : null,
           react.createElement(
             'div',
             { style: FOOTER_STYLE },

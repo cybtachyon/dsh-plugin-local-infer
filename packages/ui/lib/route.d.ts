@@ -1,16 +1,19 @@
 /**
- * The webServer route the Web card talks to. GET /local-infer/summary returns
- * the engine list, the detected hardware, the form model for the selected
- * engine, the VRAM meter model for the current config, and the guideline
- * warning model the banner and inline red warnings render from; POST
- * /local-infer/save persists the config. The values live in
+ * The webServer routes the Web card talks to. GET /local-infer/summary
+ * returns the engine list, the detected hardware, the form model for the
+ * selected engine, the VRAM meter model for the current config, and the
+ * guideline warning model the banner and inline red warnings render from;
+ * POST /local-infer/save persists the config; POST /local-infer/launch and
+ * /local-infer/stop drive the engine lifecycle; and POST /local-infer/
+ * register and /local-infer/unregister publish the engine as a DSH model
+ * through the settings seam. The values live in
  * ~/.dsh/local-infer/config.json, shared with the CLI, so the browser never
- * sees a secret it did not store. The route is held by an effect, so it goes
- * when the plugin does.
+ * sees a secret it did not store. The routes are held by an effect, so they
+ * go when the plugin does.
  * @module @dsh/dsh-plugin-local-infer/ui/route
  */
 import type { Context } from '@deepseek-ai/cordis';
-import type { Config, HardwareProfile, InstallResult, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
+import type { Config, HardwareProfile, InstallResult, RegisterResult, VramModel, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
 import type { LaunchResult, LocalInferService } from '@dsh/dsh-plugin-local-infer/service';
 import type { EngineInfo } from '../../providers/lib/index.js';
 import type { DepsModel } from './deps.ts';
@@ -172,11 +175,48 @@ export declare function launchEngine(localInfer: LocalInferService, request: Lau
  */
 export declare function stopEngine(localInfer: LocalInferService, request: LaunchRequest): Promise<void>;
 /**
+ * RegisterRequest is the query the card sends for the register and
+ * unregister routes: the engine and the config the plan renders from, and
+ * agentDefault, which points the agent default model at the registered
+ * engine. Absent values fall back to the stored config, the same rule the
+ * summary route applies.
+ */
+export interface RegisterRequest {
+    engine?: string;
+    config?: Config;
+    agentDefault?: boolean;
+}
+/**
+ * resolveContextWindow picks the context window the registrar publishes: the
+ * config's maxContext when it names one, else the native ceiling of the
+ * VramModel the config resolves to (the named model, or the single
+ * registered model), else the 32768 spec default. The DSH contextWindow must
+ * not promise a context the engine cannot serve, so the ceiling is the
+ * model's own, not an optimistic number.
+ */
+export declare function resolveContextWindow(config: Config, models: readonly VramModel[]): number;
+/**
+ * registerFor renders the plan through the registered adapter, resolves the
+ * model row and the context window, and runs the service's register entry
+ * point, which upserts the provider and model through the settings seam.
+ * The result carries the entry the registrar wrote, so the card names the
+ * model it published.
+ */
+export declare function registerFor(localInfer: LocalInferService, request?: RegisterRequest): Promise<RegisterResult>;
+/**
+ * unregisterFor runs the service's removeModel entry point for the engine's
+ * provider and the model row the register step resolved, so the removal
+ * targets the exact entry the registration wrote.
+ */
+export declare function unregisterFor(localInfer: LocalInferService, request?: RegisterRequest): Promise<{
+    removed: boolean;
+}>;
+/**
  * registerLocalInferRoute registers the summary, save, deps, install, launch,
- * and stop routes on the web server and holds them by an effect, so a bundle
- * switch off removes them before the next switch on re-registers. The scoped
- * context carries the webServer; the localInfer service is passed in because
- * the scope only injects what it names.
+ * stop, register, and unregister routes on the web server and holds them by
+ * an effect, so a bundle switch off removes them before the next switch on
+ * re-registers. The scoped context carries the webServer; the localInfer
+ * service is passed in because the scope only injects what it names.
  */
 export declare function registerLocalInferRoute(scope: Context & {
     webServer: WebServerService;

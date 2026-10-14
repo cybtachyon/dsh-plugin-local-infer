@@ -1,12 +1,15 @@
 /**
- * The webServer route the Web card talks to. GET /local-infer/summary returns
- * the engine list, the detected hardware, the form model for the selected
- * engine, the VRAM meter model for the current config, and the guideline
- * warning model the banner and inline red warnings render from; POST
- * /local-infer/save persists the config. The values live in
+ * The webServer routes the Web card talks to. GET /local-infer/summary
+ * returns the engine list, the detected hardware, the form model for the
+ * selected engine, the VRAM meter model for the current config, and the
+ * guideline warning model the banner and inline red warnings render from;
+ * POST /local-infer/save persists the config; POST /local-infer/launch and
+ * /local-infer/stop drive the engine lifecycle; and POST /local-infer/
+ * register and /local-infer/unregister publish the engine as a DSH model
+ * through the settings seam. The values live in
  * ~/.dsh/local-infer/config.json, shared with the CLI, so the browser never
- * sees a secret it did not store. The route is held by an effect, so it goes
- * when the plugin does.
+ * sees a secret it did not store. The routes are held by an effect, so they
+ * go when the plugin does.
  * @module @dsh/dsh-plugin-local-infer/ui/route
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -15,7 +18,7 @@ import { dirname, join } from 'node:path';
 // Relative, not the root package subpath: a self-referencing bare specifier
 // only resolves when the package sits inside a node_modules tree, so a
 // local-path or pnpm-linked install of this repo would fail the import.
-import { checkDeps, renderInstallString } from '../../core/lib/index.js';
+import { checkDeps, providerIdFor, renderInstallString } from '../../core/lib/index.js';
 import { ENGINES } from '../../providers/lib/index.js';
 import { renderDeps } from "./deps.js";
 import { renderForm } from "./form.js";
@@ -202,11 +205,79 @@ export async function stopEngine(localInfer, request) {
     await localInfer.stop(adapter.renderLaunch(config, hardware));
 }
 /**
+ * resolveContextWindow picks the context window the registrar publishes: the
+ * config's maxContext when it names one, else the native ceiling of the
+ * VramModel the config resolves to (the named model, or the single
+ * registered model), else the 32768 spec default. The DSH contextWindow must
+ * not promise a context the engine cannot serve, so the ceiling is the
+ * model's own, not an optimistic number.
+ */
+export function resolveContextWindow(config, models) {
+    const configured = config.maxContext;
+    if (typeof configured === 'number' && configured > 0) {
+        return configured;
+    }
+    let model;
+    if (typeof config.model === 'string') {
+        model = models.find((entry) => entry.id === config.model);
+    }
+    else if (models.length === 1) {
+        model = models[0];
+    }
+    return model?.nativeMaxContext ?? 32768;
+}
+/**
+ * resolveModelRow picks the model row the registrar publishes for an engine
+ * and config: the adapter's modelRef (the id the engine serves on its
+ * OpenAI endpoint) when it declares one, else the plan's model id, else the
+ * engine id. The display name follows the same fall-through.
+ */
+function resolveModelRow(adapter, plan, config) {
+    const ref = adapter.modelRef?.(config);
+    const id = ref?.id ?? plan.modelId ?? adapter.id;
+    return { id, name: ref?.name ?? id, contextWindow: 0 };
+}
+/**
+ * registerFor renders the plan through the registered adapter, resolves the
+ * model row and the context window, and runs the service's register entry
+ * point, which upserts the provider and model through the settings seam.
+ * The result carries the entry the registrar wrote, so the card names the
+ * model it published.
+ */
+export async function registerFor(localInfer, request) {
+    const stored = readConfig();
+    const engineId = request?.engine ?? stored.engine;
+    const config = request?.config ?? stored.config;
+    const adapter = resolveAdapter(localInfer, engineId);
+    const hardware = await localInfer.detectHardware();
+    const plan = adapter.renderLaunch(config, hardware);
+    const row = resolveModelRow(adapter, plan, config);
+    row.contextWindow = resolveContextWindow(config, localInfer.registeredVramModels());
+    const options = request?.agentDefault === true ? { agentDefault: true } : undefined;
+    return localInfer.registerModel(plan, row, options);
+}
+/**
+ * unregisterFor runs the service's removeModel entry point for the engine's
+ * provider and the model row the register step resolved, so the removal
+ * targets the exact entry the registration wrote.
+ */
+export async function unregisterFor(localInfer, request) {
+    const stored = readConfig();
+    const engineId = request?.engine ?? stored.engine;
+    const config = request?.config ?? stored.config;
+    const adapter = resolveAdapter(localInfer, engineId);
+    const hardware = await localInfer.detectHardware();
+    const plan = adapter.renderLaunch(config, hardware);
+    const row = resolveModelRow(adapter, plan, config);
+    await localInfer.removeModel(providerIdFor(adapter.id), row.id);
+    return { removed: true };
+}
+/**
  * registerLocalInferRoute registers the summary, save, deps, install, launch,
- * and stop routes on the web server and holds them by an effect, so a bundle
- * switch off removes them before the next switch on re-registers. The scoped
- * context carries the webServer; the localInfer service is passed in because
- * the scope only injects what it names.
+ * stop, register, and unregister routes on the web server and holds them by
+ * an effect, so a bundle switch off removes them before the next switch on
+ * re-registers. The scoped context carries the webServer; the localInfer
+ * service is passed in because the scope only injects what it names.
  */
 export function registerLocalInferRoute(scope, localInfer) {
     const summary = async (url) => {
@@ -463,6 +534,96 @@ export function registerLocalInferRoute(scope, localInfer) {
             }
         },
     };
+    // The register and unregister routes share a body parser: the engine and
+    // config the plan renders from, plus agentDefault for the register route,
+    // falling back to the stored config per key.
+    const registerRequestFromBody = (body) => {
+        const request = {};
+        if (typeof body.engine === 'string') {
+            request.engine = body.engine;
+        }
+        if (body.config && typeof body.config === 'object') {
+            request.config = body.config;
+        }
+        if (typeof body.agentDefault === 'boolean') {
+            request.agentDefault = body.agentDefault;
+        }
+        return request;
+    };
+    const register = {
+        name: 'local-infer-register',
+        kind: 'exact',
+        path: '/local-infer/register',
+        handler: async (req, res) => {
+            const send = (status, body) => {
+                res.writeHead(status, { 'content-type': 'application/json' });
+                res.end(JSON.stringify(body));
+            };
+            if (req.method !== 'POST') {
+                res.writeHead(405).end();
+                return;
+            }
+            try {
+                const chunks = [];
+                let total = 0;
+                for await (const chunk of req) {
+                    total += chunk.length;
+                    if (total > 64 * 1024) {
+                        send(413, { error: 'register payload too large' });
+                        req.destroy();
+                        return;
+                    }
+                    chunks.push(chunk);
+                }
+                const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+                send(200, await registerFor(localInfer, registerRequestFromBody(body)));
+            }
+            catch (error) {
+                if (error instanceof RouteError) {
+                    send(error.status, { error: error.message });
+                    return;
+                }
+                send(500, { error: String(error?.message ?? error) });
+            }
+        },
+    };
+    const unregister = {
+        name: 'local-infer-unregister',
+        kind: 'exact',
+        path: '/local-infer/unregister',
+        handler: async (req, res) => {
+            const send = (status, body) => {
+                res.writeHead(status, { 'content-type': 'application/json' });
+                res.end(JSON.stringify(body));
+            };
+            if (req.method !== 'POST') {
+                res.writeHead(405).end();
+                return;
+            }
+            try {
+                const chunks = [];
+                let total = 0;
+                for await (const chunk of req) {
+                    total += chunk.length;
+                    if (total > 64 * 1024) {
+                        send(413, { error: 'unregister payload too large' });
+                        req.destroy();
+                        return;
+                    }
+                    chunks.push(chunk);
+                }
+                const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+                send(200, await unregisterFor(localInfer, registerRequestFromBody(body)));
+            }
+            catch (error) {
+                if (error instanceof RouteError) {
+                    send(error.status, { error: error.message });
+                    return;
+                }
+                send(500, { error: String(error?.message ?? error) });
+            }
+        },
+    };
     scope.effect(() => {
         const disposeSummary = scope.webServer.register(route);
         const disposeSave = scope.webServer.register(save);
@@ -470,6 +631,8 @@ export function registerLocalInferRoute(scope, localInfer) {
         const disposeInstall = scope.webServer.register(install);
         const disposeLaunch = scope.webServer.register(launch);
         const disposeStop = scope.webServer.register(stop);
+        const disposeRegister = scope.webServer.register(register);
+        const disposeUnregister = scope.webServer.register(unregister);
         return () => {
             disposeSummary();
             disposeSave();
@@ -477,6 +640,8 @@ export function registerLocalInferRoute(scope, localInfer) {
             disposeInstall();
             disposeLaunch();
             disposeStop();
+            disposeRegister();
+            disposeUnregister();
         };
     }, 'local-infer: settings routes');
 }

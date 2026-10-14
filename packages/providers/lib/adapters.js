@@ -172,6 +172,13 @@ export class NInferAdapter extends EngineAdapter {
     parameters() {
         return NINFER_PARAMETERS;
     }
+    modelRef(config) {
+        // The id the engine advertises on its OpenAI endpoint is the artifact's
+        // --model-id alias, not the VramModel registry key the config names, so
+        // the registrar publishes the alias and a chat turn routes to it.
+        const artifact = artifactFor(typeof config.model === 'string' ? config.model : 'qwen3-27b');
+        return { id: artifact.modelId, name: artifact.modelId };
+    }
     renderLaunch(config, _hw) {
         const port = this.port(config);
         const modelId = typeof config.model === 'string' ? config.model : 'qwen3-27b';
@@ -327,6 +334,12 @@ export class HyperQwenAdapter extends EngineAdapter {
     }
     parameters() {
         return HYPERQWEN_PARAMETERS;
+    }
+    modelRef(_config) {
+        // vLLM serves the model under the name the compose file passes, and the
+        // plugin tracks no per-model data for Hyper-Qwen yet, so the engine id is
+        // the stable entry the registrar publishes until that data lands.
+        return { id: 'hyperqwen', name: 'Hyper-Qwen' };
     }
     renderLaunch(config, _hw) {
         const port = this.port(config);

@@ -16,7 +16,8 @@ export type { DeployResult, EnginePlatformConfig, FetchResult, HealthCheckOption
 export { constraintId, evaluateGuidelines, modelGuidelines } from './guideline.ts';
 export type { Guideline, GuidelineLevel, GuidelineResult } from './guideline.ts';
 export type { DefaultProvenance, DefaultsResolver, HardwareClass, Preset, } from './defaults.ts';
-export type { DshModelEntry, DshModelRegistrar, RegisterResult } from './registrar.ts';
+export { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, apiKeyEnvFor, buildModelEntry, LLM_PI_AI_NAMESPACE, modelRowsFrom, providerIdFor, providerRegistrationOps, providerRemovalOps, removeModelRow, upsertModelRow, } from './registrar.ts';
+export type { DshModelEntry, DshModelRegistrar, ModelRow, RegisterResult, SettingsOp, } from './registrar.ts';
 export { checkDeps, detectPackageManager, planDeps, renderInstallString, runInstall, } from './deps.ts';
 export type { CommandOutcome, CommandRunner, DepCheck, DepStatus, EngineDepPlan, InstallCommands, InstallResult, PackageManager, PackageManagerProbes, SystemDep, SystemDepProvisioner, } from './deps.ts';
 //# sourceMappingURL=index.d.ts.map

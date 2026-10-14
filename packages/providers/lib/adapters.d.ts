@@ -76,6 +76,10 @@ export declare class NInferAdapter extends EngineAdapter {
     private readonly children;
     constructor(host?: LifecycleHost);
     parameters(): readonly ParameterSpec[];
+    modelRef(config: Config): {
+        id: string;
+        name: string;
+    };
     renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan;
     deploy(plan: LaunchPlan, platform?: EnginePlatformConfig): Promise<DeployResult>;
     healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;
@@ -100,6 +104,10 @@ export declare class HyperQwenAdapter extends EngineAdapter {
     private readonly host;
     constructor(host?: LifecycleHost);
     parameters(): readonly ParameterSpec[];
+    modelRef(_config: Config): {
+        id: string;
+        name: string;
+    };
     renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan;
     deploy(plan: LaunchPlan): Promise<DeployResult>;
     healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;

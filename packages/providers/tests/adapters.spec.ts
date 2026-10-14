@@ -254,6 +254,37 @@ describe('NInferAdapter.healthCheck and stop', () => {
   })
 })
 
+describe('adapter modelRef (the registrar model seam)', () => {
+  it('resolves the NInfer model id the engine serves, not the registry key', () => {
+    const { host } = stubHost()
+    const adapter = new NInferAdapter(host)
+    // The config names the VramModel registry key; the engine serves the
+    // artifact's --model-id alias, which is what the registrar publishes.
+    expect(adapter.modelRef({ model: 'qwen3-27b' })).toEqual({
+      id: 'Qwen3.8-27B',
+      name: 'Qwen3.8-27B',
+    })
+    expect(adapter.modelRef({ model: 'qwen3-35b' })).toEqual({
+      id: 'Qwen3.8-35B-A3B',
+      name: 'Qwen3.8-35B-A3B',
+    })
+    // An unknown model id falls back to the 27B artifact, the renderLaunch
+    // rule, so a bare config always resolves a model.
+    expect(adapter.modelRef({ model: 'qwen3-99b' })).toEqual({
+      id: 'Qwen3.8-27B',
+      name: 'Qwen3.8-27B',
+    })
+    // No model named: the 27B default.
+    expect(adapter.modelRef({})).toEqual({ id: 'Qwen3.8-27B', name: 'Qwen3.8-27B' })
+  })
+
+  it('publishes the engine id for Hyper-Qwen until per-model data lands', () => {
+    const { host } = stubHost()
+    const adapter = new HyperQwenAdapter(host)
+    expect(adapter.modelRef({})).toEqual({ id: 'hyperqwen', name: 'Hyper-Qwen' })
+  })
+})
+
 describe('HyperQwenAdapter', () => {
   it('renders a compose plan with the env the spec surface maps to', () => {
     const { host } = stubHost()

@@ -10,15 +10,15 @@
  * loud conflict, so hot-reload order never changes routing. `estimate` is
  * filled in by Phase 2 over the core estimator, `guidelines` by Phase 3 over
  * the core guideline engine, `deps`, `installString`, and `runInstall` by
- * Phase 4 over the core provisioner, and `launch` and `stop` by Phase 5 over
- * the registered engine adapters. The remaining entry points fail loudly
- * with `LOCAL_INFER_NOT_IMPLEMENTED` until later phases fill them in.
+ * Phase 4 over the core provisioner, `launch` and `stop` by Phase 5 over the
+ * registered engine adapters, and `registerModel` and `removeModel` by
+ * Phase 6 over the dsh settings seam.
  * @module @dsh/dsh-plugin-local-infer/service
  */
 import { Context, Service } from '@deepseek-ai/cordis';
-import type { Config, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, Preset, RegisterResult, SystemDep, VramModel } from '@dsh/dsh-plugin-local-infer/core';
-import type { EstimateResult, LaunchOptions, LaunchResult, LocalInferService } from './types.ts';
-export type { EstimateResult, LaunchOptions, LaunchResult, LocalInferService } from './types.ts';
+import type { Config, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, ModelRow, Preset, RegisterResult, SystemDep, VramModel } from '@dsh/dsh-plugin-local-infer/core';
+import type { EstimateResult, LaunchOptions, LaunchResult, LocalInferService, RegisterModelOptions } from './types.ts';
+export type { EstimateResult, LaunchOptions, LaunchResult, LocalInferService, RegisterModelOptions, SettingsForms, SettingsNamespaceDescriptor, } from './types.ts';
 declare module '@deepseek-ai/cordis' {
     interface Context {
         localInfer: LocalInferService;
@@ -27,8 +27,8 @@ declare module '@deepseek-ai/cordis' {
 /**
  * Local-inference failure. Extends Error with a stable `code`
  * (`LOCAL_INFER_CONFLICT`, `LOCAL_INFER_INVALID_ENGINE`,
- * `LOCAL_INFER_INVALID_MODEL`, `LOCAL_INFER_NOT_IMPLEMENTED`) that callers
- * route on instead of parsing the message.
+ * `LOCAL_INFER_INVALID_MODEL`, `LOCAL_INFER_SETTINGS_UNAVAILABLE`) that
+ * callers route on instead of parsing the message.
  */
 export declare class LocalInferError extends Error {
     readonly code: string;
@@ -129,7 +129,39 @@ export declare class LocalInfer extends Service implements LocalInferService {
      * stop the named container, or compose down).
      */
     stop(plan: LaunchPlan): Promise<void>;
-    registerModel(_plan: LaunchPlan): Promise<RegisterResult>;
+    /**
+     * registerModel publishes a confirmed-working engine as a DSH model. It
+     * builds the entry from the plan (the provider id, the base URL, and the
+     * API-key env name derive from the engine id), reads the llm-pi-ai section
+     * through the settings seam, and upserts the provider's models list with a
+     * path-addressed mutate guarded by the section's revision, so a stale
+     * write is refused rather than overwriting a concurrent edit. Re-running
+     * with the same model replaces the row in place, never duplicating it.
+     * With agentDefault, the agent default model section points at the new
+     * provider and model, so a new session starts from the local engine.
+     */
+    registerModel(plan: LaunchPlan, model: ModelRow, options?: RegisterModelOptions): Promise<RegisterResult>;
+    /**
+     * removeModel removes a registered model from its provider: the models
+     * list without the row, the whole provider when the row was the last one,
+     * and the agent default section cleared when it pointed at the removed
+     * pair. Removing a model the provider does not carry is a no-op, so a
+     * stop with nothing registered stays quiet.
+     */
+    removeModel(providerId: string, modelId: string): Promise<void>;
+    /**
+     * settings narrows the context to the dsh settings service the registrar
+     * writes through. A profile without the service (a headless install) fails
+     * loudly with a stable code, so a caller never mistakes "no seam" for a
+     * published model.
+     */
+    private settings;
+    /**
+     * descriptor reads one settings entry by namespace key. The read requests
+     * secret redaction, because the registrar prices the section it edits and
+     * a secret value must never ride into the core's pure ops.
+     */
+    private descriptor;
     /**
      * Picks the VramModel an estimate prices against: the one the config names
      * by `model`, or the single registered model when the config names none.
@@ -144,11 +176,6 @@ export declare class LocalInfer extends Service implements LocalInferService {
      * reads from one surface, not a collision.
      */
     private collectSpecs;
-    /**
-     * The scaffold's placeholder for an entry point a later phase fills in. It
-     * fails loudly so a caller never mistakes "not built yet" for a real answer.
-     */
-    private notImplemented;
 }
 /**
  * runHardwareProbes collects the raw probe results the detector consumes: the

@@ -9,5 +9,6 @@ export { detectHardware, parseNvidiaSmiGpu, } from "./hardware.js";
 export { DEFAULT_OS_RESERVE_MIB, estimateVram, KV_PAGE_TOKENS, pageRoundUp, TIGHT_HEADROOM_BYTES, } from "./estimator.js";
 export { EngineAdapter } from "./adapter.js";
 export { constraintId, evaluateGuidelines, modelGuidelines } from "./guideline.js";
+export { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, apiKeyEnvFor, buildModelEntry, LLM_PI_AI_NAMESPACE, modelRowsFrom, providerIdFor, providerRegistrationOps, providerRemovalOps, removeModelRow, upsertModelRow, } from "./registrar.js";
 export { checkDeps, detectPackageManager, planDeps, renderInstallString, runInstall, } from "./deps.js";
 //# sourceMappingURL=index.js.map

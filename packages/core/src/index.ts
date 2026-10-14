@@ -59,7 +59,28 @@ export type {
   HardwareClass,
   Preset,
 } from './defaults.ts'
-export type { DshModelEntry, DshModelRegistrar, RegisterResult } from './registrar.ts'
+export {
+  AGENT_DEFAULT_MODEL_NAMESPACE,
+  agentDefaultOps,
+  agentDefaultPointsAt,
+  agentDefaultUnsetOps,
+  apiKeyEnvFor,
+  buildModelEntry,
+  LLM_PI_AI_NAMESPACE,
+  modelRowsFrom,
+  providerIdFor,
+  providerRegistrationOps,
+  providerRemovalOps,
+  removeModelRow,
+  upsertModelRow,
+} from './registrar.ts'
+export type {
+  DshModelEntry,
+  DshModelRegistrar,
+  ModelRow,
+  RegisterResult,
+  SettingsOp,
+} from './registrar.ts'
 export {
   checkDeps,
   detectPackageManager,

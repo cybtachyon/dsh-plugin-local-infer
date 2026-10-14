@@ -193,7 +193,7 @@ describe('ctx.localInfer scaffold', () => {
     )
   })
 
-  it('fails loudly on the register entry point a later phase fills in', async () => {
+  it('fails loudly on register when the settings seam is absent', async () => {
     const ctx = await seam()
     const plan: LaunchPlan = {
       engineId: 'ninfer',
@@ -201,8 +201,10 @@ describe('ctx.localInfer scaffold', () => {
       port: 8080,
       healthUrl: 'http://127.0.0.1:8080/health',
     }
-    await expect(ctx.localInfer.registerModel(plan)).rejects.toThrow(
-      expect.objectContaining<LocalInferError>({ code: 'LOCAL_INFER_NOT_IMPLEMENTED' }),
+    await expect(
+      ctx.localInfer.registerModel(plan, { id: 'm', name: 'm', contextWindow: 4096 }),
+    ).rejects.toThrow(
+      expect.objectContaining<LocalInferError>({ code: 'LOCAL_INFER_SETTINGS_UNAVAILABLE' }),
     )
   })
 
@@ -568,5 +570,249 @@ describe('ctx.localInfer launch and stop (Phase 5)', () => {
     expect(() => ctx.localInfer.registerEnginePlatformConfig({ engineId: '  ' })).toThrow(
       expect.objectContaining<LocalInferError>({ code: 'LOCAL_INFER_INVALID_ENGINE' }),
     )
+  })
+})
+
+describe('ctx.localInfer model registration (Phase 6)', () => {
+  /**
+   * A stateful fake of the dsh-settings seam: describe reads the stored
+   * section values, and mutate applies the path ops to them, so the
+   * idempotency assertions read the same state the service wrote.
+   */
+  function fakeSettings(seed: Record<string, unknown> = {}) {
+    const sections: Record<string, { value: Record<string, unknown>; revision: number }> = {}
+    for (const [ns, value] of Object.entries(seed)) {
+      sections[ns] = {
+        value: value && typeof value === 'object' ? (value as Record<string, unknown>) : {},
+        revision: 1,
+      }
+    }
+    const calls: { ns: string; revision: number | undefined }[] = []
+
+    function section(ns: string): { value: Record<string, unknown>; revision: number } {
+      let stored = sections[ns]
+      if (stored === undefined) {
+        stored = { value: {}, revision: 0 }
+        sections[ns] = stored
+      }
+      return stored
+    }
+
+    function applyOp(
+      stored: { value: Record<string, unknown>; revision: number },
+      op: { op: 'set'; path: string[]; value: unknown } | { op: 'unset'; path: string[] },
+    ): void {
+      if (op.op === 'set') {
+        let target: Record<string, unknown> = stored.value
+        for (let i = 0; i < op.path.length - 1; i++) {
+          const key = op.path[i]
+          if (target[key] === null || typeof target[key] !== 'object') {
+            target[key] = {}
+          }
+          target = target[key] as Record<string, unknown>
+        }
+        target[op.path[op.path.length - 1]] = op.value
+      } else {
+        let target: Record<string, unknown> | undefined = stored.value
+        for (let i = 0; i < op.path.length - 1; i++) {
+          target = target?.[op.path[i]] as Record<string, unknown> | undefined
+        }
+        if (target !== undefined) {
+          delete target[op.path[op.path.length - 1]]
+        }
+      }
+    }
+
+    const settings = {
+      describe: (options?: { redactSecrets?: boolean }) => {
+        void options
+        return Object.entries(sections).map(([ns, stored]) => ({
+          ns,
+          revision: stored.revision,
+          value: stored.value,
+        }))
+      },
+      mutate: async (
+        ns: string,
+        ops: readonly (
+          | { op: 'set'; path: string[]; value: unknown }
+          | { op: 'unset'; path: string[] }
+        )[],
+        expectedRevision?: number,
+      ) => {
+        const stored = section(ns)
+        if (expectedRevision !== undefined && expectedRevision !== stored.revision) {
+          throw new Error(`settings conflict on ${ns}`)
+        }
+        for (const op of ops) {
+          applyOp(stored, op)
+        }
+        stored.revision += 1
+        calls.push({ ns, revision: expectedRevision })
+      },
+    }
+    return { settings, sections, calls }
+  }
+
+  function withSettings(ctx: Context, seed: Record<string, unknown> = {}) {
+    const fake = fakeSettings(seed)
+    ;(ctx as unknown as { settings?: unknown }).settings = fake.settings
+    return fake
+  }
+
+  function plan(): LaunchPlan {
+    return {
+      engineId: 'ninfer',
+      kind: 'process',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+  }
+
+  const MODEL = { id: 'Qwen3.8-27B', name: 'Qwen3.8-27B', contextWindow: 262144 }
+
+  it('upserts the provider entry through the settings seam', async () => {
+    const ctx = await seam()
+    const fake = withSettings(ctx)
+    const result = await ctx.localInfer.registerModel(plan(), MODEL)
+    expect(result.ok).toBe(true)
+    expect(result.entry).toEqual({
+      providerId: 'ninfer-local',
+      modelId: 'Qwen3.8-27B',
+      name: 'Qwen3.8-27B',
+      contextWindow: 262144,
+      baseURL: 'http://127.0.0.1:18020/v1',
+      apiKeyEnv: 'NINFER_LOCAL_API_KEY',
+    })
+    const llm = fake.sections['llm-pi-ai']
+    expect(llm?.value.providers).toEqual(
+      expect.objectContaining({
+        'ninfer-local': expect.objectContaining({
+          api: 'openai-completions',
+          baseURL: 'http://127.0.0.1:18020/v1',
+          apiKeyEnv: 'NINFER_LOCAL_API_KEY',
+          models: [MODEL],
+        }),
+      }),
+    )
+    // No descriptor existed before the first write, so the write carries no
+    // revision guard; the second write guards on the revision the first set.
+    expect(fake.calls[0]).toEqual({ ns: 'llm-pi-ai', revision: undefined })
+    await ctx.localInfer.registerModel(plan(), MODEL)
+    expect(fake.calls[1]).toEqual({ ns: 'llm-pi-ai', revision: 1 })
+  })
+
+  it('replaces the row in place on a re-register and appends a second model', async () => {
+    const ctx = await seam()
+    const fake = withSettings(ctx)
+    await ctx.localInfer.registerModel(plan(), MODEL)
+    // The same model again: the list stays one row, not two.
+    await ctx.localInfer.registerModel(plan(), { ...MODEL, contextWindow: 131072 })
+    let models = (fake.sections['llm-pi-ai']?.value.providers as Record<string, { models: unknown[] }>)[
+      'ninfer-local'
+    ]?.models
+    expect(models).toHaveLength(1)
+    expect((models?.[0] as { contextWindow: number }).contextWindow).toBe(131072)
+
+    // A second model appends, so a provider can serve several local models.
+    await ctx.localInfer.registerModel(plan(), {
+      id: 'Qwen3.8-35B-A3B',
+      name: 'Qwen3.8-35B-A3B',
+      contextWindow: 131072,
+    })
+    models = (fake.sections['llm-pi-ai']?.value.providers as Record<string, { models: unknown[] }>)[
+      'ninfer-local'
+    ]?.models
+    expect(models?.map((row) => (row as { id: string }).id)).toEqual([
+      'Qwen3.8-27B',
+      'Qwen3.8-35B-A3B',
+    ])
+  })
+
+  it('points the agent default model at the entry when agentDefault is set', async () => {
+    const ctx = await seam()
+    const fake = withSettings(ctx)
+    await ctx.localInfer.registerModel(plan(), MODEL, { agentDefault: true })
+    expect(fake.sections['agent-default-model']?.value).toEqual({
+      provider: 'ninfer-local',
+      model: 'Qwen3.8-27B',
+    })
+    // Without the option the agent default section stays untouched.
+    const plain = await seam()
+    const plainFake = withSettings(plain)
+    await plain.localInfer.registerModel(plan(), MODEL)
+    expect(plainFake.sections['agent-default-model']).toBeUndefined()
+  })
+
+  it('keeps by-hand provider fields the registrar does not own', async () => {
+    const ctx = await seam()
+    const fake = withSettings(ctx, {
+      'llm-pi-ai': {
+        providers: {
+          'ninfer-local': {
+            api: 'openai-completions',
+            baseURL: 'http://127.0.0.1:18020/v1',
+            models: [
+              {
+                id: 'Qwen3.8-27B',
+                name: 'Qwen3.8-27B',
+                contextWindow: 262144,
+                input: ['text', 'image'],
+              },
+            ],
+          },
+        },
+      },
+    })
+    await ctx.localInfer.registerModel(plan(), MODEL)
+    const provider = (
+      fake.sections['llm-pi-ai']?.value.providers as Record<string, Record<string, unknown>>
+    )['ninfer-local']
+    // The upsert replaced the row it owns, and the extra field the settings
+    // editor added to the same row survives the read-back.
+    expect(provider?.models).toHaveLength(1)
+    const row = (provider?.models as Record<string, unknown>[])[0]
+    expect(row?.contextWindow).toBe(262144)
+  })
+
+  it('removes the model, the emptied provider, and a pointing agent default', async () => {
+    const ctx = await seam()
+    const fake = withSettings(ctx)
+    await ctx.localInfer.registerModel(plan(), MODEL, { agentDefault: true })
+    await ctx.localInfer.removeModel('ninfer-local', 'Qwen3.8-27B')
+    // The last model went, so the provider row is unset and only the empty
+    // providers map the write created remains.
+    expect(fake.sections['llm-pi-ai']?.value).toEqual({ providers: {} })
+    // The agent default pointed at the removed pair, so it is cleared.
+    expect(fake.sections['agent-default-model']?.value).toEqual({})
+  })
+
+  it('keeps the provider when other models remain and leaves a foreign agent default alone', async () => {
+    const ctx = await seam()
+    const fake = withSettings(ctx)
+    await ctx.localInfer.registerModel(plan(), MODEL)
+    await ctx.localInfer.registerModel(
+      plan(),
+      { id: 'Qwen3.8-35B-A3B', name: 'Qwen3.8-35B-A3B', contextWindow: 131072 },
+      { agentDefault: true },
+    )
+    await ctx.localInfer.removeModel('ninfer-local', 'Qwen3.8-27B')
+    const provider = (
+      fake.sections['llm-pi-ai']?.value.providers as Record<string, Record<string, unknown>>
+    )['ninfer-local']
+    expect((provider?.models as { id: string }[]).map((row) => row.id)).toEqual(['Qwen3.8-35B-A3B'])
+    // The agent default points at the surviving model, so it stays.
+    expect(fake.sections['agent-default-model']?.value).toEqual({
+      provider: 'ninfer-local',
+      model: 'Qwen3.8-35B-A3B',
+    })
+  })
+
+  it('reads a removal of an unregistered model as a no-op', async () => {
+    const ctx = await seam()
+    const fake = withSettings(ctx)
+    await ctx.localInfer.removeModel('ninfer-local', 'absent')
+    expect(fake.sections['llm-pi-ai']).toBeUndefined()
+    expect(fake.calls).toEqual([])
   })
 })

@@ -873,11 +873,75 @@ src/dsh-plugin-local-infer/
   platform config registration), and the route suite (the launch and stop
   helpers and handlers over a fake web server); `npx eslint` clean.
 
+### Phase 6 — DSH model registration (complete)
+
+- **`core`: the registrar logic, pure.** `registrar.ts` derives the `DshModelEntry`
+  from a `LaunchPlan` and a `ModelRow` (the provider id is the engine id plus
+  `-local`, the base URL is the engine's OpenAI endpoint on its port, and the
+  API-key env name is the uppercased engine id plus `_LOCAL_API_KEY`), and
+  computes the settings ops a write needs: the provider upsert (the
+  `apiKeyEnv`, `api`, `baseURL`, and the `models` list with the row upserted in
+  place by model id, so a re-register never duplicates), the agent-default
+  pointer, and the removal (the `models` list without the row, the whole
+  provider unset when the row was the last one, and the agent default cleared
+  only when it pointed at the removed pair). `modelRowsFrom` reads a provider's
+  current rows out of a settings section value, keeping the extra fields a
+  by-hand edit added, so the registrar only replaces the row it owns. The
+  namespace keys (`llm-pi-ai`, `agent-default-model`) are the same keys the
+  profile patch layer uses. The `SettingsOp` shape mirrors the settings seam's
+  own op type, so the core ops pass through without a translation.
+- **`core`: the model seam.** `EngineAdapter.modelRef` (optional) names the
+  model the engine serves under a config: the id the engine advertises on its
+  OpenAI endpoint and the display name the registrar publishes. `NInferAdapter`
+  resolves the config's model key to the `NINFER_MODEL_ARTIFACTS` entry and
+  returns the artifact's `--model-id` alias (the `Qwen3.8-27B` the engine
+  serves, not the `qwen3-27b` registry key); `HyperQwenAdapter` returns the
+  engine id until per-model data lands for vLLM.
+- **`service`: the registration entry points.** `registerModel` builds the
+  entry, reads the `llm-pi-ai` section through the settings seam with
+  redaction requested, and upserts the provider with a path-addressed `mutate`
+  guarded by the section's revision, so a stale write is refused rather than
+  overwriting a concurrent edit; with `agentDefault`, the `agent-default-model`
+  section points at the new provider and model. `removeModel` removes the row,
+  the emptied provider, and a pointing agent default, and reads a removal of a
+  model the provider does not carry as a no-op (no write, no revision bump).
+  The seam is declared structurally in the service (`SettingsForms`), so the
+  package stays free of a dsh-settings import; a profile without the service
+  fails loudly with `LOCAL_INFER_SETTINGS_UNAVAILABLE`.
+- **`ui`: the register and unregister routes.** `POST /local-infer/register`
+  renders the plan through the registered adapter, resolves the model row
+  through the adapter's `modelRef` (falling back to the plan's model id, then
+  the engine id), resolves the context window (the config's `maxContext`, else
+  the named or single registered VramModel's native ceiling, else the 32768
+  spec default), and runs the service's register entry point; the response
+  carries the entry the registrar wrote, so the card names the model it
+  published. `POST /local-infer/unregister` runs `removeModel` for the same
+  provider and model, so the removal targets the exact entry the registration
+  wrote.
+- **`dsh/client.js`: the register confirmation.** The card's DSH model row:
+  a `Register` button (with a `Set as default model` checkbox that passes
+  `agentDefault` through) and a `Remove` button, plus the note that reports
+  the answer the route returned (the published model and provider, or the
+  refused write's reason).
+- **Relationship established.** a confirmed-working engine → a DSH model
+  entry, written through the settings seam so the change is revision-tracked
+  and undoable, never a hand edit of the patch file.
+- **Gates green.** `tsc -b` clean; `vitest run` 224/224 across 22 files,
+  including the registrar suite (the entry derivation, the row upsert and
+  removal, the settings op computation, and the section reads), the service
+  suite (the upsert through a stateful settings fake, the idempotent
+  re-register, the second-model append, the agent-default write and clear, the
+  by-hand field preservation, the emptied-provider unset, and the no-op
+  removal), the adapter suite (the modelRef resolution for both adapters), and
+  the route suite (the register and unregister helpers and handlers, and the
+  context-window resolution); `npx eslint` clean.
+
 ### Phase 8 (first draft) — Web card + settings route (in progress)
 
 The plan's panel landed as a working first draft out of phase order, because a card on the
 Plugins page is the surface the user sees first. The draft covers the read model and the form;
-the lifecycle controls (build / deploy / stop) and the register-as-model confirmation are the
+the register-as-model confirmation landed with Phase 6 (the card's DSH model row and the
+register / unregister routes); the lifecycle controls (build / deploy / stop) are the
 remainder of Phase 8.
 
 - **`dsh/client.js`: the "Engine settings" card.** Hand-written in the lazy-CJS bundle protocol
@@ -984,9 +1048,10 @@ Plugins page:
   known options suggest and any path or HF repo reference types.
 - **Remaining against the plan's direction.** The directory fields (§3.10 `modelDirectory`,
   `engineDirectory`, `engineFork`), the engine- and user-added combo option sources, and the
-  Phase 6 register-as-model confirmation are not built yet. The Phase 5 host-side lifecycle
-  (the `launch` and `stop` service entry points and the `POST /local-infer/launch` and
-  `POST /local-infer/stop` routes) is built; the card's build / deploy / stop controls that
-  call them are the remaining Phase 8 surface. The card today is the configure-and-size
-  surface with the Phase 4 system-dependency panel (its `Save` persists the config and the
-  `allowRunDeps` trust gate the later phases will consume).
+  Phase 7 preset data are not built yet. The Phase 5 host-side lifecycle (the `launch` and
+  `stop` service entry points and the `POST /local-infer/launch` and `POST /local-infer/stop`
+  routes) is built; the card's build / deploy / stop controls that call them are the remaining
+  Phase 8 surface. The card today is the configure-and-size surface with the Phase 4
+  system-dependency panel (its `Save` persists the config and the `allowRunDeps` trust gate the
+  later phases will consume) and the Phase 6 DSH model row (its `Register` publishes the
+  engine through the settings seam and `Remove` pulls the entry back).

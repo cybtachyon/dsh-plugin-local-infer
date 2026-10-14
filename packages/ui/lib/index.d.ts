@@ -1,12 +1,12 @@
 /**
  * The Web UI for the local-inference capability: the form-type-aware parameter
  * form (checkbox, dropdown, slider, text, picker), the live VRAM Est. meter,
- * the red hardware-warning banner, the engine lifecycle controls (build /
- * deploy / stop), and the register-as-model confirmation.
+ * the red hardware-warning banner, the register-as-model confirmation (the
+ * register and unregister routes the card's DSH model row talks to), and the
+ * engine lifecycle controls (build / deploy / stop).
  *
  * The render models (form, meter, warnings) are pure data the panel draws
- * from; Phase 8 wires them into one panel with the lifecycle controls and
- * the register confirmation.
+ * from; Phase 8 wires them into one panel with the lifecycle controls.
  * @module @dsh/dsh-plugin-local-infer/ui
  */
 import type { Context } from '@deepseek-ai/cordis';
