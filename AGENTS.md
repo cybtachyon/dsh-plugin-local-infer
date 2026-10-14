@@ -21,6 +21,12 @@
   bare package. The client-module scan keys `dsh.client` on a bare
   package-root entry, never a subpath, so without it the browser card DSH UI is
   never loaded.
+- Client-side and host-side changes activate differently. A page refresh picks
+  up a new `dsh/client.js`, but host-side packages (service, providers, tool,
+  the ui route) load into the host process at startup: a bundle reinstall
+  rewrites `~/.dsh/profiles/<profile>/node_modules`, and the running host keeps
+  its in-memory modules until a restart or a bundle toggle off/on. Verify a
+  host-side change by restarting the host, not by reloading the page.
 
 # Code Style
 - Follow [Typescript Do's and Don'ts](https://www.typescriptlang.org/docs/handbook/declaration-files/do-s-and-don-ts.html)

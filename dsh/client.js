@@ -54,6 +54,7 @@ window.__ModuleLoader__.load({
         guidelineOne: 'hardware guideline',
         guidelineMany: 'hardware guidelines',
         fired: 'fired',
+        measureHint: 'Pick a model to measure the VRAM budget.',
       },
       zh: {
         section: '引擎设置',
@@ -82,6 +83,7 @@ window.__ModuleLoader__.load({
         guidelineOne: '硬件准则',
         guidelineMany: '硬件准则',
         fired: '触发',
+        measureHint: '选择模型以测量显存预算。',
       },
     };
 
@@ -684,6 +686,23 @@ window.__ModuleLoader__.load({
               )
             : null,
           renderMeter(react, data.meterModel, t),
+          // A not-measured meter with selectable models is a dead end that
+          // reads as a bug. The estimator stays not-measured on purpose when
+          // several models are registered and none is named, so the card
+          // names the next step instead.
+          data.meterModel && data.meterModel.source === 'not-measured' &&
+          (data.models || []).length > 0 && !draft.config.model
+            ? react.createElement(
+                'div',
+                {
+                  style: {
+                    fontSize: 12,
+                    color: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))',
+                  },
+                },
+                t.measureHint,
+              )
+            : null,
           data.verdict && (data.verdict.status === 'over' || data.verdict.status === 'tight')
             ? react.createElement(
                 'div',

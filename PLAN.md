@@ -767,6 +767,15 @@ remainder of Phase 8.
   self-referencing bare specifier `@dsh/dsh-plugin-local-infer/core`, which only resolves
   when the package sits inside a `node_modules` tree and fails on a local or pnpm-linked
   install of this repo.
+- **Host-side and client-side changes activate differently.** The client half
+  (`dsh/client.js`) is loaded by the browser, so a page refresh picks up a new client.
+  The host half (service, providers, tool, and the ui route) is loaded into the host
+  process at startup: a bundle reinstall rewrites the files under
+  `~/.dsh/profiles/<profile>/node_modules`, but the running host keeps its in-memory
+  modules until a restart or a bundle toggle off/on. Observed 2026-10-13: after a bundle
+  reinstall, the Plugins page showed the new client behavior (the action-labeled Save
+  button, the theme-aware inputs) while the host-built form still carried the previous
+  spec-gate message, which a host restart replaced.
 
 ### UX alignment pass (2026-10-13, against the running Plugins screen)
 
