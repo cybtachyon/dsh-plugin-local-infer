@@ -797,6 +797,15 @@ Plugins page:
   combo's `datalist` input, and the sliders now declare `color-scheme: light dark`, so
   the popups render dark-on-light in light mode and light-on-dark in dark mode, matching
   the device setting the host theme follows.
+- **The slider readout is a number input, not a label.** The static text right of each
+  slider ("3 tokens", "0.9", "—") was display-only. It is now a native `input type=number`
+  with the control's min/max/step, so a value can be typed or stepped with the spin
+  buttons, and the unit moved to a small label beside the input (a number input cannot
+  carry suffix text). The input keeps its typed text in local state and commits an
+  in-range value: spin buttons always land in range and commit immediately, a partial
+  keystroke stays local until blur, where it clamps to the bounds and snaps to the step,
+  and clearing the field reverts to the spec default, the same fall-through
+  `resolveValue` documents.
 - **The spec gate message names the fix.** `draftTokens` and `lmHeadDraft` greyed out with
   "spec must be mtp, dflash, or dflash2", a constraint statement. The shared
   `SPEC_GATE_MESSAGE` now reads "Pick a speculation backend first (mtp, dflash, or

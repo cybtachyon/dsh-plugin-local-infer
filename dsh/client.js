@@ -218,6 +218,114 @@ window.__ModuleLoader__.load({
       border: 'none',
     });
 
+    // The number input that pairs with a slider: type a number or use the
+    // native spin buttons. It keeps the typed text in local state and
+    // commits an in-range number, so a partial keystroke (a "1" on the way
+    // to "128") never pushes an out-of-range value into the draft config.
+    // Spin buttons always land in range, so they commit immediately.
+    // Defined at factory level, not inside a render function, so React
+    // keeps one hook state per field instead of remounting on every render.
+    function NumberField(props) {
+      var react = props.react;
+      var field = props.field;
+      var control = props.control;
+      var onValue = props.onValue;
+      var numeric = typeof field.value === 'number' ? field.value : null;
+      var textState = react.useState(numeric !== null ? String(numeric) : '');
+      var text = textState[0];
+      // A value that lands from outside (a save, a discard, an engine
+      // switch) resyncs the text; the ref comparison is the React
+      // adjust-state-during-render pattern, no effect cycle needed.
+      var lastNumeric = react.useRef(numeric);
+      if (numeric !== lastNumeric.current) {
+        lastNumeric.current = numeric;
+        textState[1](numeric !== null ? String(numeric) : '');
+      }
+      var snap = (value) => {
+        if (!control.step || control.step <= 0) {
+          return value;
+        }
+        var base = control.min !== undefined ? control.min : 0;
+        var steps = Math.round((value - base) / control.step);
+        // 1e6 kills float noise (0.05 * 18 = 0.9000000000000001).
+        return Math.round((base + steps * control.step) * 1e6) / 1e6;
+      };
+      var commit = () => {
+        if (text === '') {
+          return; // an empty field already committed undefined
+        }
+        var parsed = Number(text);
+        if (Number.isNaN(parsed)) {
+          textState[1](numeric !== null ? String(numeric) : '');
+          return;
+        }
+        var clamped = parsed;
+        if (control.min !== undefined && clamped < control.min) {
+          clamped = control.min;
+        }
+        if (control.max !== undefined && clamped > control.max) {
+          clamped = control.max;
+        }
+        clamped = snap(clamped);
+        textState[1](String(clamped));
+        if (clamped !== numeric) {
+          onValue(field.key, clamped);
+        }
+      };
+      return react.createElement(
+        'input',
+        {
+          type: 'number',
+          min: control.min,
+          max: control.max,
+          step: control.step,
+          value: text,
+          disabled: field.disabled,
+          style: {
+            width: 88,
+            flex: 'none',
+            padding: '4px 8px',
+            borderRadius: 6,
+            border: '1px solid var(--dsw-alias-border-secondary, rgba(128,128,128,0.24))',
+            background: 'var(--dsw-alias-background-tertiary, rgba(128,128,128,0.12))',
+            color: 'inherit',
+            font: 'inherit',
+            colorScheme: 'light dark',
+            opacity: field.disabled ? 0.5 : 1,
+          },
+          onChange: (event) => {
+            var raw = event.target.value;
+            textState[1](raw);
+            if (raw === '') {
+              // Clearing the field reverts to the spec default, the same
+              // fall-through resolveValue documents.
+              onValue(field.key, undefined);
+              return;
+            }
+            var parsed = Number(raw);
+            if (Number.isNaN(parsed)) {
+              return; // a partial like "1e"; commit on blur
+            }
+            if (control.min !== undefined && parsed < control.min) {
+              return; // out of range while typing; commit on blur
+            }
+            if (control.max !== undefined && parsed > control.max) {
+              return;
+            }
+            var snapped = snap(parsed);
+            textState[1](String(snapped));
+            onValue(field.key, snapped);
+          },
+          onBlur: commit,
+          onKeyDown: (event) => {
+            if (event.key === 'Enter') {
+              commit();
+            }
+          },
+        },
+      );
+    }
+
     // One rendered field: the control the `control` model names, greyed out
     // with its reason while `disabled` is set, and the inline guideline
     // warnings anchored to the field's key beneath it.
@@ -256,6 +364,10 @@ window.__ModuleLoader__.load({
           ),
         );
       } else if (control.kind === 'slider') {
+        // The readout is a number input, not a label: type a value or use
+        // the spin buttons, and the slider and the estimate follow. The
+        // unit moves to a small label beside the input, because a native
+        // number input cannot carry suffix text.
         var numeric = typeof value === 'number' ? value : undefined;
         input = react.createElement(
           'span',
@@ -282,18 +394,26 @@ window.__ModuleLoader__.load({
               },
             ),
           ),
-          react.createElement(
-            'span',
-            {
-              style: {
-                width: 88,
-                flex: 'none',
-                textAlign: 'right',
-                color: 'var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))',
-              },
-            },
-            numeric !== undefined ? String(numeric) + (control.unit ? ' ' + control.unit : '') : '—',
-          ),
+          react.createElement(NumberField, {
+            react: react,
+            field: field,
+            control: control,
+            onValue: onValue,
+          }),
+          control.unit
+            ? react.createElement(
+                'span',
+                {
+                  style: {
+                    width: 48,
+                    flex: 'none',
+                    fontSize: 11,
+                    color: 'var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))',
+                  },
+                },
+                control.unit,
+              )
+            : null,
         );
       } else if (control.kind === 'combo') {
         // Dropdown plus free text as one native control: the datalist suggests
