@@ -710,3 +710,94 @@ src/dsh-plugin-local-infer/
 - **Lint gate.** `eslint.config.mjs` ignores the committed `packages/*/lib/**` build output, declares the browser globals the hand-written `dsh/client.js` carrier uses, and the carrier's unused `current` setter parameter reads `_current`.
 - **Relationship established.** parameter (value *and* presence) → hardware capability → red warning, with the estimator-backed rule agreeing with the Phase 2 meter by construction.
 - **Gates green.** `tsc -b` clean; `vitest run` 112/112 across 16 files, including the guideline-engine suite (firing, ordering, default-value pricing, the absent-spec guard), the model-rule suite (the over-budget message naming the estimator's own solver answer, the draft-weights rule with the available-backend readout), the built-in rule matrix (each rule fires on its condition and stays silent off it, the StateImage pricing pinned to the measured byte figure), the service suite (spec constraints and named guidelines wire through the seam, the model rules fire against the registered model), and the warnings render model (the red/amber/neutral tones, the banner worst-level, the per-anchor grouping); `npx eslint` clean.
+
+### Phase 8 (first draft) — Web card + settings route (in progress)
+
+The plan's panel landed as a working first draft out of phase order, because a card on the
+Plugins page is the surface the user sees first. The draft covers the read model and the form;
+the lifecycle controls (build / deploy / stop) and the register-as-model confirmation are the
+remainder of Phase 8.
+
+- **`dsh/client.js`: the "Engine settings" card.** Hand-written in the lazy-CJS bundle protocol
+  (no build step, no dsh client imports; React comes from the browser module table). It mounts
+  into the Plugins page's `plugins.bundle.config` slot keyed by the bundle package name
+  (dsh 0.1.6-alpha.2 on) and the legacy `settings.plugin.item` slot on older hosts, so each
+  host fills the slot it declares. The card owns its draft: field edits update the draft and
+  re-price the summary through a debounced round trip, `Discard` reloads the stored config,
+  and `Save` persists it. It renders the form (all control kinds, the `requires` gate as a
+  disabled field with its reason), the to-scale VRAM meter with its legend and the
+  largest-fitting-context readout, the over/tight verdict banner, and the guideline warnings
+  (a summary banner painted in the worst level plus the inline warnings next to each anchored
+  field). A headless profile (no web route) renders nothing, because the card only mounts
+  after a probe of `/local-infer/summary` proves the route exists.
+- **`ui/route.ts`: the settings route.** `GET /local-infer/summary` returns the engine list,
+  the model list, the detected hardware, the form model for the selected engine, the meter
+  model, the guideline warning model, and the config; `POST /local-infer/save` persists it.
+  The values live in `~/.dsh/local-infer/config.json`, shared with the CLI, so the browser
+  never sees a value it did not store. Both routes are held by an effect, so a bundle switch
+  off removes them.
+- **`providers/engines.ts`: the engine registry data.** `ENGINES` carries the four engine
+  entries (NInfer and Hyper-Qwen with their measured parameter surfaces; llama.cpp and Strata
+  with empty surfaces until their adapters land) as the single list the card offers, so
+  adding an engine is a data edit.
+- **Relationship established.** config + hardware → form, meter, and warnings in one read
+  model the card draws, with the estimate the single source the meter and the verdict
+  banner agree on and the guideline results the single source the banner and the inline
+  warnings agree on.
+- **Gates green.** `tsc -b` clean; `vitest run` 118/118 across 17 files (the route suite pins
+  the summary read model, the warnings banner/inline split, the engine fallback, and the
+  config-file round trip against a scratch `HOME`); `npx eslint` clean.
+
+### Bundle installability and activation gotchas
+
+- **The root `package.json` is the installable bundle.** `dsh.bundle.patch` points at
+  `./cordis.patch.yml`, the `dsh.client` declaration names `dsh/client.js` (platform `web`,
+  `immediately`), and the `files` list ships the carrier plus the four package `lib` trees,
+  so the bundle installs from a git URL: `dsh plugin --profile web add
+  https://github.com/cybtachyon/dsh-plugin-local-infer` (the README documents the CLI and the
+  Web UI path).
+- **The carrier row is what makes the browser card load.** The client-module scan keys a
+  package's `dsh.client` declaration on a bare package-root Loader entry, never a subpath.
+  The bundle declared only the four subpath entries, so `dsh/client.js` was never added to
+  the boot graph and the Plugins page showed no card. The fix is a no-op `dsh/host.js`
+  carrier module, a root `.` export, and a bundle row named after the bare package (the
+  `local-infer` row in `cordis.patch.yml`), which is what the screenshot of the running
+  profile shows: five components, the card included.
+- **Sub-packages import each other by relative path.** `../../core/lib/index.js`, not the
+  self-referencing bare specifier `@dsh/dsh-plugin-local-infer/core`, which only resolves
+  when the package sits inside a `node_modules` tree and fails on a local or pnpm-linked
+  install of this repo.
+
+### UX alignment pass (2026-10-13, against the running Plugins screen)
+
+Reconciled the card with the plan's current direction and with the screenshot of the live
+Plugins page:
+
+- **The primary button is an action, not a status readout.** The draft painted its state word
+  onto the button ("Idle"), which read as a dead control and hid the one thing the card
+  offers. The button now stays `Save` and shows `Saving...` in progress; the transient
+  `saved` confirmation is a note, and the next edit clears it.
+- **Inputs follow the host theme.** The field background fell back to a solid `#fff`, which
+  painted the dropdowns and text fields as white blocks on the dark Plugins page. It now
+  uses the tertiary fill token with a neutral fallback, so the card reads the same in light
+  and dark.
+- **The spec gate message names the fix.** `draftTokens` and `lmHeadDraft` greyed out with
+  "spec must be mtp, dflash, or dflash2", a constraint statement. The shared
+  `SPEC_GATE_MESSAGE` now reads "Pick a speculation backend first (mtp, dflash, or
+  dflash2)", so the disabled field tells the user the next click.
+- **The red-warning requirement is visible in the card.** The Phase 3 warnings render model
+  reached the card: the summary carries the `warningsModel`, and the card draws the summary
+  banner (painted in the worst level, counting every fired rule) plus the inline warnings
+  next to each anchored field.
+- **The chat template is the plan's combo control.** `ParameterForm` gains the `combo` kind
+  and the `ComboOption` type (§3.1, §3.10); the NInfer `chatTemplate` spec switches from a
+  bare path picker to a dropdown plus free text, shipping the popular Froggeric22 template
+  as data tagged `source: 'popular'` (the engine- and user-added option sources are the
+  remaining data edits). The renderer draws it as a native `input` + `datalist`, so the
+  known options suggest and any path or HF repo reference types.
+- **Remaining against the plan's direction.** The directory fields (§3.10 `modelDirectory`,
+  `engineDirectory`, `engineFork`), the engine- and user-added combo option sources, the
+  Phase 4 system-dependency panel with its "Get" gate, the Phase 5 lifecycle controls
+  (build / deploy / stop), and the Phase 6 register-as-model confirmation are not built yet;
+  the card today is the configure-and-size surface, and its `Save` persists the config the
+  later phases will consume.
