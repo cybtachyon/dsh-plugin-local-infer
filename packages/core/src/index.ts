@@ -40,7 +40,8 @@ export type {
 } from './estimator.ts'
 export { EngineAdapter } from './adapter.ts'
 export type { DeployResult, HealthResult, LaunchPlan } from './adapter.ts'
-export type { Guideline, GuidelineResult } from './guideline.ts'
+export { constraintId, evaluateGuidelines, modelGuidelines } from './guideline.ts'
+export type { Guideline, GuidelineLevel, GuidelineResult } from './guideline.ts'
 export type {
   DefaultProvenance,
   DefaultsResolver,

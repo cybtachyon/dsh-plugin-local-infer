@@ -4,9 +4,9 @@
  * built-in presets, the built-in guidelines, and the per-OS SystemDep install
  * command data. Each registers itself with `ctx.localInfer`.
  *
- * In the scaffold this plugin is a no-op placeholder that injects the seam so
- * the bundle loads with zero providers. Phase 5 fills in the adapter
- * registrations and Phase 7 the preset and guideline data.
+ * Phase 3 registers the NInfer measured VramModels and the built-in hardware
+ * guidelines. The engine adapters land in Phase 5 and the preset data in
+ * Phase 7.
  * @module @dsh/dsh-plugin-local-infer/providers
  */
 import type { Context } from '@deepseek-ai/cordis';
@@ -20,12 +20,15 @@ export declare const inject: string[];
 export { CTX_OPTIONS, HYPERQWEN_PARAMETERS, KV_OPTIONS, SPEC_OPTIONS as HYPERQWEN_SPEC_OPTIONS, } from './hyperqwen.ts';
 export { DEVICE_PROFILE_OPTIONS, KV_DTYPE_OPTIONS, NINFER_PARAMETERS, SPEC_OPTIONS as NINFER_SPEC_OPTIONS, } from './ninfer.ts';
 export { NINFER_VRAM_MODELS, ninferVramModel } from './vram.ts';
+export { BUILTIN_GUIDELINES, HOST_STATE_IMAGE_BYTES } from './guidelines.ts';
 export { ENGINES } from './engines.ts';
 export type { EngineInfo } from './engines.ts';
 /**
  * Mount the providers. The NInfer measured VramModels register here so the
- * service's estimate prices a named model; the engine adapters, presets, and
- * guidelines land in later phases.
+ * service's estimate prices a named model; the built-in hardware guidelines
+ * register so the guideline engine warns on docker, host RAM, and WSL2
+ * before the engine boots. The engine adapters and presets land in later
+ * phases.
  */
 export declare function apply(ctx: Context): void;
 declare const plugin: {

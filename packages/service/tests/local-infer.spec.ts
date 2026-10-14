@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { EngineAdapter } from '@dsh/dsh-plugin-local-infer/core'
+import { EngineAdapter, estimateVram } from '@dsh/dsh-plugin-local-infer/core'
 import type {
   Config,
   DeployResult,
@@ -80,6 +80,39 @@ function vramModel(id: string): VramModel {
   }
 }
 
+/** An adapter whose single spec carries an SM-89 hardware constraint. */
+class ConstrainedAdapter extends StubAdapter {
+  constructor() {
+    super('ninfer')
+  }
+
+  parameters(): ParameterSpec[] {
+    return [
+      {
+        key: 'kvDtype',
+        label: 'KV cache format',
+        description: 'Quantizes the KV cache. Smaller formats fit a longer context.',
+        form: {
+          kind: 'enum',
+          options: [
+            { value: 'int8', label: 'int8' },
+            { value: 'nvfp4', label: 'nvfp4' },
+          ],
+        },
+        defaultValue: 'int8',
+        hardwareConstraint: (value, hw) =>
+          value === 'nvfp4' && hw.gpu && hw.gpu.sm < 89
+            ? {
+                ok: false,
+                severity: 'error',
+                message: `nvfp4 KV needs SM 89 or newer; this card reports SM ${hw.gpu.sm}.`,
+              }
+            : { ok: true },
+      },
+    ]
+  }
+}
+
 async function seam(): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(LocalInfer)
@@ -147,9 +180,6 @@ describe('ctx.localInfer scaffold', () => {
   it('fails loudly on the orchestration entry points a later phase fills in', async () => {
     const ctx = await seam()
     const plan: LaunchPlan = { kind: 'process', port: 8080, healthUrl: 'http://127.0.0.1:8080/health' }
-    await expect(ctx.localInfer.guidelines({}, HW)).rejects.toThrow(
-      expect.objectContaining<LocalInferError>({ code: 'LOCAL_INFER_NOT_IMPLEMENTED' }),
-    )
     await expect(ctx.localInfer.deps(new StubAdapter('ninfer'), 'docker', HW)).rejects.toThrow(
       expect.objectContaining<LocalInferError>({ code: 'LOCAL_INFER_NOT_IMPLEMENTED' }),
     )
@@ -222,5 +252,88 @@ describe('ctx.localInfer scaffold', () => {
     const probes = await runHardwareProbes()
     expect(probes.os).toBe('linux')
     expect(probes.cpuThreads).toBe(profile.cpuThreads)
+  })
+})
+
+describe('ctx.localInfer guidelines', () => {
+  const HW86: HardwareProfile = {
+    ...HW,
+    gpu: { name: 'NVIDIA GeForce RTX 3090', vramGiB: 24, sm: 86 },
+  }
+
+  it('returns an empty list when no rule can fire', async () => {
+    const ctx = await seam()
+    expect(await ctx.localInfer.guidelines({}, HW)).toEqual([])
+  })
+
+  it('runs a per-spec hardwareConstraint of a registered engine', async () => {
+    const ctx = await seam()
+    ctx.localInfer.registerEngine(new ConstrainedAdapter())
+    const results = await ctx.localInfer.guidelines({ kvDtype: 'nvfp4' }, HW86)
+    expect(results).toEqual([
+      {
+        id: 'constraint:kvDtype',
+        level: 'error',
+        message: expect.stringContaining('SM 89'),
+        anchors: ['kvDtype'],
+      },
+    ])
+    // The same spec on an SM-89 card stays silent.
+    const hw89 = { ...HW86, gpu: { name: 'NVIDIA GeForce RTX 4090', vramGiB: 24, sm: 89 } }
+    expect(await ctx.localInfer.guidelines({ kvDtype: 'nvfp4' }, hw89)).toEqual([])
+  })
+
+  it('runs a registered named guideline', async () => {
+    const ctx = await seam()
+    ctx.localInfer.registerGuideline({
+      id: 'docker-not-installed',
+      level: 'error',
+      message: 'Docker is selected but not installed.',
+      when: (config, hw) => !hw.dockerAvailable && config.buildMode === 'docker',
+    })
+    const results = await ctx.localInfer.guidelines({ buildMode: 'docker' }, HW)
+    expect(results).toEqual([
+      { id: 'docker-not-installed', level: 'error', message: 'Docker is selected but not installed.' },
+    ])
+  })
+
+  it('fires the estimator-backed exceeds-usable rule in agreement with the estimate', async () => {
+    const ctx = await seam()
+    ctx.localInfer.registerVramModel(vramModel('qwen3-27b'))
+    const config = { model: 'qwen3-27b', kvDtype: 'int8', maxContext: 262144 }
+    const model = ctx.localInfer.registeredVramModels()[0]
+    const estimate = estimateVram(model, config, HW86)
+    expect(estimate.verdict.status).toBe('over')
+
+    const results = await ctx.localInfer.guidelines(config, HW86)
+    const over = results.find((result) => result.id === 'vram-exceeds-usable')
+    expect(over?.level).toBe('error')
+    expect(over?.anchors).toEqual(['maxContext'])
+    // The rule readout names the estimator's own solver answer, so the
+    // warning and the Phase 2 meter cannot disagree.
+    expect(over?.message).toContain(
+      `the largest fitting context is ${estimate.breakdown.largestFittingContext}`,
+    )
+  })
+
+  it('fires the draft-weights rule for a spec the model never measured', async () => {
+    const ctx = await seam()
+    ctx.localInfer.registerVramModel(vramModel('qwen3-27b'))
+    const config = { model: 'qwen3-27b', kvDtype: 'int8', maxContext: 4096, spec: 'mtp' }
+    const results = await ctx.localInfer.guidelines(config, HW)
+    const specRule = results.find((result) => result.id === 'spec-needs-draft-weights')
+    expect(specRule?.level).toBe('error')
+    expect(specRule?.anchors).toEqual(['spec'])
+    expect(specRule?.message).toContain('qwen3-27b')
+  })
+
+  it('stays silent on a fit with a measured spec', async () => {
+    const ctx = await seam()
+    ctx.localInfer.registerVramModel(vramModel('qwen3-27b'))
+    const results = await ctx.localInfer.guidelines(
+      { model: 'qwen3-27b', kvDtype: 'int8', maxContext: 4096, spec: 'none' },
+      HW86,
+    )
+    expect(results).toEqual([])
   })
 })

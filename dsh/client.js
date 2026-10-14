@@ -441,7 +441,7 @@ window.__ModuleLoader__.load({
 
         var onEngine = react.useCallback(
           (engine) => {
-            draftState[1]((current) => {
+            draftState[1]((_current) => {
               var next = { engine: engine, config: {} };
               if (timerRef.current) {
                 clearTimeout(timerRef.current);

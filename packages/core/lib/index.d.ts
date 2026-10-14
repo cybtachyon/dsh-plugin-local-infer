@@ -13,7 +13,8 @@ export { estimateVram, KV_PAGE_TOKENS, pageRoundUp, TIGHT_HEADROOM_BYTES, } from
 export type { EstimateContext, SpeculationTerms, VramBreakdown, VramContribution, VramEstimate, VramModel, VramVerdict, } from './estimator.ts';
 export { EngineAdapter } from './adapter.ts';
 export type { DeployResult, HealthResult, LaunchPlan } from './adapter.ts';
-export type { Guideline, GuidelineResult } from './guideline.ts';
+export { constraintId, evaluateGuidelines, modelGuidelines } from './guideline.ts';
+export type { Guideline, GuidelineLevel, GuidelineResult } from './guideline.ts';
 export type { DefaultProvenance, DefaultsResolver, HardwareClass, Preset, } from './defaults.ts';
 export type { DshModelEntry, DshModelRegistrar, RegisterResult } from './registrar.ts';
 export type { DepCheck, DepStatus, InstallResult, SystemDep, SystemDepProvisioner, } from './deps.ts';

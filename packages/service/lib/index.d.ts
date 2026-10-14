@@ -8,9 +8,9 @@
  * Providers register against the registries; the tool package and the UI call
  * the entry points. Registration is order-independent and a duplicate id is a
  * loud conflict, so hot-reload order never changes routing. `estimate` is
- * filled in by Phase 2 over the core estimator; the remaining entry points
- * fail loudly with `LOCAL_INFER_NOT_IMPLEMENTED` until later phases fill them
- * in.
+ * filled in by Phase 2 over the core estimator and `guidelines` by Phase 3
+ * over the core guideline engine; the remaining entry points fail loudly with
+ * `LOCAL_INFER_NOT_IMPLEMENTED` until later phases fill them in.
  * @module @dsh/dsh-plugin-local-infer/service
  */
 import { Context, Service } from '@deepseek-ai/cordis';
@@ -59,7 +59,15 @@ export declare class LocalInfer extends Service implements LocalInferService {
      * for that capability, so detection never throws on a bare host.
      */
     detectHardware(): Promise<HardwareProfile>;
-    guidelines(_config: Config, _hw: HardwareProfile): Promise<GuidelineResult[]>;
+    /**
+     * guidelines runs the full guideline engine over a config and a hardware
+     * profile: the registered named guidelines, every per-spec hardware
+     * constraint of the registered engines, and the model-aware rules that
+     * price against the resolved VramModel (the estimator-backed "exceeds
+     * usable VRAM" and "spec needs draft weights" rules). The result list is
+     * the single source the UI banner and the inline red warnings render from.
+     */
+    guidelines(config: Config, hw: HardwareProfile): Promise<GuidelineResult[]>;
     deps(_engine: EngineAdapter, _buildMode: 'docker' | 'local', _hw: HardwareProfile): Promise<SystemDep[]>;
     installString(_engine: EngineAdapter, _buildMode: 'docker' | 'local', _hw: HardwareProfile): Promise<string>;
     runInstall(_engine: EngineAdapter, _buildMode: 'docker' | 'local', _hw: HardwareProfile): Promise<InstallResult>;
@@ -72,6 +80,13 @@ export declare class LocalInfer extends Service implements LocalInferService {
      * rather than a guess.
      */
     private resolveVramModel;
+    /**
+     * collectSpecs gathers the parameter surfaces of every registered engine,
+     * deduped by key in registration order. A key two engines share (spec,
+     * draftTokens, vision) keeps the first engine's spec, so a config warning
+     * reads from one surface, not a collision.
+     */
+    private collectSpecs;
     /**
      * The scaffold's placeholder for an entry point a later phase fills in. It
      * fails loudly so a caller never mistakes "not built yet" for a real answer.

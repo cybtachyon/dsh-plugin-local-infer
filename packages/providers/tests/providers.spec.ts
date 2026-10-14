@@ -10,12 +10,20 @@ describe('local-infer-providers scaffold', () => {
     expect(localInferProviders).toEqual({ name, inject, apply })
   })
 
-  it('loads alongside the service and keeps the seam empty', async () => {
+  it('loads alongside the service and registers the built-in guidelines', async () => {
     const ctx = new Context()
     await ctx.plugin(LocalInfer)
     await ctx.plugin(localInferProviders)
     expect(ctx.localInfer.registeredEngines()).toEqual([])
     expect(ctx.localInfer.registeredPresets()).toEqual([])
-    expect(ctx.localInfer.registeredGuidelines()).toEqual([])
+    expect(ctx.localInfer.registeredGuidelines().map((guideline) => guideline.id)).toEqual([
+      'docker-not-installed',
+      'host-tiers-exceed-host-ram',
+      'wsl2-dflash2-needs-pin-memory',
+    ])
+    expect(ctx.localInfer.registeredVramModels().map((model) => model.id)).toEqual([
+      'qwen3-27b',
+      'qwen3-35b',
+    ])
   })
 })

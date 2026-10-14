@@ -58,17 +58,44 @@ const localInfer = {
     },
 };
 
-export default defineConfig({
-    files: ['**/*.{js,ts}'],
-    extends: [js.configs.recommended, tseslint.configs.recommended],
-    plugins: { 'local-infer': localInfer },
-    rules: {
-        // Stub parameters in the scaffold are intentionally unused; the leading
-        // underscore marks a placeholder a later phase fills in.
-        '@typescript-eslint/no-unused-vars': [
-            'error',
-            { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
-        ],
-        'local-infer/behavior-first-description': 'error',
+export default defineConfig([
+    {
+        // The packages' lib/ trees are committed tsc output so a git install
+        // ships the entry points, but they are emit, not source: lint the
+        // source, not the build.
+        ignores: ['packages/*/lib/**'],
     },
-});
+    {
+        files: ['**/*.{js,ts}'],
+        extends: [js.configs.recommended, tseslint.configs.recommended],
+        plugins: { 'local-infer': localInfer },
+        rules: {
+            // Stub parameters in the scaffold are intentionally unused; the
+            // leading underscore marks a placeholder a later phase fills in.
+            '@typescript-eslint/no-unused-vars': [
+                'error',
+                { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+            ],
+            'local-infer/behavior-first-description': 'error',
+        },
+    },
+    {
+        // The browser carrier is hand-written and runs in the page, so the
+        // browser globals it touches are declared here instead of the node
+        // host globals the rest of the workspace assumes.
+        files: ['dsh/client.js'],
+        languageOptions: {
+            globals: {
+                window: 'readonly',
+                document: 'readonly',
+                navigator: 'readonly',
+                console: 'readonly',
+                fetch: 'readonly',
+                URL: 'readonly',
+                URLSearchParams: 'readonly',
+                setTimeout: 'readonly',
+                clearTimeout: 'readonly',
+            },
+        },
+    },
+]);

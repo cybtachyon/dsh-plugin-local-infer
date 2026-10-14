@@ -8,9 +8,9 @@
  * Providers register against the registries; the tool package and the UI call
  * the entry points. Registration is order-independent and a duplicate id is a
  * loud conflict, so hot-reload order never changes routing. `estimate` is
- * filled in by Phase 2 over the core estimator; the remaining entry points
- * fail loudly with `LOCAL_INFER_NOT_IMPLEMENTED` until later phases fill them
- * in.
+ * filled in by Phase 2 over the core estimator and `guidelines` by Phase 3
+ * over the core guideline engine; the remaining entry points fail loudly with
+ * `LOCAL_INFER_NOT_IMPLEMENTED` until later phases fill them in.
  * @module @dsh/dsh-plugin-local-infer/service
  */
 
@@ -22,7 +22,9 @@ import { Context, Service } from '@deepseek-ai/cordis'
 // local-path or pnpm-linked install of this repo would fail the import.
 import {
   detectHardware as detectHardwareFromProbes,
+  evaluateGuidelines,
   estimateVram,
+  modelGuidelines,
   parseNvidiaSmiGpu,
 } from '../../core/lib/index.js'
 import type {
@@ -35,6 +37,7 @@ import type {
   HardwareProbes,
   InstallResult,
   LaunchPlan,
+  ParameterSpec,
   Preset,
   RegisterResult,
   SystemDep,
@@ -188,8 +191,28 @@ export class LocalInfer extends Service implements LocalInferService {
     return detectHardwareFromProbes(probes)
   }
 
-  async guidelines(_config: Config, _hw: HardwareProfile): Promise<GuidelineResult[]> {
-    return this.notImplemented('guidelines')
+  /**
+   * guidelines runs the full guideline engine over a config and a hardware
+   * profile: the registered named guidelines, every per-spec hardware
+   * constraint of the registered engines, and the model-aware rules that
+   * price against the resolved VramModel (the estimator-backed "exceeds
+   * usable VRAM" and "spec needs draft weights" rules). The result list is
+   * the single source the UI banner and the inline red warnings render from.
+   */
+  async guidelines(config: Config, hw: HardwareProfile): Promise<GuidelineResult[]> {
+    const results = evaluateGuidelines(
+      this.registeredGuidelines(),
+      this.collectSpecs(),
+      config,
+      hw,
+    )
+    const model = this.resolveVramModel(config)
+    if (model !== undefined) {
+      for (const result of modelGuidelines(model, config, hw)) {
+        results.push(result)
+      }
+    }
+    return results
   }
 
   async deps(_engine: EngineAdapter, _buildMode: 'docker' | 'local', _hw: HardwareProfile): Promise<SystemDep[]> {
@@ -224,6 +247,25 @@ export class LocalInfer extends Service implements LocalInferService {
     }
     const models = [...this.vramModelRegistry.values()]
     return models.length === 1 ? models[0] : undefined
+  }
+
+  /**
+   * collectSpecs gathers the parameter surfaces of every registered engine,
+   * deduped by key in registration order. A key two engines share (spec,
+   * draftTokens, vision) keeps the first engine's spec, so a config warning
+   * reads from one surface, not a collision.
+   */
+  private collectSpecs(): readonly ParameterSpec[] {
+    const seen = new Set<string>()
+    const specs: ParameterSpec[] = []
+    for (const engine of this.engineRegistry.values()) {
+      for (const spec of engine.parameters()) {
+        if (seen.has(spec.key)) continue
+        seen.add(spec.key)
+        specs.push(spec)
+      }
+    }
+    return specs
   }
 
   /**

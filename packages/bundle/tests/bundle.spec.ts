@@ -21,6 +21,11 @@ describe('local-infer bundle', () => {
     expect(ctx.localInfer).toBeInstanceOf(LocalInfer)
     expect(ctx.localInfer.registeredEngines()).toEqual([])
     expect(ctx.localInfer.registeredPresets()).toEqual([])
-    expect(ctx.localInfer.registeredGuidelines()).toEqual([])
+    // The providers row registers the built-in hardware guidelines.
+    expect(ctx.localInfer.registeredGuidelines().map((guideline) => guideline.id)).toEqual([
+      'docker-not-installed',
+      'host-tiers-exceed-host-ram',
+      'wsl2-dflash2-needs-pin-memory',
+    ])
   })
 })
