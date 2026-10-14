@@ -150,6 +150,11 @@ describe('registrar section reads', () => {
     expect(modelRowsFrom(undefined, 'ninfer-local')).toEqual([])
     expect(modelRowsFrom(null, 'ninfer-local')).toEqual([])
     expect(modelRowsFrom({ providers: {} }, 'ninfer-local')).toEqual([])
+    // A providers field that is not an object (or a provider that is not an
+    // object) reads as empty, so a hand-edit that reshapes the section never
+    // throws.
+    expect(modelRowsFrom({ providers: 'nope' }, 'ninfer-local')).toEqual([])
+    expect(modelRowsFrom({ providers: { 'ninfer-local': 'nope' } }, 'ninfer-local')).toEqual([])
     expect(
       modelRowsFrom(
         { providers: { 'ninfer-local': { models: 'not-a-list' } } },
@@ -161,6 +166,13 @@ describe('registrar section reads', () => {
     expect(
       modelRowsFrom(
         { providers: { 'ninfer-local': { models: [{ name: 'no id' }, { id: 'ok' }] } } },
+        'ninfer-local',
+      ).map((row) => row.id),
+    ).toEqual(['ok'])
+    // A non-object entry in the models list is skipped the same way.
+    expect(
+      modelRowsFrom(
+        { providers: { 'ninfer-local': { models: [null, 'nope', { id: 'ok' }] } } },
         'ninfer-local',
       ).map((row) => row.id),
     ).toEqual(['ok'])

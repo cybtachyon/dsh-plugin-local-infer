@@ -115,4 +115,75 @@ export declare class HyperQwenAdapter extends EngineAdapter {
     private port;
     private profile;
 }
+/**
+ * The llama.cpp docker image the adapter pulls and runs. The engineFork
+ * platform config overrides the git source for a local build; the image stays
+ * the upstream ggml artifact.
+ */
+export declare const LLAMACPP_DOCKER_IMAGE = "ghcr.io/ggml-org/llama.cpp";
+/**
+ * LlamaCppAdapter is the llama.cpp engine, both-capable like NInfer.
+ * `renderLaunch` renders a local `llama-server` process or a `docker run` of the
+ * ggml image from the same `LLAMACPP_PARAMETERS` surface; `deploy` builds the
+ * engine in the engine directory (or pulls the image), downloads the GGUF model
+ * into the model directory, and starts the engine; `healthCheck` polls the health
+ * URL; `stop` signals the tracked process and stops the named container.
+ */
+export declare class LlamaCppAdapter extends EngineAdapter {
+    readonly id = "llamacpp";
+    readonly supports: {
+        docker: boolean;
+        local: boolean;
+    };
+    private readonly host;
+    private readonly children;
+    constructor(host?: LifecycleHost);
+    parameters(): readonly ParameterSpec[];
+    modelRef(config: Config): {
+        id: string;
+        name: string;
+    };
+    renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan;
+    deploy(plan: LaunchPlan, platform?: EnginePlatformConfig): Promise<DeployResult>;
+    healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;
+    stop(plan: LaunchPlan): Promise<void>;
+    private buildMode;
+    private port;
+    private planKey;
+    private downloadModel;
+}
+/**
+ * The Strata docker image the adapter pulls and runs. Strata is the
+ * placeholder engine: the image and the parameter data land when the engine
+ * is available, and the adapter renders a bare docker plan until then.
+ */
+export declare const STRATA_DOCKER_IMAGE = "ghcr.io/strata/strata";
+/**
+ * StrataAdapter is the placeholder docker-only engine. `renderLaunch` renders
+ * a `docker run` of the Strata image (no spec surface yet, so no flags);
+ * `deploy` pulls the image and starts the container; `healthCheck` polls the
+ * health URL; `stop` stops the named container. The parameter surface and the
+ * per-model data land with the engine, as data edits, never an adapter rewire.
+ */
+export declare class StrataAdapter extends EngineAdapter {
+    readonly id = "strata";
+    readonly supports: {
+        docker: boolean;
+        local: boolean;
+    };
+    private readonly host;
+    private readonly children;
+    constructor(host?: LifecycleHost);
+    parameters(): readonly ParameterSpec[];
+    modelRef(_config: Config): {
+        id: string;
+        name: string;
+    };
+    renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan;
+    deploy(plan: LaunchPlan): Promise<DeployResult>;
+    healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;
+    stop(plan: LaunchPlan): Promise<void>;
+    private port;
+    private planKey;
+}
 //# sourceMappingURL=adapters.d.ts.map

@@ -77,6 +77,8 @@ describe('NInfer parameter surface', () => {
     expect(argvFor('hostKvMib', 49152)).toEqual(['--host-kv-mib', '49152'])
     expect(argvFor('hostStateSlots', 16)).toEqual(['--host-state-slots', '16'])
     expect(argvFor('minP', 0.05)).toEqual(['--min-p', '0.05'])
+    expect(argvFor('kvCapacity', 262144)).toEqual(['--kv-capacity', '262144'])
+    expect(argvFor('prefillChunk', 4096)).toEqual(['--prefill-chunk', '4096'])
     expect(argvFor('vision', false)).toEqual([])
     expect(argvFor('deviceProfile', 'auto')).toEqual([])
     expect(argvFor('deviceProfile', 'calibrate')).toEqual(['--device-profile', 'calibrate'])

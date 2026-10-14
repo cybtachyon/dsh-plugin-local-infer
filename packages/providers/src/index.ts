@@ -15,7 +15,12 @@ import type { Context } from '@deepseek-ai/cordis'
 // The service's `declare module` adds `localInfer` to the cordis Context; the
 // type import loads that augmentation without a runtime edge.
 import type { LocalInferService } from '@dsh/dsh-plugin-local-infer/service'
-import { HyperQwenAdapter, NInferAdapter } from './adapters.ts'
+import {
+  HyperQwenAdapter,
+  LlamaCppAdapter,
+  NInferAdapter,
+  StrataAdapter,
+} from './adapters.ts'
 import { ENGINE_DEP_PLANS } from './deps.ts'
 import { BUILTIN_GUIDELINES } from './guidelines.ts'
 import { BUILTIN_PRESETS } from './presets.ts'
@@ -49,15 +54,27 @@ export { ENGINE_DEP_PLANS, SYSTEM_DEPS } from './deps.ts'
 export { BUILTIN_PRESETS, PRESET_SOURCES, extractJsonBlock } from './presets.ts'
 export {
   HyperQwenAdapter,
+  LLAMACPP_DOCKER_IMAGE,
   NINFER_DOCKER_IMAGE,
   NINFER_MODEL_ARTIFACTS,
   NInferAdapter,
+  STRATA_DOCKER_IMAGE,
+  StrataAdapter,
+  LlamaCppAdapter,
   envFromSpecs,
   flagsFromSpecs,
   nodeLifecycleHost,
   pollHealth,
 } from './adapters.ts'
 export type { NInferModelArtifact } from './adapters.ts'
+export {
+  KV_CACHE_TYPE_OPTIONS,
+  LLAMACPP_MODEL_ARTIFACTS,
+  LLAMACPP_PARAMETERS,
+  llamaCppModelKey,
+} from './llamacpp.ts'
+export type { LlamaCppModelArtifact } from './llamacpp.ts'
+export { STRATA_PARAMETERS } from './strata.ts'
 
 /**
  * Mount the providers. The NInfer measured VramModels register here so the
@@ -86,6 +103,8 @@ export function apply(ctx: Context): void {
   }
   localInfer.registerEngine(new NInferAdapter())
   localInfer.registerEngine(new HyperQwenAdapter())
+  localInfer.registerEngine(new LlamaCppAdapter())
+  localInfer.registerEngine(new StrataAdapter())
 }
 
 const plugin = { name, inject, apply }

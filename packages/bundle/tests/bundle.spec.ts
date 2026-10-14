@@ -19,10 +19,13 @@ describe('local-infer bundle', () => {
     await ctx.plugin(localInferTool)
     await ctx.plugin(localInferUi)
     expect(ctx.localInfer).toBeInstanceOf(LocalInfer)
-    // The providers row registers the NInfer and Hyper-Qwen engine adapters.
+    // The providers row registers all four engine adapters: the measured
+    // NInfer and Hyper-Qwen, the specified llama.cpp, and the placeholder Strata.
     expect(ctx.localInfer.registeredEngines().map((engine) => engine.id)).toEqual([
       'ninfer',
       'hyperqwen',
+      'llamacpp',
+      'strata',
     ])
     // The providers row registers the built-in presets (two NInfer, three
     // Hyper-Qwen tiers) alongside the hardware guidelines.

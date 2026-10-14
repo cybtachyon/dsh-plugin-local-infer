@@ -10,7 +10,7 @@
  * that the defaults resolver resolves against.
  * @module @dsh/dsh-plugin-local-infer/providers
  */
-import { HyperQwenAdapter, NInferAdapter } from "./adapters.js";
+import { HyperQwenAdapter, LlamaCppAdapter, NInferAdapter, StrataAdapter, } from "./adapters.js";
 import { ENGINE_DEP_PLANS } from "./deps.js";
 import { BUILTIN_GUIDELINES } from "./guidelines.js";
 import { BUILTIN_PRESETS } from "./presets.js";
@@ -29,7 +29,9 @@ export { BUILTIN_GUIDELINES, HOST_STATE_IMAGE_BYTES } from "./guidelines.js";
 export { ENGINES } from "./engines.js";
 export { ENGINE_DEP_PLANS, SYSTEM_DEPS } from "./deps.js";
 export { BUILTIN_PRESETS, PRESET_SOURCES, extractJsonBlock } from "./presets.js";
-export { HyperQwenAdapter, NINFER_DOCKER_IMAGE, NINFER_MODEL_ARTIFACTS, NInferAdapter, envFromSpecs, flagsFromSpecs, nodeLifecycleHost, pollHealth, } from "./adapters.js";
+export { HyperQwenAdapter, LLAMACPP_DOCKER_IMAGE, NINFER_DOCKER_IMAGE, NINFER_MODEL_ARTIFACTS, NInferAdapter, STRATA_DOCKER_IMAGE, StrataAdapter, LlamaCppAdapter, envFromSpecs, flagsFromSpecs, nodeLifecycleHost, pollHealth, } from "./adapters.js";
+export { KV_CACHE_TYPE_OPTIONS, LLAMACPP_MODEL_ARTIFACTS, LLAMACPP_PARAMETERS, llamaCppModelKey, } from "./llamacpp.js";
+export { STRATA_PARAMETERS } from "./strata.js";
 /**
  * Mount the providers. The NInfer measured VramModels register here so the
  * service's estimate prices a named model; the built-in hardware guidelines
@@ -57,6 +59,8 @@ export function apply(ctx) {
     }
     localInfer.registerEngine(new NInferAdapter());
     localInfer.registerEngine(new HyperQwenAdapter());
+    localInfer.registerEngine(new LlamaCppAdapter());
+    localInfer.registerEngine(new StrataAdapter());
 }
 const plugin = { name, inject, apply };
 export default plugin;

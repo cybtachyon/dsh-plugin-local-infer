@@ -142,6 +142,31 @@ describe('NInfer VramModel data', () => {
     expect(runs).toBeGreaterThan(0)
   })
 
+  it('prices the draft-head (+head) variants the grid leaves out', () => {
+    // The grid above never sets lmHeadDraft, so the +head measured entries
+    // (the 27B mtp3+head / dflash2-7+head and the 35B mtp3+head / dflash-3+head)
+    // are only reached when the head flag is on. Price them so the data is
+    // exercised, and confirm a head draft prices at least as much as the plain
+    // mode, so the meter never underprices a draft-head run.
+    for (const model of NINFER_VRAM_MODELS) {
+      for (const spec of ['mtp', 'dflash', 'dflash2']) {
+        const plain = estimateVram(
+          model,
+          { model: model.id, kvDtype: 'int8', maxContext: 32768, spec },
+          HW_3090,
+        )
+        if (plain.verdict.status === 'not-measured') continue
+        const withHead = estimateVram(
+          model,
+          { model: model.id, kvDtype: 'int8', maxContext: 32768, spec, lmHeadDraft: true },
+          HW_3090,
+        )
+        if (withHead.verdict.status === 'not-measured') continue
+        expect(withHead.breakdown.total).toBeGreaterThanOrEqual(plain.breakdown.total)
+      }
+    }
+  })
+
   it('keeps the largest-fitting-context responsive to the spec mode across the grid', () => {
     // The failure mode the per-mode terms fix: before them every spec mode
     // reported the no-speculation context, silently promising context a

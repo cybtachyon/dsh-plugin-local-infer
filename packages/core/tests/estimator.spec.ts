@@ -334,3 +334,47 @@ describe('estimateVram config plumbing', () => {
     )
   })
 })
+
+describe('estimateVram edge branches', () => {
+  it('reads a config with no KV format as not-measured, naming the missing key', () => {
+    const model = model27b()
+    const estimate = estimateVram(model, { maxContext: 4096 }, HW_3090)
+    expect(estimate.verdict.status).toBe('not-measured')
+    expect(estimate.verdict.detail).toContain('no KV format')
+  })
+
+  it('caps the largest-fitting context at the native limit when a token costs nothing', () => {
+    // A model whose KV format prices zero bytes per token and carries no
+    // per-token sequence cost has a zero per-token price, so the solver hands
+    // back the model's native ceiling instead of dividing by zero.
+    const model: VramModel = {
+      ...model27b(),
+      kvBytesPerToken: { int8: 0 },
+      seqPerToken: 0,
+      speculation: undefined,
+    }
+    const estimate = estimateVram(model, { kvDtype: 'int8', maxContext: 4096 }, HW_3090)
+    expect(estimate.breakdown.largestFittingContext).toBe(model.nativeMaxContext)
+  })
+
+  it('skips a spec with no vramContribution in the contribution sum', () => {
+    const model = model35b()
+    // A spec with no contribution is a no-op in the bucket sum, so the
+    // estimate is identical to one without the spec.
+    const plain: ParameterSpec = {
+      key: 'plain',
+      label: 'Plain',
+      description: 'A parameter the estimator does not price.',
+      form: { kind: 'boolean' },
+      defaultValue: true,
+    }
+    const withPlain = estimateVram(
+      model,
+      { kvDtype: 'int8', maxContext: 4096, plain: true },
+      HW_3090,
+      [plain],
+    )
+    const without = estimateVram(model, { kvDtype: 'int8', maxContext: 4096 }, HW_3090)
+    expect(withPlain.breakdown).toEqual(without.breakdown)
+  })
+})

@@ -1,15 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import {
   HyperQwenAdapter,
+  LLAMACPP_DOCKER_IMAGE,
   NINFER_DOCKER_IMAGE,
   NINFER_MODEL_ARTIFACTS,
   NInferAdapter,
+  STRATA_DOCKER_IMAGE,
+  StrataAdapter,
+  LlamaCppAdapter,
   envFromSpecs,
   flagsFromSpecs,
   pollHealth,
 } from '../src/adapters.ts'
 import { NINFER_PARAMETERS } from '../src/ninfer.ts'
 import { HYPERQWEN_PARAMETERS } from '../src/hyperqwen.ts'
+import { LLAMACPP_PARAMETERS } from '../src/llamacpp.ts'
 import type {
   CommandOutcome,
   FetchResult,
@@ -200,6 +205,34 @@ describe('NInferAdapter.deploy', () => {
     expect(result.ok).toBe(false)
     expect(result.detail).toContain('build failed')
   })
+
+  it('treats a compose plan as a no-op and skips the download when no artifact is named', async () => {
+    const { host, state } = stubHost()
+    const adapter = new NInferAdapter(host)
+    // A compose plan is a no-op for a process/docker engine.
+    const compose: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'compose',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    expect(await adapter.deploy(compose)).toEqual({ ok: true })
+    expect(state.run).toHaveLength(0)
+    expect(state.spawn).toHaveLength(0)
+    // A process plan that names no modelId skips the model download.
+    const bare: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      argv: ['ninfer-serve', 'x.ninfer'],
+      env: {},
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    const result = await adapter.deploy(bare)
+    expect(result.ok).toBe(true)
+    expect(state.run).toHaveLength(0)
+    expect(state.spawn).toHaveLength(1)
+  })
 })
 
 describe('NInferAdapter.healthCheck and stop', () => {
@@ -321,6 +354,32 @@ describe('HyperQwenAdapter', () => {
     await adapter.stop(plan)
     expect(state.run[1]).toBe('docker compose -f docker-compose.yml --profile single down')
   })
+
+  it('exposes the Hyper-Qwen spec surface and reports a failed compose up', async () => {
+    const { host, state } = stubHost()
+    const adapter = new HyperQwenAdapter(host)
+    // The adapter's parameter surface is the Hyper-Qwen spec data.
+    expect(adapter.parameters()).toHaveLength(HYPERQWEN_PARAMETERS.length)
+    // A failed compose up reads as not-ok with the detail.
+    state.runOk = false
+    const plan: LaunchPlan = {
+      engineId: 'hyperqwen',
+      kind: 'compose',
+      env: {},
+      composeFile: 'docker-compose.yml',
+      profile: 'single',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    const result = await adapter.deploy(plan)
+    expect(result.ok).toBe(false)
+    expect(result.detail).toContain('compose up failed')
+    // The health check polls the health URL through the shared helper.
+    state.runOk = true
+    state.fetchSequence = [503, 200]
+    const health = await adapter.healthCheck(plan, { pollMs: 0, maxAttempts: 3 })
+    expect(health.healthy).toBe(true)
+  })
 })
 
 describe('spec flag and env helpers', () => {
@@ -356,5 +415,348 @@ describe('pollHealth', () => {
     const result = await pollHealth(host, plan, { pollMs: 0, maxAttempts: 5 })
     expect(result.healthy).toBe(true)
     expect(state.fetch).toHaveLength(3)
+  })
+})
+
+describe('LlamaCppAdapter', () => {
+  it('renders a local process plan with the GGUF path and the spec flags', () => {
+    const { host } = stubHost()
+    const adapter = new LlamaCppAdapter(host)
+    const plan = adapter.renderLaunch(
+      { model: 'qwen3-27b', ctxSize: 8192, kvCacheType: 'q8_0', port: 8080, modelDirectory: '/models' },
+      HW,
+    )
+    expect(plan.kind).toBe('process')
+    expect(plan.engineId).toBe('llamacpp')
+    expect(plan.port).toBe(8080)
+    expect(plan.healthUrl).toBe('http://127.0.0.1:8080/health')
+    expect(plan.modelId).toBe('qwen3-27b')
+    expect(plan.modelDirectory).toBe('/models')
+    const argv = plan.argv ?? []
+    expect(argv[0]).toBe('llama-server')
+    expect(argv).toContain('--model')
+    expect(argv).toContain('/models/Qwen3-8-27B-q4_k_m.gguf')
+    expect(argv).toContain('--ctx-size')
+    expect(argv).toContain('8192')
+    expect(argv).toContain('--cache-type-k')
+    expect(argv).toContain('q8_0')
+    expect(argv).toContain('--port')
+    expect(argv).toContain('8080')
+  })
+
+  it('renders a docker plan with the ggml image, a named container, and the host port map', () => {
+    const { host } = stubHost()
+    const adapter = new LlamaCppAdapter(host)
+    const plan = adapter.renderLaunch(
+      { model: 'qwen3-27b', buildMode: 'docker', ctxSize: 8192, port: 8080, modelDirectory: '/models' },
+      HW,
+    )
+    expect(plan.kind).toBe('docker')
+    expect(plan.containerName).toBe('llamacpp-8080')
+    const argv = plan.argv ?? []
+    expect(argv[0]).toBe('docker')
+    expect(argv[1]).toBe('run')
+    expect(argv).toContain(LLAMACPP_DOCKER_IMAGE)
+    expect(argv).toContain('--model')
+    expect(argv).toContain('/models/Qwen3-8-27B-q4_k_m.gguf')
+  })
+
+  it('defaults to the 27B artifact and the 8080 port when the config names neither', () => {
+    const { host } = stubHost()
+    const adapter = new LlamaCppAdapter(host)
+    const plan = adapter.renderLaunch({}, HW)
+    expect(plan.modelId).toBe('qwen3-27b')
+    expect(plan.port).toBe(8080)
+    expect(plan.argv?.[2]).toBe('Qwen3-8-27B-q4_k_m.gguf')
+  })
+
+  it('builds in the engine directory, downloads the GGUF, and spawns the engine', async () => {
+    const { host, state } = stubHost()
+    const adapter = new LlamaCppAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'llamacpp',
+      kind: 'process',
+      argv: ['llama-server', '/models/x.gguf'],
+      env: {},
+      modelId: 'qwen3-27b',
+      modelDirectory: '/models',
+      port: 8080,
+      healthUrl: 'http://127.0.0.1:8080/health',
+    }
+    const result = await adapter.deploy(plan, {
+      engineId: 'llamacpp',
+      engineDirectory: '/src/llama.cpp',
+      engineFork: 'https://github.com/ggml-org/llama.cpp',
+    })
+    expect(result.ok).toBe(true)
+    expect(state.run[0]).toContain('git clone https://github.com/ggml-org/llama.cpp /src/llama.cpp')
+    expect(state.run[1]).toContain('cmake -S /src/llama.cpp -B /src/llama.cpp/build')
+    expect(state.run[2]).toContain('hf download')
+    expect(state.run[2]).toContain('--local-dir /models')
+    expect(state.spawn).toHaveLength(1)
+    expect(state.spawn[0]?.cwd).toBe('/src/llama.cpp')
+  })
+
+  it('pulls the image and spawns the container for a docker plan', async () => {
+    const { host, state } = stubHost()
+    const adapter = new LlamaCppAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'llamacpp',
+      kind: 'docker',
+      argv: ['docker', 'run', LLAMACPP_DOCKER_IMAGE, '--model', 'x.gguf'],
+      env: {},
+      containerName: 'llamacpp-8080',
+      port: 8080,
+      healthUrl: 'http://127.0.0.1:8080/health',
+    }
+    const result = await adapter.deploy(plan)
+    expect(result.ok).toBe(true)
+    expect(state.run[0]).toBe(`docker pull ${LLAMACPP_DOCKER_IMAGE}`)
+    expect(state.spawn).toHaveLength(1)
+  })
+
+  it('polls the health URL and stops the named container and tracked process', async () => {
+    const { host, state } = stubHost()
+    state.fetchSequence = [503, 200]
+    const adapter = new LlamaCppAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'llamacpp',
+      kind: 'docker',
+      argv: ['docker', 'run', LLAMACPP_DOCKER_IMAGE, '--model', 'x.gguf'],
+      env: {},
+      containerName: 'llamacpp-8080',
+      port: 8080,
+      healthUrl: 'http://127.0.0.1:8080/health',
+    }
+    const result = await adapter.healthCheck(plan, { pollMs: 0, maxAttempts: 3 })
+    expect(result.healthy).toBe(true)
+    await adapter.deploy(plan)
+    await adapter.stop(plan)
+    expect(state.run[1]).toBe('docker stop llamacpp-8080')
+    expect(state.killed).toContain(1234)
+  })
+
+  it('publishes the artifact model id the engine serves', () => {
+    const { host } = stubHost()
+    const adapter = new LlamaCppAdapter(host)
+    expect(adapter.modelRef({ model: 'qwen3-27b' })).toEqual({
+      id: 'Qwen3.8-27B',
+      name: 'Qwen3.8-27B',
+    })
+    // No model named: the 27B default.
+    expect(adapter.modelRef({})).toEqual({ id: 'Qwen3.8-27B', name: 'Qwen3.8-27B' })
+  })
+
+  it('spells the spec surface into flags through the shared helper', () => {
+    const flags = flagsFromSpecs(LLAMACPP_PARAMETERS, { ctxSize: 8192, kvCacheType: 'q4_0' })
+    expect(flags).toContain('--ctx-size')
+    expect(flags).toContain('8192')
+    expect(flags).toContain('--cache-type-k')
+    expect(flags).toContain('q4_0')
+    // A boolean default of false contributes no flag.
+    expect(flags).not.toContain('--flash-attn')
+  })
+
+  it('exposes the llama.cpp spec surface through the adapter', () => {
+    const { host } = stubHost()
+    const adapter = new LlamaCppAdapter(host)
+    expect(adapter.parameters()).toHaveLength(LLAMACPP_PARAMETERS.length)
+    expect(adapter.parameters()).toBe(LLAMACPP_PARAMETERS)
+  })
+
+  it('skips a spec whose value and default are both undefined', () => {
+    // A spec with a toArgv but no defaultValue contributes nothing when the
+    // config leaves the key unset, so a bare config renders a bare plan.
+    const specs = [
+      {
+        key: 'custom',
+        label: 'Custom',
+        description: 'A flag with no default.',
+        form: { kind: 'text' },
+        toArgv: (value: unknown) => (value ? ['--custom', String(value)] : []),
+      },
+    ]
+    expect(flagsFromSpecs(specs, {})).toEqual([])
+    expect(envFromSpecs(specs, {})).toEqual({})
+  })
+
+  it('reports a failed clone, build, and download as not-ok with the detail', async () => {
+    const { host, state } = stubHost()
+    state.runOk = false
+    const adapter = new LlamaCppAdapter(host)
+    // With a fork, the first run is the clone, so a failed run reads as a clone failure.
+    const clonePlan: LaunchPlan = {
+      engineId: 'llamacpp', kind: 'process', argv: ['llama-server', 'x.gguf'], env: {},
+      modelId: 'qwen3-27b', port: 8080, healthUrl: 'http://127.0.0.1:8080/health',
+    }
+    const cloneResult = await adapter.deploy(clonePlan, {
+      engineId: 'llamacpp', engineDirectory: '/src/llama.cpp',
+      engineFork: 'https://github.com/ggml-org/llama.cpp',
+    })
+    expect(cloneResult.ok).toBe(false)
+    expect(cloneResult.detail).toContain('git clone failed')
+    // Without a fork the clone is skipped, so a failed run reads as a build failure.
+    state.run = []
+    const buildResult = await adapter.deploy(clonePlan, {
+      engineId: 'llamacpp', engineDirectory: '/src/llama.cpp',
+    })
+    expect(buildResult.ok).toBe(false)
+    expect(buildResult.detail).toContain('build failed')
+    // Without an engine dir the clone and build are skipped, so a failed run reads
+    // as a model-download failure (the plan names the 27B artifact).
+    state.run = []
+    const downloadResult = await adapter.deploy(clonePlan)
+    expect(downloadResult.ok).toBe(false)
+    expect(downloadResult.detail).toContain('model download failed')
+    expect(state.run.length).toBeGreaterThan(0)
+  })
+
+  it('reports a failed docker pull as not-ok and treats a compose plan as a no-op', async () => {
+    const { host, state } = stubHost()
+    state.runOk = false
+    const adapter = new LlamaCppAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'llamacpp', kind: 'docker', argv: ['docker', 'run', LLAMACPP_DOCKER_IMAGE],
+      env: {}, containerName: 'llamacpp-8080', port: 8080,
+      healthUrl: 'http://127.0.0.1:8080/health',
+    }
+    const result = await adapter.deploy(plan)
+    expect(result.ok).toBe(false)
+    expect(result.detail).toContain('docker pull failed')
+    // A compose plan is a no-op for a process/docker engine.
+    state.runOk = true
+    const compose: LaunchPlan = { engineId: 'llamacpp', kind: 'compose', port: 8080, healthUrl: 'http://127.0.0.1:8080/health' }
+    expect(await adapter.deploy(compose)).toEqual({ ok: true })
+    expect(state.spawn).toHaveLength(0)
+  })
+
+  it('skips the model download when the plan names no artifact', async () => {
+    const { host, state } = stubHost()
+    const adapter = new LlamaCppAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'llamacpp', kind: 'process', argv: ['llama-server', 'x.gguf'], env: {},
+      port: 8080, healthUrl: 'http://127.0.0.1:8080/health',
+    }
+    const result = await adapter.deploy(plan)
+    expect(result.ok).toBe(true)
+    // No modelId, so no hf download command runs; only the spawn happens.
+    expect(state.run).toHaveLength(0)
+    expect(state.spawn).toHaveLength(1)
+  })
+})
+
+describe('StrataAdapter', () => {
+  it('renders a docker plan with the Strata image and a named container', () => {
+    const { host } = stubHost()
+    const adapter = new StrataAdapter(host)
+    const plan = adapter.renderLaunch({ port: 8090 }, HW)
+    expect(plan.kind).toBe('docker')
+    expect(plan.engineId).toBe('strata')
+    expect(plan.containerName).toBe('strata-8090')
+    expect(plan.port).toBe(8090)
+    expect(plan.healthUrl).toBe('http://127.0.0.1:8090/health')
+    const argv = plan.argv ?? []
+    expect(argv[0]).toBe('docker')
+    expect(argv).toContain(STRATA_DOCKER_IMAGE)
+  })
+
+  it('renders an empty spec surface, so the plan carries no flags', () => {
+    const { host } = stubHost()
+    const adapter = new StrataAdapter(host)
+    expect(adapter.parameters()).toEqual([])
+    // The bare plan: the image and the port map, nothing from a spec surface.
+    // docker run --rm --gpus all --name <c> -p <map> <image> = 10 elements.
+    const plan = adapter.renderLaunch({}, HW)
+    expect(plan.argv).toHaveLength(10)
+  })
+
+  it('pulls the image and stops the named container', async () => {
+    const { host, state } = stubHost()
+    const adapter = new StrataAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'strata',
+      kind: 'docker',
+      argv: ['docker', 'run', STRATA_DOCKER_IMAGE],
+      env: {},
+      containerName: 'strata-8080',
+      port: 8080,
+      healthUrl: 'http://127.0.0.1:8080/health',
+    }
+    const result = await adapter.deploy(plan)
+    expect(result.ok).toBe(true)
+    expect(state.run[0]).toBe(`docker pull ${STRATA_DOCKER_IMAGE}`)
+    await adapter.stop(plan)
+    expect(state.run[1]).toBe('docker stop strata-8080')
+    expect(state.killed).toContain(1234)
+  })
+
+  it('publishes the engine id until per-model data lands', () => {
+    const { host } = stubHost()
+    const adapter = new StrataAdapter(host)
+    expect(adapter.modelRef({})).toEqual({ id: 'strata', name: 'Strata' })
+  })
+
+  it('reports a failed docker pull as not-ok', async () => {
+    const { host, state } = stubHost()
+    state.runOk = false
+    const adapter = new StrataAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'strata', kind: 'docker', argv: ['docker', 'run', STRATA_DOCKER_IMAGE],
+      env: {}, containerName: 'strata-8080', port: 8080,
+      healthUrl: 'http://127.0.0.1:8080/health',
+    }
+    const result = await adapter.deploy(plan)
+    expect(result.ok).toBe(false)
+    expect(result.detail).toContain('docker pull failed')
+  })
+
+  it('polls the health URL until a 200', async () => {
+    const { host, state } = stubHost()
+    state.fetchSequence = [503, 200]
+    const adapter = new StrataAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'strata', kind: 'docker', argv: ['docker', 'run', STRATA_DOCKER_IMAGE],
+      env: {}, containerName: 'strata-8080', port: 8080,
+      healthUrl: 'http://127.0.0.1:8080/health',
+    }
+    const result = await adapter.healthCheck(plan, { pollMs: 0, maxAttempts: 3 })
+    expect(result.healthy).toBe(true)
+    expect(state.fetch).toHaveLength(2)
+  })
+})
+
+describe('nodeLifecycleHost (the live host the service wires in)', () => {
+  it('runs a command through the shell and reads a clean exit as ok', async () => {
+    const { nodeLifecycleHost } = await import('../src/adapters.ts')
+    const ok = await nodeLifecycleHost.run('echo local-infer-probe')
+    expect(ok.ok).toBe(true)
+  })
+
+  it('reads a non-zero exit as not-ok with the captured detail', async () => {
+    const { nodeLifecycleHost } = await import('../src/adapters.ts')
+    // `false` exits 1 with no stderr; the detail carries the error string.
+    const failed = await nodeLifecycleHost.run('false')
+    expect(failed.ok).toBe(false)
+    expect(failed.detail?.length).toBeGreaterThan(0)
+  })
+
+  it('spawns a detached child the stop step can signal', async () => {
+    const { nodeLifecycleHost } = await import('../src/adapters.ts')
+    // A real node child: a no-op that exits immediately. The handle carries a
+    // pid and a kill the stop step calls; the child is unrefed so it never
+    // keeps the test process alive.
+    const handle = nodeLifecycleHost.spawn(['node', '-e', 'setTimeout(() => {}, 50)'], {})
+    expect(handle.pid).toBeGreaterThan(0)
+    expect(typeof handle.kill).toBe('function')
+    handle.kill()
+  })
+
+  it('reads a connection failure as status 0, the poll not-ready signal', async () => {
+    const { nodeLifecycleHost } = await import('../src/adapters.ts')
+    // Port 1 on loopback has nothing listening, so the fetch throws and the
+    // host reports status 0, the same signal pollHealth treats as not-ready.
+    const result = await nodeLifecycleHost.fetch('http://127.0.0.1:1/health')
+    expect(result.status).toBe(0)
+    expect(result.ok).toBe(false)
   })
 })

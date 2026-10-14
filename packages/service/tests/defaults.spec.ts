@@ -216,4 +216,54 @@ describe('ctx.localInfer.fetchPreset', () => {
     expect(second.stored).toBe(true)
     expect(ctx.localInfer.registeredPresets()).toHaveLength(1)
   })
+
+  it('resolves the CLI from the MODSEARCH_CLI env when no option is passed', async () => {
+    const ctx = await seam()
+    const cli = stubCli(
+      '{"results": [{"content": "```json\\n{ \\"kvDtype\\": \\"fp8\\" }\\n```"}]}',
+    )
+    const saved = process.env.MODSEARCH_CLI
+    process.env.MODSEARCH_CLI = cli
+    try {
+      const result = await ctx.localInfer.fetchPreset(source)
+      expect(result.degraded).toBe(false)
+      expect(result.preset?.values).toEqual({ kvDtype: 'fp8' })
+    } finally {
+      if (saved === undefined) {
+        delete process.env.MODSEARCH_CLI
+      } else {
+        process.env.MODSEARCH_CLI = saved
+      }
+    }
+  })
+
+  it('treats a blank cliPath as absent, falling through to the env and PATH', async () => {
+    const ctx = await seam()
+    const saved = process.env.MODSEARCH_CLI
+    delete process.env.MODSEARCH_CLI
+    try {
+      // A blank cliPath trims to empty, so the resolver reads the bridge as
+      // unavailable (no env, no PATH modsearch) and degrades.
+      const result = await ctx.localInfer.fetchPreset(source, { cliPath: '   ' })
+      expect(result.degraded).toBe(true)
+      expect(result.detail).toMatch(/not available/)
+    } finally {
+      if (saved === undefined) {
+        delete process.env.MODSEARCH_CLI
+      } else {
+        process.env.MODSEARCH_CLI = saved
+      }
+    }
+  })
+
+  it('degrades when the CLI emits non-JSON output', async () => {
+    const ctx = await seam()
+    // A CLI that prints a plain string (not JSON) makes the parse throw, so
+    // the fetch degrades with the non-JSON detail.
+    const cliPath = join(home, `stub-nonjson-${Math.random().toString(36).slice(2)}.js`)
+    writeFileSync(cliPath, "console.log('not json'); process.exit(0);\n")
+    const result = await ctx.localInfer.fetchPreset(source, { cliPath })
+    expect(result.degraded).toBe(true)
+    expect(result.detail).toMatch(/non-JSON/)
+  })
 })

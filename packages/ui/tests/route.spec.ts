@@ -741,3 +741,174 @@ describe('route handlers over a fake web server', () => {
     }
   })
 })
+
+describe('route handler error branches', () => {
+  let home: string
+
+  beforeAll(() => {
+    home = mkdtempSync(join(tmpdir(), 'local-infer-route-err-'))
+    process.env.HOME = home
+  })
+
+  afterAll(() => {
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  function fakeRes() {
+    const res = {
+      status: 0,
+      body: '',
+      writeHead(status: number): typeof res {
+        res.status = status
+        return res
+      },
+      end(body?: string): typeof res {
+        res.body = body ?? ''
+        return res
+      },
+    }
+    return res
+  }
+
+  function fakeReq(method: string, url: string, body?: string) {
+    const chunks = body !== undefined ? [Buffer.from(body)] : []
+    return {
+      method,
+      url,
+      destroy(): void {
+        /* the handlers only destroy on an oversize body */
+      },
+      async *[Symbol.asyncIterator](): AsyncGenerator<Buffer> {
+        for (const chunk of chunks) {
+          yield chunk
+        }
+      },
+    }
+  }
+
+  function routes(service: LocalInferService) {
+    const list: { path: string; handler: (req: unknown, res: unknown) => Promise<void> }[] = []
+    registerLocalInferRoute(
+      {
+        webServer: {
+          register(route: { path: string; handler: (req: unknown, res: unknown) => Promise<void> }) {
+            list.push(route)
+            return () => {
+              /* the test owns the list */
+            }
+          },
+        },
+        effect(fn: () => unknown): void {
+          fn()
+        },
+      } as unknown as import('@deepseek-ai/cordis').Context & {
+        webServer: import('../src/route.ts').WebServerService
+      },
+      service,
+    )
+    return list
+  }
+
+  const find = (list: { path: string; handler: (req: unknown, res: unknown) => Promise<void> }[], path: string) =>
+    list.find((route) => route.path === path)!
+
+  it('answers 413 when a save payload exceeds the 64 KiB cap', async () => {
+    const service = stubService([])
+    const list = routes(service)
+    const save = find(list, '/local-infer/save')
+    const big = JSON.stringify({ engine: 'ninfer', config: { pad: 'x'.repeat(65 * 1024) } })
+    const res = fakeRes()
+    await save.handler(fakeReq('POST', '/local-infer/save', big), res)
+    expect(res.status).toBe(413)
+    expect(JSON.parse(res.body).error).toContain('too large')
+  })
+
+  it('answers 400 when a save body is not valid JSON', async () => {
+    // A broken save body is a client error, so the save route answers 400
+    // where the other POST routes answer 500.
+    const service = stubService([])
+    const list = routes(service)
+    const save = find(list, '/local-infer/save')
+    const res = fakeRes()
+    await save.handler(fakeReq('POST', '/local-infer/save', '{not json'), res)
+    expect(res.status).toBe(400)
+    expect(JSON.parse(res.body).error).toBeDefined()
+  })
+
+  it('reads the summary config query param, falling back on a broken one', async () => {
+    const service = stubService([])
+    const list = routes(service)
+    const summary = find(list, '/local-infer/summary')
+    // A valid config param round-trips into the summary.
+    const good = fakeRes()
+    await summary.handler(
+      fakeReq('GET', '/local-infer/summary?engine=ninfer&config=' + encodeURIComponent(JSON.stringify({ maxContext: 4096 }))),
+      good,
+    )
+    expect(good.status).toBe(200)
+    // A broken config param reads as absent, so the summary still answers.
+    const broken = fakeRes()
+    await summary.handler(
+      fakeReq('GET', '/local-infer/summary?engine=ninfer&config={broken'),
+      broken,
+    )
+    expect(broken.status).toBe(200)
+  })
+
+  it('reads the deps config query param the same way', async () => {
+    const service = stubService([], { deps: [TEST_DEP] })
+    const list = routes(service)
+    const deps = find(list, '/local-infer/deps')
+    const res = fakeRes()
+    await deps.handler(
+      fakeReq('GET', '/local-infer/deps?engine=ninfer&config=' + encodeURIComponent(JSON.stringify({ maxContext: 4096 }))),
+      res,
+    )
+    expect(res.status).toBe(200)
+  })
+
+  it('answers 413 for an oversize register payload and 500 for a broken one', async () => {
+    const service = stubService([])
+    const list = routes(service)
+    const register = find(list, '/local-infer/register')
+    const bigRes = fakeRes()
+    await register.handler(
+      fakeReq('POST', '/local-infer/register', JSON.stringify({ engine: 'ninfer', pad: 'x'.repeat(65 * 1024) })),
+      bigRes,
+    )
+    expect(bigRes.status).toBe(413)
+    const brokenRes = fakeRes()
+    await register.handler(fakeReq('POST', '/local-infer/register', '{broken'), brokenRes)
+    expect(brokenRes.status).toBe(500)
+  })
+
+  it('answers 413 for an oversize launch payload and 500 for a broken one', async () => {
+    const service = stubService([])
+    const list = routes(service)
+    const launch = find(list, '/local-infer/launch')
+    const bigRes = fakeRes()
+    await launch.handler(
+      fakeReq('POST', '/local-infer/launch', JSON.stringify({ engine: 'ninfer', pad: 'x'.repeat(65 * 1024) })),
+      bigRes,
+    )
+    expect(bigRes.status).toBe(413)
+    const brokenRes = fakeRes()
+    await launch.handler(fakeReq('POST', '/local-infer/launch', '{broken'), brokenRes)
+    expect(brokenRes.status).toBe(500)
+  })
+
+  it('answers 413 for an oversize stop payload and 500 for a broken one', async () => {
+    const service = stubService([])
+    const list = routes(service)
+    const stop = find(list, '/local-infer/stop')
+    const bigRes = fakeRes()
+    await stop.handler(
+      fakeReq('POST', '/local-infer/stop', JSON.stringify({ engine: 'ninfer', pad: 'x'.repeat(65 * 1024) })),
+      bigRes,
+    )
+    expect(bigRes.status).toBe(413)
+    const brokenRes = fakeRes()
+    await stop.handler(fakeReq('POST', '/local-infer/stop', '{broken'), brokenRes)
+    expect(brokenRes.status).toBe(500)
+  })
+})

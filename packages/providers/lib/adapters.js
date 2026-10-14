@@ -12,6 +12,8 @@ import { basename, dirname, join } from 'node:path';
 import { EngineAdapter } from '../../core/lib/index.js';
 import { NINFER_PARAMETERS } from "./ninfer.js";
 import { HYPERQWEN_PARAMETERS } from "./hyperqwen.js";
+import { LLAMACPP_MODEL_ARTIFACTS, LLAMACPP_PARAMETERS, llamaCppModelKey, } from "./llamacpp.js";
+import { STRATA_PARAMETERS } from "./strata.js";
 /**
  * The NInfer model artifacts, keyed by the VramModel registry id. The 27B
  * entry is the artifact the qwen-ninfer launcher downloads; the 35B entry is
@@ -374,6 +376,262 @@ export class HyperQwenAdapter extends EngineAdapter {
     }
     profile(config) {
         return typeof config.profile === 'string' ? config.profile : 'single';
+    }
+}
+/**
+ * The llama.cpp docker image the adapter pulls and runs. The engineFork
+ * platform config overrides the git source for a local build; the image stays
+ * the upstream ggml artifact.
+ */
+export const LLAMACPP_DOCKER_IMAGE = 'ghcr.io/ggml-org/llama.cpp';
+/**
+ * llamaCppArtifact resolves the artifact a model key deploys. A key no entry
+ * names falls back to the 27B artifact, so a bare config always renders a plan.
+ */
+function llamaCppArtifact(modelKey) {
+    const artifact = modelKey !== undefined ? LLAMACPP_MODEL_ARTIFACTS[modelKey] : undefined;
+    return artifact ?? LLAMACPP_MODEL_ARTIFACTS['qwen3-27b'];
+}
+/**
+ * LlamaCppAdapter is the llama.cpp engine, both-capable like NInfer.
+ * `renderLaunch` renders a local `llama-server` process or a `docker run` of the
+ * ggml image from the same `LLAMACPP_PARAMETERS` surface; `deploy` builds the
+ * engine in the engine directory (or pulls the image), downloads the GGUF model
+ * into the model directory, and starts the engine; `healthCheck` polls the health
+ * URL; `stop` signals the tracked process and stops the named container.
+ */
+export class LlamaCppAdapter extends EngineAdapter {
+    id = 'llamacpp';
+    supports = { docker: true, local: true };
+    host;
+    children = new Map();
+    constructor(host = nodeLifecycleHost) {
+        super();
+        this.host = host;
+    }
+    parameters() {
+        return LLAMACPP_PARAMETERS;
+    }
+    modelRef(config) {
+        // The engine serves the model under the artifact's advertised id, so the
+        // registrar publishes that alias and a chat turn routes to it.
+        const artifact = llamaCppArtifact(llamaCppModelKey(config));
+        return { id: artifact.modelId, name: artifact.modelId };
+    }
+    renderLaunch(config, _hw) {
+        const port = this.port(config);
+        const modelId = llamaCppModelKey(config);
+        const artifact = llamaCppArtifact(modelId);
+        const modelDirectory = typeof config.modelDirectory === 'string' ? config.modelDirectory : '';
+        const flags = flagsFromSpecs(LLAMACPP_PARAMETERS, config);
+        if (this.buildMode(config) === 'docker') {
+            const modelPath = modelDirectory === '' ? artifact.file : join(modelDirectory, artifact.file);
+            const containerModelPath = `/models/${basename(artifact.file)}`;
+            const modelMount = modelDirectory === ''
+                ? `${artifact.file}:${containerModelPath}`
+                : `${dirname(modelPath)}:/models`;
+            const containerName = `llamacpp-${port}`;
+            return {
+                engineId: this.id,
+                kind: 'docker',
+                argv: [
+                    'docker',
+                    'run',
+                    '--rm',
+                    '--gpus',
+                    'all',
+                    '--name',
+                    containerName,
+                    '-p',
+                    `127.0.0.1:${port}:8080`,
+                    '-v',
+                    modelMount,
+                    LLAMACPP_DOCKER_IMAGE,
+                    '--model',
+                    containerModelPath,
+                    ...flags,
+                ],
+                env: {},
+                containerName,
+                modelId,
+                ...(modelDirectory === '' ? {} : { modelDirectory }),
+                port,
+                healthUrl: `http://127.0.0.1:${port}/health`,
+            };
+        }
+        const modelPath = modelDirectory === '' ? artifact.file : join(modelDirectory, artifact.file);
+        return {
+            engineId: this.id,
+            kind: 'process',
+            argv: [
+                'llama-server',
+                '--model',
+                modelPath,
+                '--host',
+                '127.0.0.1',
+                '--port',
+                String(port),
+                ...flags,
+            ],
+            env: {},
+            modelId,
+            ...(modelDirectory === '' ? {} : { modelDirectory }),
+            port,
+            healthUrl: `http://127.0.0.1:${port}/health`,
+        };
+    }
+    async deploy(plan, platform) {
+        if (plan.kind === 'process') {
+            const engineDir = platform?.engineDirectory;
+            if (engineDir !== undefined) {
+                const fork = platform?.engineFork;
+                if (fork !== undefined) {
+                    const clone = await this.host.run(`git clone ${fork} ${engineDir}`);
+                    if (!clone.ok) {
+                        return { ok: false, detail: `git clone failed: ${clone.detail ?? 'unknown'}` };
+                    }
+                }
+                const build = await this.host.run(`cmake -S ${engineDir} -B ${engineDir}/build -G Ninja -DCMAKE_BUILD_TYPE=Release && ` +
+                    `cmake --build ${engineDir}/build -j`);
+                if (!build.ok) {
+                    return { ok: false, detail: `build failed: ${build.detail ?? 'unknown'}` };
+                }
+            }
+            const download = await this.downloadModel(plan);
+            if (!download.ok)
+                return download;
+            const handle = this.host.spawn(plan.argv ?? [], plan.env ?? {}, engineDir);
+            this.children.set(this.planKey(plan), handle);
+            return { ok: true };
+        }
+        if (plan.kind === 'docker') {
+            const pull = await this.host.run(`docker pull ${LLAMACPP_DOCKER_IMAGE}`);
+            if (!pull.ok) {
+                return { ok: false, detail: `docker pull failed: ${pull.detail ?? 'unknown'}` };
+            }
+            const handle = this.host.spawn(plan.argv ?? [], plan.env ?? {});
+            this.children.set(this.planKey(plan), handle);
+            return { ok: true };
+        }
+        // llama.cpp renders process and docker plans; a compose plan is a no-op.
+        return { ok: true };
+    }
+    async healthCheck(plan, options) {
+        return pollHealth(this.host, plan, options);
+    }
+    async stop(plan) {
+        if (plan.kind === 'docker' && plan.containerName !== undefined) {
+            await this.host.run(`docker stop ${plan.containerName}`);
+        }
+        const handle = this.children.get(this.planKey(plan));
+        if (handle !== undefined) {
+            handle.kill();
+            this.children.delete(this.planKey(plan));
+        }
+    }
+    buildMode(config) {
+        return config.buildMode === 'docker' ? 'docker' : 'local';
+    }
+    port(config) {
+        return typeof config.port === 'number' ? config.port : 8080;
+    }
+    planKey(plan) {
+        return `${plan.engineId}:${plan.port}`;
+    }
+    async downloadModel(plan) {
+        const artifact = plan.modelId !== undefined ? LLAMACPP_MODEL_ARTIFACTS[plan.modelId] : undefined;
+        if (artifact === undefined)
+            return { ok: true };
+        const target = plan.modelDirectory ?? '.';
+        const download = await this.host.run(`hf download ${artifact.repo} ${artifact.file} --local-dir ${target}`);
+        if (!download.ok) {
+            return { ok: false, detail: `model download failed: ${download.detail ?? 'unknown'}` };
+        }
+        return { ok: true };
+    }
+}
+/**
+ * The Strata docker image the adapter pulls and runs. Strata is the
+ * placeholder engine: the image and the parameter data land when the engine
+ * is available, and the adapter renders a bare docker plan until then.
+ */
+export const STRATA_DOCKER_IMAGE = 'ghcr.io/strata/strata';
+/**
+ * StrataAdapter is the placeholder docker-only engine. `renderLaunch` renders
+ * a `docker run` of the Strata image (no spec surface yet, so no flags);
+ * `deploy` pulls the image and starts the container; `healthCheck` polls the
+ * health URL; `stop` stops the named container. The parameter surface and the
+ * per-model data land with the engine, as data edits, never an adapter rewire.
+ */
+export class StrataAdapter extends EngineAdapter {
+    id = 'strata';
+    supports = { docker: true, local: false };
+    host;
+    children = new Map();
+    constructor(host = nodeLifecycleHost) {
+        super();
+        this.host = host;
+    }
+    parameters() {
+        return STRATA_PARAMETERS;
+    }
+    modelRef(_config) {
+        // Strata serves the model under the name the container passes, and the
+        // plugin tracks no per-model data for Strata yet, so the engine id is the
+        // stable entry the registrar publishes until that data lands.
+        return { id: 'strata', name: 'Strata' };
+    }
+    renderLaunch(config, _hw) {
+        const port = this.port(config);
+        const containerName = `strata-${port}`;
+        return {
+            engineId: this.id,
+            kind: 'docker',
+            argv: [
+                'docker',
+                'run',
+                '--rm',
+                '--gpus',
+                'all',
+                '--name',
+                containerName,
+                '-p',
+                `127.0.0.1:${port}:8080`,
+                STRATA_DOCKER_IMAGE,
+            ],
+            env: {},
+            containerName,
+            port,
+            healthUrl: `http://127.0.0.1:${port}/health`,
+        };
+    }
+    async deploy(plan) {
+        const pull = await this.host.run(`docker pull ${STRATA_DOCKER_IMAGE}`);
+        if (!pull.ok) {
+            return { ok: false, detail: `docker pull failed: ${pull.detail ?? 'unknown'}` };
+        }
+        const handle = this.host.spawn(plan.argv ?? [], plan.env ?? {});
+        this.children.set(this.planKey(plan), handle);
+        return { ok: true };
+    }
+    async healthCheck(plan, options) {
+        return pollHealth(this.host, plan, options);
+    }
+    async stop(plan) {
+        if (plan.containerName !== undefined) {
+            await this.host.run(`docker stop ${plan.containerName}`);
+        }
+        const handle = this.children.get(this.planKey(plan));
+        if (handle !== undefined) {
+            handle.kill();
+            this.children.delete(this.planKey(plan));
+        }
+    }
+    port(config) {
+        return typeof config.port === 'number' ? config.port : 8080;
+    }
+    planKey(plan) {
+        return `${plan.engineId}:${plan.port}`;
     }
 }
 //# sourceMappingURL=adapters.js.map
