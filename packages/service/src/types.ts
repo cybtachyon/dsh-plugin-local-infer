@@ -10,7 +10,9 @@ import type {
   LaunchPlan,
   ModelRow,
   Preset,
+  PresetSource,
   RegisterResult,
+  ResolvedDefaults,
   SettingsOp,
   SystemDep,
   VramBreakdown,
@@ -56,6 +58,28 @@ export interface LaunchOptions {
  */
 export interface RegisterModelOptions {
   agentDefault?: boolean
+}
+
+/**
+ * FetchPresetResult is the answer to a mod-search preset fetch: the tagged
+ * preset when the bridge fetched and extracted it, a storage flag, and a
+ * degraded flag that is set when the bridge was unavailable and the caller
+ * should fall back to the built-in presets.
+ */
+export interface FetchPresetResult {
+  preset: Preset | undefined
+  stored: boolean
+  degraded: boolean
+  detail?: string
+}
+
+/**
+ * FetchPresetOptions tunes the mod-search fetch: cliPath overrides where the
+ * modsearch CLI is resolved from, so a test injects a stub and a profile with
+ * a non-default install points at its own copy.
+ */
+export interface FetchPresetOptions {
+  cliPath?: string
 }
 
 /**
@@ -122,4 +146,11 @@ export interface LocalInferService {
     options?: RegisterModelOptions,
   ): Promise<RegisterResult>
   removeModel(providerId: string, modelId: string): Promise<void>
+  resolveDefaults(
+    engineId: string,
+    modelId: string,
+    hw: HardwareProfile,
+    explicit?: Config,
+  ): Promise<ResolvedDefaults>
+  fetchPreset(source: PresetSource, options?: FetchPresetOptions): Promise<FetchPresetResult>
 }

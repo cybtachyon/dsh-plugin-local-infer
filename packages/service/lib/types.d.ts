@@ -1,4 +1,4 @@
-import type { Config, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, HardwareProfile, InstallResult, LaunchPlan, ModelRow, Preset, RegisterResult, SettingsOp, SystemDep, VramBreakdown, VramModel, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
+import type { Config, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, HardwareProfile, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, RegisterResult, ResolvedDefaults, SettingsOp, SystemDep, VramBreakdown, VramModel, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
 /**
  * EstimateResult is the answer to an estimate call: the full VRAM breakdown,
  * the one-word verdict the meter renders, and the source the numbers came
@@ -34,6 +34,26 @@ export interface LaunchOptions {
  */
 export interface RegisterModelOptions {
     agentDefault?: boolean;
+}
+/**
+ * FetchPresetResult is the answer to a mod-search preset fetch: the tagged
+ * preset when the bridge fetched and extracted it, a storage flag, and a
+ * degraded flag that is set when the bridge was unavailable and the caller
+ * should fall back to the built-in presets.
+ */
+export interface FetchPresetResult {
+    preset: Preset | undefined;
+    stored: boolean;
+    degraded: boolean;
+    detail?: string;
+}
+/**
+ * FetchPresetOptions tunes the mod-search fetch: cliPath overrides where the
+ * modsearch CLI is resolved from, so a test injects a stub and a profile with
+ * a non-default install points at its own copy.
+ */
+export interface FetchPresetOptions {
+    cliPath?: string;
 }
 /**
  * SettingsNamespaceDescriptor is the structural view of one profile plugin
@@ -89,5 +109,7 @@ export interface LocalInferService {
     stop(plan: LaunchPlan): Promise<void>;
     registerModel(plan: LaunchPlan, model: ModelRow, options?: RegisterModelOptions): Promise<RegisterResult>;
     removeModel(providerId: string, modelId: string): Promise<void>;
+    resolveDefaults(engineId: string, modelId: string, hw: HardwareProfile, explicit?: Config): Promise<ResolvedDefaults>;
+    fetchPreset(source: PresetSource, options?: FetchPresetOptions): Promise<FetchPresetResult>;
 }
 //# sourceMappingURL=types.d.ts.map

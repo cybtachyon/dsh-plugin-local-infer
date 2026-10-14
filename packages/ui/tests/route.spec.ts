@@ -173,6 +173,16 @@ function stubService(
       }
     },
     enginePlatformConfig: () => undefined,
+    resolveDefaults: async (
+      _engineId: string,
+      _modelId: string,
+      _hw: HardwareProfile,
+      explicit?: Config,
+    ) => ({
+      config: { ...(explicit ?? {}) },
+      provenance: [],
+    }),
+    fetchPreset: async () => ({ preset: undefined, stored: false, degraded: true }),
   } as unknown as LocalInferService
 }
 
@@ -198,6 +208,9 @@ describe('local-infer route read model', () => {
     expect(summary.warningsModel.banner.visible).toBe(true)
     expect(summary.warningsModel.banner.level).toBe('error')
     expect(summary.warningsModel.banner.count).toBe(1)
+    // The summary carries the resolved defaults model the card draws from.
+    expect(summary.defaults).toBeDefined()
+    expect(summary.defaults.provenance).toEqual([])
     expect(summary.warningsModel.inline['kvDtype']).toHaveLength(1)
     expect(summary.warningsModel.inline['kvDtype']?.[0]?.tone).toBe('red')
   })

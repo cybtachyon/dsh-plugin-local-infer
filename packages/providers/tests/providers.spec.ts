@@ -19,7 +19,21 @@ describe('local-infer-providers scaffold', () => {
       'ninfer',
       'hyperqwen',
     ])
-    expect(ctx.localInfer.registeredPresets()).toEqual([])
+    // Phase 7 registers the built-in presets: the two NInfer measured presets
+    // and the three Hyper-Qwen tiers (distinct by label, one isDefault).
+    expect(ctx.localInfer.registeredPresets()).toHaveLength(5)
+    expect(
+      ctx.localInfer
+        .registeredPresets()
+        .map((preset) => `${preset.engineId}/${preset.modelId}/${preset.hardwareClass}`)
+        .sort(),
+    ).toEqual([
+      'hyperqwen/qwen3-27b/24g-sm86',
+      'hyperqwen/qwen3-27b/24g-sm86',
+      'hyperqwen/qwen3-27b/24g-sm86',
+      'ninfer/qwen3-27b/24g-sm86',
+      'ninfer/qwen3-35b/24g-sm86',
+    ])
     expect(ctx.localInfer.registeredGuidelines().map((guideline) => guideline.id)).toEqual([
       'docker-not-installed',
       'host-tiers-exceed-host-ram',

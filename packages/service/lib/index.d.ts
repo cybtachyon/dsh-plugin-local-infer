@@ -11,14 +11,16 @@
  * filled in by Phase 2 over the core estimator, `guidelines` by Phase 3 over
  * the core guideline engine, `deps`, `installString`, and `runInstall` by
  * Phase 4 over the core provisioner, `launch` and `stop` by Phase 5 over the
- * registered engine adapters, and `registerModel` and `removeModel` by
- * Phase 6 over the dsh settings seam.
+ * registered engine adapters, `registerModel` and `removeModel` by
+ * Phase 6 over the dsh settings seam, and `resolveDefaults` and
+ * `fetchPreset` by Phase 7 over the core defaults resolver and the
+ * mod-search bridge.
  * @module @dsh/dsh-plugin-local-infer/service
  */
 import { Context, Service } from '@deepseek-ai/cordis';
-import type { Config, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, ModelRow, Preset, RegisterResult, SystemDep, VramModel } from '@dsh/dsh-plugin-local-infer/core';
-import type { EstimateResult, LaunchOptions, LaunchResult, LocalInferService, RegisterModelOptions } from './types.ts';
-export type { EstimateResult, LaunchOptions, LaunchResult, LocalInferService, RegisterModelOptions, SettingsForms, SettingsNamespaceDescriptor, } from './types.ts';
+import type { Config, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, RegisterResult, ResolvedDefaults, SystemDep, VramModel } from '@dsh/dsh-plugin-local-infer/core';
+import type { EstimateResult, FetchPresetOptions, FetchPresetResult, LaunchOptions, LaunchResult, LocalInferService, RegisterModelOptions } from './types.ts';
+export type { EstimateResult, FetchPresetOptions, FetchPresetResult, LaunchOptions, LaunchResult, LocalInferService, RegisterModelOptions, SettingsForms, SettingsNamespaceDescriptor, } from './types.ts';
 declare module '@deepseek-ai/cordis' {
     interface Context {
         localInfer: LocalInferService;
@@ -149,6 +151,63 @@ export declare class LocalInfer extends Service implements LocalInferService {
      * stop with nothing registered stays quiet.
      */
     removeModel(providerId: string, modelId: string): Promise<void>;
+    /**
+     * resolveDefaults resolves the starting Config for an engine, model, and
+     * detected hardware over the registered presets and the engine's parameter
+     * surface. The resolution order (explicit value, exact-class preset,
+     * built-in preset, spec default) and the per-key provenance are the core
+     * resolver's, so the meter, the form, and the DSH contextWindow all price
+     * the same starting config.
+     */
+    resolveDefaults(engineId: string, modelId: string, hw: HardwareProfile, explicit?: Config): Promise<ResolvedDefaults>;
+    /**
+     * fetchPreset is the mod-search fetch path: it runs the bridge over the
+     * source's URL, extracts the values with the source's pure extractor, tags
+     * the result with the URL and the fetch date, persists it to the preset
+     * store, and registers it so the next resolveDefaults uses it. When the
+     * bridge is unavailable (no CLI, a failed fetch) it degrades to a
+     * not-stored, degraded answer so the caller falls back to the built-in
+     * presets and says so.
+     */
+    fetchPreset(source: PresetSource, options?: FetchPresetOptions): Promise<FetchPresetResult>;
+    /**
+     * specsForEngine reads the parameter surface of the registered adapter for
+     * an engine id, so the defaults resolver floors the result on that engine's
+     * own spec defaults. An engine no adapter serves floors on an empty
+     * surface, which reads as "no spec defaults" rather than a collision.
+     */
+    private specsForEngine;
+    /**
+     * resolveModsearchCli finds the modsearch CLI script the fetch path spawns.
+     * An injected cliPath wins, then the MODSEARCH_CLI env, then the modsearch
+     * bin on PATH. None found reads as the bridge being unavailable, which
+     * fetchPreset degrades on.
+     */
+    private resolveModsearchCli;
+    /**
+     * fetchPage runs the modsearch CLI over one URL and reads the fetched page
+     * content out of its JSON answer. The CLI's fetch schema carries a
+     * `content` string; a non-JSON answer or a nonzero exit reads as a failed
+     * fetch, which the caller degrades on.
+     */
+    private fetchPage;
+    /**
+     * storePreset persists a fetched preset to the preset store, replacing any
+     * stored preset with the same (engine, model, class) key so a re-fetch
+     * refreshes in place rather than duplicating.
+     */
+    private storePreset;
+    /**
+     * readPresetStore reads the stored presets, degrading a missing or broken
+     * file to an empty list so a first fetch starts a fresh store.
+     */
+    private readPresetStore;
+    /**
+     * registerIfNew registers a fetched preset with the seam, skipping the
+     * write when the preset's key is already reserved, so a re-fetch of a
+     * built-in triple does not trip the duplicate-id conflict.
+     */
+    private registerIfNew;
     /**
      * settings narrows the context to the dsh settings service the registrar
      * writes through. A profile without the service (a headless install) fails

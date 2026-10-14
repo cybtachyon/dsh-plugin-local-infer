@@ -11,17 +11,21 @@
  * filled in by Phase 2 over the core estimator, `guidelines` by Phase 3 over
  * the core guideline engine, `deps`, `installString`, and `runInstall` by
  * Phase 4 over the core provisioner, `launch` and `stop` by Phase 5 over the
- * registered engine adapters, and `registerModel` and `removeModel` by
- * Phase 6 over the dsh settings seam.
+ * registered engine adapters, `registerModel` and `removeModel` by
+ * Phase 6 over the dsh settings seam, and `resolveDefaults` and
+ * `fetchPreset` by Phase 7 over the core defaults resolver and the
+ * mod-search bridge.
  * @module @dsh/dsh-plugin-local-infer/service
  */
 import { execFile, spawn } from 'node:child_process';
-import { availableParallelism, cpus, platform, release, totalmem } from 'node:os';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { availableParallelism, cpus, homedir, platform, release, totalmem } from 'node:os';
+import { dirname, join } from 'node:path';
 import { Service } from '@deepseek-ai/cordis';
 // Relative, not the root package subpath: a self-referencing bare specifier
 // only resolves when the package sits inside a node_modules tree, so a
 // local-path or pnpm-linked install of this repo would fail the import.
-import { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, buildModelEntry, detectHardware as detectHardwareFromProbes, detectPackageManager, evaluateGuidelines, estimateVram, LLM_PI_AI_NAMESPACE, modelGuidelines, modelRowsFrom, parseNvidiaSmiGpu, providerRegistrationOps, providerRemovalOps, removeModelRow, renderInstallString, runInstall, } from '../../core/lib/index.js';
+import { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, buildModelEntry, detectHardware as detectHardwareFromProbes, detectPackageManager, evaluateGuidelines, estimateVram, LLM_PI_AI_NAMESPACE, modelGuidelines, modelRowsFrom, parseNvidiaSmiGpu, presetFromFetch, providerRegistrationOps, providerRemovalOps, removeModelRow, renderInstallString, resolveDefaults as resolveDefaultsFromPresets, runInstall, } from '../../core/lib/index.js';
 /**
  * Local-inference failure. Extends Error with a stable `code`
  * (`LOCAL_INFER_CONFLICT`, `LOCAL_INFER_INVALID_ENGINE`,
@@ -330,6 +334,162 @@ export class LocalInfer extends Service {
         }
     }
     /**
+     * resolveDefaults resolves the starting Config for an engine, model, and
+     * detected hardware over the registered presets and the engine's parameter
+     * surface. The resolution order (explicit value, exact-class preset,
+     * built-in preset, spec default) and the per-key provenance are the core
+     * resolver's, so the meter, the form, and the DSH contextWindow all price
+     * the same starting config.
+     */
+    async resolveDefaults(engineId, modelId, hw, explicit) {
+        const specs = this.specsForEngine(engineId);
+        return resolveDefaultsFromPresets(this.registeredPresets(), specs, engineId, modelId, hw, explicit);
+    }
+    /**
+     * fetchPreset is the mod-search fetch path: it runs the bridge over the
+     * source's URL, extracts the values with the source's pure extractor, tags
+     * the result with the URL and the fetch date, persists it to the preset
+     * store, and registers it so the next resolveDefaults uses it. When the
+     * bridge is unavailable (no CLI, a failed fetch) it degrades to a
+     * not-stored, degraded answer so the caller falls back to the built-in
+     * presets and says so.
+     */
+    async fetchPreset(source, options) {
+        const cliPath = await this.resolveModsearchCli(options?.cliPath);
+        if (cliPath === null) {
+            return {
+                preset: undefined,
+                stored: false,
+                degraded: true,
+                detail: 'the modsearch CLI is not available; the built-in presets apply',
+            };
+        }
+        let content;
+        try {
+            content = await this.fetchPage(source.url, cliPath);
+        }
+        catch (error) {
+            const detail = error instanceof Error ? error.message : String(error);
+            return {
+                preset: undefined,
+                stored: false,
+                degraded: true,
+                detail: `the modsearch fetch failed: ${detail}; the built-in presets apply`,
+            };
+        }
+        const preset = presetFromFetch(source, content, todayIso());
+        this.storePreset(preset);
+        this.registerIfNew(preset);
+        return { preset, stored: true, degraded: false };
+    }
+    /**
+     * specsForEngine reads the parameter surface of the registered adapter for
+     * an engine id, so the defaults resolver floors the result on that engine's
+     * own spec defaults. An engine no adapter serves floors on an empty
+     * surface, which reads as "no spec defaults" rather than a collision.
+     */
+    specsForEngine(engineId) {
+        const adapter = this.engineRegistry.get(engineId);
+        if (adapter === undefined)
+            return [];
+        return adapter.parameters();
+    }
+    /**
+     * resolveModsearchCli finds the modsearch CLI script the fetch path spawns.
+     * An injected cliPath wins, then the MODSEARCH_CLI env, then the modsearch
+     * bin on PATH. None found reads as the bridge being unavailable, which
+     * fetchPreset degrades on.
+     */
+    async resolveModsearchCli(cliPath) {
+        if (cliPath !== undefined && cliPath.trim() !== '')
+            return cliPath;
+        const env = process.env.MODSEARCH_CLI;
+        if (env !== undefined && env.trim() !== '')
+            return env;
+        const which = await runCommand('which', ['modsearch']);
+        if (which.ok && which.stdout.trim() !== '')
+            return which.stdout.trim();
+        return null;
+    }
+    /**
+     * fetchPage runs the modsearch CLI over one URL and reads the fetched page
+     * content out of its JSON answer. The CLI's fetch schema carries a
+     * `content` string; a non-JSON answer or a nonzero exit reads as a failed
+     * fetch, which the caller degrades on.
+     */
+    fetchPage(url, cliPath) {
+        return new Promise((resolve, reject) => {
+            const child = spawn('node', [cliPath, 'search', '-u', url, '--deadline', '60000'], { stdio: ['ignore', 'pipe', 'pipe'] });
+            let stdout = '';
+            let stderr = '';
+            child.stdout.on('data', (chunk) => {
+                stdout += chunk.toString('utf8');
+            });
+            child.stderr.on('data', (chunk) => {
+                stderr += chunk.toString('utf8');
+            });
+            child.on('error', (error) => {
+                reject(new Error(`the modsearch CLI failed to start: ${error.message}`));
+            });
+            child.on('close', (code) => {
+                if (code === 0) {
+                    try {
+                        // The CLI's fetch answer nests the page under results[0].content;
+                        // a top-level content (a search answer) is read the same way.
+                        const parsed = JSON.parse(stdout);
+                        const first = parsed.results?.[0];
+                        const content = typeof parsed.content === 'string' ? parsed.content : first?.content;
+                        resolve(typeof content === 'string' ? content : '');
+                    }
+                    catch (error) {
+                        reject(new Error(`the modsearch CLI returned non-JSON output: ${error.message}`));
+                    }
+                    return;
+                }
+                reject(new Error(`the modsearch CLI exited ${code}: ${stderr.trim().slice(-512)}`));
+            });
+        });
+    }
+    /**
+     * storePreset persists a fetched preset to the preset store, replacing any
+     * stored preset with the same (engine, model, class) key so a re-fetch
+     * refreshes in place rather than duplicating.
+     */
+    storePreset(preset) {
+        const path = presetStorePath();
+        mkdirSync(dirname(path), { recursive: true });
+        const key = presetKey(preset);
+        const next = this.readPresetStore().filter((entry) => presetKey(entry) !== key);
+        next.push(preset);
+        writeFileSync(path, JSON.stringify(next, null, 2));
+    }
+    /**
+     * readPresetStore reads the stored presets, degrading a missing or broken
+     * file to an empty list so a first fetch starts a fresh store.
+     */
+    readPresetStore() {
+        const path = presetStorePath();
+        if (!existsSync(path))
+            return [];
+        try {
+            const parsed = JSON.parse(readFileSync(path, 'utf8'));
+            return Array.isArray(parsed) ? parsed : [];
+        }
+        catch {
+            return [];
+        }
+    }
+    /**
+     * registerIfNew registers a fetched preset with the seam, skipping the
+     * write when the preset's key is already reserved, so a re-fetch of a
+     * built-in triple does not trip the duplicate-id conflict.
+     */
+    registerIfNew(preset) {
+        if (this.presetRegistry.has(presetKey(preset)))
+            return;
+        this.registerPreset(preset);
+    }
+    /**
      * settings narrows the context to the dsh settings service the registrar
      * writes through. A profile without the service (a headless install) fails
      * loudly with a stable code, so a caller never mistakes "no seam" for a
@@ -385,11 +545,27 @@ export class LocalInfer extends Service {
 }
 /**
  * The stable registry key for a preset: its exact (engine, model, hardware
- * class) triple. A preset is only trusted for the triple it was sourced for,
- * so the key never collapses two distinct presets.
+ * class) triple plus its label. A preset is only trusted for the triple it
+ * was sourced for, and the label keeps the distinct tiers that share a triple
+ * (the Hyper-Qwen speed, long-context, and huge-context presets) from
+ * collapsing into one key.
  */
 function presetKey(preset) {
-    return `${preset.engineId}/${preset.modelId}/${preset.hardwareClass}`;
+    return `${preset.engineId}/${preset.modelId}/${preset.hardwareClass}/${preset.label ?? ''}`;
+}
+/**
+ * presetStorePath is where fetched presets persist: under the dsh home so a
+ * web user and a CLI user share one store, the way the config file does.
+ */
+function presetStorePath() {
+    return join(homedir(), '.dsh', 'local-infer', 'presets.json');
+}
+/**
+ * todayIso is the fetch date a fetched preset is tagged with, in the
+ * YYYY-MM-DD form the UI renders beside the source.
+ */
+function todayIso() {
+    return new Date().toISOString().slice(0, 10);
 }
 /**
  * runCommand runs one probe command and reports whether it exited clean. A

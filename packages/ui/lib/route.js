@@ -134,6 +134,11 @@ export async function buildSummary(localInfer, request) {
     const hardware = await localInfer.detectHardware();
     const estimate = await localInfer.estimate(config, hardware);
     const guidelineResults = await localInfer.guidelines(config, hardware);
+    // The defaults model resolves the starting config for the selected engine
+    // and model over the detected hardware, so the card can show the provenance
+    // ("sourced from X") beside the form it seeds.
+    const modelId = typeof config.model === 'string' ? config.model : engine.id;
+    const defaults = await localInfer.resolveDefaults(engine.id, modelId, hardware, config);
     return {
         engines: ENGINES.map((entry) => ({ id: entry.id, label: entry.label, supports: entry.supports })),
         models: localInfer.registeredVramModels().map((model) => ({ id: model.id, source: model.source })),
@@ -145,6 +150,7 @@ export async function buildSummary(localInfer, request) {
         warningsModel: renderWarnings(guidelineResults),
         config,
         platformConfigs: stored.platform,
+        defaults: { config: defaults.config, provenance: defaults.provenance },
     };
 }
 /**

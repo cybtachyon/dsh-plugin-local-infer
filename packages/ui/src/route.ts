@@ -19,6 +19,7 @@ import { dirname, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
   Config,
+  DefaultProvenance,
   EnginePlatformConfig,
   HardwareProfile,
   InstallResult,
@@ -92,6 +93,20 @@ export interface LocalInferSummary {
   // The per-engine platform configs (§3.10) the card's Engine Directory and
   // Engine Fork fields edit, keyed by engine id.
   platformConfigs: Record<string, StoredPlatformConfig>
+  // The resolved defaults for the selected engine and model: the starting
+  // config and the per-key provenance the card shows as "sourced from X".
+  defaults: DefaultsModel
+}
+
+/**
+ * DefaultsModel is the resolved-defaults read model the card draws: the
+ * starting config the defaults resolver produced and the per-key provenance
+ * that names the source that supplied each value (a preset, the user, or a
+ * spec default).
+ */
+export interface DefaultsModel {
+  config: Config
+  provenance: DefaultProvenance[]
 }
 
 /**
@@ -248,6 +263,11 @@ export async function buildSummary(
   const hardware = await localInfer.detectHardware()
   const estimate = await localInfer.estimate(config, hardware)
   const guidelineResults = await localInfer.guidelines(config, hardware)
+  // The defaults model resolves the starting config for the selected engine
+  // and model over the detected hardware, so the card can show the provenance
+  // ("sourced from X") beside the form it seeds.
+  const modelId = typeof config.model === 'string' ? config.model : engine.id
+  const defaults = await localInfer.resolveDefaults(engine.id, modelId, hardware, config)
   return {
     engines: ENGINES.map((entry) => ({ id: entry.id, label: entry.label, supports: entry.supports })),
     models: localInfer.registeredVramModels().map((model) => ({ id: model.id, source: model.source })),
@@ -264,6 +284,7 @@ export async function buildSummary(
     warningsModel: renderWarnings(guidelineResults),
     config,
     platformConfigs: stored.platform,
+    defaults: { config: defaults.config, provenance: defaults.provenance },
   }
 }
 

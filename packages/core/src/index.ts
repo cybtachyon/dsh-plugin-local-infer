@@ -53,11 +53,19 @@ export type {
 } from './adapter.ts'
 export { constraintId, evaluateGuidelines, modelGuidelines } from './guideline.ts'
 export type { Guideline, GuidelineLevel, GuidelineResult } from './guideline.ts'
+export {
+  hardwareClass,
+  presetFromFetch,
+  resolveDefaults,
+  WILDCARD_HARDWARE_CLASS,
+} from './defaults.ts'
 export type {
   DefaultProvenance,
   DefaultsResolver,
   HardwareClass,
   Preset,
+  PresetSource,
+  ResolvedDefaults,
 } from './defaults.ts'
 export {
   AGENT_DEFAULT_MODEL_NAMESPACE,

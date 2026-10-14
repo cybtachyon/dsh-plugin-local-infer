@@ -24,7 +24,9 @@ describe('local-infer bundle', () => {
       'ninfer',
       'hyperqwen',
     ])
-    expect(ctx.localInfer.registeredPresets()).toEqual([])
+    // The providers row registers the built-in presets (two NInfer, three
+    // Hyper-Qwen tiers) alongside the hardware guidelines.
+    expect(ctx.localInfer.registeredPresets()).toHaveLength(5)
     // The providers row registers the built-in hardware guidelines.
     expect(ctx.localInfer.registeredGuidelines().map((guideline) => guideline.id)).toEqual([
       'docker-not-installed',

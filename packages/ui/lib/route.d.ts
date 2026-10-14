@@ -13,7 +13,7 @@
  * @module @dsh/dsh-plugin-local-infer/ui/route
  */
 import type { Context } from '@deepseek-ai/cordis';
-import type { Config, HardwareProfile, InstallResult, RegisterResult, VramModel, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
+import type { Config, DefaultProvenance, HardwareProfile, InstallResult, RegisterResult, VramModel, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
 import type { LaunchResult, LocalInferService } from '@dsh/dsh-plugin-local-infer/service';
 import type { EngineInfo } from '../../providers/lib/index.js';
 import type { DepsModel } from './deps.ts';
@@ -70,6 +70,17 @@ export interface LocalInferSummary {
     warningsModel: WarningsModel;
     config: Config;
     platformConfigs: Record<string, StoredPlatformConfig>;
+    defaults: DefaultsModel;
+}
+/**
+ * DefaultsModel is the resolved-defaults read model the card draws: the
+ * starting config the defaults resolver produced and the per-key provenance
+ * that names the source that supplied each value (a preset, the user, or a
+ * spec default).
+ */
+export interface DefaultsModel {
+    config: Config;
+    provenance: DefaultProvenance[];
 }
 /**
  * The config file the route owns. It sits under the dsh home so a web user and

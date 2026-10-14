@@ -936,6 +936,63 @@ src/dsh-plugin-local-infer/
   the route suite (the register and unregister helpers and handlers, and the
   context-window resolution); `npx eslint` clean.
 
+### Phase 7 — Defaults layer (mod-search sourced) (complete)
+
+- **`core`: the pure resolver.** `packages/core/src/defaults.ts` gains
+  `hardwareClass(hw)` (a `HardwareProfile` to the coarse capability bucket a
+  preset is sourced for, the VRAM in GiB plus the SM arch, e.g. `24g-sm86`; a
+  host with no detected GPU reads as no class), `resolveDefaults(presets,
+  specs, engineId, modelId, hw, explicit?)` (the resolution order per key:
+  the explicit user value, the preset for the detected hardware class, the
+  built-in (wildcard) preset, then the `ParameterSpec.defaultValue`, with a
+  per-key `DefaultProvenance` list that names the source that supplied each
+  value), and `PresetSource` / `presetFromFetch` (the mod-search fetch seam:
+  a source names the engine, model, class, URL, and a pure extractor that
+  turns the fetched page content into the values, and the result is tagged
+  with the URL and the fetch date). Several presets can share a triple (the
+  Hyper-Qwen tiers), so `Preset` gains a `label` (the distinct tier name) and
+  an `isDefault` flag the resolver auto-picks, and the registry key carries
+  the label so the tiers never collapse.
+- **`providers`: the built-in preset data.** `packages/providers/src/
+  presets.ts` carries `BUILTIN_PRESETS`: the two NInfer measured presets (the
+  27B and 35B on the 24 GiB sm86 card, the launcher's working config with the
+  KV format set to the sm86-safe int8 tier, since nvfp4 needs SM 89) and the
+  three Hyper-Qwen `.env` tiers (the single-user speed-first default, the
+  long-context tier, and the huge-context KVarN tier, each a distinct label
+  with the speed-first tier marked `isDefault`). `PRESET_SOURCES` names the
+  mod-search fetch path (the NInfer docs source, with `extractJsonBlock` as
+  the pure extractor that reads the page's fenced json block). The providers
+  `apply` registers every built-in preset with the seam.
+- **`service`: the entry points.** `ctx.localInfer.resolveDefaults` runs the
+  core resolver over the registered presets and the registered engine's
+  parameter surface, so the meter, the form, and the DSH contextWindow all
+  price the same starting config. `ctx.localInfer.fetchPreset` is the
+  mod-search fetch path: it resolves the modsearch CLI (an injected `cliPath`,
+  the `MODSEARCH_CLI` env, or the `modsearch` bin on PATH), runs the bridge
+  over the source's URL, extracts the values with the source's extractor,
+  tags the result with the URL and the fetch date, persists it to
+  `~/.dsh/local-infer/presets.json` (replacing a stored preset with the same
+  key), and registers it (skipping a triple already reserved, so a re-fetch
+  refreshes in place). When the bridge is unavailable (no CLI, a failed
+  fetch) it degrades to a not-stored, degraded answer, so the caller falls
+  back to the built-in presets and says so.
+- **`ui`: the provenance read model.** `LocalInferSummary` gains a
+  `defaults` model (the resolved starting config and the per-key
+  provenance), so the card can show "sourced from NInfer docs (fetched
+  2026-10-13)" beside the form it seeds.
+- **Relationship established.** hardware class → sane defaults, with the
+  resolver the single source the meter, the form, and the DSH contextWindow
+  agree on and the per-key provenance the card renders.
+- **Gates green.** `tsc -b` clean; `vitest run` 263/263 across 26 files,
+  including the new resolver suite (the class mapping, the resolution order
+  and provenance, the exact-class over built-in precedence, the
+  no-class fallback, and the fetch tagging), the preset data suite (the
+  NInfer sm86-safe KV tier, the three Hyper-Qwen tiers, the triple+label
+  keys, and the json-block extractor), the service suite (the resolve over
+  the registered presets and surface, the fetch store-and-register, the
+  fetch-failure and no-CLI degradations, and the re-fetch no-conflict), and
+  the route suite (the defaults model in the summary); `npx eslint` clean.
+
 ### Phase 8 (first draft) — Web card + settings route (in progress)
 
 The plan's panel landed as a working first draft out of phase order, because a card on the
@@ -1047,7 +1104,8 @@ Plugins page:
   remaining data edits). The renderer draws it as a native `input` + `datalist`, so the
   known options suggest and any path or HF repo reference types.
 - **Remaining against the plan's direction.** The engine- and user-added combo option
-  sources, and the Phase 7 preset data, are not built yet. The card's build / deploy / stop
+  sources are not built yet (the Phase 7 preset data landed, so the defaults layer is
+  complete). The card's build / deploy / stop
   controls landed with the Phase 8 lifecycle-controls chunk (the Launch / Stop row that calls
   the `POST /local-infer/launch` and `POST /local-infer/stop` routes), so the card today is
   the configure-and-size surface with the Phase 4 system-dependency panel (its `Save`

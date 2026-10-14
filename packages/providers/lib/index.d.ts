@@ -5,8 +5,9 @@
  * command data. Each registers itself with `ctx.localInfer`.
  *
  * Phase 3 registers the NInfer measured VramModels and the built-in hardware
- * guidelines. The engine adapters land in Phase 5 and the preset data in
- * Phase 7.
+ * guidelines. The engine adapters land in Phase 5. Phase 7 registers the
+ * built-in preset data (the NInfer measured and Hyper-Qwen profile presets)
+ * that the defaults resolver resolves against.
  * @module @dsh/dsh-plugin-local-infer/providers
  */
 import type { Context } from '@deepseek-ai/cordis';
@@ -24,6 +25,7 @@ export { BUILTIN_GUIDELINES, HOST_STATE_IMAGE_BYTES } from './guidelines.ts';
 export { ENGINES } from './engines.ts';
 export type { EngineInfo } from './engines.ts';
 export { ENGINE_DEP_PLANS, SYSTEM_DEPS } from './deps.ts';
+export { BUILTIN_PRESETS, PRESET_SOURCES, extractJsonBlock } from './presets.ts';
 export { HyperQwenAdapter, NINFER_DOCKER_IMAGE, NINFER_MODEL_ARTIFACTS, NInferAdapter, envFromSpecs, flagsFromSpecs, nodeLifecycleHost, pollHealth, } from './adapters.ts';
 export type { NInferModelArtifact } from './adapters.ts';
 /**
@@ -32,9 +34,10 @@ export type { NInferModelArtifact } from './adapters.ts';
  * register so the guideline engine warns on docker, host RAM, and WSL2
  * before the engine boots; the per-engine dep plans register so the deps,
  * installString, and runInstall entry points resolve a plan for every engine
- * the card offers; and the engine adapters register so the launch, stop, and
- * register entry points route a plan to the adapter that rendered it. The
- * preset data lands in Phase 7.
+ * the card offers; the built-in presets register so the defaults resolver
+ * resolves a sane starting config for the detected hardware class; and the
+ * engine adapters register so the launch, stop, and register entry points
+ * route a plan to the adapter that rendered it.
  */
 export declare function apply(ctx: Context): void;
 declare const plugin: {
