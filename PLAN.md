@@ -196,6 +196,11 @@ usable       = (vramGiB * 1024 - reserveMiB) * MiB
 headroom     = usable - total
 ```
 
+`reserveMiB` is the config's explicit `reserveMiB`/`reserveGiB` when named, else the
+3 GiB default (`DEFAULT_OS_RESERVE_MIB`), the working-set floor the desktop keeps on a
+GPU card. The dynamic OS-reserve computation (Phase 10) replaces the default with a
+measured value when something else is using the card.
+
 Verdict: `not-measured` (no `VramModel`), `over` (`headroom < 0`), `tight`
 (`headroom < 0.5 GiB`), else `fits`. `largestFittingContext` is solved iteratively (the
 graph-allowance step function is re-evaluated at each candidate) and capped at
@@ -602,6 +607,37 @@ green, `npx eslint` clean).
 - Test hardening (coverage thresholds like codegraph), docs, `AGENTS.md` updates.
 - **Exit.** A new engine is added by one adapter + its parameter data, with zero changes to
   `core`/`service`.
+
+### Phase 10 — Dynamic OS reserve (pending)
+- **`core`: OS-usage-aware reserve.** The estimator prices the 3 GiB default
+  (`DEFAULT_OS_RESERVE_MIB`) when the config names no reserve. This phase adds the code
+  that calculates the OS VRAM usage **when a local inference is not currently running**
+  (that is, when the plugin did not launch the engine) and replaces the default with a
+  measured value. The resolution order:
+  1. **Plugin-launched engine.** The plugin launched the engine itself, so its footprint
+     (weights, KV, workspace) is already priced by the estimator; the reserve stays at
+     the 3 GiB default.
+  2. **Foreign engine, detected by process.** The plugin did not launch it. Detect local
+     inference through running processes based on the providers' config: match running
+     processes against the launch signature each provider's `toArgv`/`toEnv` produces
+     (the engine binary, the port, the env keys). A match means a foreign local inference
+     is running, and its VRAM usage is read from the GPU probe.
+  3. **VRAM-usage fallback.** Local inference cannot be detected through running
+     processes. Fall back to checking for **75% or more VRAM usage**: read
+     `nvidia-smi`'s `memory.used`/`memory.total`, and when the usage is 75% or more treat
+     the card as busy and raise the reserve to the used VRAM (capped at the card's
+     capacity). Below 75%, keep the 3 GiB default.
+- **`service`: probe wiring.** `detectHardware` (or a new entry point) runs the
+  process-signature and GPU-usage probes and hands the resolved reserve to
+  `estimateVram`, so the meter, the verdict, and the DSH `contextWindow` all price the
+  same number.
+- **`ui`: the dark reserve segment.** The "Reserved for the OS" meter segment renders
+  dark (`#1c1c1c` with a `#4d4d4d` hatch), so the reserve reads as the card's budget
+  floor rather than free space, and the readout shows the resolved reserve.
+- **Relationship established.** OS usage → reserve → usable budget → verdict.
+- **Exit.** With nothing running, the estimator prices the 3 GiB default; a foreign
+  engine detected by process raises the reserve; the 75%-usage fallback raises it further;
+  the meter's dark reserve segment reflects the resolved value.
 
 ---
 
