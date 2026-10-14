@@ -17,5 +17,6 @@ export { constraintId, evaluateGuidelines, modelGuidelines } from './guideline.t
 export type { Guideline, GuidelineLevel, GuidelineResult } from './guideline.ts';
 export type { DefaultProvenance, DefaultsResolver, HardwareClass, Preset, } from './defaults.ts';
 export type { DshModelEntry, DshModelRegistrar, RegisterResult } from './registrar.ts';
-export type { DepCheck, DepStatus, InstallResult, SystemDep, SystemDepProvisioner, } from './deps.ts';
+export { checkDeps, detectPackageManager, planDeps, renderInstallString, runInstall, } from './deps.ts';
+export type { CommandOutcome, CommandRunner, DepCheck, DepStatus, EngineDepPlan, InstallCommands, InstallResult, PackageManager, PackageManagerProbes, SystemDep, SystemDepProvisioner, } from './deps.ts';
 //# sourceMappingURL=index.d.ts.map

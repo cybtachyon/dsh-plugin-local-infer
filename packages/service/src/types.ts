@@ -1,6 +1,7 @@
 import type {
   Config,
   EngineAdapter,
+  EngineDepPlan,
   Guideline,
   GuidelineResult,
   HardwareProfile,
@@ -47,18 +48,20 @@ export interface LocalInferService {
   registerPreset(preset: Preset): () => void
   registerGuideline(guideline: Guideline): () => void
   registerVramModel(model: VramModel): () => void
+  registerDepPlan(engineId: string, plan: EngineDepPlan): () => void
 
   registeredEngines(): readonly EngineAdapter[]
   registeredPresets(): readonly Preset[]
   registeredGuidelines(): readonly Guideline[]
   registeredVramModels(): readonly VramModel[]
+  registeredDepPlans(): ReadonlyMap<string, EngineDepPlan>
 
   estimate(config: Config, hw: HardwareProfile): Promise<EstimateResult>
   detectHardware(): Promise<HardwareProfile>
   guidelines(config: Config, hw: HardwareProfile): Promise<GuidelineResult[]>
-  deps(engine: EngineAdapter, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<SystemDep[]>
-  installString(engine: EngineAdapter, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<string>
-  runInstall(engine: EngineAdapter, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<InstallResult>
+  deps(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<readonly SystemDep[]>
+  installString(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<string>
+  runInstall(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<InstallResult>
   launch(plan: LaunchPlan): Promise<LaunchResult>
   registerModel(plan: LaunchPlan): Promise<RegisterResult>
 }

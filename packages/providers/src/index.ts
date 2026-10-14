@@ -14,6 +14,7 @@ import type { Context } from '@deepseek-ai/cordis'
 // The service's `declare module` adds `localInfer` to the cordis Context; the
 // type import loads that augmentation without a runtime edge.
 import type { LocalInferService } from '@dsh/dsh-plugin-local-infer/service'
+import { ENGINE_DEP_PLANS } from './deps.ts'
 import { BUILTIN_GUIDELINES } from './guidelines.ts'
 import { NINFER_VRAM_MODELS } from './vram.ts'
 
@@ -41,13 +42,15 @@ export { NINFER_VRAM_MODELS, ninferVramModel } from './vram.ts'
 export { BUILTIN_GUIDELINES, HOST_STATE_IMAGE_BYTES } from './guidelines.ts'
 export { ENGINES } from './engines.ts'
 export type { EngineInfo } from './engines.ts'
+export { ENGINE_DEP_PLANS, SYSTEM_DEPS } from './deps.ts'
 
 /**
  * Mount the providers. The NInfer measured VramModels register here so the
  * service's estimate prices a named model; the built-in hardware guidelines
  * register so the guideline engine warns on docker, host RAM, and WSL2
- * before the engine boots. The engine adapters and presets land in later
- * phases.
+ * before the engine boots; the per-engine dep plans register so the deps,
+ * installString, and runInstall entry points resolve a plan for every engine
+ * the card offers. The engine adapters and presets land in later phases.
  */
 export function apply(ctx: Context): void {
   const localInfer: LocalInferService = ctx.localInfer
@@ -56,6 +59,9 @@ export function apply(ctx: Context): void {
   }
   for (const guideline of BUILTIN_GUIDELINES) {
     localInfer.registerGuideline(guideline)
+  }
+  for (const [engineId, plan] of Object.entries(ENGINE_DEP_PLANS)) {
+    localInfer.registerDepPlan(engineId, plan)
   }
 }
 

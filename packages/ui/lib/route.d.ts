@@ -10,8 +10,10 @@
  * @module @dsh/dsh-plugin-local-infer/ui/route
  */
 import type { Context } from '@deepseek-ai/cordis';
-import type { Config, HardwareProfile, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
+import type { Config, HardwareProfile, InstallResult, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
 import type { LocalInferService } from '@dsh/dsh-plugin-local-infer/service';
+import type { EngineInfo } from '../../providers/lib/index.js';
+import type { DepsModel } from './deps.ts';
 import type { FormModel } from './form.ts';
 import type { MeterModel } from './meter.ts';
 import type { WarningsModel } from './warnings.ts';
@@ -73,18 +75,19 @@ export declare function localInferConfigPath(): string;
 export interface StoredConfig {
     engine: string;
     config: Config;
+    allowRunDeps: boolean;
 }
 /**
- * readConfig reads the stored engine and config. A missing or broken file reads
- * as the scaffold default (NInfer, empty config) so the card always has a form
- * to draw.
+ * readConfig reads the stored engine, config, and the allowRunDeps trust gate.
+ * A missing or broken file reads as the scaffold default (NInfer, empty
+ * config, gate off) so the card always has a form to draw.
  */
 export declare function readConfig(): StoredConfig;
 /**
- * writeConfig persists the engine and config, creating the directory tree on
- * first write.
+ * writeConfig persists the engine, config, and trust gate, creating the
+ * directory tree on first write.
  */
-export declare function writeConfig(engine: string, config: Config): void;
+export declare function writeConfig(engine: string, config: Config, allowRunDeps: boolean): void;
 /**
  * buildSummary assembles the card's read model for one engine and config: the
  * static engine and model lists, the detected hardware, the form model the
@@ -99,11 +102,60 @@ export declare function buildSummary(localInfer: LocalInferService, request?: {
     config?: Config;
 }): Promise<LocalInferSummary>;
 /**
- * registerLocalInferRoute registers the summary and save routes on the web
- * server and holds them by an effect, so a bundle switch off removes them
- * before the next switch on re-registers. The scoped context carries the
- * webServer; the localInfer service is passed in because the scope only
- * injects what it names.
+ * RouteError is a route failure that carries its own HTTP status, so the
+ * handlers map the domain answer (a gate that is off, an unsupported build
+ * mode) to a status the card can read instead of a blanket 500.
+ */
+export declare class RouteError extends Error {
+    readonly status: number;
+    constructor(status: number, message: string);
+}
+/**
+ * DepsRequest is the query the card sends for the deps panel: the engine and
+ * the config the build mode reads from. Absent values fall back to the stored
+ * config, the same rule the summary route applies.
+ */
+export interface DepsRequest {
+    engine?: string;
+    config?: Config;
+}
+/**
+ * resolveBuildMode picks the deploy mode the dep plan prices: the config's
+ * buildMode when the selected engine supports it, else the engine's default
+ * (local when the engine can build locally, docker when it cannot). The
+ * docker-not-installed guideline reads this same value, so the panel and the
+ * warning never disagree about the mode.
+ */
+export declare function resolveBuildMode(engine: EngineInfo, config: Config): 'docker' | 'local';
+/**
+ * buildDeps assembles the deps panel read model for one engine and config:
+ * the detected hardware (with its package manager), the dep plan the service
+ * resolves, the per-dep statuses, the copy/paste install string, and the
+ * Play/Run trust gate the stored config carries.
+ */
+export declare function buildDeps(localInfer: LocalInferService, request?: DepsRequest): Promise<DepsModel>;
+/**
+ * InstallResponse is the answer to a Play/Run: the install result and the
+ * refreshed deps model, so the card re-renders the gate from the same
+ * re-check the install ran.
+ */
+export interface InstallResponse {
+    result: InstallResult;
+    deps: DepsModel;
+}
+/**
+ * runInstallFor is the Play/Run path: it refuses with a 409 while the
+ * trust gate is off (the copy/paste path is always the fallback), runs the
+ * install through the service, and refreshes the deps model from the
+ * re-check, so the "Get" gate opens only after a re-check passes.
+ */
+export declare function runInstallFor(localInfer: LocalInferService, request: DepsRequest): Promise<InstallResponse>;
+/**
+ * registerLocalInferRoute registers the summary, save, deps, and install
+ * routes on the web server and holds them by an effect, so a bundle switch
+ * off removes them before the next switch on re-registers. The scoped context
+ * carries the webServer; the localInfer service is passed in because the
+ * scope only injects what it names.
  */
 export declare function registerLocalInferRoute(scope: Context & {
     webServer: WebServerService;

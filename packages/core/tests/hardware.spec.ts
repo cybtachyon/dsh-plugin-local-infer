@@ -78,4 +78,24 @@ describe('detectHardware', () => {
     expect(blackwell.gpu?.sm).toBe(120)
     expect(ada.gpu?.sm).toBe(89)
   })
+
+  it('carries the package-manager winner into the profile and omits it when none was detected', () => {
+    const withPm = detectHardware({
+      os: 'linux',
+      cpuThreads: 4,
+      dockerAvailable: false,
+      wsl2: false,
+      packageManager: 'pacman',
+    })
+    expect(withPm.packageManager).toBe('pacman')
+
+    const withoutPm = detectHardware({
+      os: 'windows',
+      cpuThreads: 4,
+      dockerAvailable: false,
+      wsl2: false,
+      packageManager: null,
+    })
+    expect('packageManager' in withoutPm).toBe(false)
+  })
 })

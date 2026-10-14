@@ -747,6 +747,82 @@ src/dsh-plugin-local-infer/
 - **Relationship established.** parameter (value *and* presence) → hardware capability → red warning, with the estimator-backed rule agreeing with the Phase 2 meter by construction.
 - **Gates green.** `tsc -b` clean; `vitest run` 112/112 across 16 files, including the guideline-engine suite (firing, ordering, default-value pricing, the absent-spec guard), the model-rule suite (the over-budget message naming the estimator's own solver answer, the draft-weights rule with the available-backend readout), the built-in rule matrix (each rule fires on its condition and stays silent off it, the StateImage pricing pinned to the measured byte figure), the service suite (spec constraints and named guidelines wire through the seam, the model rules fire against the registered model), and the warnings render model (the red/amber/neutral tones, the banner worst-level, the per-anchor grouping); `npx eslint` clean.
 
+### Phase 4 — System dependency provisioning (complete)
+
+- **`core`: the provisioner logic.** `packages/core/src/deps.ts` carries the
+  pure relationship: `PackageManager` (`apt`/`dnf`/`pacman`/`brew`) plus
+  `detectPackageManager`, the probe-to-winner mapping (linux tries the
+  distro-native managers in the plan order, macOS keys on brew, Windows reads
+  undetected until a command set lands); `InstallCommands` (per-manager
+  commands plus `envAfter` exports, which replaced the dep-level `envAfter`,
+  because the CUDA export paths differ between Debian and Arch);
+  `CommandRunner`/`CommandOutcome` so the Play/Run path takes an injectable
+  runner; and the pure `planDeps` (adapter-declared deps, empty when the
+  adapter declares none), `checkDeps` (a dep with no probe degrades to
+  missing), `renderInstallString` (the copy/paste block: purpose headers, the
+  detected manager's commands, a by-hand note where the manager has none,
+  manager-grouped blocks when none is detected), and `runInstall` (runs a
+  missing dep's commands in order, stops at the first failed command with its
+  exit detail, re-probes to confirm, and reads an unconfirmable run as
+  failed). `EngineAdapter` gains the optional `systemDeps(buildMode, hw)`
+  declaration and `HardwareProfile`/`HardwareProbes` carry the detected
+  `packageManager`.
+- **`providers`: the SystemDep data.** `packages/providers/src/deps.ts`
+  carries `SYSTEM_DEPS` (cmake, ninja, pkg-config, ffmpeg, curl, cuda-toolkit,
+  docker, nvidia-container-toolkit, hf-cli), each with its which/version probe
+  and per-manager install blocks mirroring the `qwen-ninfer` header: the apt
+  lines plus the ubuntu2604 CUDA-keyring `wget`/`dpkg`/`apt` sequence and
+  `export CUDACXX` on Debian/Ubuntu, the `pacman -S --noconfirm` lines plus
+  the `/opt/cuda` exports on Arch, and dnf/brew blocks flagged untested.
+  `ENGINE_DEP_PLANS` maps (engine, build mode) to the dep lists: the NInfer
+  local toolchain ending in the hf CLI, the docker runtime plus the NVIDIA
+  Container Toolkit plus the hf CLI for the docker engines, and the thin
+  specified-not-verified lists for llama.cpp and Strata. The providers `apply`
+  registers every plan with the seam.
+- **`service`: the entry points.** `registerDepPlan` joins the registries
+  (order-independent, duplicate-id conflict, `ctx.effect`-based disposer);
+  `deps(engineId, buildMode, hw)` resolves a registered adapter's
+  `systemDeps` first, falls back to the provider-registered plan, and plans an
+  empty list for an unknown engine; `installString` renders the pure block;
+  `runInstall` runs it through a shell runner that captures the per-command
+  exit tail and closes stdin, so a sudo prompt that cannot read a terminal
+  fails fast instead of hanging the panel; `detectHardware` now probes
+  `which apt-get|dnf|pacman|brew` and hands the winner to the profile.
+- **`ui`: the panel and its routes.** `packages/ui/src/deps.ts` maps the
+  check results to the panel model (the per-dep rows with purpose and sudo
+  flag, the install string, the Play/Run trust gate, and the "Get" gate that
+  opens only when every dep reports satisfied; an empty plan opens it).
+  `GET /local-infer/deps` re-probes the host on every fetch so the gate reads
+  the live `checkDeps` answer, resolving the build mode from the config
+  against the engine's supported modes; `POST /local-infer/install` refuses
+  with a 409 while the `allowRunDeps` gate is off and, when it runs, returns
+  the re-checked dep model so the gate re-renders from the same re-check;
+  `allowRunDeps` persists in the shared `~/.dsh/local-infer/config.json`.
+- **`dsh/client.js`: the card panel.** The card gains the Build mode row
+  (local/docker per the engine's supports, a config field the
+  docker-not-installed guideline reads), the System dependencies section
+  (status-glyphed dep rows, the copy/paste block with a Copy button, the
+  "Allow one-click install (sudo)" toggle that persists the gate, the ▶ Run
+  arrow while the gate is on, and the Get button disabled until every dep
+  reports satisfied), and a field edit refreshes the summary and the deps
+  panel in one debounced round.
+- **Meter fix.** The `renderMeter` segment order put the OS reserve first;
+  the plan (and the file's own doc comment) read it at the far end, and the
+  meter suite pinned the far-end order. The segment order is corrected, which
+  is what the card's hatched-reserve rendering draws from.
+- **Relationship established.** engine + build mode + OS → host deps →
+  install string / Play-Run / gate, with the copy/paste block the no-trust
+  fallback the plan names.
+- **Gates green.** `tsc -b` clean; `vitest run` 164/164 across 20 files,
+  including the provisioner suite (the manager mapping, the degrade-to-
+  missing rule, the apt/pacman block rendering over the `qwen-ninfer`
+  package set, the Play/Run stop-at-failure and unconfirmable-run cases),
+  the provider data suite (the header-mirror assertions, the plan contents,
+  the registration), the service suite (the plan registry, the adapter-over-
+  plan resolution, the no-shell no-commands install, the live pm probe), and
+  the route suite (the deps read model, the 409 gate, the re-checked install
+  response); `npx eslint` clean.
+
 ### Phase 8 (first draft) — Web card + settings route (in progress)
 
 The plan's panel landed as a working first draft out of phase order, because a card on the
@@ -858,7 +934,7 @@ Plugins page:
   known options suggest and any path or HF repo reference types.
 - **Remaining against the plan's direction.** The directory fields (§3.10 `modelDirectory`,
   `engineDirectory`, `engineFork`), the engine- and user-added combo option sources, the
-  Phase 4 system-dependency panel with its "Get" gate, the Phase 5 lifecycle controls
-  (build / deploy / stop), and the Phase 6 register-as-model confirmation are not built yet;
-  the card today is the configure-and-size surface, and its `Save` persists the config the
-  later phases will consume.
+  Phase 5 lifecycle controls (build / deploy / stop), and the Phase 6 register-as-model
+  confirmation are not built yet; the card today is the configure-and-size surface with the
+  Phase 4 system-dependency panel (its `Save` persists the config and the `allowRunDeps`
+  trust gate the later phases will consume).

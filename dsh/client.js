@@ -55,6 +55,21 @@ window.__ModuleLoader__.load({
         guidelineMany: 'hardware guidelines',
         fired: 'fired',
         measureHint: 'Pick a model to measure the VRAM budget.',
+        build: 'Build',
+        buildLocal: 'local',
+        buildDocker: 'docker',
+        depsTitle: 'System dependencies',
+        depsNone: 'No system dependencies required.',
+        pmUnknown: 'package manager not detected',
+        copy: 'Copy',
+        copied: 'copied',
+        copyFailed: 'copy failed',
+        run: 'Run',
+        running: 'running...',
+        get: 'Get',
+        allowRun: 'Allow one-click install (sudo)',
+        depsSatisfied: 'All dependencies satisfied.',
+        installRejected: 'one-click install is not allowed; copy the install string instead',
       },
       zh: {
         section: '引擎设置',
@@ -84,6 +99,21 @@ window.__ModuleLoader__.load({
         guidelineMany: '硬件准则',
         fired: '触发',
         measureHint: '选择模型以测量显存预算。',
+        build: '构建',
+        buildLocal: '本地',
+        buildDocker: '容器',
+        depsTitle: '系统依赖',
+        depsNone: '无需系统依赖。',
+        pmUnknown: '未检测到包管理器',
+        copy: '复制',
+        copied: '已复制',
+        copyFailed: '复制失败',
+        run: '运行',
+        running: '运行中…',
+        get: '获取',
+        allowRun: '允许一键安装 (sudo)',
+        depsSatisfied: '所有依赖已满足。',
+        installRejected: '未允许一键安装；请复制安装命令。',
       },
     };
 
@@ -221,6 +251,34 @@ window.__ModuleLoader__.load({
       color: '#fff',
       border: 'none',
     });
+    // The deps panel. The install block is a copy/paste target, so it gets a
+    // monospace pre with its own copy button; the dep rows read their status
+    // from a colored glyph, not a word, so a long list stays scannable.
+    var DEPS_ROW_STYLE = {
+      display: 'flex',
+      alignItems: 'baseline',
+      gap: 6,
+      fontSize: 12,
+      marginTop: 2,
+    };
+    var DEPS_STATUS_COLOR = {
+      satisfied: '#34c38f',
+      missing: 'var(--dsw-alias-label-warning, #ff9f0a)',
+      failed: 'var(--dsw-alias-label-error, #ff3b30)',
+      installing: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))',
+    };
+    var INSTALL_BLOCK_STYLE = {
+      margin: '8px 0',
+      padding: 8,
+      borderRadius: 6,
+      background: 'var(--dsw-alias-background-tertiary, rgba(128,128,128,0.08))',
+      border: '1px solid var(--dsw-alias-border-secondary, rgba(128,128,128,0.24))',
+      fontSize: 11,
+      lineHeight: 1.5,
+      whiteSpace: 'pre-wrap',
+      wordBreak: 'break-all',
+      fontFamily: 'var(--dsw-alias-font-mono, ui-monospace, monospace)',
+    };
 
     // The number input that pairs with a slider: type a number or use the
     // native spin buttons. It keeps the typed text in local state and
@@ -575,6 +633,146 @@ window.__ModuleLoader__.load({
       );
     }
 
+    // The "System dependencies" panel: the per-dep status list, the copy/paste
+    // install block, the Play/Run arrow (only while the trust gate is on),
+    // and the "Get" gate that stays disabled until every dep reports
+    // satisfied. The actions ride in as callbacks so the panel stays a pure
+    // draw of the deps model the /local-infer/deps route returns.
+    function renderDepsPanel(react, deps, t, actions) {
+      if (deps === null || deps === undefined) {
+        return null;
+      }
+      var glyph = { satisfied: '✓', missing: '○', failed: '✗', installing: '…' };
+      var rows = (deps.deps || []).map((dep) =>
+        react.createElement(
+          'div',
+          { key: dep.id, style: DEPS_ROW_STYLE },
+          react.createElement(
+            'span',
+            {
+              style: {
+                color: DEPS_STATUS_COLOR[dep.status] || 'inherit',
+                width: 12,
+                flex: 'none',
+              },
+            },
+            glyph[dep.status] || '○',
+          ),
+          react.createElement('span', { style: { fontWeight: 600 } }, dep.id),
+          react.createElement(
+            'span',
+            {
+              style: {
+                color: 'var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))',
+              },
+            },
+            dep.purpose + (dep.requiresSudo ? ' (sudo)' : ''),
+          ),
+        ),
+      );
+      return react.createElement(
+        'div',
+        { style: { marginTop: 8 } },
+        react.createElement(
+          'div',
+          { style: { display: 'flex', alignItems: 'baseline', gap: 8 } },
+          react.createElement('div', { style: SECTION_STYLE }, t.depsTitle),
+          deps.packageManager === null
+            ? react.createElement(
+                'span',
+                {
+                  style: {
+                    fontSize: 11,
+                    color: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))',
+                  },
+                },
+                t.pmUnknown,
+              )
+            : null,
+        ),
+        (deps.deps || []).length > 0
+          ? react.createElement('div', null, rows)
+          : react.createElement(
+              'div',
+              { style: { fontSize: 12, opacity: 0.7, marginTop: 4 } },
+              t.depsNone,
+            ),
+        deps.installString
+          ? react.createElement(
+              'div',
+              null,
+              react.createElement('pre', { style: INSTALL_BLOCK_STYLE }, deps.installString),
+              react.createElement(
+                'button',
+                {
+                  type: 'button',
+                  style: GHOST_BUTTON,
+                  onClick: actions.onCopy,
+                },
+                actions.copyNote ? actions.copyNote : t.copy,
+              ),
+            )
+          : null,
+        react.createElement(
+          'div',
+          { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 } },
+          react.createElement(
+            'label',
+            {
+              style: {
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 12,
+                cursor: 'pointer',
+              },
+            },
+            react.createElement('input', {
+              type: 'checkbox',
+              checked: deps.runAllowed === true,
+              onChange: (event) => actions.onAllowRun(event.target.checked),
+            }),
+            t.allowRun,
+          ),
+          deps.runAllowed && !deps.allSatisfied
+            ? react.createElement(
+                'button',
+                {
+                  type: 'button',
+                  style: GHOST_BUTTON,
+                  onClick: actions.onRun,
+                  disabled: actions.installing,
+                },
+                actions.installing ? t.running : '▶ ' + t.run,
+              )
+            : null,
+          react.createElement(
+            'button',
+            {
+              type: 'button',
+              style: PRIMARY_BUTTON,
+              onClick: actions.onGet,
+              disabled: !deps.allSatisfied,
+            },
+            t.get,
+          ),
+        ),
+        actions.depsNote
+          ? react.createElement(
+              'div',
+              {
+                style: {
+                  fontSize: 12,
+                  marginTop: 4,
+                  color: 'var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))',
+                },
+              },
+              actions.depsNote,
+            )
+          : null,
+      );
+    }
+
     // The card. It owns its draft and validation display; the page draws the
     // title, icon, and crumb, and the form drops its staged edits when left.
     function ConfigCard(react, localeRef) {
@@ -603,10 +801,21 @@ window.__ModuleLoader__.load({
         // state word on the button (the old "Idle" label) read as a dead
         // control and hid the one thing the card offers.
         var savingState = react.useState(false);
+        // The deps panel state. The deps model and its note come from the
+        // /local-infer/deps route, which re-probes the host on every fetch,
+        // so the "Get" gate always reads the live checkDeps answer.
+        var depsState = react.useState(null);
+        var installingState = react.useState(false);
+        var depsNoteState = react.useState('');
+        var copyNoteState = react.useState('');
         var data = dataState[0];
         var draft = draftState[0];
         var note = noteState[0];
         var saving = savingState[0];
+        var deps = depsState[0];
+        var installing = installingState[0];
+        var depsNote = depsNoteState[0];
+        var copyNote = copyNoteState[0];
         var timerRef = react.useRef(null);
 
         var fetchSummary = react.useCallback(
@@ -636,9 +845,41 @@ window.__ModuleLoader__.load({
           [t],
         );
 
+        // The deps panel reads its own route, because it re-probes the host
+        // on every fetch (the "Get" gate must read the live checkDeps
+        // answer), while the summary re-prices the meter. Both ride the same
+        // engine and config, so a field edit refreshes both in one round.
+        var fetchDeps = react.useCallback(
+          (engine, config) => {
+            var params = new URLSearchParams();
+            if (engine) params.set('engine', engine);
+            if (config) params.set('config', JSON.stringify(config));
+            var suffix = params.toString();
+            fetch('/local-infer/deps' + (suffix ? '?' + suffix : ''))
+              .then((response) =>
+                response.json().then((body) => {
+                  if (!response.ok) {
+                    throw new Error(body.error || '');
+                  }
+                  return body;
+                }),
+              )
+              .then((model) => {
+                depsState[1](model);
+              })
+              .catch(() => {
+                // A host that predates the deps route keeps the card usable,
+                // so a fetch failure reads as no panel.
+                depsState[1](null);
+              });
+          },
+          [],
+        );
+
         var load = react.useCallback(() => {
           fetchSummary(null, null);
-        }, [fetchSummary]);
+          fetchDeps(null, null);
+        }, [fetchSummary, fetchDeps]);
 
         react.useEffect(() => {
           if (data === null && draft === null) {
@@ -652,6 +893,7 @@ window.__ModuleLoader__.load({
         var onValue = react.useCallback(
           (key, value) => {
             noteState[1]('');
+            depsNoteState[1]('');
             draftState[1]((current) => {
               var config = Object.assign({}, current.config);
               config[key] = value;
@@ -661,16 +903,18 @@ window.__ModuleLoader__.load({
               }
               timerRef.current = setTimeout(() => {
                 fetchSummary(next.engine, next.config);
+                fetchDeps(next.engine, next.config);
               }, 300);
               return next;
             });
           },
-          [fetchSummary],
+          [fetchSummary, fetchDeps],
         );
 
         var onEngine = react.useCallback(
           (engine) => {
             noteState[1]('');
+            depsNoteState[1]('');
             draftState[1]((_current) => {
               var next = { engine: engine, config: {} };
               if (timerRef.current) {
@@ -678,11 +922,12 @@ window.__ModuleLoader__.load({
               }
               timerRef.current = setTimeout(() => {
                 fetchSummary(next.engine, next.config);
+                fetchDeps(next.engine, next.config);
               }, 300);
               return next;
             });
           },
-          [fetchSummary],
+          [fetchSummary, fetchDeps],
         );
 
         var save = react.useCallback(() => {
@@ -693,7 +938,11 @@ window.__ModuleLoader__.load({
           fetch('/local-infer/save', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ engine: draft.engine, config: draft.config }),
+            body: JSON.stringify({
+              engine: draft.engine,
+              config: draft.config,
+              allowRunDeps: deps !== null && deps.runAllowed === true,
+            }),
           })
             .then((response) =>
               response.json().then((body) => {
@@ -713,12 +962,128 @@ window.__ModuleLoader__.load({
               noteState[1](t.saveFailed + ': ' + (error && error.message ? error.message : ''));
               savingState[1](false);
             });
-        }, [draft, saving, t]);
+        }, [draft, saving, deps, t]);
 
         var discard = react.useCallback(() => {
           noteState[1]('');
+          depsNoteState[1]('');
           load();
         }, [load]);
+
+        // The deps panel actions. Copy hands the install block to the
+        // clipboard; the allow-run toggle and the Play/Run arrow talk to the
+        // save and install routes, which own the trust gate and the re-check.
+        var onCopy = react.useCallback(() => {
+          if (deps === null || deps.installString === undefined) {
+            return;
+          }
+          var text = deps.installString;
+          var done = (ok) => {
+            copyNoteState[1](ok ? t.copied : t.copyFailed);
+            setTimeout(() => {
+              copyNoteState[1]('');
+            }, 2000);
+          };
+          if (typeof navigator.clipboard !== 'undefined' && navigator.clipboard.writeText) {
+            navigator.clipboard
+              .writeText(text)
+              .then(() => {
+                done(true);
+              })
+              .catch(() => {
+                done(false);
+              });
+          } else {
+            done(false);
+          }
+        }, [deps, t]);
+
+        var onAllowRun = react.useCallback(
+          (checked) => {
+            if (draft === null) {
+              return;
+            }
+            fetch('/local-infer/save', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                engine: draft.engine,
+                config: draft.config,
+                allowRunDeps: checked,
+              }),
+            })
+              .then((response) =>
+                response.json().then((body) => {
+                  if (!response.ok) {
+                    throw new Error(body.error || '');
+                  }
+                  return body;
+                }),
+              )
+              .then((next) => {
+                dataState[1](next);
+                fetchDeps(next.engineId, next.config);
+              })
+              .catch((error) => {
+                noteState[1](t.saveFailed + ': ' + (error && error.message ? error.message : ''));
+              });
+          },
+          [draft, t, fetchDeps],
+        );
+
+        var onRun = react.useCallback(() => {
+          if (deps === null || draft === null || installing) {
+            return;
+          }
+          installingState[1](true);
+          depsNoteState[1]('');
+          fetch('/local-infer/install', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ engine: draft.engine, config: draft.config }),
+          })
+            .then((response) =>
+              response.json().then((body) => ({ ok: response.ok, body: body })),
+            )
+            .then(({ ok, body }) => {
+              if (!ok) {
+                depsNoteState[1](body.error || t.installRejected);
+                return;
+              }
+              // The response carries the re-checked deps model, so the gate
+              // re-renders from the same re-check the install ran.
+              depsState[1](body.deps);
+              if (body.result && body.result.ok) {
+                depsNoteState[1](t.depsSatisfied);
+              } else {
+                var failed = (body.result && body.result.results
+                  ? body.result.results
+                  : []
+                ).filter((entry) => entry.status !== 'satisfied');
+                depsNoteState[1](
+                  failed
+                    .map((entry) => entry.id + (entry.detail ? ': ' + entry.detail : ''))
+                    .join('; '),
+                );
+              }
+            })
+            .catch((error) => {
+              depsNoteState[1](t.saveFailed + ': ' + (error && error.message ? error.message : ''));
+            })
+            .then(() => {
+              installingState[1](false);
+            });
+        }, [deps, draft, installing, t]);
+
+        var onGet = react.useCallback(() => {
+          if (deps === null || draft === null) {
+            return;
+          }
+          // "Get" is the gate: it re-checks the live dep state, so the button
+          // opens only after a re-check passes.
+          fetchDeps(draft.engine, draft.config);
+          depsNoteState[1](t.depsSatisfied);
+        }, [deps, draft, t, fetchDeps]);
 
         if (view === 'summary') {
           return t.subtitle;
@@ -781,6 +1146,43 @@ window.__ModuleLoader__.load({
                 ),
               )
             : null,
+          (() => {
+            // The build-mode row: the dep plan the panel prices depends on it,
+            // and the docker-not-installed guideline reads the same value, so
+            // the row stays a config field, not panel-local state.
+            var engineEntry = (data.engines || []).find(
+              (entry) => entry.id === draft.engine,
+            );
+            var buildModes = [];
+            if (engineEntry && engineEntry.supports.local) buildModes.push('local');
+            if (engineEntry && engineEntry.supports.docker) buildModes.push('docker');
+            var buildMode =
+              typeof draft.config.buildMode === 'string'
+                ? draft.config.buildMode
+                : buildModes[0] || 'local';
+            return buildModes.length > 0
+              ? react.createElement(
+                  'div',
+                  { style: ROW_STYLE },
+                  react.createElement('label', { style: LABEL_STYLE }, t.build),
+                  react.createElement(
+                    'select',
+                    {
+                      style: INPUT_STYLE,
+                      value: buildMode,
+                      onChange: (event) => onValue('buildMode', event.target.value),
+                    },
+                    buildModes.map((mode) =>
+                      react.createElement(
+                        'option',
+                        { key: mode, value: mode },
+                        mode === 'local' ? t.buildLocal : t.buildDocker,
+                      ),
+                    ),
+                  ),
+                )
+              : null;
+          })(),
           hasFields
             ? formModel.sections.map((section) =>
                 react.createElement(
@@ -849,6 +1251,15 @@ window.__ModuleLoader__.load({
                 (data.verdict.status === 'over' ? t.over : t.tight) + ': ' + data.verdict.detail,
               )
             : null,
+          renderDepsPanel(react, deps, t, {
+            onCopy: onCopy,
+            onAllowRun: onAllowRun,
+            onRun: onRun,
+            onGet: onGet,
+            installing: installing,
+            copyNote: copyNote,
+            depsNote: depsNote,
+          }),
           react.createElement(
             'div',
             { style: FOOTER_STYLE },

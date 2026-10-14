@@ -19,6 +19,7 @@ export const inject = ['localInfer'];
  */
 export { GENERAL_GROUP, controlFor, renderForm, resolveValue, } from "./form.js";
 export { renderMeter } from "./meter.js";
+export { renderDeps } from "./deps.js";
 export { renderWarnings, toneFor } from "./warnings.js";
 /**
  * Mount the Web UI. The browser card (dsh/client.js) registers into the

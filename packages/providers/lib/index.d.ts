@@ -23,12 +23,14 @@ export { NINFER_VRAM_MODELS, ninferVramModel } from './vram.ts';
 export { BUILTIN_GUIDELINES, HOST_STATE_IMAGE_BYTES } from './guidelines.ts';
 export { ENGINES } from './engines.ts';
 export type { EngineInfo } from './engines.ts';
+export { ENGINE_DEP_PLANS, SYSTEM_DEPS } from './deps.ts';
 /**
  * Mount the providers. The NInfer measured VramModels register here so the
  * service's estimate prices a named model; the built-in hardware guidelines
  * register so the guideline engine warns on docker, host RAM, and WSL2
- * before the engine boots. The engine adapters and presets land in later
- * phases.
+ * before the engine boots; the per-engine dep plans register so the deps,
+ * installString, and runInstall entry points resolve a plan for every engine
+ * the card offers. The engine adapters and presets land in later phases.
  */
 export declare function apply(ctx: Context): void;
 declare const plugin: {

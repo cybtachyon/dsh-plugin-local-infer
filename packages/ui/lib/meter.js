@@ -18,13 +18,15 @@
 export function renderMeter(breakdown, verdict, vramGiB, source) {
     const cardBytes = vramGiB * 1024 * 1024 * 1024;
     const percentOf = (bytes) => cardBytes > 0 ? Math.max(0, Math.min(100, (bytes / cardBytes) * 100)) : 0;
+    // The bar reads against the full card the way the NInfer calculator draws
+    // it, with the OS reserve hatched at the far end.
     const segments = [
-        { key: 'reserve', label: 'Reserved for the OS', bytes: breakdown.reserve, percent: percentOf(breakdown.reserve) },
         { key: 'weights', label: 'Weights', bytes: breakdown.weights, percent: percentOf(breakdown.weights) },
         { key: 'kv', label: 'KV cache', bytes: breakdown.kv, percent: percentOf(breakdown.kv) },
         { key: 'overhead', label: 'Sequence state', bytes: breakdown.overhead, percent: percentOf(breakdown.overhead) },
         { key: 'workspace', label: 'Workspace', bytes: breakdown.workspace, percent: percentOf(breakdown.workspace) },
         { key: 'free', label: 'Free for more context', bytes: breakdown.free, percent: percentOf(breakdown.free) },
+        { key: 'reserve', label: 'Reserved for the OS', bytes: breakdown.reserve, percent: percentOf(breakdown.reserve) },
     ];
     return {
         segments,

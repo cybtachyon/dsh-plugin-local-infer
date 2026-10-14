@@ -1,6 +1,6 @@
 /**
  * Service Definition for the local-inference capability seam (`ctx.localInfer`):
- * the engine, preset, guideline, and VramModel registries plus the
+ * the engine, preset, guideline, VramModel, and dep-plan registries plus the
  * orchestration entry points that turn a config and a hardware profile into an
  * estimate, a set of warnings, a dependency plan, a launch, and a registered
  * DSH model.
@@ -8,13 +8,14 @@
  * Providers register against the registries; the tool package and the UI call
  * the entry points. Registration is order-independent and a duplicate id is a
  * loud conflict, so hot-reload order never changes routing. `estimate` is
- * filled in by Phase 2 over the core estimator and `guidelines` by Phase 3
- * over the core guideline engine; the remaining entry points fail loudly with
- * `LOCAL_INFER_NOT_IMPLEMENTED` until later phases fill them in.
+ * filled in by Phase 2 over the core estimator, `guidelines` by Phase 3 over
+ * the core guideline engine, and `deps`, `installString`, and `runInstall` by
+ * Phase 4 over the core provisioner. The remaining entry points fail loudly
+ * with `LOCAL_INFER_NOT_IMPLEMENTED` until later phases fill them in.
  * @module @dsh/dsh-plugin-local-infer/service
  */
 
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { availableParallelism, cpus, platform, release, totalmem } from 'node:os'
 import { Context, Service } from '@deepseek-ai/cordis'
 // Relative, not the root package subpath: a self-referencing bare specifier
@@ -22,14 +23,19 @@ import { Context, Service } from '@deepseek-ai/cordis'
 // local-path or pnpm-linked install of this repo would fail the import.
 import {
   detectHardware as detectHardwareFromProbes,
+  detectPackageManager,
   evaluateGuidelines,
   estimateVram,
   modelGuidelines,
   parseNvidiaSmiGpu,
+  renderInstallString,
+  runInstall,
 } from '../../core/lib/index.js'
 import type {
+  CommandOutcome,
   Config,
   EngineAdapter,
+  EngineDepPlan,
   Guideline,
   GuidelineResult,
   GpuProbe,
@@ -86,6 +92,7 @@ export class LocalInfer extends Service implements LocalInferService {
   private readonly presetRegistry = new Map<string, Preset>()
   private readonly guidelineRegistry = new Map<string, Guideline>()
   private readonly vramModelRegistry = new Map<string, VramModel>()
+  private readonly depPlanRegistry = new Map<string, EngineDepPlan>()
 
   constructor(ctx: Context) {
     super(ctx, 'localInfer')
@@ -174,6 +181,33 @@ export class LocalInfer extends Service implements LocalInferService {
     return [...this.vramModelRegistry.values()]
   }
 
+  /**
+   * registerDepPlan reserves the per-engine dep plan (the docker and local
+   * SystemDep lists the providers ship as data). The deps entry point asks a
+   * registered adapter's systemDeps first and falls back to this plan for the
+   * engine id, so an adapter that declares its own toolchain wins.
+   */
+  registerDepPlan(engineId: string, plan: EngineDepPlan): () => void {
+    if (engineId.trim() === '') {
+      throw new LocalInferError('a dep plan engine id must be a non-empty string', 'LOCAL_INFER_INVALID_ENGINE')
+    }
+    if (this.depPlanRegistry.has(engineId)) {
+      throw new LocalInferError(`a dep plan for engine "${engineId}" is already registered`, 'LOCAL_INFER_CONFLICT')
+    }
+
+    const dispose = this.ctx.effect(function* (this: LocalInfer) {
+      this.depPlanRegistry.set(engineId, plan)
+      yield () => {
+        this.depPlanRegistry.delete(engineId)
+      }
+    }.bind(this), 'localInfer.registerDepPlan()')
+    return () => void dispose()
+  }
+
+  registeredDepPlans(): ReadonlyMap<string, EngineDepPlan> {
+    return this.depPlanRegistry
+  }
+
   async estimate(config: Config, hw: HardwareProfile): Promise<EstimateResult> {
     const model = this.resolveVramModel(config)
     const estimate = estimateVram(model, config, hw)
@@ -215,16 +249,38 @@ export class LocalInfer extends Service implements LocalInferService {
     return results
   }
 
-  async deps(_engine: EngineAdapter, _buildMode: 'docker' | 'local', _hw: HardwareProfile): Promise<SystemDep[]> {
-    return this.notImplemented('deps')
+  /**
+   * deps resolves the host deps an engine's deploy step needs for a build
+   * mode. A registered adapter that declares systemDeps wins; the provider-
+   * registered plan for the engine id is the fallback, and an engine with
+   * neither plans an empty list (nothing to install, the gate passes).
+   */
+  async deps(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<readonly SystemDep[]> {
+    const adapter = this.engineRegistry.get(engineId)
+    if (adapter !== undefined && typeof adapter.systemDeps === 'function') {
+      return adapter.systemDeps(buildMode, hw)
+    }
+    return this.depPlanRegistry.get(engineId)?.[buildMode] ?? []
   }
 
-  async installString(_engine: EngineAdapter, _buildMode: 'docker' | 'local', _hw: HardwareProfile): Promise<string> {
-    return this.notImplemented('installString')
+  /**
+   * installString renders the copy/paste block for the resolved dep plan,
+   * keyed to the detected package manager, with the by-hand note for a dep
+   * the manager has no commands for.
+   */
+  async installString(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<string> {
+    const deps = await this.deps(engineId, buildMode, hw)
+    return renderInstallString(deps, hw)
   }
 
-  async runInstall(_engine: EngineAdapter, _buildMode: 'docker' | 'local', _hw: HardwareProfile): Promise<InstallResult> {
-    return this.notImplemented('runInstall')
+  /**
+   * runInstall is the Play/Run path: it runs the resolved dep plan's commands
+   * through the shell runner and re-probes each dep. The runner captures the
+   * per-command exit, so a failure names the command that broke.
+   */
+  async runInstall(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<InstallResult> {
+    const deps = await this.deps(engineId, buildMode, hw)
+    return runInstall(deps, hw, shellRunCommand)
   }
 
   async launch(_plan: LaunchPlan): Promise<LaunchResult> {
@@ -303,6 +359,40 @@ function runCommand(cmd: string, args: string[]): Promise<{ ok: boolean; stdout:
 }
 
 /**
+ * The tail of the output the shell runner keeps on a failure. The full log
+ * of a CUDA toolkit download is noise in a UI note; the last kilobyte names
+ * the broken line.
+ */
+const INSTALL_OUTPUT_TAIL = 1024
+
+/**
+ * shellRunCommand is the Play/Run runner: it runs one command line through
+ * the system shell and reports the exit. stdin is closed, so a sudo password
+ * prompt that cannot read a terminal fails fast instead of hanging the panel;
+ * the copy/paste path is the fallback the plan names for exactly this.
+ */
+const shellRunCommand = (command: string): Promise<CommandOutcome> =>
+  new Promise(resolve => {
+    const child = spawn(command, { shell: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    let output = ''
+    const append = (chunk: Buffer): void => {
+      output += chunk.toString('utf8')
+      if (output.length > INSTALL_OUTPUT_TAIL * 2) {
+        output = output.slice(-INSTALL_OUTPUT_TAIL * 2)
+      }
+    }
+    child.stdout.on('data', append)
+    child.stderr.on('data', append)
+    child.on('close', code => {
+      if (code === 0) {
+        resolve({ ok: true })
+        return
+      }
+      resolve({ ok: false, detail: `exit ${code}: ${output.trim().slice(-INSTALL_OUTPUT_TAIL)}` })
+    })
+  })
+
+/**
  * probeGpu reads the GPU through nvidia-smi's CSV query. Any failure (no
  * nvidia-smi, no GPU, a hung daemon) degrades to null, which detection reads
  * as "no GPU" and the estimator reads as a zero usable budget.
@@ -326,10 +416,21 @@ async function probeDocker(): Promise<boolean> {
 }
 
 /**
+ * probePackageManager checks which of the four package-manager binaries exist
+ * on the host. `which` is a read-only probe, so each answer is a plain
+ * presence flag the pure detectPackageManager mapping turns into the winner.
+ */
+async function probePackageManager(binary: string): Promise<boolean> {
+  const result = await runCommand('which', [binary])
+  return result.ok
+}
+
+/**
  * runHardwareProbes collects the raw probe results the detector consumes: the
- * OS, CPU thread count, host RAM, the GPU reading, docker availability, and
- * WSL2. The WSL2 read is a kernel-release check (WSL2 kernels carry a
- * "microsoft-standard-WSL2" suffix), which needs no child process.
+ * OS, CPU thread count, host RAM, the GPU reading, docker availability,
+ * WSL2, and the package-manager winner. The WSL2 read is a kernel-release
+ * check (WSL2 kernels carry a "microsoft-standard-WSL2" suffix), which needs
+ * no child process.
  */
 export async function runHardwareProbes(): Promise<HardwareProbes> {
   const osMap: Record<string, 'linux' | 'windows' | 'macos'> = {
@@ -338,7 +439,14 @@ export async function runHardwareProbes(): Promise<HardwareProbes> {
     darwin: 'macos',
   }
   const os = osMap[platform()] ?? 'linux'
-  const [gpu, dockerAvailable] = await Promise.all([probeGpu(), probeDocker()])
+  const [gpu, dockerAvailable, apt, dnf, pacman, brew] = await Promise.all([
+    probeGpu(),
+    probeDocker(),
+    probePackageManager('apt-get'),
+    probePackageManager('dnf'),
+    probePackageManager('pacman'),
+    probePackageManager('brew'),
+  ])
   return {
     os,
     cpuThreads: availableParallelism() || cpus().length,
@@ -346,6 +454,7 @@ export async function runHardwareProbes(): Promise<HardwareProbes> {
     wsl2: os === 'linux' && release().toLowerCase().includes('wsl'),
     hostRamGiB: totalmem() / 2 ** 30,
     gpu,
+    packageManager: detectPackageManager({ os, apt, dnf, pacman, brew }) ?? null,
   }
 }
 

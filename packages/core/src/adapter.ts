@@ -1,6 +1,7 @@
 import type { Config } from './config.ts'
 import type { HardwareProfile } from './hardware.ts'
 import type { ParameterSpec } from './parameter.ts'
+import type { SystemDep } from './deps.ts'
 
 /**
  * LaunchPlan is the engine-neutral result of rendering a config: how to start
@@ -49,4 +50,12 @@ export abstract class EngineAdapter {
   abstract healthCheck(plan: LaunchPlan): Promise<HealthResult>
   abstract deploy(plan: LaunchPlan): Promise<DeployResult>
   abstract stop(plan: LaunchPlan): Promise<void>
+
+  /**
+   * Optional: the host deps this engine's deploy step needs for a build mode,
+   * declared by the adapter that knows its own toolchain. The service asks a
+   * registered adapter first and falls back to the provider-registered plan
+   * for the engine id when the adapter declares none.
+   */
+  systemDeps?(buildMode: 'docker' | 'local', hw: HardwareProfile): readonly SystemDep[]
 }

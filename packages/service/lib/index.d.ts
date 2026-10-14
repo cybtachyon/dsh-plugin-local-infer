@@ -1,6 +1,6 @@
 /**
  * Service Definition for the local-inference capability seam (`ctx.localInfer`):
- * the engine, preset, guideline, and VramModel registries plus the
+ * the engine, preset, guideline, VramModel, and dep-plan registries plus the
  * orchestration entry points that turn a config and a hardware profile into an
  * estimate, a set of warnings, a dependency plan, a launch, and a registered
  * DSH model.
@@ -8,13 +8,14 @@
  * Providers register against the registries; the tool package and the UI call
  * the entry points. Registration is order-independent and a duplicate id is a
  * loud conflict, so hot-reload order never changes routing. `estimate` is
- * filled in by Phase 2 over the core estimator and `guidelines` by Phase 3
- * over the core guideline engine; the remaining entry points fail loudly with
- * `LOCAL_INFER_NOT_IMPLEMENTED` until later phases fill them in.
+ * filled in by Phase 2 over the core estimator, `guidelines` by Phase 3 over
+ * the core guideline engine, and `deps`, `installString`, and `runInstall` by
+ * Phase 4 over the core provisioner. The remaining entry points fail loudly
+ * with `LOCAL_INFER_NOT_IMPLEMENTED` until later phases fill them in.
  * @module @dsh/dsh-plugin-local-infer/service
  */
 import { Context, Service } from '@deepseek-ai/cordis';
-import type { Config, EngineAdapter, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, Preset, RegisterResult, SystemDep, VramModel } from '@dsh/dsh-plugin-local-infer/core';
+import type { Config, EngineAdapter, EngineDepPlan, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, Preset, RegisterResult, SystemDep, VramModel } from '@dsh/dsh-plugin-local-infer/core';
 import type { EstimateResult, LaunchResult, LocalInferService } from './types.ts';
 export type { EstimateResult, LaunchResult, LocalInferService } from './types.ts';
 declare module '@deepseek-ai/cordis' {
@@ -42,6 +43,7 @@ export declare class LocalInfer extends Service implements LocalInferService {
     private readonly presetRegistry;
     private readonly guidelineRegistry;
     private readonly vramModelRegistry;
+    private readonly depPlanRegistry;
     constructor(ctx: Context);
     registerEngine(adapter: EngineAdapter): () => void;
     registerPreset(preset: Preset): () => void;
@@ -51,6 +53,14 @@ export declare class LocalInfer extends Service implements LocalInferService {
     registeredPresets(): readonly Preset[];
     registeredGuidelines(): readonly Guideline[];
     registeredVramModels(): readonly VramModel[];
+    /**
+     * registerDepPlan reserves the per-engine dep plan (the docker and local
+     * SystemDep lists the providers ship as data). The deps entry point asks a
+     * registered adapter's systemDeps first and falls back to this plan for the
+     * engine id, so an adapter that declares its own toolchain wins.
+     */
+    registerDepPlan(engineId: string, plan: EngineDepPlan): () => void;
+    registeredDepPlans(): ReadonlyMap<string, EngineDepPlan>;
     estimate(config: Config, hw: HardwareProfile): Promise<EstimateResult>;
     /**
      * detectHardware runs the host probes (nvidia-smi, docker, WSL2, OS, CPU,
@@ -68,9 +78,25 @@ export declare class LocalInfer extends Service implements LocalInferService {
      * the single source the UI banner and the inline red warnings render from.
      */
     guidelines(config: Config, hw: HardwareProfile): Promise<GuidelineResult[]>;
-    deps(_engine: EngineAdapter, _buildMode: 'docker' | 'local', _hw: HardwareProfile): Promise<SystemDep[]>;
-    installString(_engine: EngineAdapter, _buildMode: 'docker' | 'local', _hw: HardwareProfile): Promise<string>;
-    runInstall(_engine: EngineAdapter, _buildMode: 'docker' | 'local', _hw: HardwareProfile): Promise<InstallResult>;
+    /**
+     * deps resolves the host deps an engine's deploy step needs for a build
+     * mode. A registered adapter that declares systemDeps wins; the provider-
+     * registered plan for the engine id is the fallback, and an engine with
+     * neither plans an empty list (nothing to install, the gate passes).
+     */
+    deps(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<readonly SystemDep[]>;
+    /**
+     * installString renders the copy/paste block for the resolved dep plan,
+     * keyed to the detected package manager, with the by-hand note for a dep
+     * the manager has no commands for.
+     */
+    installString(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<string>;
+    /**
+     * runInstall is the Play/Run path: it runs the resolved dep plan's commands
+     * through the shell runner and re-probes each dep. The runner captures the
+     * per-command exit, so a failure names the command that broke.
+     */
+    runInstall(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<InstallResult>;
     launch(_plan: LaunchPlan): Promise<LaunchResult>;
     registerModel(_plan: LaunchPlan): Promise<RegisterResult>;
     /**
@@ -95,9 +121,10 @@ export declare class LocalInfer extends Service implements LocalInferService {
 }
 /**
  * runHardwareProbes collects the raw probe results the detector consumes: the
- * OS, CPU thread count, host RAM, the GPU reading, docker availability, and
- * WSL2. The WSL2 read is a kernel-release check (WSL2 kernels carry a
- * "microsoft-standard-WSL2" suffix), which needs no child process.
+ * OS, CPU thread count, host RAM, the GPU reading, docker availability,
+ * WSL2, and the package-manager winner. The WSL2 read is a kernel-release
+ * check (WSL2 kernels carry a "microsoft-standard-WSL2" suffix), which needs
+ * no child process.
  */
 export declare function runHardwareProbes(): Promise<HardwareProbes>;
 export default LocalInfer;

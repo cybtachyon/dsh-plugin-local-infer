@@ -1,3 +1,5 @@
+import type { PackageManager } from './deps.ts'
+
 /**
  * GpuProfile is the detected graphics card: its name, VRAM in GiB, and the SM
  * architecture number that gates certain KV formats and speculation backends.
@@ -22,6 +24,7 @@ export interface HardwareProfile {
   wsl2: boolean
   os: 'linux' | 'windows' | 'macos'
   cpuThreads: number
+  packageManager?: PackageManager
 }
 
 /**
@@ -48,6 +51,7 @@ export interface HardwareProbes {
   wsl2: boolean
   hostRamGiB?: number
   gpu?: GpuProbe | null
+  packageManager?: PackageManager | null
 }
 
 /**
@@ -101,6 +105,9 @@ export function detectHardware(probes: HardwareProbes): HardwareProfile {
   }
   if (probes.hostRamGiB !== undefined) {
     profile.hostRamGiB = probes.hostRamGiB
+  }
+  if (probes.packageManager !== undefined && probes.packageManager !== null) {
+    profile.packageManager = probes.packageManager
   }
   return profile
 }

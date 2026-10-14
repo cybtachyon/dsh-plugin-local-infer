@@ -4,12 +4,14 @@ import { EngineAdapter, estimateVram } from '@dsh/dsh-plugin-local-infer/core'
 import type {
   Config,
   DeployResult,
+  EngineDepPlan,
   Guideline,
   HardwareProfile,
   HealthResult,
   LaunchPlan,
   ParameterSpec,
   Preset,
+  SystemDep,
   VramModel,
 } from '@dsh/dsh-plugin-local-infer/core'
 import LocalInfer, { LocalInferError, runHardwareProbes } from '../src/index.ts'
@@ -177,18 +179,9 @@ describe('ctx.localInfer scaffold', () => {
     expect(() => ctx.localInfer.registerEngine(new StubAdapter('ninfer'))).not.toThrow()
   })
 
-  it('fails loudly on the orchestration entry points a later phase fills in', async () => {
+  it('fails loudly on the launch and register entry points a later phase fills in', async () => {
     const ctx = await seam()
     const plan: LaunchPlan = { kind: 'process', port: 8080, healthUrl: 'http://127.0.0.1:8080/health' }
-    await expect(ctx.localInfer.deps(new StubAdapter('ninfer'), 'docker', HW)).rejects.toThrow(
-      expect.objectContaining<LocalInferError>({ code: 'LOCAL_INFER_NOT_IMPLEMENTED' }),
-    )
-    await expect(ctx.localInfer.installString(new StubAdapter('ninfer'), 'docker', HW)).rejects.toThrow(
-      expect.objectContaining<LocalInferError>({ code: 'LOCAL_INFER_NOT_IMPLEMENTED' }),
-    )
-    await expect(ctx.localInfer.runInstall(new StubAdapter('ninfer'), 'docker', HW)).rejects.toThrow(
-      expect.objectContaining<LocalInferError>({ code: 'LOCAL_INFER_NOT_IMPLEMENTED' }),
-    )
     await expect(ctx.localInfer.launch(plan)).rejects.toThrow(
       expect.objectContaining<LocalInferError>({ code: 'LOCAL_INFER_NOT_IMPLEMENTED' }),
     )
@@ -335,5 +328,137 @@ describe('ctx.localInfer guidelines', () => {
       HW86,
     )
     expect(results).toEqual([])
+  })
+})
+
+describe('ctx.localInfer dep provisioning', () => {
+  function depPlan(id: string): EngineDepPlan {
+    const dep: SystemDep = {
+      id,
+      purpose: 'a test dep',
+      requiresSudo: true,
+      install: { apt: { commands: [`sudo apt install ${id}`] } },
+    }
+    return { docker: [dep], local: [dep] }
+  }
+
+  it('registers a dep plan keyed by engine id and rejects duplicates and empty ids', async () => {
+    const ctx = await seam()
+    ctx.localInfer.registerDepPlan('ninfer', depPlan('cmake'))
+    expect(ctx.localInfer.registeredDepPlans().has('ninfer')).toBe(true)
+    expect(() => ctx.localInfer.registerDepPlan('ninfer', depPlan('cmake')))
+      .toThrow(expect.objectContaining<LocalInferError>({ code: 'LOCAL_INFER_CONFLICT' }))
+    expect(() => ctx.localInfer.registerDepPlan('  ', depPlan('x')))
+      .toThrow(expect.objectContaining<LocalInferError>({ code: 'LOCAL_INFER_INVALID_ENGINE' }))
+    // The disposer releases the id, proving the reservation was made.
+    const dispose = ctx.localInfer.registerDepPlan('strata', depPlan('docker'))
+    dispose()
+    expect(ctx.localInfer.registeredDepPlans().has('strata')).toBe(false)
+  })
+
+  it('resolves the registered plan for an engine id and build mode', async () => {
+    const ctx = await seam()
+    ctx.localInfer.registerDepPlan('ninfer', depPlan('cmake'))
+    const deps = await ctx.localInfer.deps('ninfer', 'local', HW)
+    expect(deps.map((dep) => dep.id)).toEqual(['cmake'])
+    // An engine with no plan plans an empty list: nothing to install.
+    expect(await ctx.localInfer.deps('unknown', 'local', HW)).toEqual([])
+  })
+
+  it('lets an adapter-declared systemDeps win over the registered plan', async () => {
+    const ctx = await seam()
+    ctx.localInfer.registerDepPlan('ninfer', depPlan('cmake'))
+    class DeclaringAdapter extends StubAdapter {
+      systemDeps(buildMode: 'docker' | 'local'): readonly SystemDep[] {
+        return [
+          {
+            id: `declared-${buildMode}`,
+            purpose: 'declared by the adapter',
+            requiresSudo: false,
+            install: {},
+          },
+        ]
+      }
+    }
+    ctx.localInfer.registerEngine(new DeclaringAdapter('ninfer'))
+    expect((await ctx.localInfer.deps('ninfer', 'docker', HW)).map((dep) => dep.id)).toEqual([
+      'declared-docker',
+    ])
+  })
+
+  it('renders the install string for the detected package manager', async () => {
+    const ctx = await seam()
+    ctx.localInfer.registerDepPlan('ninfer', depPlan('cmake'))
+    const block = await ctx.localInfer.installString('ninfer', 'local', {
+      ...HW,
+      packageManager: 'pacman',
+    })
+    expect(block).toContain('# Package manager: pacman')
+    expect(block).toContain('# no pacman install commands for cmake; install it by hand')
+  })
+
+  it('runs an install that has no commands for the detected manager without spawning a shell', async () => {
+    const ctx = await seam()
+    ctx.localInfer.registerDepPlan('ninfer', depPlan('cmake'))
+    // The plan only carries apt commands, so on a pacman host nothing runs and
+    // the dep reports missing, which proves no shell was spawned.
+    const result = await ctx.localInfer.runInstall('ninfer', 'local', {
+      ...HW,
+      packageManager: 'pacman',
+    })
+    expect(result).toEqual({
+      ok: false,
+      results: [{ id: 'cmake', status: 'missing', detail: 'no pacman install commands' }],
+    })
+  })
+
+  it('runs install commands through the shell runner and captures the exit', async () => {
+    const ctx = await seam()
+    const plan: EngineDepPlan = {
+      docker: [],
+      local: [
+        {
+          id: 'noop',
+          purpose: 'a no-op command',
+          requiresSudo: false,
+          install: { apt: { commands: ['true'] } },
+        },
+        {
+          id: 'broken',
+          purpose: 'a failing command',
+          requiresSudo: false,
+          install: { apt: { commands: ['false'] } },
+        },
+      ],
+    }
+    ctx.localInfer.registerDepPlan('shelltest', plan)
+    const result = await ctx.localInfer.runInstall('shelltest', 'local', {
+      ...HW,
+      packageManager: 'apt',
+    })
+    expect(result.ok).toBe(false)
+    // The no-op command exits clean, but the dep has no probe, so the run
+    // reads as failed-unconfirmed, which is the documented degrade rule.
+    const noop = result.results.find((entry) => entry.id === 'noop')
+    expect(noop?.status).toBe('failed')
+    expect(noop?.detail).toContain('re-check by hand')
+    // The failing command captures its exit code in the detail.
+    const broken = result.results.find((entry) => entry.id === 'broken')
+    expect(broken?.status).toBe('failed')
+    expect(broken?.detail).toContain('exit 1')
+  })
+
+  it('detects the package-manager winner in the live hardware probes', async () => {
+    const ctx = await seam()
+    const profile = await ctx.localInfer.detectHardware()
+    // The probe reads the real host, so the field is either a known manager or
+    // absent, never an unknown value.
+    expect(profile.packageManager === undefined || ['apt', 'dnf', 'pacman', 'brew'].includes(profile.packageManager)).toBe(
+      true,
+    )
+    const probes = await runHardwareProbes()
+    expect(probes.packageManager === undefined || probes.packageManager === null || typeof probes.packageManager === 'string').toBe(
+      true,
+    )
   })
 })

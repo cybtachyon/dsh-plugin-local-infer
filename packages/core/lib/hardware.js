@@ -52,6 +52,9 @@ export function detectHardware(probes) {
     if (probes.hostRamGiB !== undefined) {
         profile.hostRamGiB = probes.hostRamGiB;
     }
+    if (probes.packageManager !== undefined && probes.packageManager !== null) {
+        profile.packageManager = probes.packageManager;
+    }
     return profile;
 }
 //# sourceMappingURL=hardware.js.map
