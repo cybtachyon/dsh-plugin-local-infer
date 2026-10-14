@@ -5,6 +5,14 @@
 # driven — so the seam may appear before or after the providers that fill it.
 
 - insert:
+    # Client carrier: mounts the bare package name so the client-module scan
+    # keys the `dsh.client` declaration on it and loads dsh/client.js into the
+    # boot graph. The scan only maps a bare package-root entry to its
+    # `dsh.client` field, never a subpath, so this row makes the client half
+    # reachable. The host module is a no-op.
+    - id: local-infer
+      name: '@dsh/dsh-plugin-local-infer'
+
     # Service Definition: publishes ctx.localInfer, the engine/preset/guideline
     # registries, and the orchestration entry points. Carries no store of its
     # own.

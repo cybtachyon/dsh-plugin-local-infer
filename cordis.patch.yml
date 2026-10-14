@@ -7,6 +7,15 @@
 # retune it (last write per row wins).
 
 - insert:
+    # Client carrier: mounts the bare package name so the client-module scan
+    # keys the `dsh.client` declaration on it and loads dsh/client.js (the
+    # browser "Engine settings" card) into the boot graph. The scan only maps
+    # a bare package-root entry to its `dsh.client` field, never a subpath, so
+    # this row is what makes the client half reachable. The host module is a
+    # no-op; the capability lives in the four subpath rows below.
+    - id: local-infer
+      name: '@dsh/dsh-plugin-local-infer'
+
     # Service Definition: publishes ctx.localInfer, the engine/preset/guideline
     # registries, and the orchestration entry points (estimate, guidelines,
     # deps, installString, runInstall, launch, registerModel). Carries no store
