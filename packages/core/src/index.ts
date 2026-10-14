@@ -33,6 +33,7 @@ export {
 } from './estimator.ts'
 export type {
   EstimateContext,
+  EstimateOptions,
   SpeculationTerms,
   VramBreakdown,
   VramContribution,
@@ -40,6 +41,19 @@ export type {
   VramModel,
   VramVerdict,
 } from './estimator.ts'
+export {
+  GPU_USAGE_BUSY_THRESHOLD,
+  matchLaunchSignature,
+  parseNvidiaSmiGpuUsage,
+  resolveOsReserve,
+} from './reserve.ts'
+export type {
+  EngineLaunchSignature,
+  GpuUsageProbe,
+  ProcessLine,
+  ReserveResolution,
+  ReserveSource,
+} from './reserve.ts'
 export { EngineAdapter } from './adapter.ts'
 export type {
   DeployResult,

@@ -69,4 +69,16 @@ describe('renderMeter', () => {
       expect(segment.percent).toBe(0)
     }
   })
+
+  it('rides the reserve source through so the readout names where the dark segment came from', () => {
+    const foreign = renderMeter(breakdown(), fits, 24, 'measured', 'foreign-process')
+    expect(foreign.reserveSource).toBe('foreign-process')
+    const busy = renderMeter(breakdown(), fits, 24, 'measured', 'gpu-usage')
+    expect(busy.reserveSource).toBe('gpu-usage')
+    const explicit = renderMeter(breakdown(), fits, 24, 'measured', 'explicit')
+    expect(explicit.reserveSource).toBe('explicit')
+    // An absent source reads as the 3 GiB default, the pre-Phase-10 behavior.
+    const defaulted = renderMeter(breakdown(), fits, 24, 'measured')
+    expect(defaulted.reserveSource).toBe('default')
+  })
 })

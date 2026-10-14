@@ -18,9 +18,9 @@
  * @module @dsh/dsh-plugin-local-infer/service
  */
 import { Context, Service } from '@deepseek-ai/cordis';
-import type { Config, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, RegisterResult, ResolvedDefaults, SystemDep, VramModel } from '@dsh/dsh-plugin-local-infer/core';
-import type { EstimateResult, FetchPresetOptions, FetchPresetResult, LaunchOptions, LaunchResult, LocalInferService, RegisterModelOptions } from './types.ts';
-export type { EstimateResult, FetchPresetOptions, FetchPresetResult, LaunchOptions, LaunchResult, LocalInferService, RegisterModelOptions, SettingsForms, SettingsNamespaceDescriptor, } from './types.ts';
+import type { Config, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, RegisterResult, ReserveResolution, ResolvedDefaults, SystemDep, VramModel } from '@dsh/dsh-plugin-local-infer/core';
+import type { DetectOsReserveOptions, EstimateResult, FetchPresetOptions, FetchPresetResult, LaunchOptions, LaunchResult, LocalInferService, RegisterModelOptions } from './types.ts';
+export type { DetectOsReserveOptions, EstimateResult, FetchPresetOptions, FetchPresetResult, LaunchOptions, LaunchResult, LocalInferService, RegisterModelOptions, SettingsForms, SettingsNamespaceDescriptor, } from './types.ts';
 declare module '@deepseek-ai/cordis' {
     interface Context {
         localInfer: LocalInferService;
@@ -48,6 +48,7 @@ export declare class LocalInfer extends Service implements LocalInferService {
     private readonly vramModelRegistry;
     private readonly depPlanRegistry;
     private readonly platformConfigRegistry;
+    private readonly launchedEngines;
     constructor(ctx: Context);
     registerEngine(adapter: EngineAdapter): () => void;
     registerPreset(preset: Preset): () => void;
@@ -66,6 +67,13 @@ export declare class LocalInfer extends Service implements LocalInferService {
     registerDepPlan(engineId: string, plan: EngineDepPlan): () => void;
     registeredDepPlans(): ReadonlyMap<string, EngineDepPlan>;
     /**
+     * launchedEngineIds lists the engine ids this service's launch step
+     * started and has not stopped. The OS-reserve resolver reads the list to
+     * keep the 3 GiB default for a plugin-launched engine, whose footprint the
+     * estimator already prices.
+     */
+    launchedEngineIds(): readonly string[];
+    /**
      * registerEnginePlatformConfig stores the per-engine platform config (the
      * Engine Directory and Engine Fork the user adds for a specific engine). The
      * launch and deploy steps resolve it against the global modelDirectory to
@@ -80,7 +88,15 @@ export declare class LocalInfer extends Service implements LocalInferService {
      * adapter's default source and a managed cache directory".
      */
     enginePlatformConfig(engineId: string): EnginePlatformConfig | undefined;
-    estimate(config: Config, hw: HardwareProfile): Promise<EstimateResult>;
+    /**
+     * estimate prices a config against the resolved VramModel and the detected
+     * hardware. The OS reserve resolves dynamically (the Phase 10 order:
+     * explicit config value, then the plugin-launched / foreign-process /
+     * GPU-usage probes), so the meter, the verdict, and the DSH contextWindow
+     * all price the same usable budget. The result carries the reserve's
+     * source, so the meter's readout names where the number came from.
+     */
+    estimate(config: Config, hw: HardwareProfile, engineId?: string): Promise<EstimateResult>;
     /**
      * detectHardware runs the host probes (nvidia-smi, docker, WSL2, OS, CPU,
      * RAM) and turns their results into the HardwareProfile every relationship
@@ -89,6 +105,19 @@ export declare class LocalInfer extends Service implements LocalInferService {
      */
     detectHardware(): Promise<HardwareProfile>;
     /**
+     * detectOsReserve runs the Phase 10 OS-reserve probes and resolves the
+     * reserve: the plugin-launched check against this service's launched
+     * engines, the process-signature match of the running process table
+     * against every registered adapter's launch signature (the engine binary
+     * or docker image, the port, the env keys), and the GPU-usage reading.
+     * The resolution order is the core resolver's: a plugin-launched engine
+     * keeps the 3 GiB default, a detected foreign engine raises the reserve to
+     * the GPU's used VRAM, and the 75%-usage fallback raises it further when
+     * no process signature matched. The options inject the probe results, so
+     * a test prices a busy card without a live nvidia-smi or ps.
+     */
+    detectOsReserve(config?: Config, options?: DetectOsReserveOptions): Promise<ReserveResolution>;
+    /**
      * guidelines runs the full guideline engine over a config and a hardware
      * profile: the registered named guidelines, every per-spec hardware
      * constraint of the registered engines, and the model-aware rules that
@@ -96,7 +125,7 @@ export declare class LocalInfer extends Service implements LocalInferService {
      * usable VRAM" and "spec needs draft weights" rules). The result list is
      * the single source the UI banner and the inline red warnings render from.
      */
-    guidelines(config: Config, hw: HardwareProfile): Promise<GuidelineResult[]>;
+    guidelines(config: Config, hw: HardwareProfile, engineId?: string): Promise<GuidelineResult[]>;
     /**
      * deps resolves the host deps an engine's deploy step needs for a build
      * mode. A registered adapter that declares systemDeps wins; the provider-
@@ -228,6 +257,22 @@ export declare class LocalInfer extends Service implements LocalInferService {
      * rather than a guess.
      */
     private resolveVramModel;
+    /**
+     * collectLaunchSignatures gathers the launch signatures of every registered
+     * adapter for a config, so the OS-reserve probe matches the running process
+     * table against each engine's own toArgv/toEnv spelling. An adapter without
+     * a signature (one whose engine leaves no host process) contributes none.
+     */
+    private collectLaunchSignatures;
+    /**
+     * resolveReserveFor resolves the OS reserve an estimate prices: an explicit
+     * config value (reserveMiB or reserveGiB) wins and reads as 'explicit'
+     * without running a probe, else the Phase 10 resolution over the probes
+     * (the plugin-launched check, the foreign-process match, the GPU-usage
+     * reading). The answer is the single source the meter, the verdict, and
+     * the DSH contextWindow price.
+     */
+    private resolveReserveFor;
     /**
      * collectSpecs gathers the parameter surfaces of every registered engine,
      * deduped by key in registration order. A key two engines share (spec,

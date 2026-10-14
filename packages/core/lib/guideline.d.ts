@@ -1,4 +1,4 @@
-import type { VramModel } from './estimator.ts';
+import type { EstimateOptions, VramModel } from './estimator.ts';
 import type { Config } from './config.ts';
 import type { HardwareProfile } from './hardware.ts';
 import type { ParameterSpec } from './parameter.ts';
@@ -57,7 +57,8 @@ export declare function evaluateGuidelines(guidelines: readonly Guideline[], spe
  * VRAM" rule and the "spec needs draft weights the artifact never measured"
  * rule. Both reuse `estimateVram` and the model's `specKey` mapping, so they
  * agree with the meter by construction. A config with no spec, or a spec the
- * model measured, fires nothing.
+ * model measured, fires nothing. The options carry the dynamically resolved
+ * OS reserve, so the rule prices the same usable budget the meter does.
  */
-export declare function modelGuidelines(model: VramModel, config: Config, hw: HardwareProfile): GuidelineResult[];
+export declare function modelGuidelines(model: VramModel, config: Config, hw: HardwareProfile, options?: EstimateOptions): GuidelineResult[];
 //# sourceMappingURL=guideline.d.ts.map

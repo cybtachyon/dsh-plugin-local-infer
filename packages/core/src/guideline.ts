@@ -1,5 +1,5 @@
 import { estimateVram } from './estimator.ts'
-import type { VramModel } from './estimator.ts'
+import type { EstimateOptions, VramModel } from './estimator.ts'
 import type { Config } from './config.ts'
 import type { HardwareProfile } from './hardware.ts'
 import type { ParameterSpec } from './parameter.ts'
@@ -119,16 +119,18 @@ function availableSpecNames(model: VramModel): string {
  * VRAM" rule and the "spec needs draft weights the artifact never measured"
  * rule. Both reuse `estimateVram` and the model's `specKey` mapping, so they
  * agree with the meter by construction. A config with no spec, or a spec the
- * model measured, fires nothing.
+ * model measured, fires nothing. The options carry the dynamically resolved
+ * OS reserve, so the rule prices the same usable budget the meter does.
  */
 export function modelGuidelines(
   model: VramModel,
   config: Config,
   hw: HardwareProfile,
+  options?: EstimateOptions,
 ): GuidelineResult[] {
   const results: GuidelineResult[] = []
 
-  const estimate = estimateVram(model, config, hw)
+  const estimate = estimateVram(model, config, hw, undefined, options)
   if (estimate.verdict.status === 'over') {
     const largest = estimate.breakdown.largestFittingContext
     // The measured solver floors at 0 when even one token does not fit; the

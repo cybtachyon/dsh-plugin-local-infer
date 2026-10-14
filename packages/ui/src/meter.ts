@@ -10,6 +10,7 @@
  */
 
 import type {
+  ReserveSource,
   VramBreakdown,
   VramVerdict,
 } from '@dsh/dsh-plugin-local-infer/core'
@@ -30,8 +31,10 @@ export interface MeterSegment {
 /**
  * MeterModel is the whole meter: the segments in bar order, the card size the
  * percents are against, the verdict the banner renders, the largest-fitting-
- * context readout, and the source label (measured, estimated, or not-
- * measured) the panel shows so a number is never read as authoritative.
+ * context readout, the source label (measured, estimated, or not-measured)
+ * the panel shows so a number is never read as authoritative, and the
+ * reserve source the dark reserve segment's readout renders (the 3 GiB
+ * default, a config value, a foreign engine, or the GPU-usage fallback).
  */
 export interface MeterModel {
   segments: MeterSegment[]
@@ -39,6 +42,7 @@ export interface MeterModel {
   verdict: VramVerdict
   largestFittingContext: number | null
   source: 'measured' | 'estimated' | 'not-measured'
+  reserveSource: ReserveSource
 }
 
 /**
@@ -46,13 +50,16 @@ export interface MeterModel {
  * to-scale against the full card, so "free" on the bar means free to the user
  * rather than free minus whatever the desktop takes. A not-measured verdict
  * overrides the model's source label, so the meter never shows a measured or
- * estimated badge on a number it could not price.
+ * estimated badge on a number it could not price. The reserve source rides
+ * through from the service's estimate, so the reserve readout names where
+ * the dark segment's value came from.
  */
 export function renderMeter(
   breakdown: VramBreakdown,
   verdict: VramVerdict,
   vramGiB: number,
   source: 'measured' | 'estimated' | 'not-measured',
+  reserveSource: ReserveSource = 'default',
 ): MeterModel {
   const cardBytes = vramGiB * 1024 * 1024 * 1024
   const percentOf = (bytes: number): number =>
@@ -73,5 +80,6 @@ export function renderMeter(
     verdict,
     largestFittingContext: breakdown.largestFittingContext,
     source: verdict.status === 'not-measured' ? 'not-measured' : source,
+    reserveSource,
   }
 }

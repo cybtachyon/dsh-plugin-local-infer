@@ -128,7 +128,14 @@ function stubService(
 ): LocalInferService {
   return {
     detectHardware: async () => HW,
-    estimate: async () => ({ breakdown: BREAKDOWN, verdict: FITS, source: 'measured' }),
+    estimate: async () => ({
+      breakdown: BREAKDOWN,
+      verdict: FITS,
+      source: 'measured',
+      reserveSource: 'default',
+    }),
+    detectOsReserve: async () => ({ reserveMiB: 3072, source: 'default' }),
+    launchedEngineIds: () => [],
     guidelines: async () => guidelines,
     registeredVramModels: () => (extras.models ?? []),
     registeredEngines: () => (extras.engines ?? [fakeAdapter('ninfer'), fakeAdapter('hyperqwen')]),
@@ -225,6 +232,26 @@ describe('local-infer route read model', () => {
   it('falls back to the first engine when the request names none', async () => {
     const summary = await buildSummary(stubService([]), undefined)
     expect(summary.engineId).toBe('ninfer')
+  })
+
+  it('rides the estimate reserve source into the meter model', async () => {
+    // The meter's reserve readout names where the dark segment came from, so
+    // the summary must carry the estimate's reserveSource, not a constant.
+    const service: LocalInferService = {
+      ...stubService([]),
+      estimate: async () => ({
+        breakdown: BREAKDOWN,
+        verdict: FITS,
+        source: 'measured',
+        reserveSource: 'foreign-process',
+      }),
+    }
+    const summary = await buildSummary(service, { engine: 'ninfer', config: {} })
+    expect(summary.meterModel.reserveSource).toBe('foreign-process')
+    // The stub service's default source rides through when the estimate
+    // carries none of the dynamic sources.
+    const defaulted = await buildSummary(stubService([]), { engine: 'ninfer', config: {} })
+    expect(defaulted.meterModel.reserveSource).toBe('default')
   })
 
   it('round-trips the stored config through the file the CLI shares', () => {

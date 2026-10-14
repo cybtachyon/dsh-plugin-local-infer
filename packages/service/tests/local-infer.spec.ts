@@ -5,13 +5,16 @@ import type {
   Config,
   DeployResult,
   EngineDepPlan,
+  EngineLaunchSignature,
   EnginePlatformConfig,
+  GpuUsageProbe,
   Guideline,
   HardwareProfile,
   HealthResult,
   LaunchPlan,
   ParameterSpec,
   Preset,
+  ProcessLine,
   SystemDep,
   VramModel,
 } from '@dsh/dsh-plugin-local-infer/core'
@@ -311,7 +314,11 @@ describe('ctx.localInfer guidelines', () => {
   it('fires the estimator-backed exceeds-usable rule in agreement with the estimate', async () => {
     const ctx = await seam()
     ctx.localInfer.registerVramModel(vramModel('qwen3-27b'))
-    const config = { model: 'qwen3-27b', kvDtype: 'int8', maxContext: 262144 }
+    // The explicit reserve pins the 3 GiB default, so the core estimate and
+    // the service's guideline rule price the same budget on any host: the
+    // Phase 10 live probes would otherwise raise the reserve on a busy card
+    // and the two readouts would no longer agree.
+    const config = { model: 'qwen3-27b', kvDtype: 'int8', maxContext: 262144, reserveMiB: 3072 }
     const model = ctx.localInfer.registeredVramModels()[0]
     const estimate = estimateVram(model, config, HW86)
     expect(estimate.verdict.status).toBe('over')
@@ -341,8 +348,11 @@ describe('ctx.localInfer guidelines', () => {
   it('stays silent on a fit with a measured spec', async () => {
     const ctx = await seam()
     ctx.localInfer.registerVramModel(vramModel('qwen3-27b'))
+    // The explicit reserve pins the 3 GiB default the fit was priced against,
+    // so a busy host card (the Phase 10 probes raising the reserve) cannot
+    // turn the fit into a fire.
     const results = await ctx.localInfer.guidelines(
-      { model: 'qwen3-27b', kvDtype: 'int8', maxContext: 4096, spec: 'none' },
+      { model: 'qwen3-27b', kvDtype: 'int8', maxContext: 4096, spec: 'none', reserveMiB: 3072 },
       HW86,
     )
     expect(results).toEqual([])
@@ -814,5 +824,168 @@ describe('ctx.localInfer model registration (Phase 6)', () => {
     await ctx.localInfer.removeModel('ninfer-local', 'absent')
     expect(fake.sections['llm-pi-ai']).toBeUndefined()
     expect(fake.calls).toEqual([])
+  })
+})
+
+describe('ctx.localInfer OS reserve (Phase 10)', () => {
+  const NINFER_SIG: EngineLaunchSignature = { binary: 'ninfer-serve', port: 18020 }
+  const FOREIGN_LINE: ProcessLine = {
+    command: 'ninfer-serve /models/model.ninfer --host 127.0.0.1 --port 18020',
+  }
+  const GPU_BUSY: GpuUsageProbe = { usedMiB: 18000, totalMiB: 24576 }
+  const GPU_IDLE: GpuUsageProbe = { usedMiB: 2048, totalMiB: 24576 }
+  const HW86: HardwareProfile = {
+    ...HW,
+    gpu: { name: 'NVIDIA GeForce RTX 3090', vramGiB: 24, sm: 86 },
+  }
+
+  /** An adapter that declares a launch signature the process matcher hits. */
+  class SigningAdapter extends StubAdapter {
+    constructor(id: string, private readonly signature: EngineLaunchSignature) {
+      super(id)
+    }
+    launchSignature(): EngineLaunchSignature {
+      return this.signature
+    }
+  }
+
+  function launchPlan(engineId: string): LaunchPlan {
+    return { engineId, kind: 'process', port: 18020, healthUrl: 'http://127.0.0.1:18020/health' }
+  }
+
+  it('resolves the 3 GiB default with no engines and no GPU reading', async () => {
+    const ctx = await seam()
+    const resolution = await ctx.localInfer.detectOsReserve(undefined, {
+      gpuUsage: null,
+      processes: [],
+    })
+    expect(resolution).toEqual({ reserveMiB: 3072, source: 'default' })
+  })
+
+  it('raises the reserve to the used VRAM when a running process matches an engine signature', async () => {
+    const ctx = await seam()
+    ctx.localInfer.registerEngine(new SigningAdapter('ninfer', NINFER_SIG))
+    const resolution = await ctx.localInfer.detectOsReserve(undefined, {
+      gpuUsage: GPU_BUSY,
+      processes: [FOREIGN_LINE],
+    })
+    expect(resolution).toEqual({ reserveMiB: 18000, source: 'foreign-process' })
+  })
+
+  it('caps the foreign-process reserve at the card capacity', async () => {
+    const ctx = await seam()
+    ctx.localInfer.registerEngine(new SigningAdapter('ninfer', NINFER_SIG))
+    const overshot: GpuUsageProbe = { usedMiB: 30000, totalMiB: 24576 }
+    const resolution = await ctx.localInfer.detectOsReserve(undefined, {
+      gpuUsage: overshot,
+      processes: [FOREIGN_LINE],
+    })
+    expect(resolution).toEqual({ reserveMiB: 24576, source: 'foreign-process' })
+  })
+
+  it('stays at the default when no process matches and the card is idle', async () => {
+    const ctx = await seam()
+    ctx.localInfer.registerEngine(new SigningAdapter('ninfer', NINFER_SIG))
+    const resolution = await ctx.localInfer.detectOsReserve(undefined, {
+      gpuUsage: GPU_IDLE,
+      processes: [{ command: 'vim PLAN.md' }],
+    })
+    expect(resolution).toEqual({ reserveMiB: 3072, source: 'default' })
+  })
+
+  it('raises the reserve through the 75% usage fallback when no process matches', async () => {
+    const ctx = await seam()
+    ctx.localInfer.registerEngine(new SigningAdapter('ninfer', NINFER_SIG))
+    const saturated: GpuUsageProbe = { usedMiB: 24576, totalMiB: 24576 }
+    const resolution = await ctx.localInfer.detectOsReserve(undefined, {
+      gpuUsage: saturated,
+      processes: [{ command: 'vim PLAN.md' }],
+    })
+    expect(resolution).toEqual({ reserveMiB: 24576, source: 'gpu-usage' })
+  })
+
+  it('keeps the default for a plugin-launched engine even while its process runs', async () => {
+    const ctx = await seam()
+    class LaunchingAdapter extends SigningAdapter {
+      async healthCheck(_p: LaunchPlan): Promise<HealthResult> {
+        return { healthy: true, status: 200 }
+      }
+    }
+    ctx.localInfer.registerEngine(new LaunchingAdapter('ninfer', NINFER_SIG))
+    await ctx.localInfer.launch(launchPlan('ninfer'))
+    expect(ctx.localInfer.launchedEngineIds()).toEqual(['ninfer'])
+    // The engine the plugin launched is priced by the estimator already, so
+    // the running process and the busy card both stay at the default.
+    const resolution = await ctx.localInfer.detectOsReserve(undefined, {
+      engineId: 'ninfer',
+      gpuUsage: GPU_BUSY,
+      processes: [FOREIGN_LINE],
+    })
+    expect(resolution).toEqual({ reserveMiB: 3072, source: 'default' })
+  })
+
+  it('unmarks the engine on stop, so the probes may price its card again', async () => {
+    const ctx = await seam()
+    class LaunchingAdapter extends SigningAdapter {
+      async healthCheck(_p: LaunchPlan): Promise<HealthResult> {
+        return { healthy: true, status: 200 }
+      }
+    }
+    ctx.localInfer.registerEngine(new LaunchingAdapter('ninfer', NINFER_SIG))
+    const plan = launchPlan('ninfer')
+    await ctx.localInfer.launch(plan)
+    expect(ctx.localInfer.launchedEngineIds()).toEqual(['ninfer'])
+    await ctx.localInfer.stop(plan)
+    expect(ctx.localInfer.launchedEngineIds()).toEqual([])
+    const resolution = await ctx.localInfer.detectOsReserve(undefined, {
+      engineId: 'ninfer',
+      gpuUsage: GPU_BUSY,
+      processes: [FOREIGN_LINE],
+    })
+    expect(resolution.source).toBe('foreign-process')
+  })
+
+  it('prices an explicit config reserve as explicit, without running a probe', async () => {
+    const ctx = await seam()
+    ctx.localInfer.registerVramModel(vramModel('qwen3-27b'))
+    const result = await ctx.localInfer.estimate(
+      { model: 'qwen3-27b', kvDtype: 'int8', maxContext: 4096, reserveMiB: 8192 },
+      HW86,
+    )
+    expect(result.reserveSource).toBe('explicit')
+    expect(result.breakdown.reserve).toBe(8192 * 1024 * 1024)
+  })
+
+  it('prices a dynamically resolved reserve through the estimate', async () => {
+    // The live probes run against the real host: the answer is one of the four
+    // sources, the reserve is a finite non-negative MiB number, and the
+    // breakdown prices it (the usable budget is the card minus the reserve).
+    const ctx = await seam()
+    ctx.localInfer.registerVramModel(vramModel('qwen3-27b'))
+    const result = await ctx.localInfer.estimate(
+      { model: 'qwen3-27b', kvDtype: 'int8', maxContext: 4096 },
+      HW86,
+      'ninfer',
+    )
+    expect(['default', 'explicit', 'foreign-process', 'gpu-usage']).toContain(result.reserveSource)
+    expect(Number.isFinite(result.breakdown.reserve)).toBe(true)
+    expect(result.breakdown.reserve).toBeGreaterThanOrEqual(0)
+    expect(result.breakdown.usable).toBe(
+      (24 * 1024 - result.breakdown.reserve / (1024 * 1024)) * 1024 * 1024,
+    )
+  })
+
+  it('fires the exceeds-usable rule on a raised reserve, in agreement with the estimate', async () => {
+    // A context that fits under the 3 GiB default but not under an 18 GiB
+    // reserve: the red rule and the meter verdict price the same budget.
+    const ctx = await seam()
+    ctx.localInfer.registerVramModel(vramModel('qwen3-27b'))
+    const config = { model: 'qwen3-27b', kvDtype: 'int8', maxContext: 131072, reserveMiB: 18 * 1024 }
+    const estimate = await ctx.localInfer.estimate(config, HW86)
+    expect(estimate.verdict.status).toBe('over')
+    const results = await ctx.localInfer.guidelines(config, HW86, 'ninfer')
+    const over = results.find((result) => result.id === 'vram-exceeds-usable')
+    expect(over?.level).toBe('error')
+    expect(over?.anchors).toEqual(['maxContext'])
   })
 })

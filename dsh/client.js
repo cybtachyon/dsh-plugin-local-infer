@@ -54,6 +54,11 @@ window.__ModuleLoader__.load({
         largestContext: 'Largest fitting context',
         tokens: 'tokens',
         cardTotal: 'card',
+        reserveReadout: 'Reserved for the OS',
+        reserveDefault: '(default)',
+        reserveExplicit: '(config)',
+        reserveForeign: '(foreign engine)',
+        reserveGpuBusy: '(GPU busy)',
         over: 'Over budget',
         tight: 'Fits tightly',
         guidelineOne: 'hardware guideline',
@@ -120,6 +125,11 @@ window.__ModuleLoader__.load({
         largestContext: '最大可用上下文',
         tokens: 'token',
         cardTotal: '显存',
+        reserveReadout: '系统保留',
+        reserveDefault: '(默认)',
+        reserveExplicit: '(配置)',
+        reserveForeign: '(外部引擎)',
+        reserveGpuBusy: '(GPU 繁忙)',
         over: '超出预算',
         tight: '勉强可容纳',
         guidelineOne: '硬件准则',
@@ -858,6 +868,25 @@ window.__ModuleLoader__.load({
           : meter.source === 'estimated'
             ? t.meterSourceEstimated
             : t.meterSourceNotMeasured;
+      // The reserve readout names where the dark segment's value came from:
+      // the 3 GiB default, a config value, a foreign engine the probe
+      // detected by process, or the 75%-GPU-usage fallback. The value is the
+      // reserve segment's byte count, so the readout and the bar agree.
+      var reserveSegment = null;
+      for (var ri = 0; ri < meter.segments.length; ri++) {
+        if (meter.segments[ri].key === 'reserve') {
+          reserveSegment = meter.segments[ri];
+          break;
+        }
+      }
+      var reserveSourceLabel =
+        meter.reserveSource === 'foreign-process'
+          ? t.reserveForeign
+          : meter.reserveSource === 'gpu-usage'
+            ? t.reserveGpuBusy
+            : meter.reserveSource === 'explicit'
+              ? t.reserveExplicit
+              : t.reserveDefault;
       var readout = react.createElement(
         'div',
         { style: { marginTop: 8, fontSize: 12, color: 'var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))' } },
@@ -866,6 +895,18 @@ window.__ModuleLoader__.load({
           ? react.createElement('strong', null, String(meter.largestFittingContext) + ' ' + t.tokens)
           : react.createElement('span', null, '—'),
         react.createElement('span', null, '  ·  ' + sourceLabel),
+        react.createElement(
+          'div',
+          { style: { marginTop: 2 } },
+          react.createElement('span', null, t.reserveReadout + ': '),
+          react.createElement(
+            'span',
+            null,
+            (reserveSegment ? (reserveSegment.bytes / 1024 / 1024 / 1024).toFixed(2) : '0.00') +
+              ' GiB ' +
+              reserveSourceLabel,
+          ),
+        ),
       );
       return react.createElement(
         'div',

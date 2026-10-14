@@ -3,6 +3,7 @@ import type { Config } from './config.ts';
 import type { HardwareProfile } from './hardware.ts';
 import type { ParameterSpec } from './parameter.ts';
 import type { SystemDep } from './deps.ts';
+import type { EngineLaunchSignature } from './reserve.ts';
 /**
  * LaunchPlan is the engine-neutral result of rendering a config: how to start
  * the engine (a local process, a docker container, or a compose file), the
@@ -129,5 +130,14 @@ export declare abstract class EngineAdapter {
         id: string;
         name: string;
     } | undefined;
+    /**
+     * Optional: the launch signature the engine's toArgv/toEnv produce for a
+     * config: the binary (or docker image) it runs under, the port it binds,
+     * and the env keys it sets. The service's OS-reserve probe matches running
+     * processes against these signatures to detect a foreign local inference
+     * the plugin did not launch. An adapter whose engine leaves no host
+     * process omits it, and the reserve falls back to the GPU-usage rule.
+     */
+    launchSignature?(config?: Config): EngineLaunchSignature | undefined;
 }
 //# sourceMappingURL=adapter.d.ts.map

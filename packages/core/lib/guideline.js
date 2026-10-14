@@ -76,11 +76,12 @@ function availableSpecNames(model) {
  * VRAM" rule and the "spec needs draft weights the artifact never measured"
  * rule. Both reuse `estimateVram` and the model's `specKey` mapping, so they
  * agree with the meter by construction. A config with no spec, or a spec the
- * model measured, fires nothing.
+ * model measured, fires nothing. The options carry the dynamically resolved
+ * OS reserve, so the rule prices the same usable budget the meter does.
  */
-export function modelGuidelines(model, config, hw) {
+export function modelGuidelines(model, config, hw, options) {
     const results = [];
-    const estimate = estimateVram(model, config, hw);
+    const estimate = estimateVram(model, config, hw, undefined, options);
     if (estimate.verdict.status === 'over') {
         const largest = estimate.breakdown.largestFittingContext;
         // The measured solver floors at 0 when even one token does not fit; the

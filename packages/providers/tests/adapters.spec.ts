@@ -760,3 +760,51 @@ describe('nodeLifecycleHost (the live host the service wires in)', () => {
     expect(result.ok).toBe(false)
   })
 })
+
+describe('adapter launchSignature (the Phase 10 process-match data)', () => {
+  it('NInfer: the local signature is the ninfer-serve binary and the config port', () => {
+    const adapter = new NInferAdapter()
+    const signature = adapter.launchSignature({ port: 18020 })
+    expect(signature).toEqual({ binary: 'ninfer-serve', port: 18020 })
+  })
+
+  it('NInfer: the docker signature is the ghcr image marker and the config port', () => {
+    const adapter = new NInferAdapter()
+    const signature = adapter.launchSignature({ buildMode: 'docker', port: 19000 })
+    expect(signature).toEqual({ binary: NINFER_DOCKER_IMAGE, port: 19000 })
+  })
+
+  it('NInfer: a bare config falls back to the adapter default port', () => {
+    const adapter = new NInferAdapter()
+    expect(adapter.launchSignature()).toEqual({ binary: 'ninfer-serve', port: 18020 })
+  })
+
+  it('Hyper-Qwen: the signature is the docker compose command, port, and toEnv keys', () => {
+    const adapter = new HyperQwenAdapter()
+    const signature = adapter.launchSignature({ port: 18021, spec: 'dflash2', ctx: 32768 })
+    expect(signature?.binary).toBe('docker compose')
+    expect(signature?.port).toBe(18021)
+    // The toEnv keys ride along so a process line that carries env data must
+    // set at least one of them.
+    expect(signature?.envKeys).toEqual(
+      expect.arrayContaining(['SPEC', 'CTX', 'KV']),
+    )
+  })
+
+  it('llama.cpp: the local signature is the llama-server binary, the docker one the ggml image', () => {
+    const adapter = new LlamaCppAdapter()
+    expect(adapter.launchSignature({ port: 8081 })).toEqual({ binary: 'llama-server', port: 8081 })
+    expect(adapter.launchSignature({ buildMode: 'docker', port: 8081 })).toEqual({
+      binary: LLAMACPP_DOCKER_IMAGE,
+      port: 8081,
+    })
+  })
+
+  it('Strata: the signature is the Strata image marker and the port', () => {
+    const adapter = new StrataAdapter()
+    expect(adapter.launchSignature({ port: 8082 })).toEqual({
+      binary: STRATA_DOCKER_IMAGE,
+      port: 8082,
+    })
+  })
+})

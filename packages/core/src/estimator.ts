@@ -100,6 +100,16 @@ export interface VramEstimate {
 }
 
 /**
+ * EstimateOptions tunes a single estimate. `osReserveMiB` is the dynamically
+ * resolved OS reserve (the Phase 10 resolver's answer) that replaces the 3
+ * GiB default when the config names no reserve of its own: an explicit
+ * config value (reserveMiB or reserveGiB) always wins over it.
+ */
+export interface EstimateOptions {
+  osReserveMiB?: number
+}
+
+/**
  * The paged KV allocator reserves whole 64-token physical pages, so a
  * requested context prices the page it rounds up to, and a solved maximum
  * context lands on a page boundary the engine can actually reach.
@@ -161,15 +171,25 @@ function fmtGiB(bytes: number): string {
 export const DEFAULT_OS_RESERVE_MIB = 3 * 1024
 
 /**
- * resolveReserveMiB reads the OS-reserve budget from the config: an explicit
- * MiB value, else a GiB value converted to MiB, else the 3 GiB default.
+ * resolveReserveMiB reads the OS-reserve budget: an explicit config MiB
+ * value, else a config GiB value converted to MiB, else the dynamically
+ * resolved reserve the options carry (the Phase 10 resolver's answer), else
+ * the 3 GiB default. The dynamic value is a finite non-negative MiB number;
+ * anything else degrades to the default.
  */
-function resolveReserveMiB(config: Config): number {
+function resolveReserveMiB(config: Config, options?: EstimateOptions): number {
   if (typeof config.reserveMiB === 'number' && Number.isFinite(config.reserveMiB)) {
     return config.reserveMiB
   }
   if (typeof config.reserveGiB === 'number' && Number.isFinite(config.reserveGiB)) {
     return config.reserveGiB * 1024
+  }
+  if (
+    options?.osReserveMiB !== undefined &&
+    Number.isFinite(options.osReserveMiB) &&
+    options.osReserveMiB >= 0
+  ) {
+    return options.osReserveMiB
   }
   return DEFAULT_OS_RESERVE_MIB
 }
@@ -249,13 +269,16 @@ function notMeasured(detail: string): VramEstimate {
  * sequence state adds its fixed block plus per-token remainder, the weights
  * gain the speculation mode's draft companion weights, and the workspace gains
  * the mode's CUDA-graph allowance. Optional parameter contributions sum on top
- * of the model terms, bucket by bucket.
+ * of the model terms, bucket by bucket. The options carry the dynamically
+ * resolved OS reserve, which replaces the 3 GiB default when the config names
+ * no reserve of its own.
  */
 export function estimateVram(
   model: VramModel | undefined,
   config: Config,
   hw: HardwareProfile,
   specs?: readonly ParameterSpec[],
+  options?: EstimateOptions,
 ): VramEstimate {
   if (model === undefined) {
     return notMeasured('no VramModel registered for this model')
@@ -284,7 +307,7 @@ export function estimateVram(
     return notMeasured(`no measured figures for the "${specKey}" speculation mode`)
   }
 
-  const reserveMiB = resolveReserveMiB(config)
+  const reserveMiB = resolveReserveMiB(config, options)
   const vramGiB = hw.gpu?.vramGiB ?? 0
   const baseWeightsGiB = model.speculation?.['none']?.weightsGiB
   const specExtra =

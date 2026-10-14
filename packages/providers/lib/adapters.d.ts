@@ -8,7 +8,7 @@
  * @module @dsh/dsh-plugin-local-infer/providers/adapters
  */
 import { EngineAdapter } from '../../core/lib/index.js';
-import type { Config, DeployResult, EnginePlatformConfig, HealthCheckOptions, HealthResult, HardwareProfile, LaunchPlan, LifecycleHost, ParameterSpec } from '../../core/lib/index.js';
+import type { Config, DeployResult, EngineLaunchSignature, EnginePlatformConfig, HealthCheckOptions, HealthResult, HardwareProfile, LaunchPlan, LifecycleHost, ParameterSpec } from '../../core/lib/index.js';
 /**
  * NInferModelArtifact is the per-model deploy data: the `.ninfer` artifact
  * file, the Hugging Face repo the model download pulls it from, and the
@@ -80,6 +80,7 @@ export declare class NInferAdapter extends EngineAdapter {
         id: string;
         name: string;
     };
+    launchSignature(config?: Config): EngineLaunchSignature;
     renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan;
     deploy(plan: LaunchPlan, platform?: EnginePlatformConfig): Promise<DeployResult>;
     healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;
@@ -108,6 +109,7 @@ export declare class HyperQwenAdapter extends EngineAdapter {
         id: string;
         name: string;
     };
+    launchSignature(config?: Config): EngineLaunchSignature;
     renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan;
     deploy(plan: LaunchPlan): Promise<DeployResult>;
     healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;
@@ -143,6 +145,7 @@ export declare class LlamaCppAdapter extends EngineAdapter {
         id: string;
         name: string;
     };
+    launchSignature(config?: Config): EngineLaunchSignature;
     renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan;
     deploy(plan: LaunchPlan, platform?: EnginePlatformConfig): Promise<DeployResult>;
     healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;
@@ -179,6 +182,7 @@ export declare class StrataAdapter extends EngineAdapter {
         id: string;
         name: string;
     };
+    launchSignature(config?: Config): EngineLaunchSignature;
     renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan;
     deploy(plan: LaunchPlan): Promise<DeployResult>;
     healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;

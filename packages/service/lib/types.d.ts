@@ -1,13 +1,30 @@
-import type { Config, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, HardwareProfile, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, RegisterResult, ResolvedDefaults, SettingsOp, SystemDep, VramBreakdown, VramModel, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
+import type { Config, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, GpuUsageProbe, HardwareProfile, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, RegisterResult, ReserveResolution, ReserveSource, ResolvedDefaults, SettingsOp, SystemDep, VramBreakdown, VramModel, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
 /**
  * EstimateResult is the answer to an estimate call: the full VRAM breakdown,
- * the one-word verdict the meter renders, and the source the numbers came
- * from, so the meter labels measured versus estimated.
+ * the one-word verdict the meter renders, the source the numbers came from,
+ * so the meter labels measured versus estimated, and the source the OS
+ * reserve in the breakdown came from, so the meter's reserve readout names
+ * the 3 GiB default, a config value, a foreign engine, or the GPU-usage
+ * fallback.
  */
 export interface EstimateResult {
     breakdown: VramBreakdown;
     verdict: VramVerdict;
     source: 'measured' | 'estimated' | 'not-measured';
+    reserveSource: ReserveSource;
+}
+/**
+ * DetectOsReserveOptions tunes the OS-reserve detection: engineId names the
+ * engine the config prices (the plugin-launched check runs against it), and
+ * gpuUsage / processes inject the probe results, so a test prices a busy card
+ * or a foreign engine without a live nvidia-smi or ps. An absent probe result
+ * runs the live probe; a present one (including an explicit null GPU reading)
+ * is used as given.
+ */
+export interface DetectOsReserveOptions {
+    engineId?: string;
+    gpuUsage?: GpuUsageProbe | null;
+    processes?: ProcessLine[];
 }
 /**
  * LaunchResult is the answer to a launch call: the plan that was started,
@@ -99,9 +116,11 @@ export interface LocalInferService {
     registeredVramModels(): readonly VramModel[];
     registeredDepPlans(): ReadonlyMap<string, EngineDepPlan>;
     enginePlatformConfig(engineId: string): EnginePlatformConfig | undefined;
-    estimate(config: Config, hw: HardwareProfile): Promise<EstimateResult>;
+    launchedEngineIds(): readonly string[];
+    estimate(config: Config, hw: HardwareProfile, engineId?: string): Promise<EstimateResult>;
     detectHardware(): Promise<HardwareProfile>;
-    guidelines(config: Config, hw: HardwareProfile): Promise<GuidelineResult[]>;
+    detectOsReserve(config?: Config, options?: DetectOsReserveOptions): Promise<ReserveResolution>;
+    guidelines(config: Config, hw: HardwareProfile, engineId?: string): Promise<GuidelineResult[]>;
     deps(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<readonly SystemDep[]>;
     installString(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<string>;
     runInstall(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<InstallResult>;

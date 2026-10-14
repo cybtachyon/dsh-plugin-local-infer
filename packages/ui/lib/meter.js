@@ -13,9 +13,11 @@
  * to-scale against the full card, so "free" on the bar means free to the user
  * rather than free minus whatever the desktop takes. A not-measured verdict
  * overrides the model's source label, so the meter never shows a measured or
- * estimated badge on a number it could not price.
+ * estimated badge on a number it could not price. The reserve source rides
+ * through from the service's estimate, so the reserve readout names where
+ * the dark segment's value came from.
  */
-export function renderMeter(breakdown, verdict, vramGiB, source) {
+export function renderMeter(breakdown, verdict, vramGiB, source, reserveSource = 'default') {
     const cardBytes = vramGiB * 1024 * 1024 * 1024;
     const percentOf = (bytes) => cardBytes > 0 ? Math.max(0, Math.min(100, (bytes / cardBytes) * 100)) : 0;
     // The bar reads against the full card the way the NInfer calculator draws
@@ -34,6 +36,7 @@ export function renderMeter(breakdown, verdict, vramGiB, source) {
         verdict,
         largestFittingContext: breakdown.largestFittingContext,
         source: verdict.status === 'not-measured' ? 'not-measured' : source,
+        reserveSource,
     };
 }
 //# sourceMappingURL=meter.js.map

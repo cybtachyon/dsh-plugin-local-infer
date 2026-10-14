@@ -25,7 +25,7 @@ import { Service } from '@deepseek-ai/cordis';
 // Relative, not the root package subpath: a self-referencing bare specifier
 // only resolves when the package sits inside a node_modules tree, so a
 // local-path or pnpm-linked install of this repo would fail the import.
-import { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, buildModelEntry, detectHardware as detectHardwareFromProbes, detectPackageManager, evaluateGuidelines, estimateVram, LLM_PI_AI_NAMESPACE, modelGuidelines, modelRowsFrom, parseNvidiaSmiGpu, presetFromFetch, providerRegistrationOps, providerRemovalOps, removeModelRow, renderInstallString, resolveDefaults as resolveDefaultsFromPresets, runInstall, } from '../../core/lib/index.js';
+import { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, buildModelEntry, detectHardware as detectHardwareFromProbes, detectPackageManager, evaluateGuidelines, estimateVram, LLM_PI_AI_NAMESPACE, matchLaunchSignature, modelGuidelines, modelRowsFrom, parseNvidiaSmiGpu, parseNvidiaSmiGpuUsage, presetFromFetch, providerRegistrationOps, providerRemovalOps, removeModelRow, renderInstallString, resolveDefaults as resolveDefaultsFromPresets, resolveOsReserve, runInstall, } from '../../core/lib/index.js';
 /**
  * Local-inference failure. Extends Error with a stable `code`
  * (`LOCAL_INFER_CONFLICT`, `LOCAL_INFER_INVALID_ENGINE`,
@@ -58,6 +58,12 @@ export class LocalInfer extends Service {
     vramModelRegistry = new Map();
     depPlanRegistry = new Map();
     platformConfigRegistry = new Map();
+    // The engine ids this service's launch step started. A plugin-launched
+    // engine's footprint is already priced by the estimator, so the OS-reserve
+    // resolver keeps its 3 GiB default for it instead of pricing the GPU's
+    // used VRAM on top. The set resets on a host restart, which reads as
+    // "nothing is plugin-launched" on a fresh start.
+    launchedEngines = new Set();
     constructor(ctx) {
         super(ctx, 'localInfer');
     }
@@ -157,6 +163,15 @@ export class LocalInfer extends Service {
         return this.depPlanRegistry;
     }
     /**
+     * launchedEngineIds lists the engine ids this service's launch step
+     * started and has not stopped. The OS-reserve resolver reads the list to
+     * keep the 3 GiB default for a plugin-launched engine, whose footprint the
+     * estimator already prices.
+     */
+    launchedEngineIds() {
+        return [...this.launchedEngines];
+    }
+    /**
      * registerEnginePlatformConfig stores the per-engine platform config (the
      * Engine Directory and Engine Fork the user adds for a specific engine). The
      * launch and deploy steps resolve it against the global modelDirectory to
@@ -182,10 +197,24 @@ export class LocalInfer extends Service {
     enginePlatformConfig(engineId) {
         return this.platformConfigRegistry.get(engineId);
     }
-    async estimate(config, hw) {
+    /**
+     * estimate prices a config against the resolved VramModel and the detected
+     * hardware. The OS reserve resolves dynamically (the Phase 10 order:
+     * explicit config value, then the plugin-launched / foreign-process /
+     * GPU-usage probes), so the meter, the verdict, and the DSH contextWindow
+     * all price the same usable budget. The result carries the reserve's
+     * source, so the meter's readout names where the number came from.
+     */
+    async estimate(config, hw, engineId) {
         const model = this.resolveVramModel(config);
-        const estimate = estimateVram(model, config, hw);
-        return { breakdown: estimate.breakdown, verdict: estimate.verdict, source: estimate.source };
+        const reserve = await this.resolveReserveFor(config, engineId);
+        const estimate = estimateVram(model, config, hw, undefined, { osReserveMiB: reserve.reserveMiB });
+        return {
+            breakdown: estimate.breakdown,
+            verdict: estimate.verdict,
+            source: estimate.source,
+            reserveSource: reserve.source,
+        };
     }
     /**
      * detectHardware runs the host probes (nvidia-smi, docker, WSL2, OS, CPU,
@@ -198,6 +227,37 @@ export class LocalInfer extends Service {
         return detectHardwareFromProbes(probes);
     }
     /**
+     * detectOsReserve runs the Phase 10 OS-reserve probes and resolves the
+     * reserve: the plugin-launched check against this service's launched
+     * engines, the process-signature match of the running process table
+     * against every registered adapter's launch signature (the engine binary
+     * or docker image, the port, the env keys), and the GPU-usage reading.
+     * The resolution order is the core resolver's: a plugin-launched engine
+     * keeps the 3 GiB default, a detected foreign engine raises the reserve to
+     * the GPU's used VRAM, and the 75%-usage fallback raises it further when
+     * no process signature matched. The options inject the probe results, so
+     * a test prices a busy card without a live nvidia-smi or ps.
+     */
+    async detectOsReserve(config, options) {
+        const engineId = options?.engineId;
+        const pluginLaunched = engineId !== undefined && this.launchedEngines.has(engineId);
+        const signatures = this.collectLaunchSignatures(config);
+        let foreignProcess = false;
+        if (!pluginLaunched) {
+            const processes = options?.processes !== undefined
+                ? options.processes
+                : await probeProcesses(signatures.map(signature => signature.binary));
+            for (const signature of signatures) {
+                if (processes.some(line => matchLaunchSignature(line, signature))) {
+                    foreignProcess = true;
+                    break;
+                }
+            }
+        }
+        const gpuUsage = options?.gpuUsage !== undefined ? options.gpuUsage : await probeGpuUsage();
+        return resolveOsReserve({ pluginLaunched, foreignProcess, gpuUsage });
+    }
+    /**
      * guidelines runs the full guideline engine over a config and a hardware
      * profile: the registered named guidelines, every per-spec hardware
      * constraint of the registered engines, and the model-aware rules that
@@ -205,11 +265,14 @@ export class LocalInfer extends Service {
      * usable VRAM" and "spec needs draft weights" rules). The result list is
      * the single source the UI banner and the inline red warnings render from.
      */
-    async guidelines(config, hw) {
+    async guidelines(config, hw, engineId) {
         const results = evaluateGuidelines(this.registeredGuidelines(), this.collectSpecs(), config, hw);
         const model = this.resolveVramModel(config);
         if (model !== undefined) {
-            for (const result of modelGuidelines(model, config, hw)) {
+            // The model-aware rules price the same usable budget the estimate
+            // does, so the red "exceeds VRAM" warning and the meter verdict agree.
+            const reserve = await this.resolveReserveFor(config, engineId);
+            for (const result of modelGuidelines(model, config, hw, { osReserveMiB: reserve.reserveMiB })) {
                 results.push(result);
             }
         }
@@ -269,6 +332,11 @@ export class LocalInfer extends Service {
             }
             return result;
         }
+        // A successful deploy means the engine process is running, so the
+        // OS-reserve resolver keeps the 3 GiB default for it: its footprint is
+        // already priced by the estimator, and pricing the GPU's used VRAM on
+        // top would double-count.
+        this.launchedEngines.add(plan.engineId);
         const health = await adapter.healthCheck(plan, options);
         const launchResult = { plan, healthy: health.healthy };
         if (health.detail !== undefined) {
@@ -287,6 +355,10 @@ export class LocalInfer extends Service {
             throw new LocalInferError(`no engine adapter is registered for "${plan.engineId}"`, 'LOCAL_INFER_INVALID_ENGINE');
         }
         await adapter.stop(plan);
+        // The stop step signalled the tracked process or container, so the
+        // engine is no longer plugin-launched and the OS-reserve resolver may
+        // price the card's live usage for it again.
+        this.launchedEngines.delete(plan.engineId);
     }
     /**
      * registerModel publishes a confirmed-working engine as a DSH model. It
@@ -524,6 +596,45 @@ export class LocalInfer extends Service {
         return models.length === 1 ? models[0] : undefined;
     }
     /**
+     * collectLaunchSignatures gathers the launch signatures of every registered
+     * adapter for a config, so the OS-reserve probe matches the running process
+     * table against each engine's own toArgv/toEnv spelling. An adapter without
+     * a signature (one whose engine leaves no host process) contributes none.
+     */
+    collectLaunchSignatures(config) {
+        const signatures = [];
+        for (const adapter of this.engineRegistry.values()) {
+            const signature = adapter.launchSignature?.(config);
+            if (signature !== undefined) {
+                signatures.push(signature);
+            }
+        }
+        return signatures;
+    }
+    /**
+     * resolveReserveFor resolves the OS reserve an estimate prices: an explicit
+     * config value (reserveMiB or reserveGiB) wins and reads as 'explicit'
+     * without running a probe, else the Phase 10 resolution over the probes
+     * (the plugin-launched check, the foreign-process match, the GPU-usage
+     * reading). The answer is the single source the meter, the verdict, and
+     * the DSH contextWindow price.
+     */
+    async resolveReserveFor(config, engineId) {
+        if (typeof config.reserveMiB === 'number' && Number.isFinite(config.reserveMiB)) {
+            return { reserveMiB: config.reserveMiB, source: 'explicit' };
+        }
+        if (typeof config.reserveGiB === 'number' && Number.isFinite(config.reserveGiB)) {
+            return { reserveMiB: config.reserveGiB * 1024, source: 'explicit' };
+        }
+        // exactOptionalPropertyTypes: build the options with only the key that is
+        // present, so an absent engine id never writes `undefined`.
+        const options = {};
+        if (engineId !== undefined) {
+            options.engineId = engineId;
+        }
+        return this.detectOsReserve(config, options);
+    }
+    /**
      * collectSpecs gathers the parameter surfaces of every registered engine,
      * deduped by key in registration order. A key two engines share (spec,
      * draftTokens, vision) keeps the first engine's spec, so a config warning
@@ -621,6 +732,74 @@ async function probeGpu() {
         '--format=csv,noheader',
     ]);
     return result.ok ? parseNvidiaSmiGpu(result.stdout) : null;
+}
+/**
+ * probeGpuUsage reads the card's live VRAM usage (used and total MiB)
+ * through nvidia-smi's CSV query. Any failure (no nvidia-smi, no GPU, a hung
+ * daemon) degrades to null, which the reserve resolver reads as "no usage
+ * reading" and falls back to the 3 GiB default.
+ */
+async function probeGpuUsage() {
+    const result = await runCommand('nvidia-smi', [
+        '--query-gpu=memory.used,memory.total',
+        '--format=csv,noheader',
+    ]);
+    return result.ok ? parseNvidiaSmiGpuUsage(result.stdout) : null;
+}
+/**
+ * probeProcesses reads the running process table (`ps -eo pid,args`) into
+ * process lines the launch-signature matcher consumes. The env element of a
+ * line is read from the Linux /proc environ, and only for a pid whose command
+ * line carries one of the engine markers: a full table of env reads is slow,
+ * and the matcher's env-key element only fires on a marker-matched process
+ * anyway. A host without /proc (macOS) degrades to env-less lines, which the
+ * matcher reads as a neutral env element.
+ */
+async function probeProcesses(markers) {
+    const result = await runCommand('ps', ['-eo', 'pid,args']);
+    if (!result.ok)
+        return [];
+    const lines = [];
+    for (const raw of result.stdout.split('\n')) {
+        const trimmed = raw.trim();
+        if (trimmed === '' || trimmed.startsWith('PID'))
+            continue;
+        const space = trimmed.indexOf(' ');
+        if (space <= 0)
+            continue;
+        const pid = Number(trimmed.slice(0, space));
+        const command = trimmed.slice(space + 1).trim();
+        if (!Number.isFinite(pid) || command === '')
+            continue;
+        const env = markers.some(marker => command.includes(marker))
+            ? readProcEnviron(pid)
+            : undefined;
+        lines.push({ command, ...(env !== undefined ? { env } : {}) });
+    }
+    return lines;
+}
+/**
+ * readProcEnviron reads one process's environment out of its /proc environ
+ * file (NUL-separated KEY=VALUE entries). Any failure (no /proc, the process
+ * exited, a permission) degrades to undefined, which the matcher reads as a
+ * neutral env element rather than a no-match.
+ */
+function readProcEnviron(pid) {
+    let raw;
+    try {
+        raw = readFileSync(`/proc/${pid}/environ`, 'utf8');
+    }
+    catch {
+        return undefined;
+    }
+    const env = {};
+    for (const entry of raw.split('\0')) {
+        const eq = entry.indexOf('=');
+        if (eq > 0) {
+            env[entry.slice(0, eq)] = entry.slice(eq + 1);
+        }
+    }
+    return Object.keys(env).length > 0 ? env : undefined;
 }
 /**
  * probeDocker checks for the docker binary. `docker --version` needs no

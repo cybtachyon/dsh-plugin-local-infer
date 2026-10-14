@@ -608,7 +608,7 @@ green, `npx eslint` clean).
 - **Exit.** A new engine is added by one adapter + its parameter data, with zero changes to
   `core`/`service`.
 
-### Phase 10 — Dynamic OS reserve (pending)
+### Phase 10 — Dynamic OS reserve
 - **`core`: OS-usage-aware reserve.** The estimator prices the 3 GiB default
   (`DEFAULT_OS_RESERVE_MIB`) when the config names no reserve. This phase adds the code
   that calculates the OS VRAM usage **when a local inference is not currently running**
@@ -1235,3 +1235,76 @@ thresholds from the scaffold's 80% to a level the suite clears with a buffer.
   the new llama.cpp / Strata data and adapter suites, the live-host suite, the
   raised-coverage gate, and the route error-branch suite; `npx eslint` clean;
   `vitest run --coverage` clears the raised thresholds.
+
+### Phase 10 — Dynamic OS reserve (complete)
+
+The estimator's 3 GiB OS-reserve default becomes a floor, not a constant: when
+the config names no reserve, the service probes the live system and prices the
+reserve from what the card is actually doing. The resolution order is a pure
+core function of the probe results, so the meter, the verdict, and the DSH
+`contextWindow` all price the same number.
+
+- **`core`: `reserve.ts`.** `packages/core/src/reserve.ts` carries the
+  OS-usage-aware reserve as data: `GpuUsageProbe` (the used/total MiB reading)
+  with `parseNvidiaSmiGpuUsage` (the `nvidia-smi --query-gpu=
+  memory.used,memory.total` CSV line), `EngineLaunchSignature` (the binary or
+  docker image, the port, the env keys a provider's `toArgv`/`toEnv` produce),
+  `ProcessLine` (a running-process row, env neutral when the detector cannot
+  read it), and `matchLaunchSignature` (the binary marker is required, a
+  declared port must appear as a standalone number, a declared env key must be
+  set when the line carries env data). `resolveOsReserve` is the pure
+  resolution order: a plugin-launched engine keeps the 3 GiB default (its
+  footprint is already priced by the estimator), a foreign engine detected by
+  process raises the reserve to the GPU's used VRAM (capped at the card's
+  capacity), and the 75%-usage fallback (`GPU_USAGE_BUSY_THRESHOLD`) raises it
+  further when no process signature matched. `ReserveSource` names where a
+  resolved reserve came from (`default`, `explicit`, `foreign-process`,
+  `gpu-usage`) so the meter's readout can render it.
+- **`core`: estimator + guidelines options.** `estimateVram` gains an
+  `EstimateOptions` argument: `osReserveMiB` replaces the 3 GiB default when
+  the config names no reserve of its own (an explicit `reserveMiB`/
+  `reserveGiB` always wins, a non-finite or negative value degrades to the
+  default). `modelGuidelines` passes the options through to `estimateVram`,
+  so the estimator-backed "exceeds usable VRAM" rule and the meter agree on
+  the usable budget by construction.
+- **`core`: adapter signatures.** `EngineAdapter` gains an optional
+  `launchSignature(config)` method: the launch signature the engine's
+  `toArgv`/`toEnv` produce, the data the reserve probe matches the running
+  process table against.
+- **`providers`: the four signatures.** `NInferAdapter` signs the
+  `ninfer-serve` binary (local) or the ghcr image (docker) with the config
+  port; `LlamaCppAdapter` signs `llama-server` or the ggml image;
+  `StrataAdapter` signs the Strata image; `HyperQwenAdapter` signs the
+  `docker compose` command with the port and the `toEnv` keys (the `.env`
+  keys, neutral on a compose host process that carries no env data).
+- **`service`: probe wiring.** `LocalInfer` tracks the engines its `launch`
+  step started (a `launchedEngines` set, marked on a successful deploy,
+  released by `stop`, exposed through `launchedEngineIds`). The new
+  `detectOsReserve(config?, options?)` entry point runs the resolution: the
+  plugin-launched check against the set, the process-signature match through
+  `probeProcesses` (`ps -eo pid,args`, the `/proc` environ read only for a
+  pid whose command carries an engine marker), and the GPU-usage reading
+  through `probeGpuUsage`. `estimate` and `guidelines` take an optional
+  engine id, resolve the reserve through the same path (an explicit config
+  reserve wins without a probe), and hand it to `estimateVram` /
+  `modelGuidelines`. `EstimateResult` carries `reserveSource`, so the meter
+  readout names where the number came from. The options inject the probe
+  results, so a test prices a busy card without a live nvidia-smi or ps.
+- **`ui`: the dark reserve readout.** `MeterModel` gains `reserveSource`,
+  `renderMeter` rides it through, and the card's meter readout renders the
+  resolved reserve: "Reserved for the OS: 3.00 GiB (default)", "(config)",
+  "(foreign engine)", or "(GPU busy)" next to the already-dark hatched
+  segment. The route passes the selected engine id into `estimate` and
+  `guidelines`, so the summary prices the reserve for the engine the card is
+  editing.
+- **Relationship established.** OS usage → reserve → usable budget → verdict:
+  the resolver is the single source the meter, the guideline rule, and the
+  estimate price, and a new engine's signature is data the probe matches,
+  never a rewire of the resolver.
+- **Gates green.** `tsc -b` clean; `vitest run` 351/351 across 29 files,
+  including the new core reserve suite (the matcher, the parser, the
+  resolution order), the estimator options tests, the service Phase 10 suite
+  (the injected-probe resolutions, the launch/stop tracking, the explicit-
+  reserve and raised-reserve agreement), the adapter signature suite, the
+  meter `reserveSource` test, and the route reserve-readout test; `npx eslint`
+  clean; `vitest run --coverage` clears the raised thresholds.

@@ -15,6 +15,7 @@ import type {
   CommandOutcome,
   Config,
   DeployResult,
+  EngineLaunchSignature,
   EnginePlatformConfig,
   FetchResult,
   HealthCheckOptions,
@@ -231,6 +232,17 @@ export class NInferAdapter extends EngineAdapter {
     return { id: artifact.modelId, name: artifact.modelId }
   }
 
+  override launchSignature(config: Config = {}): EngineLaunchSignature {
+    // The local plan runs the ninfer-serve binary; the docker plan's host
+    // process is docker run of the ghcr image, so the image name is the
+    // command-line marker the reserve probe matches on.
+    const port = this.port(config)
+    if (this.buildMode(config) === 'docker') {
+      return { binary: NINFER_DOCKER_IMAGE, port }
+    }
+    return { binary: 'ninfer-serve', port }
+  }
+
   renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan {
     const port = this.port(config)
     const modelId = typeof config.model === 'string' ? config.model : 'qwen3-27b'
@@ -408,6 +420,17 @@ export class HyperQwenAdapter extends EngineAdapter {
     return { id: 'hyperqwen', name: 'Hyper-Qwen' }
   }
 
+  override launchSignature(config: Config = {}): EngineLaunchSignature {
+    // The compose host process is `docker compose ... up`, so the marker is
+    // the command, not an image. The toEnv keys (SPEC, CTX, KV, ...) name the
+    // .env the compose file reads, not the host process env, so they ride
+    // along as the env-key element the matcher checks when a process line
+    // carries env data.
+    const port = this.port(config)
+    const envKeys = Object.keys(envFromSpecs(HYPERQWEN_PARAMETERS, config))
+    return { binary: 'docker compose', port, envKeys }
+  }
+
   renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan {
     const port = this.port(config)
     const profile = this.profile(config)
@@ -496,6 +519,17 @@ export class LlamaCppAdapter extends EngineAdapter {
     // registrar publishes that alias and a chat turn routes to it.
     const artifact = llamaCppArtifact(llamaCppModelKey(config))
     return { id: artifact.modelId, name: artifact.modelId }
+  }
+
+  override launchSignature(config: Config = {}): EngineLaunchSignature {
+    // The local plan runs the llama-server binary; the docker plan's host
+    // process is docker run of the ggml image, so the image name is the
+    // command-line marker the reserve probe matches on.
+    const port = this.port(config)
+    if (this.buildMode(config) === 'docker') {
+      return { binary: LLAMACPP_DOCKER_IMAGE, port }
+    }
+    return { binary: 'llama-server', port }
   }
 
   renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan {
@@ -675,6 +709,12 @@ export class StrataAdapter extends EngineAdapter {
     // plugin tracks no per-model data for Strata yet, so the engine id is the
     // stable entry the registrar publishes until that data lands.
     return { id: 'strata', name: 'Strata' }
+  }
+
+  override launchSignature(config: Config = {}): EngineLaunchSignature {
+    // Strata is docker-only, so the signature is the image name the docker
+    // run carries plus the port the plan binds.
+    return { binary: STRATA_DOCKER_IMAGE, port: this.port(config) }
   }
 
   renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan {

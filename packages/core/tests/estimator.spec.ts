@@ -295,6 +295,50 @@ describe('estimateVram config plumbing', () => {
     expect(viaGiB.breakdown.reserve).toBe(1536 * 1024 * 1024)
   })
 
+  it('prices a dynamically resolved OS reserve from the options when the config names none', () => {
+    // The Phase 10 resolver's answer rides in as options.osReserveMiB and
+    // replaces the 3 GiB default: the usable budget and the breakdown's
+    // reserve segment both price the resolved value.
+    const model = model27b()
+    const plain = estimateVram(model, { kvDtype: 'int8', maxContext: 4096 }, HW_3090)
+    expect(plain.breakdown.reserve).toBe(3 * 1024 * 1024 * 1024)
+    const resolved = estimateVram(
+      model,
+      { kvDtype: 'int8', maxContext: 4096 },
+      HW_3090,
+      undefined,
+      { osReserveMiB: 18000 },
+    )
+    expect(resolved.breakdown.reserve).toBe(18000 * 1024 * 1024)
+    expect(resolved.breakdown.usable).toBe((24 * 1024 - 18000) * 1024 * 1024)
+  })
+
+  it('lets an explicit config reserve win over the options reserve', () => {
+    const model = model35b()
+    const explicit = estimateVram(
+      model,
+      { kvDtype: 'int8', maxContext: 4096, reserveMiB: 512 },
+      HW_3090,
+      undefined,
+      { osReserveMiB: 18000 },
+    )
+    expect(explicit.breakdown.reserve).toBe(512 * 1024 * 1024)
+  })
+
+  it('degrades a non-finite or negative options reserve to the default', () => {
+    const model = model27b()
+    for (const osReserveMiB of [Number.NaN, -1024, Number.POSITIVE_INFINITY]) {
+      const estimate = estimateVram(
+        model,
+        { kvDtype: 'int8', maxContext: 4096 },
+        HW_3090,
+        undefined,
+        { osReserveMiB },
+      )
+      expect(estimate.breakdown.reserve).toBe(3 * 1024 * 1024 * 1024)
+    }
+  })
+
   it('prices the no-speculation baseline when the config names no spec', () => {
     const model = model27b()
     const explicit = estimateVram(model, { kvDtype: 'int8', maxContext: 4096, spec: 'none' }, HW_3090)

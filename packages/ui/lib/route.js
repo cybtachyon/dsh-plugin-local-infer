@@ -132,8 +132,11 @@ export async function buildSummary(localInfer, request) {
     // ENGINES is a known non-empty constant, so the fallback is always defined.
     const engine = ENGINES.find((entry) => entry.id === engineId) ?? ENGINES[0];
     const hardware = await localInfer.detectHardware();
-    const estimate = await localInfer.estimate(config, hardware);
-    const guidelineResults = await localInfer.guidelines(config, hardware);
+    // The engine id rides into both entry points: the estimate's OS-reserve
+    // resolution runs the plugin-launched check against it, and the
+    // model-aware guidelines price the same usable budget the meter does.
+    const estimate = await localInfer.estimate(config, hardware, engine.id);
+    const guidelineResults = await localInfer.guidelines(config, hardware, engine.id);
     // The defaults model resolves the starting config for the selected engine
     // and model over the detected hardware, so the card can show the provenance
     // ("sourced from X") beside the form it seeds.
@@ -145,7 +148,7 @@ export async function buildSummary(localInfer, request) {
         hardware,
         engineId: engine.id,
         formModel: renderForm(engine.parameters, config),
-        meterModel: renderMeter(estimate.breakdown, estimate.verdict, hardware.gpu?.vramGiB ?? 0, estimate.source),
+        meterModel: renderMeter(estimate.breakdown, estimate.verdict, hardware.gpu?.vramGiB ?? 0, estimate.source, estimate.reserveSource),
         verdict: estimate.verdict,
         warningsModel: renderWarnings(guidelineResults),
         config,
