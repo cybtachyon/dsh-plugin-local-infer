@@ -1,10 +1,11 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type {
   Config,
   EngineAdapter,
+  EnginePlatformConfig,
   GuidelineResult,
   HardwareProfile,
   InstallResult,
@@ -121,6 +122,7 @@ function stubService(
     registerResult?: RegisterResult
     onRegister?: (args: { plan: LaunchPlan; model: ModelRow; options?: RegisterModelOptions }) => void
     onRemove?: (args: { providerId: string; modelId: string }) => void
+    onPlatform?: (config: EnginePlatformConfig) => void
     models?: readonly VramModel[]
   } = {},
 ): LocalInferService {
@@ -164,6 +166,13 @@ function stubService(
     removeModel: async (providerId: string, modelId: string): Promise<void> => {
       extras.onRemove?.({ providerId, modelId })
     },
+    registerEnginePlatformConfig: (config: EnginePlatformConfig): () => void => {
+      extras.onPlatform?.(config)
+      return () => {
+        /* the route test tracks the registration, not the disposer */
+      }
+    },
+    enginePlatformConfig: () => undefined,
   } as unknown as LocalInferService
 }
 
@@ -209,13 +218,13 @@ describe('local-infer route read model', () => {
     const config: Config = { maxContext: 65536 }
     writeConfig('ninfer', config, true)
     expect(localInferConfigPath()).toBe(join(home, '.dsh', 'local-infer', 'config.json'))
-    expect(readConfig()).toEqual({ engine: 'ninfer', config, allowRunDeps: true })
+    expect(readConfig()).toEqual({ engine: 'ninfer', config, allowRunDeps: true, platform: {} })
   })
 
   it('reads a missing config file as the scaffold default with the gate off', () => {
     // The round-trip above wrote the file, so clear it for this assertion.
     rmSync(localInferConfigPath())
-    expect(readConfig()).toEqual({ engine: 'ninfer', config: {}, allowRunDeps: false })
+    expect(readConfig()).toEqual({ engine: 'ninfer', config: {}, allowRunDeps: false, platform: {} })
   })
 })
 
@@ -340,6 +349,90 @@ describe('launch and stop route helpers', () => {
     await expect(launchEngine(service, { engine: 'strata' })).rejects.toThrow(
       expect.objectContaining<RouteError>({ status: 404 }),
     )
+  })
+})
+
+describe('platform config (§3.10) round trip and launch pass-through', () => {
+  let home: string
+
+  beforeAll(() => {
+    home = mkdtempSync(join(tmpdir(), 'local-infer-platform-'))
+    process.env.HOME = home
+  })
+
+  afterAll(() => {
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  it('round-trips the per-engine platform config through the file', () => {
+    writeConfig('ninfer', {}, false, {
+      ninfer: { engineDirectory: '/home/derek/src/ninfer', engineFork: 'https://github.com/iamwavecut/ninfer-all' },
+    })
+    const stored = readConfig()
+    expect(stored.platform).toEqual({
+      ninfer: {
+        engineDirectory: '/home/derek/src/ninfer',
+        engineFork: 'https://github.com/iamwavecut/ninfer-all',
+      },
+    })
+  })
+
+  it('drops a non-object platform map and non-string fields', () => {
+    const path = localInferConfigPath()
+    // A by-hand edit can leave a malformed platform map; the route reads it
+    // as absent rather than poisoning the deploy step.
+    writeFileSync(
+      path,
+      JSON.stringify({
+        engine: 'ninfer',
+        config: {},
+        allowRunDeps: false,
+        platform: { ninfer: { engineDirectory: 42, engineFork: 'ok' }, hyperqwen: 'not-an-object' },
+      }),
+    )
+    expect(readConfig().platform).toEqual({
+      ninfer: { engineFork: 'ok' },
+    })
+  })
+
+  it('exposes the stored platform map in the summary', async () => {
+    writeConfig('ninfer', {}, false, {
+      ninfer: { engineDirectory: '/home/derek/src/ninfer' },
+    })
+    const summary = await buildSummary(stubService([]), { engine: 'ninfer', config: {} })
+    expect(summary.platformConfigs).toEqual({
+      ninfer: { engineDirectory: '/home/derek/src/ninfer' },
+    })
+  })
+
+  it('registers the request platform override with the service before launch', async () => {
+    let seen: EnginePlatformConfig | undefined
+    const service = stubService([], {
+      onPlatform: (config: EnginePlatformConfig) => {
+        seen = config
+      },
+    })
+    await launchEngine(service, {
+      engine: 'ninfer',
+      config: { port: 18020 },
+      platform: { engineDirectory: '/home/derek/src/ninfer', engineFork: 'https://github.com/iamwavecut/ninfer-all' },
+    })
+    expect(seen).toEqual({
+      engineId: 'ninfer',
+      engineDirectory: '/home/derek/src/ninfer',
+      engineFork: 'https://github.com/iamwavecut/ninfer-all',
+    })
+  })
+
+  it('keeps the stored entry when the launch request carries no platform', async () => {
+    let registered = false
+    const service = stubService([], {
+      onPlatform: () => {
+        registered = true
+      },
+    })
+    await launchEngine(service, { engine: 'ninfer', config: { port: 18020 } })
+    expect(registered).toBe(false)
   })
 })
 

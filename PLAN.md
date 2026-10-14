@@ -1046,12 +1046,43 @@ Plugins page:
   as data tagged `source: 'popular'` (the engine- and user-added option sources are the
   remaining data edits). The renderer draws it as a native `input` + `datalist`, so the
   known options suggest and any path or HF repo reference types.
-- **Remaining against the plan's direction.** The directory fields (§3.10 `modelDirectory`,
-  `engineDirectory`, `engineFork`), the engine- and user-added combo option sources, and the
-  Phase 7 preset data are not built yet. The Phase 5 host-side lifecycle (the `launch` and
-  `stop` service entry points and the `POST /local-infer/launch` and `POST /local-infer/stop`
-  routes) is built; the card's build / deploy / stop controls that call them are the remaining
-  Phase 8 surface. The card today is the configure-and-size surface with the Phase 4
-  system-dependency panel (its `Save` persists the config and the `allowRunDeps` trust gate the
-  later phases will consume) and the Phase 6 DSH model row (its `Register` publishes the
-  engine through the settings seam and `Remove` pulls the entry back).
+- **Remaining against the plan's direction.** The engine- and user-added combo option
+  sources, and the Phase 7 preset data, are not built yet. The Phase 5 host-side lifecycle
+  (the `launch` and `stop` service entry points and the `POST /local-infer/launch` and
+  `POST /local-infer/stop` routes) is built; the card's build / deploy / stop controls that
+  call them are the remaining Phase 8 surface. The card today is the configure-and-size
+  surface with the Phase 4 system-dependency panel (its `Save` persists the config and the
+  `allowRunDeps` trust gate the later phases will consume), the Phase 6 DSH model row (its
+  `Register` publishes the engine through the settings seam and `Remove` pulls the entry
+  back), and the §3.10 directory fields (the Model Directory row and the per-engine Engine
+  Directory / Engine Fork fields the deploy step consumes).
+
+### Directory fields (§3.10) (complete)
+
+- **`ui/route.ts`: persistence and exposure.** `StoredConfig` gains a per-engine
+  `platform` map (the Engine Directory and Engine Fork the user adds for a specific
+  engine, keyed by engine id), and `readConfig`/`writeConfig` round-trip it. A
+  non-object map or a non-string field reads as absent, so a by-hand edit never poisons
+  the deploy step. `LocalInferSummary` exposes the map as `platformConfigs`, and the
+  `save` route persists it and re-syncs the service registry.
+- **`ui/route.ts`: the service sync.** A route-level disposer map keeps the service's
+  platform-config registry in sync with the stored config: on route registration and
+  after every save, `syncPlatformConfigs` registers (or re-registers) each engine that
+  carries a config and unregisters each that no longer does, so a launch always reads
+  the platform config the user last saved. `launchEngine` registers the request's
+  `platform` override (the card's unsaved edits) before the launch, so a launch uses
+  them without a prior save.
+- **`dsh/client.js`: the card controls.** The card gains a Model Directory row (a config
+  field the deploy step's model download targets, riding the config round trip) and an
+  Engine platform section (the per-engine Engine Directory and Engine Fork, riding the
+  platform map). The draft carries the `platform` map per engine, so an engine switch
+  keeps the other engines' configs; a platform edit updates the draft and persists on
+  Save. The `save` route POSTs the platform map, and the response's `platformConfigs`
+  re-seeds the draft.
+- **Relationship established.** the §3.10 directory fields → the deploy step's
+  clone/build/download plan, with the stored config the single source the card, the
+  route, and the service's launch step all read.
+- **Gates green.** `tsc -b` clean; `vitest run` 229/229 across 22 files, including the
+  new platform suite (the file round trip, the malformed-map degrade, the summary
+  exposure, the launch pass-through, and the no-override keeps-stored case);
+  `npx eslint` clean.

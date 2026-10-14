@@ -77,6 +77,12 @@ window.__ModuleLoader__.load({
         registerFailed: 'register failed',
         unregistered: 'removed',
         unregisterFailed: 'remove failed',
+        modelDirectory: 'Model Directory',
+        enginePlatform: 'Engine platform',
+        engineDirectory: 'Engine Directory',
+        engineFork: 'Engine Fork (Git Repo)',
+        dirPlaceholder: 'directory path',
+        forkPlaceholder: 'git repo url',
       },
       zh: {
         section: '引擎设置',
@@ -128,6 +134,12 @@ window.__ModuleLoader__.load({
         registerFailed: '注册失败',
         unregistered: '已移除',
         unregisterFailed: '移除失败',
+        modelDirectory: '模型目录',
+        enginePlatform: '引擎平台',
+        engineDirectory: '引擎目录',
+        engineFork: '引擎 Fork (Git 仓库)',
+        dirPlaceholder: '目录路径',
+        forkPlaceholder: 'git 仓库地址',
       },
     };
 
@@ -861,7 +873,11 @@ window.__ModuleLoader__.load({
               )
               .then((next) => {
                 dataState[1](next);
-                draftState[1]({ engine: next.engineId, config: next.config });
+                draftState[1]({
+                  engine: next.engineId,
+                  config: next.config,
+                  platform: next.platformConfigs || {},
+                });
                 noteState[1]('');
               })
               .catch((error) => {
@@ -923,7 +939,11 @@ window.__ModuleLoader__.load({
             draftState[1]((current) => {
               var config = Object.assign({}, current.config);
               config[key] = value;
-              var next = { engine: current.engine, config: config };
+              var next = {
+                engine: current.engine,
+                config: config,
+                platform: current.platform || {},
+              };
               if (timerRef.current) {
                 clearTimeout(timerRef.current);
               }
@@ -937,12 +957,32 @@ window.__ModuleLoader__.load({
           [fetchSummary, fetchDeps],
         );
 
+        // A platform field edit updates the per-engine platform config in the
+        // draft. The platform config drives the deploy step only, so it does
+        // not re-price the meter; it persists on Save.
+        var onPlatform = react.useCallback(
+          (field, value) => {
+            noteState[1]('');
+            draftState[1]((current) => {
+              var engine = current.engine;
+              var enginePlatform = Object.assign({}, (current.platform || {})[engine] || {});
+              enginePlatform[field] = value;
+              var platform = Object.assign({}, current.platform || {});
+              platform[engine] = enginePlatform;
+              return { engine: engine, config: current.config, platform: platform };
+            });
+          },
+          [],
+        );
+
         var onEngine = react.useCallback(
           (engine) => {
             noteState[1]('');
             depsNoteState[1]('');
             draftState[1]((_current) => {
-              var next = { engine: engine, config: {} };
+              // The platform config is per-engine, so an engine switch keeps
+              // the map and only resets the per-engine parameter config.
+              var next = { engine: engine, config: {}, platform: _current.platform || {} };
               if (timerRef.current) {
                 clearTimeout(timerRef.current);
               }
@@ -968,6 +1008,7 @@ window.__ModuleLoader__.load({
               engine: draft.engine,
               config: draft.config,
               allowRunDeps: deps !== null && deps.runAllowed === true,
+              platform: draft.platform || {},
             }),
           })
             .then((response) =>
@@ -980,7 +1021,11 @@ window.__ModuleLoader__.load({
             )
             .then((next) => {
               dataState[1](next);
-              draftState[1]({ engine: next.engineId, config: next.config });
+              draftState[1]({
+                engine: next.engineId,
+                config: next.config,
+                platform: next.platformConfigs || {},
+              });
               noteState[1](t.saved);
               savingState[1](false);
             })
@@ -1280,6 +1325,93 @@ window.__ModuleLoader__.load({
                   ),
                 )
               : null;
+          })(),
+          // The Model Directory row: the global model download directory
+          // (§3.10). A config field the deploy step's model download targets,
+          // so it rides the config round trip, not the platform map.
+          react.createElement(
+            'div',
+            { style: ROW_STYLE },
+            react.createElement('label', { style: LABEL_STYLE }, t.modelDirectory),
+            react.createElement(
+              'input',
+              Object.assign(
+                { style: INPUT_STYLE },
+                {
+                  type: 'text',
+                  value:
+                    typeof (draft.config || {}).modelDirectory === 'string'
+                      ? draft.config.modelDirectory
+                      : '',
+                  placeholder: t.dirPlaceholder,
+                  onChange: (event) =>
+                    onValue(
+                      'modelDirectory',
+                      event.target.value === '' ? undefined : event.target.value,
+                    ),
+                },
+              ),
+            ),
+          ),
+          (() => {
+            // The Engine platform section: the per-engine Engine Directory and
+            // Engine Fork (§3.10) the deploy step's clone/build step consumes.
+            // These ride the platform map, not the config, so an engine switch
+            // keeps them.
+            var enginePlatform = (draft.platform || {})[draft.engine] || {};
+            return react.createElement(
+              'div',
+              null,
+              react.createElement('div', { style: SECTION_STYLE }, t.enginePlatform),
+              react.createElement(
+                'div',
+                { style: ROW_STYLE },
+                react.createElement('label', { style: LABEL_STYLE }, t.engineDirectory),
+                react.createElement(
+                  'input',
+                  Object.assign(
+                    { style: INPUT_STYLE },
+                    {
+                      type: 'text',
+                      value:
+                        typeof enginePlatform.engineDirectory === 'string'
+                          ? enginePlatform.engineDirectory
+                          : '',
+                      placeholder: t.dirPlaceholder,
+                      onChange: (event) =>
+                        onPlatform(
+                          'engineDirectory',
+                          event.target.value === '' ? undefined : event.target.value,
+                        ),
+                    },
+                  ),
+                ),
+              ),
+              react.createElement(
+                'div',
+                { style: ROW_STYLE },
+                react.createElement('label', { style: LABEL_STYLE }, t.engineFork),
+                react.createElement(
+                  'input',
+                  Object.assign(
+                    { style: INPUT_STYLE },
+                    {
+                      type: 'text',
+                      value:
+                        typeof enginePlatform.engineFork === 'string'
+                          ? enginePlatform.engineFork
+                          : '',
+                      placeholder: t.forkPlaceholder,
+                      onChange: (event) =>
+                        onPlatform(
+                          'engineFork',
+                          event.target.value === '' ? undefined : event.target.value,
+                        ),
+                    },
+                  ),
+                ),
+              ),
+            );
           })(),
           hasFields
             ? formModel.sections.map((section) =>

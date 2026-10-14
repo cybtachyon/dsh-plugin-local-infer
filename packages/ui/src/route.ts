@@ -19,6 +19,7 @@ import { dirname, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
   Config,
+  EnginePlatformConfig,
   HardwareProfile,
   InstallResult,
   ModelRow,
@@ -88,6 +89,9 @@ export interface LocalInferSummary {
   verdict: VramVerdict
   warningsModel: WarningsModel
   config: Config
+  // The per-engine platform configs (§3.10) the card's Engine Directory and
+  // Engine Fork fields edit, keyed by engine id.
+  platformConfigs: Record<string, StoredPlatformConfig>
 }
 
 /**
@@ -98,6 +102,18 @@ export function localInferConfigPath(): string {
   return join(homedir(), '.dsh', 'local-infer', 'config.json')
 }
 
+/**
+ * StoredPlatformConfig is the per-engine platform config the deploy step
+ * consumes (§3.10): where the engine platform lives locally and the git repo
+ * that overrides the engine's default upstream. The map is keyed by engine id,
+ * so the stored entry carries no id of its own; the route adds it when it
+ * builds the EnginePlatformConfig the service registry stores.
+ */
+export interface StoredPlatformConfig {
+  engineDirectory?: string
+  engineFork?: string
+}
+
 export interface StoredConfig {
   engine: string
   config: Config
@@ -105,42 +121,110 @@ export interface StoredConfig {
   // package-manager commands, often as root, so it stays off until the user
   // says the add-on may.
   allowRunDeps: boolean
+  // The per-engine platform configs (§3.10): the Engine Directory and Engine
+  // Fork the user adds for a specific engine, keyed by engine id.
+  platform: Record<string, StoredPlatformConfig>
 }
 
 /**
- * readConfig reads the stored engine, config, and the allowRunDeps trust gate.
- * A missing or broken file reads as the scaffold default (NInfer, empty
- * config, gate off) so the card always has a form to draw.
+ * readConfig reads the stored engine, config, trust gate, and per-engine
+ * platform configs. A missing or broken file reads as the scaffold default
+ * (NInfer, empty config, gate off, no platform configs) so the card always has
+ * a form to draw. A platform entry that is not an object (or whose fields are
+ * not strings) is dropped, so a by-hand edit never poisons the deploy step.
  */
 export function readConfig(): StoredConfig {
   const path = localInferConfigPath()
   if (!existsSync(path)) {
-    return { engine: 'ninfer', config: {}, allowRunDeps: false }
+    return { engine: 'ninfer', config: {}, allowRunDeps: false, platform: {} }
   }
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf8')) as {
       engine?: unknown
       config?: unknown
       allowRunDeps?: unknown
+      platform?: unknown
     }
     return {
       engine: typeof parsed.engine === 'string' ? parsed.engine : 'ninfer',
       config: parsed.config && typeof parsed.config === 'object' ? (parsed.config as Config) : {},
       allowRunDeps: typeof parsed.allowRunDeps === 'boolean' ? parsed.allowRunDeps : false,
+      platform: parsePlatformConfigs(parsed.platform),
     }
   } catch {
-    return { engine: 'ninfer', config: {}, allowRunDeps: false }
+    return { engine: 'ninfer', config: {}, allowRunDeps: false, platform: {} }
   }
 }
 
 /**
- * writeConfig persists the engine, config, and trust gate, creating the
- * directory tree on first write.
+ * writeConfig persists the engine, config, trust gate, and per-engine platform
+ * configs, creating the directory tree on first write.
  */
-export function writeConfig(engine: string, config: Config, allowRunDeps: boolean): void {
+export function writeConfig(
+  engine: string,
+  config: Config,
+  allowRunDeps: boolean,
+  platform?: Record<string, StoredPlatformConfig>,
+): void {
   const path = localInferConfigPath()
   mkdirSync(dirname(path), { recursive: true })
-  writeFileSync(path, JSON.stringify({ engine, config, allowRunDeps }, null, 2))
+  writeFileSync(
+    path,
+    JSON.stringify({ engine, config, allowRunDeps, platform: platform ?? {} }, null, 2),
+  )
+}
+
+/**
+ * parsePlatformConfigs reads the stored platform map, keeping only entries
+ * whose fields are strings. A non-object map or a non-object entry reads as
+ * absent, so the deploy step never sees a platform config it cannot price.
+ */
+function parsePlatformConfigs(raw: unknown): Record<string, StoredPlatformConfig> {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    return {}
+  }
+  const platform: Record<string, StoredPlatformConfig> = {}
+  for (const [engineId, entry] of Object.entries(raw as Record<string, unknown>)) {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+      continue
+    }
+    const stored: StoredPlatformConfig = {}
+    const fields = entry as Record<string, unknown>
+    if (typeof fields.engineDirectory === 'string') {
+      stored.engineDirectory = fields.engineDirectory
+    }
+    if (typeof fields.engineFork === 'string') {
+      stored.engineFork = fields.engineFork
+    }
+    if (stored.engineDirectory !== undefined || stored.engineFork !== undefined) {
+      platform[engineId] = stored
+    }
+  }
+  return platform
+}
+
+/**
+ * parseStoredPlatformConfig reads one engine's platform config (the launch
+ * request's `platform` key), keeping only string fields. A non-object or an
+ * object with no string fields reads as absent, so the launch keeps the stored
+ * entry the save route synced.
+ */
+function parseStoredPlatformConfig(raw: unknown): StoredPlatformConfig | undefined {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    return undefined
+  }
+  const fields = raw as Record<string, unknown>
+  const stored: StoredPlatformConfig = {}
+  if (typeof fields.engineDirectory === 'string') {
+    stored.engineDirectory = fields.engineDirectory
+  }
+  if (typeof fields.engineFork === 'string') {
+    stored.engineFork = fields.engineFork
+  }
+  if (stored.engineDirectory === undefined && stored.engineFork === undefined) {
+    return undefined
+  }
+  return stored
 }
 
 /**
@@ -179,6 +263,7 @@ export async function buildSummary(
     verdict: estimate.verdict,
     warningsModel: renderWarnings(guidelineResults),
     config,
+    platformConfigs: stored.platform,
   }
 }
 
@@ -194,6 +279,60 @@ export class RouteError extends Error {
     super(message)
     this.name = 'RouteError'
     this.status = status
+  }
+}
+
+/**
+ * The route's view of which engine platform configs are registered with the
+ * service, keyed by engine id. The service registry is the single source the
+ * launch step reads, so the route keeps it in sync with the stored config:
+ * on route registration, after every save, and when a launch request carries
+ * a platform override. A disposer is tracked per engine, so an engine whose
+ * stored config is cleared is unregistered rather than left stale.
+ */
+const platformDisposers = new Map<string, () => void>()
+
+/**
+ * setPlatformConfig registers one engine's platform config with the service,
+ * replacing any stored entry. A config with no fields is read as "no platform
+ * config", which unregisters the engine so the deploy step falls back to the
+ * adapter's default source and cache directory.
+ */
+function setPlatformConfig(
+  localInfer: LocalInferService,
+  engineId: string,
+  config: StoredPlatformConfig | undefined,
+): void {
+  platformDisposers.get(engineId)?.()
+  platformDisposers.delete(engineId)
+  if (config === undefined) {
+    return
+  }
+  if (config.engineDirectory === undefined && config.engineFork === undefined) {
+    return
+  }
+  const platform: EnginePlatformConfig = { engineId, ...config }
+  platformDisposers.set(engineId, localInfer.registerEnginePlatformConfig(platform))
+}
+
+/**
+ * syncPlatformConfigs re-syncs the service registry with the stored platform
+ * map: it registers (or re-registers) every engine that carries a config, and
+ * unregisters every engine that no longer does, so a launch always reads the
+ * platform config the user last saved.
+ */
+function syncPlatformConfigs(
+  localInfer: LocalInferService,
+  stored: StoredConfig,
+): void {
+  const wanted = stored.platform
+  for (const engineId of [...platformDisposers.keys()]) {
+    if (wanted[engineId] === undefined) {
+      setPlatformConfig(localInfer, engineId, undefined)
+    }
+  }
+  for (const [engineId, config] of Object.entries(wanted)) {
+    setPlatformConfig(localInfer, engineId, config)
   }
 }
 
@@ -287,12 +426,15 @@ export async function runInstallFor(
 
 /**
  * LaunchRequest is the query the card sends for the launch and stop routes: the
- * engine and the config the plan renders from. Absent values fall back to the
- * stored config, the same rule the summary route applies.
+ * engine and the config the plan renders from. `platform` carries the card's
+ * unsaved Engine Directory / Engine Fork edits for the engine, so a launch uses
+ * them without a prior save. Absent values fall back to the stored config, the
+ * same rule the summary route applies.
  */
 export interface LaunchRequest {
   engine?: string
   config?: Config
+  platform?: StoredPlatformConfig
 }
 
 /**
@@ -322,6 +464,13 @@ export async function launchEngine(
   const config = request.config ?? stored.config
   const adapter = resolveAdapter(localInfer, engineId)
   const hardware = await localInfer.detectHardware()
+  // Register the request's platform override (the card's unsaved Engine
+  // Directory / Engine Fork edits) so the service's launch resolves it against
+  // the adapter's deploy step. An absent platform keeps the stored entry,
+  // which the save route and route registration already synced.
+  if (request.platform !== undefined) {
+    setPlatformConfig(localInfer, engineId, request.platform)
+  }
   return localInfer.launch(adapter.renderLaunch(config, hardware))
 }
 
@@ -520,11 +669,16 @@ export function registerLocalInferRoute(
           engine?: unknown
           config?: unknown
           allowRunDeps?: unknown
+          platform?: unknown
         }
         const engine = typeof body.engine === 'string' ? body.engine : 'ninfer'
         const config = body.config && typeof body.config === 'object' ? (body.config as Config) : {}
         const allowRunDeps = typeof body.allowRunDeps === 'boolean' ? body.allowRunDeps : false
-        writeConfig(engine, config, allowRunDeps)
+        const platform = parsePlatformConfigs(body.platform)
+        writeConfig(engine, config, allowRunDeps, platform)
+        // Re-sync the service registry with the saved platform map, so the next
+        // launch reads the platform config the user just saved.
+        syncPlatformConfigs(localInfer, { engine, config, allowRunDeps, platform })
         send(200, await buildSummary(localInfer, { engine, config }))
       } catch (error) {
         send(400, { error: String((error as Error)?.message ?? error) })
@@ -620,11 +774,13 @@ export function registerLocalInferRoute(
     },
   }
 
-  // The launch and stop routes share a POST body parser: the engine and config
-  // the plan renders from, falling back to the stored config per key.
+  // The launch and stop routes share a POST body parser: the engine, config,
+  // and platform override the plan renders from, falling back to the stored
+  // config per key. The stop route ignores the platform key.
   const launchRequestFromBody = (body: {
     engine?: unknown
     config?: unknown
+    platform?: unknown
   }): LaunchRequest => {
     const request: LaunchRequest = {}
     if (typeof body.engine === 'string') {
@@ -632,6 +788,10 @@ export function registerLocalInferRoute(
     }
     if (body.config && typeof body.config === 'object') {
       request.config = body.config as Config
+    }
+    const platform = parseStoredPlatformConfig(body.platform)
+    if (platform !== undefined) {
+      request.platform = platform
     }
     return request
   }
@@ -821,6 +981,10 @@ export function registerLocalInferRoute(
 
   scope.effect(
     () => {
+      // Sync the service's platform-config registry with the stored config on
+      // route registration, so a launch before the first save reads the
+      // platform config the user last saved.
+      syncPlatformConfigs(localInfer, readConfig())
       const disposeSummary = scope.webServer.register(route)
       const disposeSave = scope.webServer.register(save)
       const disposeDeps = scope.webServer.register(deps)

@@ -69,28 +69,43 @@ export interface LocalInferSummary {
     verdict: VramVerdict;
     warningsModel: WarningsModel;
     config: Config;
+    platformConfigs: Record<string, StoredPlatformConfig>;
 }
 /**
  * The config file the route owns. It sits under the dsh home so a web user and
  * a CLI user share one file, the way modsearch shares ~/.modsearch.
  */
 export declare function localInferConfigPath(): string;
+/**
+ * StoredPlatformConfig is the per-engine platform config the deploy step
+ * consumes (§3.10): where the engine platform lives locally and the git repo
+ * that overrides the engine's default upstream. The map is keyed by engine id,
+ * so the stored entry carries no id of its own; the route adds it when it
+ * builds the EnginePlatformConfig the service registry stores.
+ */
+export interface StoredPlatformConfig {
+    engineDirectory?: string;
+    engineFork?: string;
+}
 export interface StoredConfig {
     engine: string;
     config: Config;
     allowRunDeps: boolean;
+    platform: Record<string, StoredPlatformConfig>;
 }
 /**
- * readConfig reads the stored engine, config, and the allowRunDeps trust gate.
- * A missing or broken file reads as the scaffold default (NInfer, empty
- * config, gate off) so the card always has a form to draw.
+ * readConfig reads the stored engine, config, trust gate, and per-engine
+ * platform configs. A missing or broken file reads as the scaffold default
+ * (NInfer, empty config, gate off, no platform configs) so the card always has
+ * a form to draw. A platform entry that is not an object (or whose fields are
+ * not strings) is dropped, so a by-hand edit never poisons the deploy step.
  */
 export declare function readConfig(): StoredConfig;
 /**
- * writeConfig persists the engine, config, and trust gate, creating the
- * directory tree on first write.
+ * writeConfig persists the engine, config, trust gate, and per-engine platform
+ * configs, creating the directory tree on first write.
  */
-export declare function writeConfig(engine: string, config: Config, allowRunDeps: boolean): void;
+export declare function writeConfig(engine: string, config: Config, allowRunDeps: boolean, platform?: Record<string, StoredPlatformConfig>): void;
 /**
  * buildSummary assembles the card's read model for one engine and config: the
  * static engine and model lists, the detected hardware, the form model the
@@ -155,12 +170,15 @@ export interface InstallResponse {
 export declare function runInstallFor(localInfer: LocalInferService, request: DepsRequest): Promise<InstallResponse>;
 /**
  * LaunchRequest is the query the card sends for the launch and stop routes: the
- * engine and the config the plan renders from. Absent values fall back to the
- * stored config, the same rule the summary route applies.
+ * engine and the config the plan renders from. `platform` carries the card's
+ * unsaved Engine Directory / Engine Fork edits for the engine, so a launch uses
+ * them without a prior save. Absent values fall back to the stored config, the
+ * same rule the summary route applies.
  */
 export interface LaunchRequest {
     engine?: string;
     config?: Config;
+    platform?: StoredPlatformConfig;
 }
 /**
  * launchEngine renders the plan the registered adapter produces for the config
