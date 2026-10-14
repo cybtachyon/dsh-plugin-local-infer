@@ -1,12 +1,14 @@
 /**
  * The webServer routes the Web card talks to. GET /local-infer/summary
  * returns the engine list, the detected hardware, the form model for the
- * selected engine, the VRAM meter model for the current config, and the
- * guideline warning model the banner and inline red warnings render from;
- * POST /local-infer/save persists the config; POST /local-infer/launch and
- * /local-infer/stop drive the engine lifecycle; and POST /local-infer/
- * register and /local-infer/unregister publish the engine as a DSH model
- * through the settings seam. The values live in
+ * selected engine, the VRAM meter model for the current config, the default
+ * model list and the model status (presence, hf CLI, download command) the
+ * banner and inline red warnings render from; POST /local-infer/save persists
+ * the config; POST /local-infer/download runs the hf CLI download for a
+ * default model; POST /local-infer/launch and /local-infer/stop drive the
+ * engine lifecycle; and POST /local-infer/register and /local-infer/
+ * unregister publish the engine as a DSH model through the settings seam.
+ * The values live in
  * ~/.dsh/local-infer/config.json, shared with the CLI, so the browser never
  * sees a secret it did not store. The routes are held by an effect, so they
  * go when the plugin does.
@@ -14,7 +16,7 @@
  */
 import type { Context } from '@deepseek-ai/cordis';
 import type { Config, DefaultProvenance, HardwareProfile, InstallResult, RegisterResult, VramModel, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
-import type { LaunchResult, LocalInferService } from '@dsh/dsh-plugin-local-infer/service';
+import type { DownloadResult, LaunchResult, LocalInferService } from '@dsh/dsh-plugin-local-infer/service';
 import type { EngineInfo } from '../../providers/lib/index.js';
 import type { DepsModel } from './deps.ts';
 import type { FormModel } from './form.ts';
@@ -71,6 +73,34 @@ export interface LocalInferSummary {
     config: Config;
     platformConfigs: Record<string, StoredPlatformConfig>;
     defaults: DefaultsModel;
+    modelDirectory: string;
+    modelDefaults: ModelDefaultModel[];
+    modelStatus: ModelStatusModel | null;
+    modelFiles: string[];
+}
+/**
+ * ModelDefaultModel is the card-facing view of one default model entry: the
+ * registry key the config `model` field carries, the label the dropdown
+ * shows, and the Hugging Face URL the no-CLI row links to.
+ */
+export interface ModelDefaultModel {
+    id: string;
+    label: string;
+    url: string;
+}
+/**
+ * ModelStatusModel is the model-status read model the card draws: whether the
+ * model is present in the model directory, whether the hf CLI is available,
+ * and the download command the Download button runs. The card shows the row
+ * only while the model is absent.
+ */
+export interface ModelStatusModel {
+    modelId: string;
+    label: string;
+    url: string;
+    present: boolean;
+    hfCli: boolean;
+    downloadCommand: string;
 }
 /**
  * DefaultsModel is the resolved-defaults read model the card draws: the
@@ -179,6 +209,24 @@ export interface InstallResponse {
  * re-check, so the "Get" gate opens only after a re-check passes.
  */
 export declare function runInstallFor(localInfer: LocalInferService, request: DepsRequest): Promise<InstallResponse>;
+/**
+ * DownloadRequest is the query the card sends for the download route: the
+ * engine, model, and directory the hf CLI download targets. Absent values
+ * fall back to the stored config, the same rule the summary route applies.
+ */
+export interface DownloadRequest {
+    engine?: string;
+    model?: string;
+    directory?: string;
+}
+/**
+ * downloadFor runs the hf CLI download for the request's default model: it
+ * resolves the entry through the providers' default list (a 404 when no
+ * entry names the pair), resolves the directory against the request, the
+ * stored config, and the plugin's default model directory in that order, and
+ * runs the download through the service.
+ */
+export declare function downloadFor(localInfer: LocalInferService, request: DownloadRequest): Promise<DownloadResult>;
 /**
  * LaunchRequest is the query the card sends for the launch and stop routes: the
  * engine and the config the plan renders from. `platform` carries the card's

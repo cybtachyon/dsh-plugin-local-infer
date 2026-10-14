@@ -110,6 +110,14 @@ export {
   renderInstallString,
   runInstall,
 } from './deps.ts'
+export {
+  hfDownloadCommand,
+  modelArtifactPath,
+  modelEntriesForEngine,
+  repoIdFromUrl,
+  repoNameFromUrl,
+} from './models.ts'
+export type { DefaultModel, ModelDirectoryEntry } from './models.ts'
 export type {
   CommandOutcome,
   CommandRunner,

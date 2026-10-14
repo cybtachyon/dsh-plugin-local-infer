@@ -1,4 +1,4 @@
-import type { Config, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, GpuUsageProbe, HardwareProfile, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, RegisterResult, ReserveResolution, ReserveSource, ResolvedDefaults, SettingsOp, SystemDep, VramBreakdown, VramModel, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
+import type { CommandOutcome, Config, DefaultModel, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, GpuUsageProbe, HardwareProfile, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, RegisterResult, ReserveResolution, ReserveSource, ResolvedDefaults, SettingsOp, SystemDep, VramBreakdown, VramModel, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
 /**
  * EstimateResult is the answer to an estimate call: the full VRAM breakdown,
  * the one-word verdict the meter renders, the source the numbers came from,
@@ -73,6 +73,29 @@ export interface FetchPresetOptions {
     cliPath?: string;
 }
 /**
+ * HfCliOptions tunes the hf CLI probe: cliPath overrides where the CLI is
+ * resolved from, so a test injects a stub and a profile with a non-default
+ * install points at its own copy.
+ */
+export interface HfCliOptions {
+    cliPath?: string;
+}
+/**
+ * DownloadResult is the answer to a model download: ok, or a detail naming
+ * the broken step the card shows beside its Download button.
+ */
+export interface DownloadResult {
+    ok: boolean;
+    detail?: string;
+}
+/**
+ * DownloadModelOptions tunes the model download: runner injects the command
+ * runner, so a test captures the rendered hf CLI command without a live hf.
+ */
+export interface DownloadModelOptions {
+    runner?: (command: string) => Promise<CommandOutcome>;
+}
+/**
  * SettingsNamespaceDescriptor is the structural view of one profile plugin
  * entry the registrar reads: its namespace key, the resolved section value,
  * and the revision the write hands back as the conflict guard.
@@ -130,5 +153,9 @@ export interface LocalInferService {
     removeModel(providerId: string, modelId: string): Promise<void>;
     resolveDefaults(engineId: string, modelId: string, hw: HardwareProfile, explicit?: Config): Promise<ResolvedDefaults>;
     fetchPreset(source: PresetSource, options?: FetchPresetOptions): Promise<FetchPresetResult>;
+    defaultModelDirectory(): string;
+    hfCliAvailable(options?: HfCliOptions): Promise<string | null>;
+    downloadModel(entry: DefaultModel, directory: string, options?: DownloadModelOptions): Promise<DownloadResult>;
+    listModelDirectory(directory: string): ModelDirectoryEntry[];
 }
 //# sourceMappingURL=types.d.ts.map

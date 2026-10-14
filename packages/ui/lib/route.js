@@ -1,12 +1,14 @@
 /**
  * The webServer routes the Web card talks to. GET /local-infer/summary
  * returns the engine list, the detected hardware, the form model for the
- * selected engine, the VRAM meter model for the current config, and the
- * guideline warning model the banner and inline red warnings render from;
- * POST /local-infer/save persists the config; POST /local-infer/launch and
- * /local-infer/stop drive the engine lifecycle; and POST /local-infer/
- * register and /local-infer/unregister publish the engine as a DSH model
- * through the settings seam. The values live in
+ * selected engine, the VRAM meter model for the current config, the default
+ * model list and the model status (presence, hf CLI, download command) the
+ * banner and inline red warnings render from; POST /local-infer/save persists
+ * the config; POST /local-infer/download runs the hf CLI download for a
+ * default model; POST /local-infer/launch and /local-infer/stop drive the
+ * engine lifecycle; and POST /local-infer/register and /local-infer/
+ * unregister publish the engine as a DSH model through the settings seam.
+ * The values live in
  * ~/.dsh/local-infer/config.json, shared with the CLI, so the browser never
  * sees a secret it did not store. The routes are held by an effect, so they
  * go when the plugin does.
@@ -18,8 +20,8 @@ import { dirname, join } from 'node:path';
 // Relative, not the root package subpath: a self-referencing bare specifier
 // only resolves when the package sits inside a node_modules tree, so a
 // local-path or pnpm-linked install of this repo would fail the import.
-import { checkDeps, providerIdFor, renderInstallString } from '../../core/lib/index.js';
-import { ENGINES } from '../../providers/lib/index.js';
+import { checkDeps, hfDownloadCommand, modelArtifactPath, modelEntriesForEngine, providerIdFor, renderInstallString, } from '../../core/lib/index.js';
+import { defaultModelFor, defaultModelsForEngine, ENGINES, } from '../../providers/lib/index.js';
 import { renderDeps } from "./deps.js";
 import { renderForm } from "./form.js";
 import { renderMeter } from "./meter.js";
@@ -128,20 +130,51 @@ function parseStoredPlatformConfig(raw) {
 export async function buildSummary(localInfer, request) {
     const stored = readConfig();
     const engineId = request?.engine ?? stored.engine;
-    const config = request?.config ?? stored.config;
     // ENGINES is a known non-empty constant, so the fallback is always defined.
     const engine = ENGINES.find((entry) => entry.id === engineId) ?? ENGINES[0];
+    // The Model Directory field defaults to the plugin's model download
+    // directory (~/.dsh/models, created when absent), so the card always
+    // seeds a real path the deploy step can target. A stored or requested
+    // directory that is a non-blank string wins over the default.
+    const modelDirectory = localInfer.defaultModelDirectory();
+    const rawConfig = request?.config ?? stored.config;
+    const config = typeof rawConfig.modelDirectory === 'string' && rawConfig.modelDirectory.trim() !== ''
+        ? rawConfig
+        : { ...rawConfig, modelDirectory };
+    const modelDir = typeof config.modelDirectory === 'string' ? config.modelDirectory : modelDirectory;
     const hardware = await localInfer.detectHardware();
     // The engine id rides into both entry points: the estimate's OS-reserve
     // resolution runs the plugin-launched check against it, and the
     // model-aware guidelines price the same usable budget the meter does.
     const estimate = await localInfer.estimate(config, hardware, engine.id);
     const guidelineResults = await localInfer.guidelines(config, hardware, engine.id);
-    // The defaults model resolves the starting config for the selected engine
-    // and model over the detected hardware, so the card can show the provenance
-    // ("sourced from X") beside the form it seeds.
-    const modelId = typeof config.model === 'string' ? config.model : engine.id;
+    // The defaults list is the Model field's "Defaults" special case: a config
+    // with no model names the engine's first default model, so the meter, the
+    // form seed, and the model status all price the same starting model.
+    const engineDefaults = defaultModelsForEngine(engine.id);
+    const modelId = typeof config.model === 'string' ? config.model : (engineDefaults[0]?.modelId ?? engine.id);
     const defaults = await localInfer.resolveDefaults(engine.id, modelId, hardware, config);
+    // The directory scan lists the model files the selected engine can serve
+    // straight from the model directory, so the card's Model dropdown offers
+    // them beside the defaults. A missing directory reads as an empty list.
+    const modelFiles = modelEntriesForEngine(localInfer.listModelDirectory(modelDir), engine.id);
+    // The model status checks the selected model against the model directory
+    // and probes the hf CLI, so the card shows its Download row (or the URL
+    // row) only while the model is absent.
+    const entry = defaultModelFor(engine.id, modelId);
+    let modelStatus = null;
+    if (entry !== undefined) {
+        const present = existsSync(modelArtifactPath(entry, modelDir));
+        const hfCli = (await localInfer.hfCliAvailable()) !== null;
+        modelStatus = {
+            modelId: entry.modelId,
+            label: entry.label,
+            url: entry.url,
+            present,
+            hfCli,
+            downloadCommand: hfDownloadCommand(entry, modelDir),
+        };
+    }
     return {
         engines: ENGINES.map((entry) => ({ id: entry.id, label: entry.label, supports: entry.supports })),
         models: localInfer.registeredVramModels().map((model) => ({ id: model.id, source: model.source })),
@@ -154,6 +187,14 @@ export async function buildSummary(localInfer, request) {
         config,
         platformConfigs: stored.platform,
         defaults: { config: defaults.config, provenance: defaults.provenance },
+        modelDirectory,
+        modelDefaults: engineDefaults.map((entry) => ({
+            id: entry.modelId,
+            label: entry.label,
+            url: entry.url,
+        })),
+        modelStatus,
+        modelFiles,
     };
 }
 /**
@@ -274,6 +315,29 @@ export async function runInstallFor(localInfer, request) {
         result,
         deps: { ...model, deps, allSatisfied: result.ok },
     };
+}
+/**
+ * downloadFor runs the hf CLI download for the request's default model: it
+ * resolves the entry through the providers' default list (a 404 when no
+ * entry names the pair), resolves the directory against the request, the
+ * stored config, and the plugin's default model directory in that order, and
+ * runs the download through the service.
+ */
+export async function downloadFor(localInfer, request) {
+    const stored = readConfig();
+    const engineId = request.engine ?? stored.engine;
+    const modelId = request.model ?? (typeof stored.config.model === 'string' ? stored.config.model : '');
+    const entry = defaultModelFor(engineId, modelId);
+    if (entry === undefined) {
+        throw new RouteError(404, `no default model is registered for "${engineId}/${modelId}"`);
+    }
+    const storedDir = stored.config.modelDirectory;
+    const directory = typeof request.directory === 'string' && request.directory.trim() !== ''
+        ? request.directory
+        : typeof storedDir === 'string' && storedDir.trim() !== ''
+            ? storedDir
+            : localInfer.defaultModelDirectory();
+    return localInfer.downloadModel(entry, directory);
 }
 /**
  * resolveAdapter picks the registered engine adapter an engine id routes to. A
@@ -566,6 +630,53 @@ export function registerLocalInferRoute(scope, localInfer) {
             }
         },
     };
+    const download = {
+        name: 'local-infer-download',
+        kind: 'exact',
+        path: '/local-infer/download',
+        handler: async (req, res) => {
+            const send = (status, body) => {
+                res.writeHead(status, { 'content-type': 'application/json' });
+                res.end(JSON.stringify(body));
+            };
+            if (req.method !== 'POST') {
+                res.writeHead(405).end();
+                return;
+            }
+            try {
+                const chunks = [];
+                let total = 0;
+                for await (const chunk of req) {
+                    total += chunk.length;
+                    if (total > 64 * 1024) {
+                        send(413, { error: 'download payload too large' });
+                        req.destroy();
+                        return;
+                    }
+                    chunks.push(chunk);
+                }
+                const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+                const request = {};
+                if (typeof body.engine === 'string') {
+                    request.engine = body.engine;
+                }
+                if (typeof body.model === 'string') {
+                    request.model = body.model;
+                }
+                if (typeof body.directory === 'string') {
+                    request.directory = body.directory;
+                }
+                send(200, await downloadFor(localInfer, request));
+            }
+            catch (error) {
+                if (error instanceof RouteError) {
+                    send(error.status, { error: error.message });
+                    return;
+                }
+                send(500, { error: String(error?.message ?? error) });
+            }
+        },
+    };
     // The launch and stop routes share a POST body parser: the engine, config,
     // and platform override the plan renders from, falling back to the stored
     // config per key. The stop route ignores the platform key.
@@ -757,6 +868,7 @@ export function registerLocalInferRoute(scope, localInfer) {
         const disposeSave = scope.webServer.register(save);
         const disposeDeps = scope.webServer.register(deps);
         const disposeInstall = scope.webServer.register(install);
+        const disposeDownload = scope.webServer.register(download);
         const disposeLaunch = scope.webServer.register(launch);
         const disposeStop = scope.webServer.register(stop);
         const disposeRegister = scope.webServer.register(register);
@@ -766,6 +878,7 @@ export function registerLocalInferRoute(scope, localInfer) {
             disposeSave();
             disposeDeps();
             disposeInstall();
+            disposeDownload();
             disposeLaunch();
             disposeStop();
             disposeRegister();

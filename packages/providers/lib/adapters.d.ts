@@ -21,9 +21,10 @@ export interface NInferModelArtifact {
     modelId: string;
 }
 /**
- * The NInfer model artifacts, keyed by the VramModel registry id. The 27B
- * entry is the artifact the qwen-ninfer launcher downloads; the 35B entry is
- * the 35B-A3B companion-weight artifact.
+ * The NInfer model artifacts, keyed by the model registry id. The 27B entry
+ * is the default the DEFAULT_MODELS list names; the 35B-A3B entries are the
+ * Qwen3.8 measured artifact (`qwen3-35b`) and the Qwen3.6 default
+ * (`qwen36-35b`).
  */
 export declare const NINFER_MODEL_ARTIFACTS: Record<string, NInferModelArtifact>;
 /**

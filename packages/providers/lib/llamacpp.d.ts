@@ -31,7 +31,7 @@ export interface LlamaCppModelArtifact {
 }
 /**
  * The llama.cpp model artifacts, keyed by the config model key. The 27B entry
- * is the Qwen3.8-27B GGUF the launcher downloads; an id no entry names falls
+ * is the default the DEFAULT_MODELS list names; an id no entry names falls
  * back to it, so a bare config always renders a plan.
  */
 export declare const LLAMACPP_MODEL_ARTIFACTS: Record<string, LlamaCppModelArtifact>;

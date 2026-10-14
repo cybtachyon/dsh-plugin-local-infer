@@ -102,6 +102,12 @@ window.__ModuleLoader__.load({
         engineFork: 'Engine Fork (Git Repo)',
         dirPlaceholder: 'directory path',
         forkPlaceholder: 'git repo url',
+        hfCliDetected: 'HF CLI detected:',
+        noHfCli: 'No HF CLI detected, url:',
+        download: 'Download',
+        downloading: 'downloading...',
+        downloaded: 'download complete',
+        downloadFailed: 'download failed',
       },
       zh: {
         section: '引擎设置',
@@ -173,6 +179,12 @@ window.__ModuleLoader__.load({
         engineFork: '引擎 Fork (Git 仓库)',
         dirPlaceholder: '目录路径',
         forkPlaceholder: 'git 仓库地址',
+        hfCliDetected: '检测到 HF CLI:',
+        noHfCli: '未检测到 HF CLI,url:',
+        download: '下载',
+        downloading: '下载中…',
+        downloaded: '下载完成',
+        downloadFailed: '下载失败',
       },
     };
 
@@ -1086,6 +1098,11 @@ window.__ModuleLoader__.load({
         var launchingState = react.useState(false);
         var stoppingState = react.useState(false);
         var lifecycleNoteState = react.useState('');
+        // The model download state. The Download button runs the hf CLI
+        // download through the /local-infer/download route, and the note
+        // reports the answer the route returned.
+        var downloadingState = react.useState(false);
+        var downloadNoteState = react.useState('');
         var data = dataState[0];
         var draft = draftState[0];
         var note = noteState[0];
@@ -1101,6 +1118,8 @@ window.__ModuleLoader__.load({
         var launching = launchingState[0];
         var stopping = stoppingState[0];
         var lifecycleNote = lifecycleNoteState[0];
+        var downloading = downloadingState[0];
+        var downloadNote = downloadNoteState[0];
         var timerRef = react.useRef(null);
 
         var fetchSummary = react.useCallback(
@@ -1120,10 +1139,28 @@ window.__ModuleLoader__.load({
               )
               .then((next) => {
                 dataState[1](next);
-                draftState[1]({
-                  engine: next.engineId,
-                  config: next.config,
-                  platform: next.platformConfigs || {},
+                draftState[1]((current) => {
+                  // The summary's platformConfigs is the host-persisted
+                  // platform state, while the draft's platform entries are
+                  // the unsaved local edits the Engine Directory and Engine
+                  // Fork fields carry until Save. A field-level merge keeps
+                  // both: the persisted fields surface, and the local edits
+                  // survive the re-price refetch a spec field change fires.
+                  var mergedPlatform = Object.assign({}, next.platformConfigs || {});
+                  if (current !== null && current.platform) {
+                    for (var engineId in current.platform) {
+                      mergedPlatform[engineId] = Object.assign(
+                        {},
+                        (next.platformConfigs || {})[engineId] || {},
+                        current.platform[engineId],
+                      );
+                    }
+                  }
+                  return {
+                    engine: next.engineId,
+                    config: next.config,
+                    platform: mergedPlatform,
+                  };
                 });
                 noteState[1]('');
               })
@@ -1203,6 +1240,77 @@ window.__ModuleLoader__.load({
             });
           },
           [fetchSummary, fetchDeps],
+        );
+
+        // The Model Directory field edit. A valid directory (non-blank, no
+        // whitespace) plus an empty model auto-fills the engine's first
+        // default model, the "Defaults" special case: the Model field is the
+        // model directory plus the default list, and the auto entry is the
+        // special case the plan names.
+        var onModelDirectory = react.useCallback(
+          (value) => {
+            var trimmed = value === undefined || value === null ? '' : String(value).trim();
+            onValue('modelDirectory', trimmed === '' ? undefined : trimmed);
+            var currentModel =
+              draft !== null && draft.config && typeof draft.config.model === 'string'
+                ? draft.config.model
+                : '';
+            var firstDefault = (data !== null && data.modelDefaults || [])[0];
+            if (
+              trimmed !== '' &&
+              !/\s/.test(trimmed) &&
+              currentModel === '' &&
+              firstDefault !== undefined
+            ) {
+              onValue('model', firstDefault.id);
+            }
+          },
+          [onValue, draft, data],
+        );
+
+        // The Download button action: it runs the hf CLI download through the
+        // /local-infer/download route for the selected model and directory,
+        // then refreshes the summary so the model status row re-checks the
+        // directory. The note reports the answer the route returned.
+        var onDownload = react.useCallback(
+          () => {
+            if (draft === null || downloading) {
+              return;
+            }
+            downloadingState[1](true);
+            downloadNoteState[1]('');
+            fetch('/local-infer/download', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                engine: draft.engine,
+                model:
+                  typeof draft.config.model === 'string' ? draft.config.model : undefined,
+                directory:
+                  typeof draft.config.modelDirectory === 'string'
+                    ? draft.config.modelDirectory
+                    : undefined,
+              }),
+            })
+              .then((response) => response.json().then((body) => ({ ok: response.ok, body: body })))
+              .then(({ ok, body }) => {
+                if (ok && body.ok) {
+                  downloadNoteState[1](t.downloaded);
+                  fetchSummary(draft.engine, draft.config);
+                } else {
+                  downloadNoteState[1](t.downloadFailed + (body.detail ? ': ' + body.detail : ''));
+                }
+              })
+              .catch((error) => {
+                downloadNoteState[1](
+                  t.downloadFailed + (error && error.message ? ': ' + error.message : ''),
+                );
+              })
+              .then(() => {
+                downloadingState[1](false);
+              });
+          },
+          [draft, downloading, t, fetchSummary],
         );
 
         // A platform field edit updates the per-engine platform config in the
@@ -1600,7 +1708,12 @@ window.__ModuleLoader__.load({
               onSelect: (id) => onEngine(id),
             }),
           ),
-          (data.models || []).length > 0
+          // The Model row draws from the default model list plus the
+          // directory scan: the defaults are the models the plugin knows how
+          // to download, and the model files are the models the user already
+          // has in the model directory, launchable as-is. An engine with
+          // neither (Strata) carries no row.
+          (data.modelDefaults || []).length > 0 || (data.modelFiles || []).length > 0
             ? react.createElement(
                 'div',
                 { style: ROW_STYLE },
@@ -1610,9 +1723,16 @@ window.__ModuleLoader__.load({
                     draft.config && typeof draft.config.model === 'string'
                       ? draft.config.model
                       : '';
-                  var modelItems = [{ id: '', label: t.modelAuto }].concat(
-                    data.models.map((model) => ({ id: model.id, label: model.id })),
-                  );
+                  var modelItems = [{ id: '', label: t.modelAuto }]
+                    .concat(
+                      (data.modelDefaults || []).map((model) => ({
+                        id: model.id,
+                        label: model.label,
+                      })),
+                    )
+                    .concat(
+                      (data.modelFiles || []).map((file) => ({ id: file, label: file })),
+                    );
                   return renderSelect(react, primitives, {
                     value: modelValue,
                     label:
@@ -1658,8 +1778,10 @@ window.__ModuleLoader__.load({
               : null;
           })(),
           // The Model Directory row: the global model download directory
-          // (§3.10). A config field the deploy step's model download targets,
-          // so it rides the config round trip, not the platform map.
+          // (§3.10). The summary seeds it with the plugin's default
+          // (~/.dsh/models, created when absent), so the input always shows a
+          // real path. A config field the deploy step's model download
+          // targets, so it rides the config round trip, not the platform map.
           react.createElement(
             'div',
             { style: ROW_STYLE },
@@ -1675,15 +1797,65 @@ window.__ModuleLoader__.load({
                       ? draft.config.modelDirectory
                       : '',
                   placeholder: t.dirPlaceholder,
-                  onChange: (event) =>
-                    onValue(
-                      'modelDirectory',
-                      event.target.value === '' ? undefined : event.target.value,
-                    ),
+                  onChange: (event) => onModelDirectory(event.target.value),
                 },
               ),
             ),
           ),
+          (() => {
+            // The model status row: it shows while the selected model is
+            // absent from the model directory. With the hf CLI detected it
+            // names the download command and offers a Download button that
+            // runs it; without the CLI it links the model URL instead.
+            var status = data.modelStatus;
+            if (status === null || status === undefined || status.present) {
+              return null;
+            }
+            if (status.hfCli) {
+              return react.createElement(
+                'div',
+                { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 } },
+                react.createElement(
+                  'span',
+                  {
+                    style: {
+                      flex: 1,
+                      minWidth: 0,
+                      fontSize: 12,
+                      wordBreak: 'break-all',
+                      fontFamily: 'var(--dsw-alias-font-mono, ui-monospace, monospace)',
+                    },
+                  },
+                  t.hfCliDetected + ' ' + status.downloadCommand,
+                ),
+                renderButton(
+                  react,
+                  primitives,
+                  'ghost',
+                  { onClick: onDownload, disabled: downloading },
+                  downloading ? t.downloading : t.download,
+                ),
+              );
+            }
+            return react.createElement(
+              'div',
+              { style: { fontSize: 12, marginTop: 4 } },
+              t.noHfCli + ' ',
+              react.createElement(
+                'a',
+                {
+                  href: status.url,
+                  target: '_blank',
+                  rel: 'noreferrer',
+                  style: { color: 'var(--dsw-alias-accent, #0a84ff)' },
+                },
+                status.url,
+              ),
+            );
+          })(),
+          downloadNote !== ''
+            ? react.createElement('div', { style: { fontSize: 12 } }, downloadNote)
+            : null,
           (() => {
             // The Engine platform section: the per-engine Engine Directory and
             // Engine Fork (§3.10) the deploy step's clone/build step consumes.

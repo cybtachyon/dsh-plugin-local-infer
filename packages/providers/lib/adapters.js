@@ -15,20 +15,26 @@ import { HYPERQWEN_PARAMETERS } from "./hyperqwen.js";
 import { LLAMACPP_MODEL_ARTIFACTS, LLAMACPP_PARAMETERS, llamaCppModelKey, } from "./llamacpp.js";
 import { STRATA_PARAMETERS } from "./strata.js";
 /**
- * The NInfer model artifacts, keyed by the VramModel registry id. The 27B
- * entry is the artifact the qwen-ninfer launcher downloads; the 35B entry is
- * the 35B-A3B companion-weight artifact.
+ * The NInfer model artifacts, keyed by the model registry id. The 27B entry
+ * is the default the DEFAULT_MODELS list names; the 35B-A3B entries are the
+ * Qwen3.8 measured artifact (`qwen3-35b`) and the Qwen3.6 default
+ * (`qwen36-35b`).
  */
 export const NINFER_MODEL_ARTIFACTS = {
     'qwen3-27b': {
-        file: 'qwen3_8_27b_swift15abl_nvfp4full-dflash2.ninfer',
-        repo: 'kaushikvira/Qwen3.8-27B-swift15-uncensored-ajgazin-nvfp4full-dflash2-NInfer-v3',
+        file: 'qwen3_8_27b_nvfp4.ninfer',
+        repo: 'neroued/Qwen3.8-27B-nvfp4-NInfer',
         modelId: 'Qwen3.8-27B',
     },
     'qwen3-35b': {
         file: 'qwen3_8_35b_a3b.ninfer',
         repo: 'Neroued/Qwen3.8-35B-A3B-NInfer',
         modelId: 'Qwen3.8-35B-A3B',
+    },
+    'qwen36-35b': {
+        file: 'qwen3_6_35b_a3b.ninfer',
+        repo: 'neroued/Qwen3.6-35B-A3B-NInfer',
+        modelId: 'Qwen3.6-35B-A3B',
     },
 };
 /**
@@ -195,13 +201,17 @@ export class NInferAdapter extends EngineAdapter {
         const port = this.port(config);
         const modelId = typeof config.model === 'string' ? config.model : 'qwen3-27b';
         const artifact = artifactFor(modelId);
+        // A model key that names a local artifact file (a directory-scanned
+        // model) overrides the artifact map's file, so a file the user has on
+        // disk launches as-is.
+        const file = modelId.endsWith('.ninfer') ? modelId : artifact.file;
         const modelDirectory = typeof config.modelDirectory === 'string' ? config.modelDirectory : '';
         const flags = flagsFromSpecs(NINFER_PARAMETERS, config);
         if (this.buildMode(config) === 'docker') {
-            const modelPath = modelDirectory === '' ? artifact.file : join(modelDirectory, artifact.file);
-            const containerModelPath = `/models/${basename(artifact.file)}`;
+            const modelPath = modelDirectory === '' ? file : join(modelDirectory, file);
+            const containerModelPath = `/models/${basename(file)}`;
             const modelMount = modelDirectory === ''
-                ? `${artifact.file}:${containerModelPath}`
+                ? `${file}:${containerModelPath}`
                 : `${dirname(modelPath)}:/models`;
             const containerName = `ninfer-${port}`;
             return {
@@ -238,7 +248,7 @@ export class NInferAdapter extends EngineAdapter {
                 healthUrl: `http://127.0.0.1:${port}/health`,
             };
         }
-        const modelPath = modelDirectory === '' ? artifact.file : join(modelDirectory, artifact.file);
+        const modelPath = modelDirectory === '' ? file : join(modelDirectory, file);
         return {
             engineId: this.id,
             kind: 'process',
@@ -452,13 +462,17 @@ export class LlamaCppAdapter extends EngineAdapter {
         const port = this.port(config);
         const modelId = llamaCppModelKey(config);
         const artifact = llamaCppArtifact(modelId);
+        // A model key that names a local GGUF file (a directory-scanned model)
+        // overrides the artifact map's file, so a file the user has on disk
+        // launches as-is.
+        const file = modelId.endsWith('.gguf') ? modelId : artifact.file;
         const modelDirectory = typeof config.modelDirectory === 'string' ? config.modelDirectory : '';
         const flags = flagsFromSpecs(LLAMACPP_PARAMETERS, config);
         if (this.buildMode(config) === 'docker') {
-            const modelPath = modelDirectory === '' ? artifact.file : join(modelDirectory, artifact.file);
-            const containerModelPath = `/models/${basename(artifact.file)}`;
+            const modelPath = modelDirectory === '' ? file : join(modelDirectory, file);
+            const containerModelPath = `/models/${basename(file)}`;
             const modelMount = modelDirectory === ''
-                ? `${artifact.file}:${containerModelPath}`
+                ? `${file}:${containerModelPath}`
                 : `${dirname(modelPath)}:/models`;
             const containerName = `llamacpp-${port}`;
             return {
@@ -489,7 +503,7 @@ export class LlamaCppAdapter extends EngineAdapter {
                 healthUrl: `http://127.0.0.1:${port}/health`,
             };
         }
-        const modelPath = modelDirectory === '' ? artifact.file : join(modelDirectory, artifact.file);
+        const modelPath = modelDirectory === '' ? file : join(modelDirectory, file);
         return {
             engineId: this.id,
             kind: 'process',

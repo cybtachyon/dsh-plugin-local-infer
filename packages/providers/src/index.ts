@@ -52,6 +52,7 @@ export { ENGINES } from './engines.ts'
 export type { EngineInfo } from './engines.ts'
 export { ENGINE_DEP_PLANS, SYSTEM_DEPS } from './deps.ts'
 export { BUILTIN_PRESETS, PRESET_SOURCES, extractJsonBlock } from './presets.ts'
+export { DEFAULT_MODELS, defaultModelFor, defaultModelsForEngine } from './model-defaults.ts'
 export {
   HyperQwenAdapter,
   LLAMACPP_DOCKER_IMAGE,

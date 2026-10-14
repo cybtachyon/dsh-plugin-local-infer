@@ -17,15 +17,15 @@
  * mod-search bridge.
  * @module @dsh/dsh-plugin-local-infer/service
  */
-import { execFile, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { exec, execFile, spawn } from 'node:child_process';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { availableParallelism, cpus, homedir, platform, release, totalmem } from 'node:os';
 import { dirname, join } from 'node:path';
 import { Service } from '@deepseek-ai/cordis';
 // Relative, not the root package subpath: a self-referencing bare specifier
 // only resolves when the package sits inside a node_modules tree, so a
 // local-path or pnpm-linked install of this repo would fail the import.
-import { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, buildModelEntry, detectHardware as detectHardwareFromProbes, detectPackageManager, evaluateGuidelines, estimateVram, LLM_PI_AI_NAMESPACE, matchLaunchSignature, modelGuidelines, modelRowsFrom, parseNvidiaSmiGpu, parseNvidiaSmiGpuUsage, presetFromFetch, providerRegistrationOps, providerRemovalOps, removeModelRow, renderInstallString, resolveDefaults as resolveDefaultsFromPresets, resolveOsReserve, runInstall, } from '../../core/lib/index.js';
+import { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, buildModelEntry, detectHardware as detectHardwareFromProbes, detectPackageManager, evaluateGuidelines, estimateVram, hfDownloadCommand, LLM_PI_AI_NAMESPACE, matchLaunchSignature, modelGuidelines, modelRowsFrom, parseNvidiaSmiGpu, parseNvidiaSmiGpuUsage, presetFromFetch, providerRegistrationOps, providerRemovalOps, removeModelRow, renderInstallString, resolveDefaults as resolveDefaultsFromPresets, resolveOsReserve, runInstall, } from '../../core/lib/index.js';
 /**
  * Local-inference failure. Extends Error with a stable `code`
  * (`LOCAL_INFER_CONFLICT`, `LOCAL_INFER_INVALID_ENGINE`,
@@ -455,6 +455,80 @@ export class LocalInfer extends Service {
         return { preset, stored: true, degraded: false };
     }
     /**
+     * defaultModelDirectory is the plugin's model download directory: under
+     * the dsh home so a web user and a CLI user share one location, the way the
+     * config file does. The directory is created when absent, so the field's
+     * default is always a real path the deploy step can target.
+     */
+    defaultModelDirectory() {
+        const directory = join(homedir(), '.dsh', 'models');
+        mkdirSync(directory, { recursive: true });
+        return directory;
+    }
+    /**
+     * hfCliAvailable probes for the hf CLI the model download runs: an
+     * injected cliPath wins, then the `hf` binary on PATH. None found reads as
+     * null, which the card renders as the no-CLI row with the model URL.
+     */
+    async hfCliAvailable(options) {
+        const injected = options?.cliPath;
+        if (injected !== undefined && injected.trim() !== '')
+            return injected;
+        const which = await runCommand('which', ['hf']);
+        if (which.ok && which.stdout.trim() !== '')
+            return which.stdout.trim();
+        return null;
+    }
+    /**
+     * downloadModel runs the hf CLI download for one default model into the
+     * model directory: it creates the target directory when absent (the
+     * recursive flag covers the parents too), renders the command through the
+     * core builder (the single source the card shows), and runs it through the
+     * injected runner when one is given, so a test captures the command without
+     * a live hf. A failure keeps the runner's detail, so the card names the
+     * broken step.
+     */
+    async downloadModel(entry, directory, options) {
+        mkdirSync(directory, { recursive: true });
+        const runner = options?.runner ?? downloadRunner;
+        const result = await runner(hfDownloadCommand(entry, directory));
+        if (result.ok)
+            return { ok: true };
+        return { ok: false, detail: `model download failed: ${result.detail ?? 'unknown'}` };
+    }
+    /**
+     * listModelDirectory lists the top-level entries of a model directory, the
+     * data the Model dropdown's directory scan draws from. Dot entries (the
+     * `.cache` the hf CLI keeps) never name a model, so they are skipped. A
+     * directory entry carries the `hasSafetensors` marker the Hyper-Qwen
+     * filter reads: a repo folder with a weight file is a usable local model.
+     * A missing or unreadable directory reads as an empty list, which the
+     * route renders as "no local models".
+     */
+    listModelDirectory(directory) {
+        let dirents;
+        try {
+            dirents = readdirSync(directory, { withFileTypes: true });
+        }
+        catch {
+            return [];
+        }
+        const entries = [];
+        for (const dirent of dirents) {
+            if (dirent.name.startsWith('.'))
+                continue;
+            const isDirectory = dirent.isDirectory();
+            entries.push({
+                name: dirent.name,
+                isDirectory,
+                ...(isDirectory
+                    ? { hasSafetensors: hasSafetensorsIn(join(directory, dirent.name)) }
+                    : {}),
+            });
+        }
+        return entries;
+    }
+    /**
      * specsForEngine reads the parameter surface of the registered adapter for
      * an engine id, so the defaults resolver floors the result on that engine's
      * own spec defaults. An engine no adapter serves floors on an empty
@@ -721,6 +795,42 @@ const shellRunCommand = (command) => new Promise(resolve => {
         resolve({ ok: false, detail: `exit ${code}: ${output.trim().slice(-INSTALL_OUTPUT_TAIL)}` });
     });
 });
+/**
+ * The download timeout. A model download moves tens of GiB, so the cap is
+ * hours, not the probe's seconds; a hung download must not kill the panel,
+ * only the command.
+ */
+const DOWNLOAD_TIMEOUT_MS = 7_200_000;
+/**
+ * downloadRunner is the model-download runner: it runs the rendered hf CLI
+ * command through the system shell and reports the exit. The output tail keeps
+ * the last kilobyte, the same rule the install runner uses, so a failure names
+ * the broken line.
+ */
+const downloadRunner = (command) => new Promise(resolve => {
+    exec(command, { timeout: DOWNLOAD_TIMEOUT_MS }, (error, stdout, stderr) => {
+        if (error === null) {
+            resolve({ ok: true });
+            return;
+        }
+        const detail = `${stderr ?? ''}${stdout ?? ''}`.trim().slice(-INSTALL_OUTPUT_TAIL);
+        resolve({ ok: false, detail: detail === '' ? String(error) : detail });
+    });
+});
+/**
+ * hasSafetensorsIn reports whether one directory holds a `.safetensors`
+ * weight file, the marker the Hyper-Qwen filter uses to tell a model repo
+ * folder from a template or cache directory. An unreadable directory reads
+ * as no weights.
+ */
+function hasSafetensorsIn(directory) {
+    try {
+        return readdirSync(directory).some((name) => name.endsWith('.safetensors'));
+    }
+    catch {
+        return false;
+    }
+}
 /**
  * probeGpu reads the GPU through nvidia-smi's CSV query. Any failure (no
  * nvidia-smi, no GPU, a hung daemon) degrades to null, which detection reads

@@ -78,11 +78,16 @@ describe('llama.cpp parameter surface', () => {
     expect(argvFor('jinja', false)).toEqual([])
   })
 
-  it('ships the 27B GGUF artifact with the key the config names', () => {
-    expect(Object.keys(LLAMACPP_MODEL_ARTIFACTS)).toEqual(['qwen3-27b'])
+  it('ships the default GGUF artifacts with the keys the config names', () => {
+    expect(Object.keys(LLAMACPP_MODEL_ARTIFACTS)).toEqual(['qwen3-27b', 'qwen36-35b'])
     const artifact = LLAMACPP_MODEL_ARTIFACTS['qwen3-27b']!
-    expect(artifact.file).toBe('Qwen3-8-27B-q4_k_m.gguf')
+    expect(artifact.file).toBe('Qwen3.8-27B-Q4_K_M.gguf')
+    expect(artifact.repo).toBe('ggml-org/Qwen3.8-27B-GGUF')
     expect(artifact.modelId).toBe('Qwen3.8-27B')
+    const thirtyFive = LLAMACPP_MODEL_ARTIFACTS['qwen36-35b']!
+    expect(thirtyFive.file).toBe('Qwen3.6-35B-A3B-Q4_K_M.gguf')
+    expect(thirtyFive.repo).toBe('bartowski/Qwen_Qwen3.6-35B-A3B-GGUF')
+    expect(thirtyFive.modelId).toBe('Qwen3.6-35B-A3B')
   })
 
   it('resolves the model key from the config, defaulting to the 27B entry', () => {

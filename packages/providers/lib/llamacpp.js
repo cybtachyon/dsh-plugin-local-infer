@@ -26,14 +26,19 @@ export const KV_CACHE_TYPE_OPTIONS = [
 ];
 /**
  * The llama.cpp model artifacts, keyed by the config model key. The 27B entry
- * is the Qwen3.8-27B GGUF the launcher downloads; an id no entry names falls
+ * is the default the DEFAULT_MODELS list names; an id no entry names falls
  * back to it, so a bare config always renders a plan.
  */
 export const LLAMACPP_MODEL_ARTIFACTS = {
     'qwen3-27b': {
-        file: 'Qwen3-8-27B-q4_k_m.gguf',
-        repo: 'Qwen/Qwen3.8-27B-GGUF',
+        file: 'Qwen3.8-27B-Q4_K_M.gguf',
+        repo: 'ggml-org/Qwen3.8-27B-GGUF',
         modelId: 'Qwen3.8-27B',
+    },
+    'qwen36-35b': {
+        file: 'Qwen3.6-35B-A3B-Q4_K_M.gguf',
+        repo: 'bartowski/Qwen_Qwen3.6-35B-A3B-GGUF',
+        modelId: 'Qwen3.6-35B-A3B',
     },
 };
 /**

@@ -82,7 +82,7 @@ describe('NInferAdapter.renderLaunch', () => {
     expect(plan.modelDirectory).toBe('/models')
     const argv = plan.argv ?? []
     expect(argv[0]).toBe('ninfer-serve')
-    expect(argv[1]).toBe('/models/qwen3_8_27b_swift15abl_nvfp4full-dflash2.ninfer')
+    expect(argv[1]).toBe('/models/qwen3_8_27b_nvfp4.ninfer')
     expect(argv).toContain('--port')
     expect(argv).toContain('18020')
     expect(argv).toContain('--kv-dtype')
@@ -120,6 +120,21 @@ describe('NInferAdapter.renderLaunch', () => {
     const plan = adapter.renderLaunch({ port: 18020 }, HW)
     expect(plan.modelId).toBe('qwen3-27b')
     expect(plan.argv?.[1]).toBe(NINFER_MODEL_ARTIFACTS['qwen3-27b']!.file)
+  })
+
+  it('launches a directory-scanned .ninfer file as-is', () => {
+    const { host } = stubHost()
+    const adapter = new NInferAdapter(host)
+    const plan = adapter.renderLaunch(
+      {
+        model: 'qwen3_8_27b_swift15abl_nvfp4full-dflash2.ninfer',
+        modelDirectory: '/models',
+        port: 18020,
+      },
+      HW,
+    )
+    expect(plan.modelId).toBe('qwen3_8_27b_swift15abl_nvfp4full-dflash2.ninfer')
+    expect(plan.argv?.[1]).toBe('/models/qwen3_8_27b_swift15abl_nvfp4full-dflash2.ninfer')
   })
 })
 
@@ -435,7 +450,7 @@ describe('LlamaCppAdapter', () => {
     const argv = plan.argv ?? []
     expect(argv[0]).toBe('llama-server')
     expect(argv).toContain('--model')
-    expect(argv).toContain('/models/Qwen3-8-27B-q4_k_m.gguf')
+    expect(argv).toContain('/models/Qwen3.8-27B-Q4_K_M.gguf')
     expect(argv).toContain('--ctx-size')
     expect(argv).toContain('8192')
     expect(argv).toContain('--cache-type-k')
@@ -458,7 +473,7 @@ describe('LlamaCppAdapter', () => {
     expect(argv[1]).toBe('run')
     expect(argv).toContain(LLAMACPP_DOCKER_IMAGE)
     expect(argv).toContain('--model')
-    expect(argv).toContain('/models/Qwen3-8-27B-q4_k_m.gguf')
+    expect(argv).toContain('/models/Qwen3.8-27B-Q4_K_M.gguf')
   })
 
   it('defaults to the 27B artifact and the 8080 port when the config names neither', () => {
@@ -467,7 +482,18 @@ describe('LlamaCppAdapter', () => {
     const plan = adapter.renderLaunch({}, HW)
     expect(plan.modelId).toBe('qwen3-27b')
     expect(plan.port).toBe(8080)
-    expect(plan.argv?.[2]).toBe('Qwen3-8-27B-q4_k_m.gguf')
+    expect(plan.argv?.[2]).toBe('Qwen3.8-27B-Q4_K_M.gguf')
+  })
+
+  it('launches a directory-scanned .gguf file as-is', () => {
+    const { host } = stubHost()
+    const adapter = new LlamaCppAdapter(host)
+    const plan = adapter.renderLaunch(
+      { model: 'Qwen3.8-27B-Q4_K_M.gguf', modelDirectory: '/models', port: 8080 },
+      HW,
+    )
+    expect(plan.modelId).toBe('Qwen3.8-27B-Q4_K_M.gguf')
+    expect(plan.argv).toContain('/models/Qwen3.8-27B-Q4_K_M.gguf')
   })
 
   it('builds in the engine directory, downloads the GGUF, and spawns the engine', async () => {

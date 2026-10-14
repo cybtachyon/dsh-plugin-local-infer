@@ -1,8 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { EngineAdapter, estimateVram } from '@dsh/dsh-plugin-local-infer/core'
 import type {
   Config,
+  DefaultModel,
   DeployResult,
   EngineDepPlan,
   EngineLaunchSignature,
@@ -987,5 +991,112 @@ describe('ctx.localInfer OS reserve (Phase 10)', () => {
     const over = results.find((result) => result.id === 'vram-exceeds-usable')
     expect(over?.level).toBe('error')
     expect(over?.anchors).toEqual(['maxContext'])
+  })
+})
+
+describe('model directory, hf CLI, and model download', () => {
+  let home: string
+
+  beforeAll(() => {
+    // defaultModelDirectory keys on homedir(), so the suite points HOME at a
+    // scratch dir and never touches the real one.
+    home = mkdtempSync(join(tmpdir(), 'local-infer-service-'))
+    process.env.HOME = home
+  })
+
+  afterAll(() => {
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  it('resolves the default model directory under the dsh home and creates it', async () => {
+    const ctx = await seam()
+    const directory = ctx.localInfer.defaultModelDirectory()
+    expect(directory).toBe(join(home, '.dsh', 'models'))
+    expect(existsSync(directory)).toBe(true)
+  })
+
+  it('lets an injected cliPath win in the hf CLI probe', async () => {
+    const ctx = await seam()
+    expect(await ctx.localInfer.hfCliAvailable({ cliPath: '/opt/hf/bin/hf' })).toBe(
+      '/opt/hf/bin/hf',
+    )
+  })
+
+  it('reads the live hf CLI probe as a path or null', async () => {
+    const ctx = await seam()
+    const answer = await ctx.localInfer.hfCliAvailable()
+    expect(answer === null || typeof answer === 'string').toBe(true)
+  })
+
+  it('renders the hf download command through the injected runner and creates the target', async () => {
+    const ctx = await seam()
+    const entry: DefaultModel = {
+      engineId: 'ninfer',
+      modelId: 'qwen3-27b',
+      label: 'Ninfer Qwen3.8-27B',
+      url: 'https://huggingface.co/neroued/Qwen3.8-27B-nvfp4-NInfer',
+      file: 'qwen3_8_27b_nvfp4.ninfer',
+    }
+    const commands: string[] = []
+    const runner = async (command: string) => {
+      commands.push(command)
+      return { ok: true }
+    }
+    const target = join(home, 'models')
+    const result = await ctx.localInfer.downloadModel(entry, target, { runner })
+    expect(result).toEqual({ ok: true })
+    expect(commands).toEqual([
+      `hf download neroued/Qwen3.8-27B-nvfp4-NInfer qwen3_8_27b_nvfp4.ninfer --local-dir ${target}`,
+    ])
+    expect(existsSync(target)).toBe(true)
+  })
+
+  it('keeps the runner detail on a failed download', async () => {
+    const ctx = await seam()
+    const entry: DefaultModel = {
+      engineId: 'hyperqwen',
+      modelId: 'qwen3-27b',
+      label: 'HyperQwen Qwen3.8-27B',
+      url: 'https://huggingface.co/born2bewild/Qwen3.8-27B-W4A16-AutoRound-fast',
+    }
+    const result = await ctx.localInfer.downloadModel(entry, join(home, 'models'), {
+      runner: async () => ({ ok: false, detail: 'exit 1: no such repo' }),
+    })
+    expect(result.ok).toBe(false)
+    expect(result.detail).toContain('no such repo')
+  })
+
+  it('lists the model directory entries and marks the weight-bearing directories', async () => {
+    const ctx = await seam()
+    const dir = join(home, 'scan')
+    mkdirSync(join(dir, 'weights-repo'), { recursive: true })
+    writeFileSync(join(dir, 'weights-repo', 'model.safetensors'), 'weights')
+    mkdirSync(join(dir, 'templates'), { recursive: true })
+    writeFileSync(join(dir, 'templates', 'template.json'), '{}')
+    writeFileSync(join(dir, 'a.ninfer'), 'weights')
+    writeFileSync(join(dir, 'b.gguf'), 'weights')
+    mkdirSync(join(dir, '.cache'), { recursive: true })
+    const entries = ctx.localInfer.listModelDirectory(dir)
+    expect(entries.map((entry) => entry.name).sort()).toEqual([
+      'a.ninfer',
+      'b.gguf',
+      'templates',
+      'weights-repo',
+    ])
+    // Dot entries never name a model, so the listing skips them.
+    expect(entries.some((entry) => entry.name === '.cache')).toBe(false)
+    const repo = entries.find((entry) => entry.name === 'weights-repo')!
+    expect(repo.isDirectory).toBe(true)
+    expect(repo.hasSafetensors).toBe(true)
+    const templates = entries.find((entry) => entry.name === 'templates')!
+    expect(templates.isDirectory).toBe(true)
+    expect(templates.hasSafetensors).toBe(false)
+    const artifact = entries.find((entry) => entry.name === 'a.ninfer')!
+    expect(artifact.isDirectory).toBe(false)
+  })
+
+  it('reads a missing model directory as an empty list', async () => {
+    const ctx = await seam()
+    expect(ctx.localInfer.listModelDirectory(join(home, 'no-such-dir'))).toEqual([])
   })
 })

@@ -18,9 +18,9 @@
  * @module @dsh/dsh-plugin-local-infer/service
  */
 import { Context, Service } from '@deepseek-ai/cordis';
-import type { Config, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, RegisterResult, ReserveResolution, ResolvedDefaults, SystemDep, VramModel } from '@dsh/dsh-plugin-local-infer/core';
-import type { DetectOsReserveOptions, EstimateResult, FetchPresetOptions, FetchPresetResult, LaunchOptions, LaunchResult, LocalInferService, RegisterModelOptions } from './types.ts';
-export type { DetectOsReserveOptions, EstimateResult, FetchPresetOptions, FetchPresetResult, LaunchOptions, LaunchResult, LocalInferService, RegisterModelOptions, SettingsForms, SettingsNamespaceDescriptor, } from './types.ts';
+import type { Config, DefaultModel, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, RegisterResult, ReserveResolution, ResolvedDefaults, SystemDep, VramModel } from '@dsh/dsh-plugin-local-infer/core';
+import type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, RegisterModelOptions } from './types.ts';
+export type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, RegisterModelOptions, SettingsForms, SettingsNamespaceDescriptor, } from './types.ts';
 declare module '@deepseek-ai/cordis' {
     interface Context {
         localInfer: LocalInferService;
@@ -199,6 +199,39 @@ export declare class LocalInfer extends Service implements LocalInferService {
      * presets and says so.
      */
     fetchPreset(source: PresetSource, options?: FetchPresetOptions): Promise<FetchPresetResult>;
+    /**
+     * defaultModelDirectory is the plugin's model download directory: under
+     * the dsh home so a web user and a CLI user share one location, the way the
+     * config file does. The directory is created when absent, so the field's
+     * default is always a real path the deploy step can target.
+     */
+    defaultModelDirectory(): string;
+    /**
+     * hfCliAvailable probes for the hf CLI the model download runs: an
+     * injected cliPath wins, then the `hf` binary on PATH. None found reads as
+     * null, which the card renders as the no-CLI row with the model URL.
+     */
+    hfCliAvailable(options?: HfCliOptions): Promise<string | null>;
+    /**
+     * downloadModel runs the hf CLI download for one default model into the
+     * model directory: it creates the target directory when absent (the
+     * recursive flag covers the parents too), renders the command through the
+     * core builder (the single source the card shows), and runs it through the
+     * injected runner when one is given, so a test captures the command without
+     * a live hf. A failure keeps the runner's detail, so the card names the
+     * broken step.
+     */
+    downloadModel(entry: DefaultModel, directory: string, options?: DownloadModelOptions): Promise<DownloadResult>;
+    /**
+     * listModelDirectory lists the top-level entries of a model directory, the
+     * data the Model dropdown's directory scan draws from. Dot entries (the
+     * `.cache` the hf CLI keeps) never name a model, so they are skipped. A
+     * directory entry carries the `hasSafetensors` marker the Hyper-Qwen
+     * filter reads: a repo folder with a weight file is a usable local model.
+     * A missing or unreadable directory reads as an empty list, which the
+     * route renders as "no local models".
+     */
+    listModelDirectory(directory: string): ModelDirectoryEntry[];
     /**
      * specsForEngine reads the parameter surface of the registered adapter for
      * an engine id, so the defaults resolver floors the result on that engine's

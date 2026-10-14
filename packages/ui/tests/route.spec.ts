@@ -4,12 +4,14 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type {
   Config,
+  DefaultModel,
   EngineAdapter,
   EnginePlatformConfig,
   GuidelineResult,
   HardwareProfile,
   InstallResult,
   LaunchPlan,
+  ModelDirectoryEntry,
   ModelRow,
   RegisterResult,
   SystemDep,
@@ -18,6 +20,7 @@ import type {
   VramVerdict,
 } from '@dsh/dsh-plugin-local-infer/core'
 import type {
+  DownloadResult,
   LaunchResult,
   LocalInferService,
   RegisterModelOptions,
@@ -25,6 +28,7 @@ import type {
 import {
   buildDeps,
   buildSummary,
+  downloadFor,
   launchEngine,
   localInferConfigPath,
   readConfig,
@@ -124,6 +128,10 @@ function stubService(
     onRemove?: (args: { providerId: string; modelId: string }) => void
     onPlatform?: (config: EnginePlatformConfig) => void
     models?: readonly VramModel[]
+    hfCliPath?: string | null
+    onDownload?: (args: { entry: DefaultModel; directory: string }) => void
+    downloadResult?: DownloadResult
+    modelEntries?: ModelDirectoryEntry[]
   } = {},
 ): LocalInferService {
   return {
@@ -190,8 +198,22 @@ function stubService(
       provenance: [],
     }),
     fetchPreset: async () => ({ preset: undefined, stored: false, degraded: true }),
+    defaultModelDirectory: () => MODEL_DIR,
+    hfCliAvailable: async () => extras.hfCliPath ?? null,
+    downloadModel: async (entry: DefaultModel, directory: string) => {
+      extras.onDownload?.({ entry, directory })
+      return extras.downloadResult ?? { ok: true }
+    },
+    listModelDirectory: () => extras.modelEntries ?? [],
   } as unknown as LocalInferService
 }
+
+/**
+ * The model directory the stub service's defaultModelDirectory names. The
+ * presence tests create the artifact file here, so the path is a real
+ * directory the suite owns, not a literal.
+ */
+const MODEL_DIR = mkdtempSync(join(tmpdir(), 'local-infer-models-'))
 
 describe('local-infer route read model', () => {
   let home: string
@@ -663,6 +685,7 @@ describe('route handlers over a fake web server', () => {
       '/local-infer/save',
       '/local-infer/deps',
       '/local-infer/install',
+      '/local-infer/download',
       '/local-infer/launch',
       '/local-infer/stop',
       '/local-infer/register',
@@ -755,6 +778,7 @@ describe('route handlers over a fake web server', () => {
       if (
         route.path === '/local-infer/save' ||
         route.path === '/local-infer/install' ||
+        route.path === '/local-infer/download' ||
         route.path === '/local-infer/launch' ||
         route.path === '/local-infer/stop' ||
         route.path === '/local-infer/register' ||
@@ -937,5 +961,179 @@ describe('route handler error branches', () => {
     const brokenRes = fakeRes()
     await stop.handler(fakeReq('POST', '/local-infer/stop', '{broken'), brokenRes)
     expect(brokenRes.status).toBe(500)
+  })
+
+  it('serves the download route and maps the service answer through', async () => {
+    let seen: { entry: DefaultModel; directory: string } | undefined
+    const service = stubService([], {
+      onDownload: (args) => {
+        seen = args
+      },
+    })
+    const list = routes(service)
+    const download = find(list, '/local-infer/download')
+    const res = fakeRes()
+    await download.handler(
+      fakeReq(
+        'POST',
+        '/local-infer/download',
+        JSON.stringify({ engine: 'ninfer', model: 'qwen3-27b', directory: '/custom/models' }),
+      ),
+      res,
+    )
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual({ ok: true })
+    expect(seen?.entry?.modelId).toBe('qwen3-27b')
+    expect(seen?.directory).toBe('/custom/models')
+  })
+
+  it('answers 404 for a download the default list does not name', async () => {
+    const list = routes(stubService([]))
+    const download = find(list, '/local-infer/download')
+    const res = fakeRes()
+    await download.handler(
+      fakeReq('POST', '/local-infer/download', JSON.stringify({ engine: 'strata' })),
+      res,
+    )
+    expect(res.status).toBe(404)
+    expect(JSON.parse(res.body).error).toContain('no default model')
+  })
+})
+
+describe('model defaults, status, and download read model', () => {
+  let home: string
+
+  beforeAll(() => {
+    home = mkdtempSync(join(tmpdir(), 'local-infer-models-route-'))
+    process.env.HOME = home
+  })
+
+  afterAll(() => {
+    rmSync(home, { recursive: true, force: true })
+    rmSync(MODEL_DIR, { recursive: true, force: true })
+  })
+
+  it('seeds the summary with the model directory and the engine default models', async () => {
+    const summary = await buildSummary(stubService([]), { engine: 'ninfer', config: {} })
+    expect(summary.modelDirectory).toBe(MODEL_DIR)
+    expect(summary.modelDefaults).toEqual([
+      {
+        id: 'qwen3-27b',
+        label: 'Ninfer Qwen3.8-27B',
+        url: 'https://huggingface.co/neroued/Qwen3.8-27B-nvfp4-NInfer',
+      },
+      {
+        id: 'qwen36-35b',
+        label: 'Ninfer Qwen3.6-35B',
+        url: 'https://huggingface.co/neroued/Qwen3.6-35B-A3B-NInfer',
+      },
+    ])
+    // An engine with no defaults (Strata) carries an empty list and a null
+    // status, so the card renders no Model row for it.
+    const strata = await buildSummary(stubService([]), { engine: 'strata', config: {} })
+    expect(strata.modelDefaults).toEqual([])
+    expect(strata.modelStatus).toBeNull()
+  })
+
+  it('applies the default directory to the config when the user named none', async () => {
+    const summary = await buildSummary(stubService([]), { engine: 'ninfer', config: {} })
+    expect(summary.config.modelDirectory).toBe(MODEL_DIR)
+  })
+
+  it('keeps a user-named directory over the default', async () => {
+    const summary = await buildSummary(stubService([]), {
+      engine: 'ninfer',
+      config: { modelDirectory: '/custom/models' },
+    })
+    expect(summary.config.modelDirectory).toBe('/custom/models')
+    expect(summary.modelStatus?.downloadCommand).toContain('--local-dir /custom/models')
+  })
+
+  it('reads an absent model as the no-CLI row with the download command', async () => {
+    const summary = await buildSummary(stubService([], { hfCliPath: null }), {
+      engine: 'ninfer',
+      config: {},
+    })
+    expect(summary.modelStatus).toEqual({
+      modelId: 'qwen3-27b',
+      label: 'Ninfer Qwen3.8-27B',
+      url: 'https://huggingface.co/neroued/Qwen3.8-27B-nvfp4-NInfer',
+      present: false,
+      hfCli: false,
+      downloadCommand: `hf download neroued/Qwen3.8-27B-nvfp4-NInfer qwen3_8_27b_nvfp4.ninfer --local-dir ${MODEL_DIR}`,
+    })
+  })
+
+  it('reports the hf CLI detected when the probe finds it', async () => {
+    const summary = await buildSummary(stubService([], { hfCliPath: '/usr/local/bin/hf' }), {
+      engine: 'ninfer',
+      config: {},
+    })
+    expect(summary.modelStatus?.hfCli).toBe(true)
+  })
+
+  it('reads the model as present when its artifact file is in the directory', async () => {
+    writeFileSync(join(MODEL_DIR, 'qwen3_8_27b_nvfp4.ninfer'), 'weights')
+    const summary = await buildSummary(stubService([]), { engine: 'ninfer', config: {} })
+    expect(summary.modelStatus?.present).toBe(true)
+    rmSync(join(MODEL_DIR, 'qwen3_8_27b_nvfp4.ninfer'))
+  })
+
+  it('resolves the download through the service with the request directory', async () => {
+    let seen: { entry: DefaultModel; directory: string } | undefined
+    const service = stubService([], {
+      onDownload: (args) => {
+        seen = args
+      },
+    })
+    const result = await downloadFor(service, {
+      engine: 'ninfer',
+      model: 'qwen36-35b',
+      directory: '/custom/models',
+    })
+    expect(result).toEqual({ ok: true })
+    expect(seen?.entry?.url).toBe('https://huggingface.co/neroued/Qwen3.6-35B-A3B-NInfer')
+    expect(seen?.directory).toBe('/custom/models')
+  })
+
+  it('falls back to the stored config directory and model when the request names none', async () => {
+    writeConfig('ninfer', { model: 'qwen3-27b', modelDirectory: '/stored/models' }, false)
+    let seen: { entry: DefaultModel; directory: string } | undefined
+    const service = stubService([], {
+      onDownload: (args) => {
+        seen = args
+      },
+    })
+    await downloadFor(service, {})
+    expect(seen?.entry?.modelId).toBe('qwen3-27b')
+    expect(seen?.directory).toBe('/stored/models')
+  })
+
+  it('refuses a download for a model no default names with a 404', async () => {
+    await expect(downloadFor(stubService([]), { engine: 'strata', model: 'qwen3-27b' })).rejects.toThrow(
+      expect.objectContaining<RouteError>({ status: 404 }),
+    )
+  })
+
+  it('seeds the summary with the directory-scanned model files for the engine', async () => {
+    const service = stubService([], {
+      modelEntries: [
+        { name: 'qwen3_8_27b_swift15abl_nvfp4full-dflash2.ninfer', isDirectory: false },
+        { name: 'Qwen3.8-27B-Q4_K_M.gguf', isDirectory: false },
+        { name: 'Qwen3.8-27B-W4A16-AutoRound-fast', isDirectory: true, hasSafetensors: true },
+        { name: 'froggeric_Qwen-Fixed-Chat-Templates', isDirectory: true, hasSafetensors: false },
+      ],
+    })
+    const ninfer = await buildSummary(service, { engine: 'ninfer', config: {} })
+    expect(ninfer.modelFiles).toEqual([
+      'qwen3_8_27b_swift15abl_nvfp4full-dflash2.ninfer',
+    ])
+    const llamacpp = await buildSummary(service, { engine: 'llamacpp', config: {} })
+    expect(llamacpp.modelFiles).toEqual(['Qwen3.8-27B-Q4_K_M.gguf'])
+    const hyperqwen = await buildSummary(service, { engine: 'hyperqwen', config: {} })
+    expect(hyperqwen.modelFiles).toEqual(['Qwen3.8-27B-W4A16-AutoRound-fast'])
+    // Strata offers no dense-Qwen model, so the scan reads as empty.
+    const strata = await buildSummary(service, { engine: 'strata', config: {} })
+    expect(strata.modelFiles).toEqual([])
   })
 })
