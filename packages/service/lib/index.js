@@ -16,7 +16,10 @@
 import { execFile } from 'node:child_process';
 import { availableParallelism, cpus, platform, release, totalmem } from 'node:os';
 import { Service } from '@deepseek-ai/cordis';
-import { detectHardware as detectHardwareFromProbes, estimateVram, parseNvidiaSmiGpu, } from '@dsh/dsh-plugin-local-infer/core';
+// Relative, not the root package subpath: a self-referencing bare specifier
+// only resolves when the package sits inside a node_modules tree, so a
+// local-path or pnpm-linked install of this repo would fail the import.
+import { detectHardware as detectHardwareFromProbes, estimateVram, parseNvidiaSmiGpu, } from '../../core/lib/index.js';
 /**
  * Local-inference failure. Extends Error with a stable `code`
  * (`LOCAL_INFER_CONFLICT`, `LOCAL_INFER_INVALID_ENGINE`,

@@ -10,7 +10,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { ENGINES } from '@dsh/dsh-plugin-local-infer/providers';
+// Relative, not the root package subpath: a self-referencing bare specifier
+// only resolves when the package sits inside a node_modules tree, so a
+// local-path or pnpm-linked install of this repo would fail the import.
+import { ENGINES } from '../../providers/lib/index.js';
 import { renderForm } from "./form.js";
 import { renderMeter } from "./meter.js";
 /**

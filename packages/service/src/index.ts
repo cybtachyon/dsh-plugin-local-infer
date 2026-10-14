@@ -17,11 +17,14 @@
 import { execFile } from 'node:child_process'
 import { availableParallelism, cpus, platform, release, totalmem } from 'node:os'
 import { Context, Service } from '@deepseek-ai/cordis'
+// Relative, not the root package subpath: a self-referencing bare specifier
+// only resolves when the package sits inside a node_modules tree, so a
+// local-path or pnpm-linked install of this repo would fail the import.
 import {
   detectHardware as detectHardwareFromProbes,
   estimateVram,
   parseNvidiaSmiGpu,
-} from '@dsh/dsh-plugin-local-infer/core'
+} from '../../core/lib/index.js'
 import type {
   Config,
   EngineAdapter,

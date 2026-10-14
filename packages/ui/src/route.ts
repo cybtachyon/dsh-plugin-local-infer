@@ -14,7 +14,10 @@ import { dirname, join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Config, HardwareProfile, VramVerdict } from '@dsh/dsh-plugin-local-infer/core'
 import type { LocalInferService } from '@dsh/dsh-plugin-local-infer/service'
-import { ENGINES } from '@dsh/dsh-plugin-local-infer/providers'
+// Relative, not the root package subpath: a self-referencing bare specifier
+// only resolves when the package sits inside a node_modules tree, so a
+// local-path or pnpm-linked install of this repo would fail the import.
+import { ENGINES } from '../../providers/lib/index.js'
 import { renderForm } from './form.ts'
 import type { FormModel } from './form.ts'
 import { renderMeter } from './meter.ts'
