@@ -1047,15 +1047,16 @@ Plugins page:
   remaining data edits). The renderer draws it as a native `input` + `datalist`, so the
   known options suggest and any path or HF repo reference types.
 - **Remaining against the plan's direction.** The engine- and user-added combo option
-  sources, and the Phase 7 preset data, are not built yet. The Phase 5 host-side lifecycle
-  (the `launch` and `stop` service entry points and the `POST /local-infer/launch` and
-  `POST /local-infer/stop` routes) is built; the card's build / deploy / stop controls that
-  call them are the remaining Phase 8 surface. The card today is the configure-and-size
-  surface with the Phase 4 system-dependency panel (its `Save` persists the config and the
-  `allowRunDeps` trust gate the later phases will consume), the Phase 6 DSH model row (its
-  `Register` publishes the engine through the settings seam and `Remove` pulls the entry
-  back), and the §3.10 directory fields (the Model Directory row and the per-engine Engine
-  Directory / Engine Fork fields the deploy step consumes).
+  sources, and the Phase 7 preset data, are not built yet. The card's build / deploy / stop
+  controls landed with the Phase 8 lifecycle-controls chunk (the Launch / Stop row that calls
+  the `POST /local-infer/launch` and `POST /local-infer/stop` routes), so the card today is
+  the configure-and-size surface with the Phase 4 system-dependency panel (its `Save`
+  persists the config and the `allowRunDeps` trust gate the later phases will consume), the
+  engine lifecycle row (its `Launch` runs the deploy and health poll and `Stop` signals the
+  tracked process or container), the Phase 6 DSH model row (its `Register` publishes the
+  engine through the settings seam and `Remove` pulls the entry back), and the §3.10
+  directory fields (the Model Directory row and the per-engine Engine Directory / Engine
+  Fork fields the deploy step consumes).
 
 ### Directory fields (§3.10) (complete)
 
@@ -1086,3 +1087,43 @@ Plugins page:
   new platform suite (the file round trip, the malformed-map degrade, the summary
   exposure, the launch pass-through, and the no-override keeps-stored case);
   `npx eslint` clean.
+
+### Phase 8 (lifecycle controls) (complete)
+
+The card's build / deploy / stop controls landed, closing the remaining Phase 8
+surface. The host-side lifecycle (the `launch` and `stop` service entry points and
+the `POST /local-infer/launch` and `POST /local-infer/stop` routes) was already
+built in Phase 5; this chunk is the card surface that calls them.
+
+- **`dsh/client.js`: the engine lifecycle row.** The card gains a Launch / Stop row
+  between the system-dependency panel and the DSH model row. `Launch` posts the
+  draft's engine and config to `/local-infer/launch`, riding the card's unsaved
+  per-engine platform entry (the Engine Directory / Engine Fork edits) so a launch
+  uses them without a prior save, the same rule the route's `LaunchRequest.platform`
+  documents. The route runs the deploy and the health poll and answers the
+  `LaunchResult`; the card reports it in a note (running on the plan's port when
+  healthy, the detail string when not). `Stop` posts the same body to
+  `/local-infer/stop` and reports the stop answer. Both buttons show their
+  in-progress state (`launching...` / `stopping...`) and disable while in flight.
+- **The Launch gate.** `Launch` stays disabled while a launch is in flight, while a
+  stop is in flight, and while the deps panel reports a missing host dependency.
+  That last condition is the same gate the panel's "Get" button reads, so the card
+  and the panel never disagree about when the deploy may proceed. A host without the
+  deps route (the panel reads null) leaves the gate open.
+- **Note lifecycle.** The lifecycle note clears on a field edit, an engine switch,
+  and a discard, so a stale launch answer never outlives the config it described.
+- **`ui`: the carrier smoke test.** `packages/ui/tests/client.spec.ts` loads the
+  hand-written `dsh/client.js` under a fake `window.__ModuleLoader__` and pins the
+  contract the dsh client-module scan and the card's routes rely on: the lazy-CJS
+  plugin shape (`apply` plus an empty `inject`), the locale and slots seam
+  registration, the mount path that registers both slot declarations when the route
+  probe succeeds, and the eight route paths the card calls (the launch and stop
+  routes among them). The test is the first regression gate on the carrier, which
+  had no test of its own.
+- **Relationship established.** the card's lifecycle controls → the Phase 5 launch
+  and stop routes → the service's deploy and health poll, with the stored config and
+  the unsaved platform entry the single source the card, the route, and the service
+  all read.
+- **Gates green.** `tsc -b` clean; `vitest run` 233/233 across 23 files, including
+  the new carrier suite (the plugin shape, the seam registration, the mount path,
+  and the route contract); `npx eslint` clean.

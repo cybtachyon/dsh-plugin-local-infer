@@ -77,6 +77,15 @@ window.__ModuleLoader__.load({
         registerFailed: 'register failed',
         unregistered: 'removed',
         unregisterFailed: 'remove failed',
+        launch: 'Launch',
+        launching: 'launching...',
+        launchFailed: 'launch failed',
+        runningOn: 'running on port',
+        notHealthy: 'not healthy',
+        stop: 'Stop',
+        stopping: 'stopping...',
+        stopped: 'stopped',
+        stopFailed: 'stop failed',
         modelDirectory: 'Model Directory',
         enginePlatform: 'Engine platform',
         engineDirectory: 'Engine Directory',
@@ -134,6 +143,15 @@ window.__ModuleLoader__.load({
         registerFailed: '注册失败',
         unregistered: '已移除',
         unregisterFailed: '移除失败',
+        launch: '启动',
+        launching: '启动中…',
+        launchFailed: '启动失败',
+        runningOn: '运行于端口',
+        notHealthy: '不健康',
+        stop: '停止',
+        stopping: '停止中…',
+        stopped: '已停止',
+        stopFailed: '停止失败',
         modelDirectory: '模型目录',
         enginePlatform: '引擎平台',
         engineDirectory: '引擎目录',
@@ -842,6 +860,14 @@ window.__ModuleLoader__.load({
         var removingState = react.useState(false);
         var registerNoteState = react.useState('');
         var agentDefaultState = react.useState(false);
+        // The engine lifecycle state. Launch runs the deploy and the health
+        // poll through the /local-infer/launch route; Stop signals the
+        // tracked process or container through /local-infer/stop. The note
+        // reports the answer the route returned, the way the register note
+        // does.
+        var launchingState = react.useState(false);
+        var stoppingState = react.useState(false);
+        var lifecycleNoteState = react.useState('');
         var data = dataState[0];
         var draft = draftState[0];
         var note = noteState[0];
@@ -854,6 +880,9 @@ window.__ModuleLoader__.load({
         var removing = removingState[0];
         var registerNote = registerNoteState[0];
         var agentDefault = agentDefaultState[0];
+        var launching = launchingState[0];
+        var stopping = stoppingState[0];
+        var lifecycleNote = lifecycleNoteState[0];
         var timerRef = react.useRef(null);
 
         var fetchSummary = react.useCallback(
@@ -936,6 +965,7 @@ window.__ModuleLoader__.load({
           (key, value) => {
             noteState[1]('');
             depsNoteState[1]('');
+            lifecycleNoteState[1]('');
             draftState[1]((current) => {
               var config = Object.assign({}, current.config);
               config[key] = value;
@@ -979,6 +1009,7 @@ window.__ModuleLoader__.load({
           (engine) => {
             noteState[1]('');
             depsNoteState[1]('');
+            lifecycleNoteState[1]('');
             draftState[1]((_current) => {
               // The platform config is per-engine, so an engine switch keeps
               // the map and only resets the per-engine parameter config.
@@ -1038,6 +1069,7 @@ window.__ModuleLoader__.load({
         var discard = react.useCallback(() => {
           noteState[1]('');
           depsNoteState[1]('');
+          lifecycleNoteState[1]('');
           load();
         }, [load]);
 
@@ -1227,6 +1259,86 @@ window.__ModuleLoader__.load({
               removingState[1](false);
             });
         }, [draft, removing, t]);
+
+        // The engine lifecycle actions. Launch runs the deploy and the health
+        // poll through the /local-infer/launch route, and Stop signals the
+        // tracked process or container through /local-infer/stop. Both send
+        // the card's unsaved Engine Directory / Engine Fork edits (the
+        // per-engine platform entry) so a launch uses them without a prior
+        // save, the same rule the route's LaunchRequest.platform documents.
+        // The note reports the answer the route returned.
+        var launchBody = () => {
+          var platform = (draft.platform || {})[draft.engine];
+          return JSON.stringify({
+            engine: draft.engine,
+            config: draft.config,
+            platform: platform,
+          });
+        };
+
+        var onLaunch = react.useCallback(() => {
+          if (draft === null || launching) {
+            return;
+          }
+          launchingState[1](true);
+          lifecycleNoteState[1]('');
+          fetch('/local-infer/launch', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: launchBody(),
+          })
+            .then((response) => response.json().then((body) => ({ ok: response.ok, body: body })))
+            .then(({ ok, body }) => {
+              if (ok) {
+                if (body.healthy) {
+                  lifecycleNoteState[1](
+                    t.runningOn + ' ' + (body.plan && body.plan.port ? body.plan.port : ''),
+                  );
+                } else {
+                  lifecycleNoteState[1](t.notHealthy + (body.detail ? ': ' + body.detail : ''));
+                }
+              } else {
+                lifecycleNoteState[1](t.launchFailed + (body.error ? ': ' + body.error : ''));
+              }
+            })
+            .catch((error) => {
+              lifecycleNoteState[1](
+                t.launchFailed + (error && error.message ? ': ' + error.message : ''),
+              );
+            })
+            .then(() => {
+              launchingState[1](false);
+            });
+        }, [draft, launching, t]);
+
+        var onStop = react.useCallback(() => {
+          if (draft === null || stopping) {
+            return;
+          }
+          stoppingState[1](true);
+          lifecycleNoteState[1]('');
+          fetch('/local-infer/stop', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: launchBody(),
+          })
+            .then((response) => response.json().then((body) => ({ ok: response.ok, body: body })))
+            .then(({ ok, body }) => {
+              if (ok) {
+                lifecycleNoteState[1](t.stopped);
+              } else {
+                lifecycleNoteState[1](t.stopFailed + (body.error ? ': ' + body.error : ''));
+              }
+            })
+            .catch((error) => {
+              lifecycleNoteState[1](
+                t.stopFailed + (error && error.message ? ': ' + error.message : ''),
+              );
+            })
+            .then(() => {
+              stoppingState[1](false);
+            });
+        }, [draft, stopping, t]);
 
         if (view === 'summary') {
           return t.subtitle;
@@ -1490,6 +1602,41 @@ window.__ModuleLoader__.load({
             copyNote: copyNote,
             depsNote: depsNote,
           }),
+          // The engine lifecycle row: Launch runs the deploy and the health
+          // poll through the /local-infer/launch route, and Stop signals the
+          // tracked process or container through /local-infer/stop. Launch
+          // stays disabled while a launch is in flight or while the deps
+          // panel reports a missing host dependency, the same gate the panel's
+          // "Get" button reads. The note reports the answer the route
+          // returned, so a failed deploy names its broken step.
+          react.createElement(
+            'div',
+            { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 } },
+            react.createElement(
+              'button',
+              {
+                type: 'button',
+                style: PRIMARY_BUTTON,
+                onClick: onLaunch,
+                disabled:
+                  launching || stopping || (deps !== null && deps.allSatisfied !== true),
+              },
+              launching ? t.launching : t.launch,
+            ),
+            react.createElement(
+              'button',
+              {
+                type: 'button',
+                style: GHOST_BUTTON,
+                onClick: onStop,
+                disabled: stopping || launching,
+              },
+              stopping ? t.stopping : t.stop,
+            ),
+          ),
+          lifecycleNote
+            ? react.createElement('div', { style: { fontSize: 12 } }, lifecycleNote)
+            : null,
           // The DSH model row: Register publishes the engine as a DSH model
           // through the settings seam, the checkbox opts the new session
           // default in, and Remove pulls the entry back. The note reports the
