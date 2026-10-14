@@ -18,11 +18,13 @@ describe('local-infer-ui scaffold', () => {
     expect(ctx.localInfer).toBeInstanceOf(LocalInfer)
   })
 
-  it('registers the settings route only where a webServer is injected', () => {
+  it('registers the settings route only where a webServer is injected', async () => {
     // A context whose inject hands the callback a scope carrying a webServer
-    // mounts the route; a bare context (no inject) mounts nothing.
+    // mounts the route; a bare context (no inject) mounts nothing. The
+    // service plugin is awaited, so ctx.localInfer is set before apply runs
+    // (the route's platform sync reads it), not a promise still resolving.
     const ctx = new Context()
-    void ctx.plugin(LocalInfer)
+    await ctx.plugin(LocalInfer)
     const registered: { path: string }[] = []
     const webServer = {
       register(route: { path: string; handler: unknown }): () => void {

@@ -13,6 +13,8 @@ export { DEFAULT_OS_RESERVE_MIB, estimateVram, KV_PAGE_TOKENS, pageRoundUp, TIGH
 export type { EstimateContext, EstimateOptions, SpeculationTerms, VramBreakdown, VramContribution, VramEstimate, VramModel, VramVerdict, } from './estimator.ts';
 export { GPU_USAGE_BUSY_THRESHOLD, matchLaunchSignature, parseNvidiaSmiGpuUsage, resolveOsReserve, } from './reserve.ts';
 export type { EngineLaunchSignature, GpuUsageProbe, ProcessLine, ReserveResolution, ReserveSource, } from './reserve.ts';
+export { computeProviderStatuses, isGpuBusy, } from './status.ts';
+export type { ProviderRef, ProviderStatus, ProviderStatusInput, RunningEngineRef, } from './status.ts';
 export { EngineAdapter } from './adapter.ts';
 export type { DeployResult, EnginePlatformConfig, FetchResult, HealthCheckOptions, HealthResult, LaunchPlan, LifecycleHost, ProcessHandle, } from './adapter.ts';
 export { constraintId, evaluateGuidelines, modelGuidelines } from './guideline.ts';

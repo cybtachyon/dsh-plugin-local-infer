@@ -38,9 +38,11 @@ import {
   evaluateGuidelines,
   estimateVram,
   hfDownloadCommand,
+  isGpuBusy,
   LLM_PI_AI_NAMESPACE,
   matchLaunchSignature,
   modelGuidelines,
+  computeProviderStatuses,
   modelRowsFrom,
   parseNvidiaSmiGpu,
   parseNvidiaSmiGpuUsage,
@@ -75,9 +77,12 @@ import type {
   Preset,
   PresetSource,
   ProcessLine,
+  ProviderRef,
+  ProviderStatus,
   RegisterResult,
   ReserveResolution,
   ResolvedDefaults,
+  RunningEngineRef,
   SystemDep,
   VramModel,
 } from '@dsh/dsh-plugin-local-infer/core'
@@ -108,6 +113,7 @@ export type {
   LaunchOptions,
   LaunchResult,
   LocalInferService,
+  ProviderStatusOptions,
   RegisterModelOptions,
   SettingsForms,
   SettingsNamespaceDescriptor,
@@ -160,6 +166,14 @@ export class LocalInfer extends Service implements LocalInferService {
   // used VRAM on top. The set resets on a host restart, which reads as
   // "nothing is plugin-launched" on a fresh start.
   private readonly launchedEngines = new Set<string>()
+  // The port-to-model map of the engines this service's launch step started.
+  // The provider-status detector matches a running engine's port against it to
+  // confirm which model a live engine serves: a port the plugin launched reads
+  // as that model, a port it did not launch (a foreign engine) has no entry and
+  // reads as "engine running, model unknown". The map resets on a host
+  // restart, so a fresh start tracks only the launches it made itself. See
+  // PLAN.md for the PID-cache note: a full PID cache is a future refinement.
+  private readonly launchedModels = new Map<number, { engineId: string; modelId: string }>()
 
   constructor(ctx: Context) {
     super(ctx, 'localInfer')
@@ -384,6 +398,54 @@ export class LocalInfer extends Service implements LocalInferService {
   }
 
   /**
+   * providerStatuses resolves the running-state the card paints each saved
+   * provider's status dot from. It collects every registered adapter's launch
+   * signature, probes the running process table against those markers, and
+   * ties a running engine's port to the model the plugin launched it with (the
+   * launched-models map), so a plugin-launched engine reads as that model and
+   * a foreign engine reads as "engine running, model unknown". The GPU-usage
+   * reading feeds the busy-card rule. The answer is the core resolver's: a
+   * busy card or no engine running reads as unsure for every provider, an
+   * engine the detector saw but could not tie to a model reads as unsure for
+   * its configs and stopped for the rest, and a confirmed engine-plus-model
+   * reads as running. The options inject the probe results, so a test prices a
+   * busy card or a foreign engine without a live nvidia-smi or ps.
+   */
+  async providerStatuses(
+    providers: readonly ProviderRef[],
+    options?: { processes?: ProcessLine[]; gpuUsage?: GpuUsageProbe | null },
+  ): Promise<Record<string, ProviderStatus>> {
+    const refs: { engineId: string; signature: EngineLaunchSignature }[] = []
+    for (const adapter of this.engineRegistry.values()) {
+      const signature = adapter.launchSignature?.()
+      if (signature !== undefined) {
+        refs.push({ engineId: adapter.id, signature })
+      }
+    }
+    const markers = refs.map((ref) => ref.signature.binary)
+    const processes =
+      options?.processes !== undefined ? options.processes : await probeProcesses(markers)
+    const running: RunningEngineRef[] = []
+    for (const ref of refs) {
+      const match = processes.find((line) => matchLaunchSignature(line, ref.signature))
+      if (match === undefined) continue
+      const entry: RunningEngineRef = {
+        engineId: ref.engineId,
+        ...(ref.signature.port !== undefined ? { port: ref.signature.port } : {}),
+      }
+      if (ref.signature.port !== undefined) {
+        const launched = this.launchedModels.get(ref.signature.port)
+        if (launched !== undefined && launched.engineId === ref.engineId) {
+          entry.modelId = launched.modelId
+        }
+      }
+      running.push(entry)
+    }
+    const gpuUsage = options?.gpuUsage !== undefined ? options.gpuUsage : await probeGpuUsage()
+    return computeProviderStatuses({ providers, running, gpuBusy: isGpuBusy(gpuUsage) })
+  }
+
+  /**
    * guidelines runs the full guideline engine over a config and a hardware
    * profile: the registered named guidelines, every per-spec hardware
    * constraint of the registered engines, and the model-aware rules that
@@ -475,6 +537,12 @@ export class LocalInfer extends Service implements LocalInferService {
     // already priced by the estimator, and pricing the GPU's used VRAM on
     // top would double-count.
     this.launchedEngines.add(plan.engineId)
+    // The provider-status detector ties a running engine's port to the model
+    // the plugin launched it with, so a live engine the plugin started reads
+    // as that model (green) rather than "engine running, model unknown".
+    if (plan.modelId !== undefined && plan.port !== undefined) {
+      this.launchedModels.set(plan.port, { engineId: plan.engineId, modelId: plan.modelId })
+    }
     const health = await adapter.healthCheck(plan, options)
     const launchResult: LaunchResult = { plan, healthy: health.healthy }
     if (health.detail !== undefined) {
@@ -501,6 +569,11 @@ export class LocalInfer extends Service implements LocalInferService {
     // engine is no longer plugin-launched and the OS-reserve resolver may
     // price the card's live usage for it again.
     this.launchedEngines.delete(plan.engineId)
+    // Clear the port-to-model entry too, so the provider-status detector no
+    // longer ties this port to the model the plugin launched it with.
+    if (plan.port !== undefined) {
+      this.launchedModels.delete(plan.port)
+    }
   }
 
   /**

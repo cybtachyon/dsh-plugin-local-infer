@@ -43,7 +43,14 @@ export function localInferConfigPath() {
 export function readConfig() {
     const path = localInferConfigPath();
     if (!existsSync(path)) {
-        return { engine: 'ninfer', config: {}, allowRunDeps: false, platform: {} };
+        return {
+            engine: 'ninfer',
+            config: {},
+            allowRunDeps: false,
+            platform: {},
+            showHelp: true,
+            providers: [],
+        };
     }
     try {
         const parsed = JSON.parse(readFileSync(path, 'utf8'));
@@ -52,20 +59,71 @@ export function readConfig() {
             config: parsed.config && typeof parsed.config === 'object' ? parsed.config : {},
             allowRunDeps: typeof parsed.allowRunDeps === 'boolean' ? parsed.allowRunDeps : false,
             platform: parsePlatformConfigs(parsed.platform),
+            // A file that predates the key (or carries a non-boolean) reads as
+            // descriptions visible, the default the card draws on first open.
+            showHelp: typeof parsed.showHelp === 'boolean' ? parsed.showHelp : true,
+            providers: parseProviders(parsed.providers),
         };
     }
     catch {
-        return { engine: 'ninfer', config: {}, allowRunDeps: false, platform: {} };
+        return {
+            engine: 'ninfer',
+            config: {},
+            allowRunDeps: false,
+            platform: {},
+            showHelp: true,
+            providers: [],
+        };
     }
 }
 /**
- * writeConfig persists the engine, config, trust gate, and per-engine platform
- * configs, creating the directory tree on first write.
+ * parseProviders reads the stored provider list, keeping only entries with a
+ * non-blank string id. A non-object entry or an entry with no id is dropped,
+ * so a by-hand edit never poisons the card's provider list. The per-engine
+ * platform config is read through the same string-field rule the platform map
+ * uses, so a provider never carries a platform field it cannot price.
  */
-export function writeConfig(engine, config, allowRunDeps, platform) {
+function parseProviders(raw) {
+    if (raw === null || typeof raw !== 'object' || !Array.isArray(raw)) {
+        return [];
+    }
+    const providers = [];
+    for (const entry of raw) {
+        if (entry === null || typeof entry !== 'object' || Array.isArray(entry))
+            continue;
+        const fields = entry;
+        if (typeof fields.id !== 'string' || fields.id.trim() === '')
+            continue;
+        const engine = typeof fields.engine === 'string' ? fields.engine : 'ninfer';
+        const config = fields.config && typeof fields.config === 'object' ? fields.config : {};
+        const platform = parseStoredPlatformConfig(fields.platform) ?? {};
+        providers.push({ id: fields.id, engine, config, platform });
+    }
+    return providers;
+}
+/**
+ * newProviderId mints the stable id a new provider entry carries: a
+ * timestamp base plus a random tail, so two Saves in the same tick never
+ * collide. The card edits and deletes against this id.
+ */
+function newProviderId() {
+    return `provider-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+/**
+ * writeConfig persists the engine, config, trust gate, per-engine platform
+ * configs, and the help toggle, creating the directory tree on first write.
+ */
+export function writeConfig(engine, config, allowRunDeps, platform, showHelp, providers) {
     const path = localInferConfigPath();
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, JSON.stringify({ engine, config, allowRunDeps, platform: platform ?? {} }, null, 2));
+    writeFileSync(path, JSON.stringify({
+        engine,
+        config,
+        allowRunDeps,
+        platform: platform ?? {},
+        showHelp: showHelp ?? true,
+        providers: providers ?? [],
+    }, null, 2));
 }
 /**
  * parsePlatformConfigs reads the stored platform map, keeping only entries
@@ -175,6 +233,28 @@ export async function buildSummary(localInfer, request) {
             downloadCommand: hfDownloadCommand(entry, modelDir),
         };
     }
+    // The provider list the card renders as collapsed entries: each saved
+    // config's engine and model feed the detector, which resolves the running-
+    // state its status dot paints. A provider the detector cannot tie to a
+    // confirmed model reads as unsure, so the dot never overstates a live
+    // engine.
+    const providerRefs = stored.providers.map((provider) => {
+        const model = typeof provider.config.model === 'string' ? provider.config.model : undefined;
+        // exactOptionalPropertyTypes: include the model key only when it is a
+        // string, so a config that names no model never writes `undefined`.
+        return model !== undefined
+            ? { id: provider.id, engine: provider.engine, model }
+            : { id: provider.id, engine: provider.engine };
+    });
+    const providerStatuses = providerRefs.length > 0 ? await localInfer.providerStatuses(providerRefs) : {};
+    const providers = stored.providers.map((provider) => ({
+        id: provider.id,
+        engine: provider.engine,
+        model: typeof provider.config.model === 'string' ? provider.config.model : '',
+        status: providerStatuses[provider.id] ?? 'unsure',
+        config: provider.config,
+        platform: provider.platform,
+    }));
     return {
         engines: ENGINES.map((entry) => ({ id: entry.id, label: entry.label, supports: entry.supports })),
         models: localInfer.registeredVramModels().map((model) => ({ id: model.id, source: model.source })),
@@ -195,6 +275,8 @@ export async function buildSummary(localInfer, request) {
         })),
         modelStatus,
         modelFiles,
+        showHelp: stored.showHelp,
+        providers,
     };
 }
 /**
@@ -533,11 +615,81 @@ export function registerLocalInferRoute(scope, localInfer) {
                 const config = body.config && typeof body.config === 'object' ? body.config : {};
                 const allowRunDeps = typeof body.allowRunDeps === 'boolean' ? body.allowRunDeps : false;
                 const platform = parsePlatformConfigs(body.platform);
-                writeConfig(engine, config, allowRunDeps, platform);
+                // A body that predates the key keeps the descriptions visible.
+                const showHelp = typeof body.showHelp === 'boolean' ? body.showHelp : true;
+                const providerId = typeof body.id === 'string' && body.id.trim() !== '' ? body.id : undefined;
+                // Save upserts a provider entry: an id updates the stored entry in
+                // place, an absent id mints a new id and prepends the entry, so a Save
+                // always adds (or refreshes) a card entry at the top of the list. The
+                // provider's platform config is the per-engine entry the deploy step
+                // reads, so a provider never carries a field it cannot price.
+                const stored = readConfig();
+                const provider = {
+                    id: providerId ?? newProviderId(),
+                    engine,
+                    config,
+                    platform: platform[engine] ?? {},
+                };
+                const providers = providerId !== undefined
+                    ? stored.providers.map((entry) => (entry.id === providerId ? provider : entry))
+                    : [provider, ...stored.providers];
+                writeConfig(engine, config, allowRunDeps, platform, showHelp, providers);
                 // Re-sync the service registry with the saved platform map, so the next
                 // launch reads the platform config the user just saved.
-                syncPlatformConfigs(localInfer, { engine, config, allowRunDeps, platform });
+                syncPlatformConfigs(localInfer, {
+                    engine,
+                    config,
+                    allowRunDeps,
+                    platform,
+                    showHelp,
+                    providers,
+                });
                 send(200, await buildSummary(localInfer, { engine, config }));
+            }
+            catch (error) {
+                send(400, { error: String(error?.message ?? error) });
+            }
+        },
+    };
+    const deleteProvider = {
+        name: 'local-infer-provider-delete',
+        kind: 'exact',
+        path: '/local-infer/provider-delete',
+        handler: async (req, res) => {
+            const send = (status, body) => {
+                res.writeHead(status, { 'content-type': 'application/json' });
+                res.end(JSON.stringify(body));
+            };
+            if (req.method !== 'POST') {
+                res.writeHead(405).end();
+                return;
+            }
+            try {
+                const chunks = [];
+                let total = 0;
+                for await (const chunk of req) {
+                    total += chunk.length;
+                    if (total > 64 * 1024) {
+                        send(413, { error: 'payload too large' });
+                        req.destroy();
+                        return;
+                    }
+                    chunks.push(chunk);
+                }
+                const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+                const id = typeof body.id === 'string' ? body.id : undefined;
+                if (id === undefined) {
+                    send(400, { error: 'the provider id is required' });
+                    return;
+                }
+                // Delete removes the stored provider entry by id, keeping the rest of
+                // the list and the active config intact, then re-syncs the registry so
+                // a launch never reads a platform config the user just removed.
+                const stored = readConfig();
+                const providers = stored.providers.filter((entry) => entry.id !== id);
+                writeConfig(stored.engine, stored.config, stored.allowRunDeps, stored.platform, stored.showHelp, providers);
+                syncPlatformConfigs(localInfer, stored);
+                send(200, await buildSummary(localInfer));
             }
             catch (error) {
                 send(400, { error: String(error?.message ?? error) });
@@ -866,6 +1018,7 @@ export function registerLocalInferRoute(scope, localInfer) {
         syncPlatformConfigs(localInfer, readConfig());
         const disposeSummary = scope.webServer.register(route);
         const disposeSave = scope.webServer.register(save);
+        const disposeDeleteProvider = scope.webServer.register(deleteProvider);
         const disposeDeps = scope.webServer.register(deps);
         const disposeInstall = scope.webServer.register(install);
         const disposeDownload = scope.webServer.register(download);
@@ -876,6 +1029,7 @@ export function registerLocalInferRoute(scope, localInfer) {
         return () => {
             disposeSummary();
             disposeSave();
+            disposeDeleteProvider();
             disposeDeps();
             disposeInstall();
             disposeDownload();

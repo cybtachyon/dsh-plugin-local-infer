@@ -54,6 +54,16 @@ export type {
   ReserveResolution,
   ReserveSource,
 } from './reserve.ts'
+export {
+  computeProviderStatuses,
+  isGpuBusy,
+} from './status.ts'
+export type {
+  ProviderRef,
+  ProviderStatus,
+  ProviderStatusInput,
+  RunningEngineRef,
+} from './status.ts'
 export { EngineAdapter } from './adapter.ts'
 export type {
   DeployResult,

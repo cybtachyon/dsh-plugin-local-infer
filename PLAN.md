@@ -579,6 +579,15 @@ green, `npx eslint` clean).
 - **Exit.** On a machine with NInfer, the plugin builds-or-pulls, downloads the model, starts the
   engine, and reports healthy; same for the docker path. NInfer exercises *both* paths.
 
+- **PID cache for launched models.** The provider status dots (green running, red stopped,
+  yellow unsure) need to know which model a running engine serves. The service keeps a
+  `launchedModels` map keyed by launch port: `launch` records `{ engineId, modelId }` for the
+  port it binds, and `stop` removes it. `providerStatuses` ties a running port to that model so
+  a provider card reads as running only when the identified model matches its own. A full PID
+  cache (recording the process id the launch started, not just the port) is a future refinement:
+  it would let the plugin detect a foreign process that reuses a port, and survive a host restart
+  by re-scanning the process table. The port key is the current stand-in.
+
 ### Phase 6 — DSH model registration
 - `DshModelRegistrar`: on a passing health check, upsert the `dsh-llm-pi-ai` provider + model
   (and optional `agent-default-model`) through the settings seam; idempotent; removable on stop.

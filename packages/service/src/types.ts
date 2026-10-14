@@ -16,6 +16,8 @@ import type {
   Preset,
   PresetSource,
   ProcessLine,
+  ProviderRef,
+  ProviderStatus,
   RegisterResult,
   ReserveResolution,
   ReserveSource,
@@ -54,6 +56,18 @@ export interface DetectOsReserveOptions {
   engineId?: string
   gpuUsage?: GpuUsageProbe | null
   processes?: ProcessLine[]
+}
+
+/**
+ * ProviderStatusOptions tunes the provider-status detection: processes and
+ * gpuUsage inject the probe results, so a test prices a busy card or a foreign
+ * engine without a live nvidia-smi or ps. An absent probe result runs the live
+ * probe; a present one (including an explicit null GPU reading) is used as
+ * given.
+ */
+export interface ProviderStatusOptions {
+  processes?: ProcessLine[]
+  gpuUsage?: GpuUsageProbe | null
 }
 
 /**
@@ -187,6 +201,10 @@ export interface LocalInferService {
   estimate(config: Config, hw: HardwareProfile, engineId?: string): Promise<EstimateResult>
   detectHardware(): Promise<HardwareProfile>
   detectOsReserve(config?: Config, options?: DetectOsReserveOptions): Promise<ReserveResolution>
+  providerStatuses(
+    providers: readonly ProviderRef[],
+    options?: ProviderStatusOptions,
+  ): Promise<Record<string, ProviderStatus>>
   guidelines(config: Config, hw: HardwareProfile, engineId?: string): Promise<GuidelineResult[]>
   deps(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<readonly SystemDep[]>
   installString(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<string>

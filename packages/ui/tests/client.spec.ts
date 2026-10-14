@@ -199,4 +199,49 @@ describe('dsh/client.js browser carrier', () => {
       expect(source).toContain(route)
     }
   })
+
+  it('pins the help toggle contract the card persists', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // The circular "?" button flips the local state and persists the
+    // preference through the save route, so the descriptions-visible
+    // default survives a reload.
+    expect(source).toContain('showHelp')
+    expect(source).toContain('onToggleHelp')
+    expect(source).toContain('renderHelpRow')
+    expect(source).toContain('HELP_BUTTON_STYLE')
+  })
+
+  it('pins the provider list contract the card renders', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // The card lists the saved providers as collapsed cards, each with a
+    // status dot and Edit/Delete controls, and talks to the provider-delete
+    // route to remove one.
+    expect(source).toContain('/local-infer/provider-delete')
+    expect(source).toContain('renderProviderList')
+    expect(source).toContain('onEditProvider')
+    expect(source).toContain('onDeleteProvider')
+    expect(source).toContain('editingProviderId')
+  })
+
+  it('pins the collapsible provider form and the New provider control', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // The Engine/Model form collapses by default while entries exist, and the
+    // "New provider" control sits after the form: a button while a new
+    // provider can be started, plain text while in new mode or with no
+    // entries. Edit caches the current draft so a later New click restores it.
+    expect(source).toContain('renderNewProviderControl')
+    expect(source).toContain('providerFormMode')
+    expect(source).toContain('effectiveProviderFormMode')
+    expect(source).toContain('cachedDraft')
+    expect(source).toContain("effectiveProviderFormMode !== 'collapsed'")
+  })
+
+  it('pins the register gate the card enforces while unsaved', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // The Register button stays disabled while the config is unsaved (dirty),
+    // and the help line explains the gate.
+    expect(source).toContain('registerNeedsSave')
+    expect(source).toContain('dirty && help')
+    expect(source).toContain('registering || dirty')
+  })
 })

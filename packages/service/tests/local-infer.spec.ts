@@ -19,6 +19,7 @@ import type {
   ParameterSpec,
   Preset,
   ProcessLine,
+  ProviderRef,
   SystemDep,
   VramModel,
 } from '@dsh/dsh-plugin-local-infer/core'
@@ -991,6 +992,95 @@ describe('ctx.localInfer OS reserve (Phase 10)', () => {
     const over = results.find((result) => result.id === 'vram-exceeds-usable')
     expect(over?.level).toBe('error')
     expect(over?.anchors).toEqual(['maxContext'])
+  })
+})
+
+describe('ctx.localInfer provider statuses', () => {
+  const NINFER_SIG: EngineLaunchSignature = { binary: 'ninfer-serve', port: 18020 }
+  const NINFER_LINE: ProcessLine = {
+    command: 'ninfer-serve /models/model.ninfer --host 127.0.0.1 --port 18020',
+  }
+  const GPU_BUSY: GpuUsageProbe = { usedMiB: 24576, totalMiB: 24576 }
+  const GPU_IDLE: GpuUsageProbe = { usedMiB: 2048, totalMiB: 24576 }
+
+  class SigningAdapter extends StubAdapter {
+    constructor(id: string, private readonly signature: EngineLaunchSignature) {
+      super(id)
+    }
+    launchSignature(): EngineLaunchSignature {
+      return this.signature
+    }
+  }
+
+  it('reads every provider as unsure when no engine is running', async () => {
+    const ctx = await seam()
+    ctx.localInfer.registerEngine(new SigningAdapter('ninfer', NINFER_SIG))
+    const providers: ProviderRef[] = [
+      { id: 'a', engine: 'ninfer', model: 'qwen3-27b' },
+      { id: 'b', engine: 'hyperqwen', model: 'qwen3-27b' },
+    ]
+    const statuses = await ctx.localInfer.providerStatuses(providers, {
+      gpuUsage: GPU_IDLE,
+      processes: [{ command: 'vim PLAN.md' }],
+    })
+    expect(statuses).toEqual({ a: 'unsure', b: 'unsure' })
+  })
+
+  it('reads a foreign engine as unsure for its configs and stopped for the rest', async () => {
+    const ctx = await seam()
+    ctx.localInfer.registerEngine(new SigningAdapter('ninfer', NINFER_SIG))
+    const providers: ProviderRef[] = [
+      { id: 'a', engine: 'ninfer', model: 'qwen3-27b' },
+      { id: 'b', engine: 'hyperqwen', model: 'qwen3-27b' },
+    ]
+    // A running ninfer process the plugin did not launch: the detector ties
+    // the engine to no model, so the ninfer config reads as unsure and the
+    // hyperqwen config (a different engine) reads as stopped.
+    const statuses = await ctx.localInfer.providerStatuses(providers, {
+      gpuUsage: GPU_IDLE,
+      processes: [NINFER_LINE],
+    })
+    expect(statuses).toEqual({ a: 'unsure', b: 'stopped' })
+  })
+
+  it('reads a plugin-launched engine as running for its model', async () => {
+    const ctx = await seam()
+    class LaunchingAdapter extends SigningAdapter {
+      async healthCheck(_p: LaunchPlan): Promise<HealthResult> {
+        return { healthy: true, status: 200 }
+      }
+    }
+    ctx.localInfer.registerEngine(new LaunchingAdapter('ninfer', NINFER_SIG))
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+      modelId: 'qwen3-27b',
+    }
+    await ctx.localInfer.launch(plan)
+    const providers: ProviderRef[] = [
+      { id: 'a', engine: 'ninfer', model: 'qwen3-27b' },
+      { id: 'b', engine: 'ninfer', model: 'qwen3-35b' },
+    ]
+    // The plugin launched ninfer with qwen3-27b, so the matching provider
+    // reads as running and the other model reads as stopped.
+    const statuses = await ctx.localInfer.providerStatuses(providers, {
+      gpuUsage: GPU_IDLE,
+      processes: [NINFER_LINE],
+    })
+    expect(statuses).toEqual({ a: 'running', b: 'stopped' })
+  })
+
+  it('reads every provider as unsure when the card is busy', async () => {
+    const ctx = await seam()
+    ctx.localInfer.registerEngine(new SigningAdapter('ninfer', NINFER_SIG))
+    const providers: ProviderRef[] = [{ id: 'a', engine: 'ninfer', model: 'qwen3-27b' }]
+    const statuses = await ctx.localInfer.providerStatuses(providers, {
+      gpuUsage: GPU_BUSY,
+      processes: [NINFER_LINE],
+    })
+    expect(statuses).toEqual({ a: 'unsure' })
   })
 })
 

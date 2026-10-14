@@ -13,6 +13,8 @@ import type {
   LaunchPlan,
   ModelDirectoryEntry,
   ModelRow,
+  ProviderRef,
+  ProviderStatus,
   RegisterResult,
   SystemDep,
   VramBreakdown,
@@ -132,6 +134,9 @@ function stubService(
     onDownload?: (args: { entry: DefaultModel; directory: string }) => void
     downloadResult?: DownloadResult
     modelEntries?: ModelDirectoryEntry[]
+    providerStatuses?: (
+      providers: readonly ProviderRef[],
+    ) => Promise<Record<string, ProviderStatus>>
   } = {},
 ): LocalInferService {
   return {
@@ -143,6 +148,8 @@ function stubService(
       reserveSource: 'default',
     }),
     detectOsReserve: async () => ({ reserveMiB: 3072, source: 'default' }),
+    providerStatuses: async (providers: readonly ProviderRef[]) =>
+      (await extras.providerStatuses?.(providers)) ?? {},
     launchedEngineIds: () => [],
     guidelines: async () => guidelines,
     registeredVramModels: () => (extras.models ?? []),
@@ -280,13 +287,43 @@ describe('local-infer route read model', () => {
     const config: Config = { maxContext: 65536 }
     writeConfig('ninfer', config, true)
     expect(localInferConfigPath()).toBe(join(home, '.dsh', 'local-infer', 'config.json'))
-    expect(readConfig()).toEqual({ engine: 'ninfer', config, allowRunDeps: true, platform: {} })
+    expect(readConfig()).toEqual({
+      engine: 'ninfer',
+      config,
+      allowRunDeps: true,
+      platform: {},
+      showHelp: true,
+      providers: [],
+    })
   })
 
   it('reads a missing config file as the scaffold default with the gate off', () => {
     // The round-trip above wrote the file, so clear it for this assertion.
     rmSync(localInferConfigPath())
-    expect(readConfig()).toEqual({ engine: 'ninfer', config: {}, allowRunDeps: false, platform: {} })
+    expect(readConfig()).toEqual({
+      engine: 'ninfer',
+      config: {},
+      allowRunDeps: false,
+      platform: {},
+      showHelp: true,
+      providers: [],
+    })
+  })
+
+  it('round-trips the help toggle and reads a missing key as visible', () => {
+    writeConfig('ninfer', {}, false, undefined, false)
+    expect(readConfig().showHelp).toBe(false)
+    // A file that predates the key reads as descriptions visible, the
+    // default the card draws on first open.
+    const path = localInferConfigPath()
+    writeFileSync(path, JSON.stringify({ engine: 'ninfer', config: {}, allowRunDeps: false }))
+    expect(readConfig().showHelp).toBe(true)
+  })
+
+  it('exposes the stored help toggle in the summary', async () => {
+    writeConfig('ninfer', {}, false, undefined, false)
+    const summary = await buildSummary(stubService([]), { engine: 'ninfer', config: {} })
+    expect(summary.showHelp).toBe(false)
   })
 })
 
@@ -683,6 +720,7 @@ describe('route handlers over a fake web server', () => {
     expect(paths).toEqual([
       '/local-infer/summary',
       '/local-infer/save',
+      '/local-infer/provider-delete',
       '/local-infer/deps',
       '/local-infer/install',
       '/local-infer/download',
@@ -772,11 +810,12 @@ describe('route handlers over a fake web server', () => {
     for (const route of routes) {
       const res = fakeRes()
       // Each route takes one method; the wrong one is its complement. The
-      // save, install, launch, stop, register, and unregister routes take a
-      // POST, so a GET is wrong; the summary and deps routes take a GET, so a
-      // POST is wrong.
+      // save, provider-delete, install, launch, stop, register, and
+      // unregister routes take a POST, so a GET is wrong; the summary and
+      // deps routes take a GET, so a POST is wrong.
       if (
         route.path === '/local-infer/save' ||
+        route.path === '/local-infer/provider-delete' ||
         route.path === '/local-infer/install' ||
         route.path === '/local-infer/download' ||
         route.path === '/local-infer/launch' ||
@@ -884,6 +923,32 @@ describe('route handler error branches', () => {
     await save.handler(fakeReq('POST', '/local-infer/save', '{not json'), res)
     expect(res.status).toBe(400)
     expect(JSON.parse(res.body).error).toBeDefined()
+  })
+
+  it('persists the help toggle through the save route', async () => {
+    const service = stubService([])
+    const list = routes(service)
+    const save = find(list, '/local-infer/save')
+    const res = fakeRes()
+    await save.handler(
+      fakeReq(
+        'POST',
+        '/local-infer/save',
+        JSON.stringify({ engine: 'ninfer', config: {}, showHelp: false }),
+      ),
+      res,
+    )
+    expect(res.status).toBe(200)
+    // The stored file carries the toggle, and a body that omits it keeps
+    // the descriptions visible.
+    expect(readConfig().showHelp).toBe(false)
+    const again = fakeRes()
+    await save.handler(
+      fakeReq('POST', '/local-infer/save', JSON.stringify({ engine: 'ninfer', config: {} })),
+      again,
+    )
+    expect(again.status).toBe(200)
+    expect(readConfig().showHelp).toBe(true)
   })
 
   it('reads the summary config query param, falling back on a broken one', async () => {
@@ -1135,5 +1200,190 @@ describe('model defaults, status, and download read model', () => {
     // Strata offers no dense-Qwen model, so the scan reads as empty.
     const strata = await buildSummary(service, { engine: 'strata', config: {} })
     expect(strata.modelFiles).toEqual([])
+  })
+})
+
+describe('provider list round trip', () => {
+  let home: string
+
+  beforeAll(() => {
+    home = mkdtempSync(join(tmpdir(), 'local-infer-route-prov-'))
+    process.env.HOME = home
+  })
+
+  afterAll(() => {
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  function fakeRes() {
+    const res = {
+      status: 0,
+      body: '',
+      writeHead(status: number): typeof res {
+        res.status = status
+        return res
+      },
+      end(body?: string): typeof res {
+        res.body = body ?? ''
+        return res
+      },
+    }
+    return res
+  }
+
+  function fakeReq(method: string, url: string, body?: string) {
+    const chunks = body !== undefined ? [Buffer.from(body)] : []
+    return {
+      method,
+      url,
+      destroy(): void {
+        /* the handlers only destroy on an oversize body */
+      },
+      async *[Symbol.asyncIterator](): AsyncGenerator<Buffer> {
+        for (const chunk of chunks) {
+          yield chunk
+        }
+      },
+    }
+  }
+
+  function routes(service: LocalInferService) {
+    const list: { path: string; handler: (req: unknown, res: unknown) => Promise<void> }[] = []
+    registerLocalInferRoute(
+      {
+        webServer: {
+          register(route: { path: string; handler: (req: unknown, res: unknown) => Promise<void> }) {
+            list.push(route)
+            return () => {
+              /* the test owns the list */
+            }
+          },
+        },
+        effect(fn: () => unknown): void {
+          fn()
+        },
+      } as unknown as import('@deepseek-ai/cordis').Context & {
+        webServer: import('../src/route.ts').WebServerService
+      },
+      service,
+    )
+    return list
+  }
+
+  const find = (
+    list: { path: string; handler: (req: unknown, res: unknown) => Promise<void> }[],
+    path: string,
+  ) => list.find((route) => route.path === path)!
+
+  it('lists the saved providers with their statuses in the summary', async () => {
+    writeConfig(
+      'ninfer',
+      { model: 'qwen3-27b' },
+      false,
+      {},
+      true,
+      [
+        { id: 'p1', engine: 'ninfer', config: { model: 'qwen3-27b' }, platform: {} },
+        { id: 'p2', engine: 'hyperqwen', config: { model: 'qwen3-35b' }, platform: {} },
+      ],
+    )
+    const service = stubService([], {
+      providerStatuses: async (providers) => {
+        const statuses: Record<string, ProviderStatus> = {}
+        for (const provider of providers) {
+          statuses[provider.id] = provider.id === 'p1' ? 'running' : 'unsure'
+        }
+        return statuses
+      },
+    })
+    const summary = await buildSummary(service, { engine: 'ninfer', config: {} })
+    expect(summary.providers).toEqual([
+      {
+        id: 'p1',
+        engine: 'ninfer',
+        model: 'qwen3-27b',
+        status: 'running',
+        config: { model: 'qwen3-27b' },
+        platform: {},
+      },
+      {
+        id: 'p2',
+        engine: 'hyperqwen',
+        model: 'qwen3-35b',
+        status: 'unsure',
+        config: { model: 'qwen3-35b' },
+        platform: {},
+      },
+    ])
+  })
+
+  it('adds a new provider entry at the top of the list on a save without an id', async () => {
+    // Clear the file the earlier test wrote, so a fresh save starts from an
+    // empty list and the new entry is the only one.
+    rmSync(localInferConfigPath(), { force: true })
+    const service = stubService([])
+    const list = routes(service)
+    const save = find(list, '/local-infer/save')
+    const res = fakeRes()
+    await save.handler(
+      fakeReq('POST', '/local-infer/save', JSON.stringify({ engine: 'ninfer', config: { model: 'qwen3-27b' } })),
+      res,
+    )
+    expect(res.status).toBe(200)
+    const stored = readConfig()
+    expect(stored.providers).toHaveLength(1)
+    expect(stored.providers[0]?.engine).toBe('ninfer')
+    expect(stored.providers[0]?.config).toEqual({ model: 'qwen3-27b' })
+    // The minted id is a non-blank string the card can edit and delete against.
+    expect(typeof stored.providers[0]?.id).toBe('string')
+    expect(stored.providers[0]?.id.trim()).not.toBe('')
+  })
+
+  it('updates a stored provider in place when a save carries its id', async () => {
+    const service = stubService([])
+    const list = routes(service)
+    const save = find(list, '/local-infer/save')
+    writeConfig('ninfer', { model: 'qwen3-27b' }, false, {}, true, [
+      { id: 'p1', engine: 'ninfer', config: { model: 'qwen3-27b' }, platform: {} },
+    ])
+    const res = fakeRes()
+    await save.handler(
+      fakeReq(
+        'POST',
+        '/local-infer/save',
+        JSON.stringify({ id: 'p1', engine: 'ninfer', config: { model: 'qwen3-35b' } }),
+      ),
+      res,
+    )
+    expect(res.status).toBe(200)
+    const stored = readConfig()
+    expect(stored.providers).toHaveLength(1)
+    expect(stored.providers[0]?.id).toBe('p1')
+    expect(stored.providers[0]?.config).toEqual({ model: 'qwen3-35b' })
+  })
+
+  it('removes a provider by id through the delete route', async () => {
+    const service = stubService([])
+    const list = routes(service)
+    const del = find(list, '/local-infer/provider-delete')
+    writeConfig('ninfer', { model: 'qwen3-27b' }, false, {}, true, [
+      { id: 'p1', engine: 'ninfer', config: { model: 'qwen3-27b' }, platform: {} },
+      { id: 'p2', engine: 'hyperqwen', config: { model: 'qwen3-35b' }, platform: {} },
+    ])
+    const res = fakeRes()
+    await del.handler(fakeReq('POST', '/local-infer/provider-delete', JSON.stringify({ id: 'p1' })), res)
+    expect(res.status).toBe(200)
+    const stored = readConfig()
+    expect(stored.providers).toHaveLength(1)
+    expect(stored.providers[0]?.id).toBe('p2')
+  })
+
+  it('answers 400 when the delete route is given no id', async () => {
+    const service = stubService([])
+    const list = routes(service)
+    const del = find(list, '/local-infer/provider-delete')
+    const res = fakeRes()
+    await del.handler(fakeReq('POST', '/local-infer/provider-delete', JSON.stringify({})), res)
+    expect(res.status).toBe(400)
   })
 })

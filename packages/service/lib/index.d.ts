@@ -18,9 +18,9 @@
  * @module @dsh/dsh-plugin-local-infer/service
  */
 import { Context, Service } from '@deepseek-ai/cordis';
-import type { Config, DefaultModel, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, RegisterResult, ReserveResolution, ResolvedDefaults, SystemDep, VramModel } from '@dsh/dsh-plugin-local-infer/core';
+import type { Config, DefaultModel, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, GpuUsageProbe, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, ProviderRef, ProviderStatus, RegisterResult, ReserveResolution, ResolvedDefaults, SystemDep, VramModel } from '@dsh/dsh-plugin-local-infer/core';
 import type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, RegisterModelOptions } from './types.ts';
-export type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, RegisterModelOptions, SettingsForms, SettingsNamespaceDescriptor, } from './types.ts';
+export type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, ProviderStatusOptions, RegisterModelOptions, SettingsForms, SettingsNamespaceDescriptor, } from './types.ts';
 declare module '@deepseek-ai/cordis' {
     interface Context {
         localInfer: LocalInferService;
@@ -49,6 +49,7 @@ export declare class LocalInfer extends Service implements LocalInferService {
     private readonly depPlanRegistry;
     private readonly platformConfigRegistry;
     private readonly launchedEngines;
+    private readonly launchedModels;
     constructor(ctx: Context);
     registerEngine(adapter: EngineAdapter): () => void;
     registerPreset(preset: Preset): () => void;
@@ -117,6 +118,24 @@ export declare class LocalInfer extends Service implements LocalInferService {
      * a test prices a busy card without a live nvidia-smi or ps.
      */
     detectOsReserve(config?: Config, options?: DetectOsReserveOptions): Promise<ReserveResolution>;
+    /**
+     * providerStatuses resolves the running-state the card paints each saved
+     * provider's status dot from. It collects every registered adapter's launch
+     * signature, probes the running process table against those markers, and
+     * ties a running engine's port to the model the plugin launched it with (the
+     * launched-models map), so a plugin-launched engine reads as that model and
+     * a foreign engine reads as "engine running, model unknown". The GPU-usage
+     * reading feeds the busy-card rule. The answer is the core resolver's: a
+     * busy card or no engine running reads as unsure for every provider, an
+     * engine the detector saw but could not tie to a model reads as unsure for
+     * its configs and stopped for the rest, and a confirmed engine-plus-model
+     * reads as running. The options inject the probe results, so a test prices a
+     * busy card or a foreign engine without a live nvidia-smi or ps.
+     */
+    providerStatuses(providers: readonly ProviderRef[], options?: {
+        processes?: ProcessLine[];
+        gpuUsage?: GpuUsageProbe | null;
+    }): Promise<Record<string, ProviderStatus>>;
     /**
      * guidelines runs the full guideline engine over a config and a hardware
      * profile: the registered named guidelines, every per-spec hardware

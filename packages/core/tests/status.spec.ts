@@ -1,0 +1,82 @@
+import { describe, expect, it } from 'vitest'
+import { computeProviderStatuses, isGpuBusy } from '../src/index.ts'
+import type { GpuUsageProbe, ProviderRef, RunningEngineRef } from '../src/index.ts'
+
+const BUSY: GpuUsageProbe = { usedMiB: 18432, totalMiB: 24576 }
+const IDLE: GpuUsageProbe = { usedMiB: 2048, totalMiB: 24576 }
+
+describe('isGpuBusy', () => {
+  it('reads the card as busy at the 75% threshold', () => {
+    // 18432/24576 is exactly 0.75: the card reads as busy.
+    expect(isGpuBusy(BUSY)).toBe(true)
+  })
+
+  it('reads the card as not busy below the threshold', () => {
+    expect(isGpuBusy(IDLE)).toBe(false)
+  })
+
+  it('reads a missing reading or an empty total as not busy', () => {
+    expect(isGpuBusy(null)).toBe(false)
+    expect(isGpuBusy(undefined)).toBe(false)
+    expect(isGpuBusy({ usedMiB: 4096, totalMiB: 0 })).toBe(false)
+  })
+})
+
+describe('computeProviderStatuses', () => {
+  const providers: ProviderRef[] = [
+    { id: 'a', engine: 'ninfer', model: 'qwen3-27b' },
+    { id: 'b', engine: 'ninfer', model: 'qwen3-35b' },
+    { id: 'c', engine: 'hyperqwen', model: 'qwen3-27b' },
+  ]
+
+  it('reads every provider as unsure when no engine is running', () => {
+    const statuses = computeProviderStatuses({ providers, running: [], gpuBusy: false })
+    expect(statuses).toEqual({ a: 'unsure', b: 'unsure', c: 'unsure' })
+  })
+
+  it('reads every provider as unsure when the card is busy', () => {
+    // A busy card cannot be attributed to a single model, so even a
+    // confirmed engine-plus-model reads as unsure.
+    const running: RunningEngineRef[] = [
+      { engineId: 'ninfer', port: 18020, modelId: 'qwen3-27b' },
+    ]
+    const statuses = computeProviderStatuses({ providers, running, gpuBusy: true })
+    expect(statuses).toEqual({ a: 'unsure', b: 'unsure', c: 'unsure' })
+  })
+
+  it('reads a confirmed engine-plus-model as running and the rest as stopped', () => {
+    const running: RunningEngineRef[] = [
+      { engineId: 'ninfer', port: 18020, modelId: 'qwen3-27b' },
+    ]
+    const statuses = computeProviderStatuses({ providers, running, gpuBusy: false })
+    // a matches the running engine and model: running. b is the same engine
+    // but a different model, and the detector tied the engine to qwen3-27b,
+    // so b reads as stopped (its model is not the one serving). c is a
+    // different engine entirely: stopped.
+    expect(statuses).toEqual({ a: 'running', b: 'stopped', c: 'stopped' })
+  })
+
+  it('reads an engine the detector saw but could not tie to a model as unsure for its configs', () => {
+    // The running ninfer ref carries no modelId: the detector saw the engine
+    // but not which model it serves. Both ninfer configs read as unsure, and
+    // the hyperqwen config (a different engine) reads as stopped.
+    const running: RunningEngineRef[] = [{ engineId: 'ninfer', port: 18020 }]
+    const statuses = computeProviderStatuses({ providers, running, gpuBusy: false })
+    expect(statuses).toEqual({ a: 'unsure', b: 'unsure', c: 'stopped' })
+  })
+
+  it('reads a provider that names no model as unsure while its engine runs without a model', () => {
+    const noModel: ProviderRef[] = [{ id: 'x', engine: 'ninfer' }]
+    const running: RunningEngineRef[] = [{ engineId: 'ninfer', port: 18020, modelId: 'qwen3-27b' }]
+    const statuses = computeProviderStatuses({ providers: noModel, running, gpuBusy: false })
+    // The provider names no model, so it cannot be confirmed against the
+    // running model: unsure, not a guess.
+    expect(statuses).toEqual({ x: 'unsure' })
+  })
+
+  it('reads a provider as stopped when its engine is not among the running set', () => {
+    const running: RunningEngineRef[] = [{ engineId: 'hyperqwen', port: 8080, modelId: 'qwen3-27b' }]
+    const statuses = computeProviderStatuses({ providers, running, gpuBusy: false })
+    expect(statuses).toEqual({ a: 'stopped', b: 'stopped', c: 'running' })
+  })
+})

@@ -108,6 +108,26 @@ window.__ModuleLoader__.load({
         downloading: 'downloading...',
         downloaded: 'download complete',
         downloadFailed: 'download failed',
+        helpToggle: 'Show or hide field help',
+        engineHelp:
+          'Inference engines have different strengths and weaknesses for specific models and hardware.',
+        modelHelp:
+          'The model the engine serves. The engine default models and the model files already in the model directory are the offered choices.',
+        buildHelp:
+          'How the engine is deployed. local builds it from source on the host; docker pulls a prebuilt image. The dependency plan and hardware guidelines price the selected mode.',
+        modelDirHelp: 'Where model files are downloaded and served from.',
+        engineDirHelp:
+          'Local directory of the engine source. In local build mode the deploy step clones and builds the engine here.',
+        engineForkHelp: 'Git repo that overrides the engine default upstream for the clone step.',
+        providers: 'Providers',
+        newProvider: 'New provider',
+        edit: 'Edit',
+        delete: 'Delete',
+        deleteProvider: 'Delete provider',
+        statusRunning: 'running',
+        statusStopped: 'stopped',
+        statusUnsure: 'status unknown',
+        registerNeedsSave: 'Save the Provider configuration before registering with DSH.',
       },
       zh: {
         section: '引擎设置',
@@ -185,6 +205,23 @@ window.__ModuleLoader__.load({
         downloading: '下载中…',
         downloaded: '下载完成',
         downloadFailed: '下载失败',
+        helpToggle: '显示或隐藏字段帮助',
+        engineHelp: '推理引擎针对特定模型和硬件各有优劣。',
+        modelHelp: '引擎服务的模型。可选项包括引擎默认模型和模型目录中已有的模型文件。',
+        buildHelp:
+          '引擎的部署方式。local 在主机上从源码构建；docker 拉取预构建镜像。依赖计划和硬件准则按所选模式计价。',
+        modelDirHelp: '模型文件的下载和服务目录。',
+        engineDirHelp: '引擎源码的本地目录。本地构建模式下，部署步骤在此克隆并构建引擎。',
+        engineForkHelp: '用于克隆步骤、覆盖引擎默认上游的 git 仓库。',
+        providers: '提供方',
+        newProvider: '新增提供方',
+        edit: '编辑',
+        delete: '删除',
+        deleteProvider: '删除提供方',
+        statusRunning: '运行中',
+        statusStopped: '已停止',
+        statusUnsure: '状态未知',
+        registerNeedsSave: '注册到 DSH 之前请先保存该提供方配置。',
       },
     };
 
@@ -352,6 +389,51 @@ window.__ModuleLoader__.load({
       wordBreak: 'break-all',
       fontFamily: 'var(--dsw-alias-font-mono, ui-monospace, monospace)',
     };
+    // The circular "?" button in the card header. It toggles the per-field
+    // descriptions; the preference persists through the save route, so it
+    // survives a reload. The active state reads as the accent fill; the
+    // inactive state as the muted outline.
+    var HELP_BUTTON_STYLE = (active) => ({
+      width: 20,
+      height: 20,
+      flex: 'none',
+      borderRadius: '50%',
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 0,
+      fontSize: 12,
+      lineHeight: 1,
+      cursor: 'pointer',
+      border:
+        '1px solid ' +
+        (active
+          ? 'var(--dsw-alias-accent, #0a84ff)'
+          : 'var(--dsw-alias-border-secondary, rgba(128,128,128,0.24))'),
+      background: active ? 'var(--dsw-alias-accent, #0a84ff)' : 'transparent',
+      color: active ? '#fff' : 'var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))',
+    });
+    // The per-field description line: it sits under the input column (the
+    // 120px label plus the 8px row gap) in the tertiary label the disabled
+    // reason reads, so a two-line description stays a quiet annotation.
+    var HELP_ROW_STYLE = {
+      fontSize: 11,
+      lineHeight: 1.4,
+      marginTop: 2,
+      marginLeft: 128,
+      color: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))',
+    };
+
+    // The help line the card draws under a field row while the help toggle
+    // is on. The spec fields carry their text from the provider's
+    // ParameterSpec description; the hardcoded rows carry theirs from the
+    // card's copy table.
+    function renderHelpRow(react, text) {
+      if (text === null || text === undefined || text === '') {
+        return null;
+      }
+      return react.createElement('div', { style: HELP_ROW_STYLE }, text);
+    }
 
     // The number input that pairs with a slider: type a number or use the
     // native spin buttons. It keeps the typed text in local state and
@@ -645,10 +727,114 @@ window.__ModuleLoader__.load({
       );
     }
 
+    // The provider list: the saved provider entries the summary carries, each
+    // a collapsed card with a status dot (green running, red stopped, yellow
+    // unsure), an "Engine: Model" title, and Edit/Delete controls. A New
+    // provider button resets the form to a fresh entry. The list sits above
+    // the editing form, so a provider's full config form stays the single
+    // shared card body.
+    function renderProviderList(react, primitives, providers, opts) {
+      var statusToDot = { running: 'done', stopped: 'error', unsure: 'warning' };
+      var statusToLabel = {
+        running: opts.statusRunning,
+        stopped: opts.statusStopped,
+        unsure: opts.statusUnsure,
+      };
+      var rows = (providers || []).map(function (provider) {
+        var engineLabel =
+          ((opts.engines || []).find(function (engine) {
+            return engine.id === provider.engine;
+          }) || {}).label || provider.engine;
+        var modelLabel =
+          provider.model && provider.model !== '' ? provider.model : opts.modelAuto;
+        return react.createElement(
+          'div',
+          {
+            key: provider.id,
+            style: {
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '6px 8px',
+              border: '1px solid rgba(127,127,127,0.25)',
+              borderRadius: 6,
+            },
+          },
+          renderStateDot(react, primitives, statusToDot[provider.status] || 'idle'),
+          react.createElement(
+            'span',
+            {
+              style: {
+                flex: 1,
+                minWidth: 0,
+                fontSize: 12,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              },
+              title: engineLabel + ': ' + modelLabel,
+              'aria-label':
+                engineLabel +
+                ': ' +
+                modelLabel +
+                ' (' +
+                (statusToLabel[provider.status] || provider.status) +
+                ')',
+            },
+            engineLabel + ': ' + modelLabel,
+          ),
+          renderButton(
+            react,
+            primitives,
+            'ghost',
+            { onClick: function () { opts.onEdit(provider); } },
+            opts.editLabel,
+          ),
+          renderButton(
+            react,
+            primitives,
+            'ghost',
+            {
+              onClick: function () {
+                opts.onDelete(provider.id);
+              },
+              disabled: opts.deletingId === provider.id,
+            },
+            opts.deleteLabel,
+          ),
+        );
+      });
+      return react.createElement(
+        'div',
+        { style: { marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 } },
+        rows,
+      );
+    }
+
+    // The "New provider" control that sits after the provider entries and the
+    // editing form. It is a clickable button while a new provider can be
+    // started (entries exist and the form is not already in new-provider
+    // mode); it is plain text with no button styling while the form is in
+    // new-provider mode or there are no entries, since the form is already
+    // there to enter one.
+    function renderNewProviderControl(react, primitives, opts) {
+      if (opts.clickable) {
+        return renderButton(react, primitives, 'ghost', { onClick: opts.onNew }, opts.label);
+      }
+      return react.createElement(
+        'span',
+        {
+          style: { fontSize: 12, color: 'var(--dsw-alias-label-secondary, rgba(127,127,127,0.8))' },
+        },
+        opts.label,
+      );
+    }
+
     // One rendered field: the control the `control` model names, greyed out
-    // with its reason while `disabled` is set, and the inline guideline
-    // warnings anchored to the field's key beneath it.
-    function renderField(react, field, onValue, inlineWarnings, primitives) {
+    // with its reason while `disabled` is set, the per-field description
+    // beneath the row while `help` is on, and the inline guideline warnings
+    // anchored to the field's key beneath it.
+    function renderField(react, field, onValue, inlineWarnings, primitives, help) {
       var value = field.value;
       var common = {
         key: field.key,
@@ -807,6 +993,7 @@ window.__ModuleLoader__.load({
               )
             : null,
         ),
+        help ? renderHelpRow(react, field.description) : null,
         (inlineWarnings || []).map((warning) =>
           react.createElement(
             'div',
@@ -1103,6 +1290,33 @@ window.__ModuleLoader__.load({
         // reports the answer the route returned.
         var downloadingState = react.useState(false);
         var downloadNoteState = react.useState('');
+        // The help toggle: show the per-field descriptions. The initial value
+        // is the default (visible); the summary's stored preference wins on
+        // load, and the "?" button flips it through the save route.
+        var helpState = react.useState(true);
+        // The unsaved-changes flag: any field edit sets it true, and a save,
+        // a discard, or loading a provider into the form clears it. The
+        // Register button stays disabled while it is true, because a provider
+        // must be saved before it can be published as a DSH model.
+        var dirtyState = react.useState(false);
+        // The provider id the form is editing. null means a new provider (the
+        // next Save mints an id and prepends it); a stored id means the next
+        // Save updates that entry in place.
+        var editingProviderIdState = react.useState(null);
+        // The provider id a delete is in flight for, so the Delete button shows
+        // its in-progress state and a second click does not fire a second
+        // request.
+        var deletingProviderIdState = react.useState(null);
+        // The provider form mode: 'collapsed' hides the Engine/Model form (the
+        // default while entries exist), 'editing' shows it with a stored
+        // provider's values, and 'new' shows it ready for a fresh provider.
+        // When there are no entries the form is forced to 'new' on render,
+        // so the first provider can be entered immediately.
+        var providerFormModeState = react.useState('collapsed');
+        // The draft values cached when a provider is loaded for editing, so a
+        // later "New provider" click restores the in-progress values the form
+        // held before the edit, not the edited provider's.
+        var cachedDraftState = react.useState(null);
         var data = dataState[0];
         var draft = draftState[0];
         var note = noteState[0];
@@ -1120,6 +1334,19 @@ window.__ModuleLoader__.load({
         var lifecycleNote = lifecycleNoteState[0];
         var downloading = downloadingState[0];
         var downloadNote = downloadNoteState[0];
+        var help = helpState[0];
+        var dirty = dirtyState[0];
+        var editingProviderId = editingProviderIdState[0];
+        var deletingProviderId = deletingProviderIdState[0];
+        var providerFormMode = providerFormModeState[0];
+        var cachedDraft = cachedDraftState[0];
+        // The no-entries case forces the form into new-provider mode on
+        // render: with nothing stored, the form is where the first provider
+        // is entered, and the "New provider" control reads as plain text.
+        var effectiveProviderFormMode =
+          data !== null && (data.providers || []).length === 0
+            ? 'new'
+            : providerFormMode;
         var timerRef = react.useRef(null);
 
         var fetchSummary = react.useCallback(
@@ -1163,6 +1390,9 @@ window.__ModuleLoader__.load({
                   };
                 });
                 noteState[1]('');
+                // The stored preference wins over the default; a summary that
+                // predates the key keeps the descriptions visible.
+                helpState[1](next.showHelp !== false);
               })
               .catch((error) => {
                 noteState[1](t.loadFailed + ': ' + (error && error.message ? error.message : ''));
@@ -1221,6 +1451,7 @@ window.__ModuleLoader__.load({
             noteState[1]('');
             depsNoteState[1]('');
             lifecycleNoteState[1]('');
+            dirtyState[1](true);
             draftState[1]((current) => {
               var config = Object.assign({}, current.config);
               config[key] = value;
@@ -1313,12 +1544,57 @@ window.__ModuleLoader__.load({
           [draft, downloading, t, fetchSummary],
         );
 
+        // The help toggle: flip the local state and persist the preference
+        // through the save route, so it survives a reload. The save response
+        // carries the fresh summary, so the data and the draft resync from
+        // the same round trip, the way the allow-run toggle does.
+        var onToggleHelp = react.useCallback(
+          (next) => {
+            if (draft === null) {
+              return;
+            }
+            helpState[1](next);
+            fetch('/local-infer/save', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                engine: draft.engine,
+                config: draft.config,
+                allowRunDeps: deps !== null && deps.runAllowed === true,
+                platform: draft.platform || {},
+                showHelp: next,
+              }),
+            })
+              .then((response) =>
+                response.json().then((body) => {
+                  if (!response.ok) {
+                    throw new Error(body.error || '');
+                  }
+                  return body;
+                }),
+              )
+              .then((saved) => {
+                dataState[1](saved);
+                draftState[1]({
+                  engine: saved.engineId,
+                  config: saved.config,
+                  platform: saved.platformConfigs || {},
+                });
+              })
+              .catch((error) => {
+                noteState[1](t.saveFailed + ': ' + (error && error.message ? error.message : ''));
+              });
+          },
+          [draft, deps, t],
+        );
+
         // A platform field edit updates the per-engine platform config in the
         // draft. The platform config drives the deploy step only, so it does
         // not re-price the meter; it persists on Save.
         var onPlatform = react.useCallback(
           (field, value) => {
             noteState[1]('');
+            dirtyState[1](true);
             draftState[1]((current) => {
               var engine = current.engine;
               var enginePlatform = Object.assign({}, (current.platform || {})[engine] || {});
@@ -1336,6 +1612,7 @@ window.__ModuleLoader__.load({
             noteState[1]('');
             depsNoteState[1]('');
             lifecycleNoteState[1]('');
+            dirtyState[1](true);
             draftState[1]((_current) => {
               // The platform config is per-engine, so an engine switch keeps
               // the map and only resets the per-engine parameter config.
@@ -1358,14 +1635,20 @@ window.__ModuleLoader__.load({
             return;
           }
           savingState[1](true);
+          // A save upserts a provider entry: editing an existing provider (a
+          // non-null id) updates it in place, a new provider (a null id) mints
+          // an id and prepends it to the list, so a Save always adds (or
+          // refreshes) a card entry at the top of the provider list.
           fetch('/local-infer/save', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
+              id: editingProviderId || undefined,
               engine: draft.engine,
               config: draft.config,
               allowRunDeps: deps !== null && deps.runAllowed === true,
               platform: draft.platform || {},
+              showHelp: help,
             }),
           })
             .then((response) =>
@@ -1383,6 +1666,12 @@ window.__ModuleLoader__.load({
                 config: next.config,
                 platform: next.platformConfigs || {},
               });
+              // The config is now persisted, so the Register gate opens and the
+              // provider list (next.providers) reflects the new entry. The form
+              // collapses back to the entry list, so the saved provider shows as
+              // a card and the "New provider" control is clickable again.
+              dirtyState[1](false);
+              providerFormModeState[1]('collapsed');
               noteState[1](t.saved);
               savingState[1](false);
             })
@@ -1390,14 +1679,107 @@ window.__ModuleLoader__.load({
               noteState[1](t.saveFailed + ': ' + (error && error.message ? error.message : ''));
               savingState[1](false);
             });
-        }, [draft, saving, deps, t]);
+        }, [draft, saving, deps, t, help, editingProviderId]);
 
         var discard = react.useCallback(() => {
           noteState[1]('');
           depsNoteState[1]('');
           lifecycleNoteState[1]('');
+          dirtyState[1](false);
+          editingProviderIdState[1](null);
           load();
         }, [load]);
+
+        // The provider-list actions. Edit loads a stored provider's engine,
+        // config, and platform into the form (the next Save updates that entry
+        // in place); New resets the form to a fresh provider (the next Save
+        // mints an id and prepends it). Both clear the dirty flag, so a
+        // freshly-loaded provider reads as saved and the Register gate opens.
+        var onEditProvider = react.useCallback(
+          (provider) => {
+            noteState[1]('');
+            depsNoteState[1]('');
+            lifecycleNoteState[1]('');
+            // Cache the form's current values before loading the provider, so a
+            // later "New provider" click restores them instead of the edited
+            // provider's.
+            cachedDraftState[1](draft);
+            editingProviderIdState[1](provider.id);
+            dirtyState[1](false);
+            draftState[1]({
+              engine: provider.engine,
+              config: provider.config || {},
+              platform: provider.platform ? { [provider.engine]: provider.platform } : {},
+            });
+            // Show the form with the provider's values, ready for editing.
+            providerFormModeState[1]('editing');
+            // Re-price the meter and deps panel for the loaded provider's
+            // engine, so the readouts match the form the provider filled.
+            fetchSummary(provider.engine, provider.config || {});
+            fetchDeps(provider.engine, provider.config || {});
+          },
+          [draft, fetchSummary, fetchDeps],
+        );
+
+        var onNewProvider = react.useCallback(
+          () => {
+            noteState[1]('');
+            editingProviderIdState[1](null);
+            dirtyState[1](false);
+            // Restore the cached in-progress values (the form state before the
+            // last edit); with no cache a fresh provider starts from the
+            // current engine and a blank config.
+            var next =
+              cachedDraft !== null
+                ? cachedDraft
+                : {
+                    engine: draft !== null ? draft.engine : 'ninfer',
+                    config: {},
+                    platform: draft !== null ? draft.platform || {} : {},
+                  };
+            draftState[1](next);
+            providerFormModeState[1]('new');
+            fetchSummary(next.engine, next.config);
+            fetchDeps(next.engine, next.config);
+          },
+          [cachedDraft, draft, fetchSummary, fetchDeps],
+        );
+
+        var onDeleteProvider = react.useCallback(
+          (providerId) => {
+            if (providerId === null || deletingProviderId !== null) {
+              return;
+            }
+            deletingProviderIdState[1](providerId);
+            fetch('/local-infer/provider-delete', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ id: providerId }),
+            })
+              .then((response) =>
+                response.json().then((body) => {
+                  if (!response.ok) {
+                    throw new Error(body.error || '');
+                  }
+                  return body;
+                }),
+              )
+              .then((next) => {
+                dataState[1](next);
+                // The deleted provider is gone, so stop editing it if the form
+                // was showing it.
+                if (editingProviderId === providerId) {
+                  editingProviderIdState[1](null);
+                }
+                deletingProviderIdState[1](null);
+              })
+              .catch((error) => {
+                noteState[1](t.saveFailed + ': ' + (error && error.message ? error.message : ''));
+                deletingProviderIdState[1](null);
+              });
+          },
+          [deletingProviderId, editingProviderId, t],
+        );
 
         // The deps panel actions. Copy hands the install block to the
         // clipboard; the allow-run toggle and the Play/Run arrow talk to the
@@ -1439,6 +1821,8 @@ window.__ModuleLoader__.load({
                 engine: draft.engine,
                 config: draft.config,
                 allowRunDeps: checked,
+                platform: draft.platform || {},
+                showHelp: help,
               }),
             })
               .then((response) =>
@@ -1457,7 +1841,7 @@ window.__ModuleLoader__.load({
                 noteState[1](t.saveFailed + ': ' + (error && error.message ? error.message : ''));
               });
           },
-          [draft, t, fetchDeps],
+          [draft, t, fetchDeps, help],
         );
 
         var onRun = react.useCallback(() => {
@@ -1689,11 +2073,65 @@ window.__ModuleLoader__.load({
         return react.createElement(
           'div',
           { style: CARD_STYLE },
-          react.createElement('div', { style: { fontWeight: 600, fontSize: 14 } }, t.section),
+          // The card header: the section title plus the circular "?" button
+          // that shows or hides the per-field descriptions. The preference
+          // persists through the save route, so it survives a reload.
           react.createElement(
             'div',
-            { style: ROW_STYLE },
-            react.createElement('label', { style: LABEL_STYLE }, t.engine),
+            {
+              style: {
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 8,
+              },
+            },
+            react.createElement('div', { style: { fontWeight: 600, fontSize: 14 } }, t.section),
+            react.createElement(
+              'button',
+              {
+                type: 'button',
+                style: HELP_BUTTON_STYLE(help),
+                title: t.helpToggle,
+                'aria-label': t.helpToggle,
+                'aria-pressed': help,
+                onClick: () => onToggleHelp(!help),
+              },
+              '?',
+            ),
+          ),
+          // The provider list: the saved provider entries, each a collapsed
+          // card with a status dot and Edit/Delete controls. Edit loads a
+          // provider into the form below; New resets the form to a fresh
+          // entry; Delete removes it through the provider-delete route.
+          // The list only renders while there are entries; with none, the
+          // form below (forced into new mode) is the entry point.
+          (data.providers || []).length > 0
+            ? renderProviderList(react, primitives, data.providers || [], {
+                onEdit: onEditProvider,
+                onDelete: onDeleteProvider,
+                deletingId: deletingProviderId,
+                engines: data.engines || [],
+                modelAuto: t.modelAuto,
+                statusRunning: t.statusRunning,
+                statusStopped: t.statusStopped,
+                statusUnsure: t.statusUnsure,
+                editLabel: t.edit,
+                deleteLabel: t.delete,
+              })
+            : null,
+          // The provider form: the Engine/Model config the card prices. It is
+          // collapsed by default while entries exist, and shown only in
+          // editing or new mode (with a stored provider's values, or a fresh
+          // one), sitting before the "New provider" control.
+          effectiveProviderFormMode !== 'collapsed'
+            ? react.createElement(
+                'div',
+                { style: { display: 'flex', flexDirection: 'column' } },
+                react.createElement(
+                  'div',
+                  { style: ROW_STYLE },
+                  react.createElement('label', { style: LABEL_STYLE }, t.engine),
             renderSelect(react, primitives, {
               value: draft.engine,
               label:
@@ -1708,6 +2146,7 @@ window.__ModuleLoader__.load({
               onSelect: (id) => onEngine(id),
             }),
           ),
+          help ? renderHelpRow(react, t.engineHelp) : null,
           // The Model row draws from the default model list plus the
           // directory scan: the defaults are the models the plugin knows how
           // to download, and the model files are the models the user already
@@ -1716,32 +2155,37 @@ window.__ModuleLoader__.load({
           (data.modelDefaults || []).length > 0 || (data.modelFiles || []).length > 0
             ? react.createElement(
                 'div',
-                { style: ROW_STYLE },
-                react.createElement('label', { style: LABEL_STYLE }, t.model),
-                (() => {
-                  var modelValue =
-                    draft.config && typeof draft.config.model === 'string'
-                      ? draft.config.model
-                      : '';
-                  var modelItems = [{ id: '', label: t.modelAuto }]
-                    .concat(
-                      (data.modelDefaults || []).map((model) => ({
-                        id: model.id,
-                        label: model.label,
-                      })),
-                    )
-                    .concat(
-                      (data.modelFiles || []).map((file) => ({ id: file, label: file })),
-                    );
-                  return renderSelect(react, primitives, {
-                    value: modelValue,
-                    label:
-                      (modelItems.find((item) => item.id === modelValue) || {}).label ||
-                      t.modelAuto,
-                    items: modelItems,
-                    onSelect: (id) => onValue('model', id === '' ? undefined : id),
-                  });
-                })(),
+                null,
+                react.createElement(
+                  'div',
+                  { style: ROW_STYLE },
+                  react.createElement('label', { style: LABEL_STYLE }, t.model),
+                  (() => {
+                    var modelValue =
+                      draft.config && typeof draft.config.model === 'string'
+                        ? draft.config.model
+                        : '';
+                    var modelItems = [{ id: '', label: t.modelAuto }]
+                      .concat(
+                        (data.modelDefaults || []).map((model) => ({
+                          id: model.id,
+                          label: model.label,
+                        })),
+                      )
+                      .concat(
+                        (data.modelFiles || []).map((file) => ({ id: file, label: file })),
+                      );
+                    return renderSelect(react, primitives, {
+                      value: modelValue,
+                      label:
+                        (modelItems.find((item) => item.id === modelValue) || {}).label ||
+                        t.modelAuto,
+                      items: modelItems,
+                      onSelect: (id) => onValue('model', id === '' ? undefined : id),
+                    });
+                  })(),
+                ),
+                help ? renderHelpRow(react, t.modelHelp) : null,
               )
             : null,
           (() => {
@@ -1765,15 +2209,20 @@ window.__ModuleLoader__.load({
             return buildModes.length > 0
               ? react.createElement(
                   'div',
-                  { style: ROW_STYLE },
-                  react.createElement('label', { style: LABEL_STYLE }, t.build),
-                  renderSelect(react, primitives, {
-                    value: buildMode,
-                    label:
-                      (buildItems.find((item) => item.id === buildMode) || {}).label || buildMode,
-                    items: buildItems,
-                    onSelect: (id) => onValue('buildMode', id),
-                  }),
+                  null,
+                  react.createElement(
+                    'div',
+                    { style: ROW_STYLE },
+                    react.createElement('label', { style: LABEL_STYLE }, t.build),
+                    renderSelect(react, primitives, {
+                      value: buildMode,
+                      label:
+                        (buildItems.find((item) => item.id === buildMode) || {}).label || buildMode,
+                      items: buildItems,
+                      onSelect: (id) => onValue('buildMode', id),
+                    }),
+                  ),
+                  help ? renderHelpRow(react, t.buildHelp) : null,
                 )
               : null;
           })(),
@@ -1784,23 +2233,28 @@ window.__ModuleLoader__.load({
           // targets, so it rides the config round trip, not the platform map.
           react.createElement(
             'div',
-            { style: ROW_STYLE },
-            react.createElement('label', { style: LABEL_STYLE }, t.modelDirectory),
+            null,
             react.createElement(
-              'input',
-              Object.assign(
-                { style: INPUT_STYLE },
-                {
-                  type: 'text',
-                  value:
-                    typeof (draft.config || {}).modelDirectory === 'string'
-                      ? draft.config.modelDirectory
-                      : '',
-                  placeholder: t.dirPlaceholder,
-                  onChange: (event) => onModelDirectory(event.target.value),
-                },
+              'div',
+              { style: ROW_STYLE },
+              react.createElement('label', { style: LABEL_STYLE }, t.modelDirectory),
+              react.createElement(
+                'input',
+                Object.assign(
+                  { style: INPUT_STYLE },
+                  {
+                    type: 'text',
+                    value:
+                      typeof (draft.config || {}).modelDirectory === 'string'
+                        ? draft.config.modelDirectory
+                        : '',
+                    placeholder: t.dirPlaceholder,
+                    onChange: (event) => onModelDirectory(event.target.value),
+                  },
+                ),
               ),
             ),
+            help ? renderHelpRow(react, t.modelDirHelp) : null,
           ),
           (() => {
             // The model status row: it shows while the selected model is
@@ -1890,6 +2344,7 @@ window.__ModuleLoader__.load({
                   ),
                 ),
               ),
+              help ? renderHelpRow(react, t.engineDirHelp) : null,
               react.createElement(
                 'div',
                 { style: ROW_STYLE },
@@ -1914,6 +2369,7 @@ window.__ModuleLoader__.load({
                   ),
                 ),
               ),
+              help ? renderHelpRow(react, t.engineForkHelp) : null,
             );
           })(),
           hasFields
@@ -1929,6 +2385,7 @@ window.__ModuleLoader__.load({
                       onValue,
                       inlineWarnings[field.key],
                       primitives,
+                      help,
                     ),
                   ),
                 ),
@@ -2043,7 +2500,7 @@ window.__ModuleLoader__.load({
               react,
               primitives,
               'ghost',
-              { onClick: onRegister, disabled: registering },
+              { onClick: onRegister, disabled: registering || dirty },
               t.register,
             ),
             renderCheckbox(react, primitives, {
@@ -2059,9 +2516,26 @@ window.__ModuleLoader__.load({
               t.unregister,
             ),
           ),
+          // While the config is unsaved, the help line names the gate: a
+          // provider must be saved before it can register. It rides the same
+          // help toggle as the field descriptions, so it hides with them.
+          dirty && help ? renderHelpRow(react, t.registerNeedsSave) : null,
           registerNote
             ? react.createElement('div', { style: { fontSize: 12 } }, registerNote)
             : null,
+          )
+            : null,
+          // The "New provider" control: a clickable button while a new
+          // provider can be started (entries exist and the form is not already
+          // in new mode), plain text while the form is in new mode or there
+          // are no entries, since the form is already there to enter one.
+          renderNewProviderControl(react, primitives, {
+            onNew: onNewProvider,
+            label: t.newProvider,
+            clickable:
+              (data.providers || []).length > 0 &&
+              effectiveProviderFormMode !== 'new',
+          }),
           react.createElement(
             'div',
             { style: FOOTER_STYLE },

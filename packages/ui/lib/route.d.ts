@@ -15,7 +15,7 @@
  * @module @dsh/dsh-plugin-local-infer/ui/route
  */
 import type { Context } from '@deepseek-ai/cordis';
-import type { Config, DefaultProvenance, HardwareProfile, InstallResult, RegisterResult, VramModel, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
+import type { Config, DefaultProvenance, HardwareProfile, InstallResult, ProviderStatus, RegisterResult, VramModel, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
 import type { DownloadResult, LaunchResult, LocalInferService } from '@dsh/dsh-plugin-local-infer/service';
 import type { EngineInfo } from '../../providers/lib/index.js';
 import type { DepsModel } from './deps.ts';
@@ -77,6 +77,22 @@ export interface LocalInferSummary {
     modelDefaults: ModelDefaultModel[];
     modelStatus: ModelStatusModel | null;
     modelFiles: string[];
+    showHelp: boolean;
+    providers: ProviderSummaryEntry[];
+}
+/**
+ * ProviderSummaryEntry is the card-facing view of one saved provider config:
+ * the stable id the card edits and deletes against, the engine and model the
+ * title renders ("NInfer: <model>"), the running-state the status dot paints,
+ * and the full config and platform the expanded form draws from.
+ */
+export interface ProviderSummaryEntry {
+    id: string;
+    engine: string;
+    model: string;
+    status: ProviderStatus;
+    config: Config;
+    platform: StoredPlatformConfig;
 }
 /**
  * ModelDefaultModel is the card-facing view of one default model entry: the
@@ -128,11 +144,27 @@ export interface StoredPlatformConfig {
     engineDirectory?: string;
     engineFork?: string;
 }
+/**
+ * StoredProviderConfig is one saved provider model+engine config the card
+ * lists: a stable id the card edits and deletes against, the engine and the
+ * full parameter config it serves, and the per-engine platform config the
+ * deploy step consumes. A Save adds a new entry (or updates one by id), so
+ * the card lists every provider the user has configured, not just the one
+ * currently being edited.
+ */
+export interface StoredProviderConfig {
+    id: string;
+    engine: string;
+    config: Config;
+    platform: StoredPlatformConfig;
+}
 export interface StoredConfig {
     engine: string;
     config: Config;
     allowRunDeps: boolean;
     platform: Record<string, StoredPlatformConfig>;
+    showHelp: boolean;
+    providers: StoredProviderConfig[];
 }
 /**
  * readConfig reads the stored engine, config, trust gate, and per-engine
@@ -143,10 +175,10 @@ export interface StoredConfig {
  */
 export declare function readConfig(): StoredConfig;
 /**
- * writeConfig persists the engine, config, trust gate, and per-engine platform
- * configs, creating the directory tree on first write.
+ * writeConfig persists the engine, config, trust gate, per-engine platform
+ * configs, and the help toggle, creating the directory tree on first write.
  */
-export declare function writeConfig(engine: string, config: Config, allowRunDeps: boolean, platform?: Record<string, StoredPlatformConfig>): void;
+export declare function writeConfig(engine: string, config: Config, allowRunDeps: boolean, platform?: Record<string, StoredPlatformConfig>, showHelp?: boolean, providers?: StoredProviderConfig[]): void;
 /**
  * buildSummary assembles the card's read model for one engine and config: the
  * static engine and model lists, the detected hardware, the form model the

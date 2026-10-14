@@ -1,4 +1,4 @@
-import type { CommandOutcome, Config, DefaultModel, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, GpuUsageProbe, HardwareProfile, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, RegisterResult, ReserveResolution, ReserveSource, ResolvedDefaults, SettingsOp, SystemDep, VramBreakdown, VramModel, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
+import type { CommandOutcome, Config, DefaultModel, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, GpuUsageProbe, HardwareProfile, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, ProviderRef, ProviderStatus, RegisterResult, ReserveResolution, ReserveSource, ResolvedDefaults, SettingsOp, SystemDep, VramBreakdown, VramModel, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
 /**
  * EstimateResult is the answer to an estimate call: the full VRAM breakdown,
  * the one-word verdict the meter renders, the source the numbers came from,
@@ -25,6 +25,17 @@ export interface DetectOsReserveOptions {
     engineId?: string;
     gpuUsage?: GpuUsageProbe | null;
     processes?: ProcessLine[];
+}
+/**
+ * ProviderStatusOptions tunes the provider-status detection: processes and
+ * gpuUsage inject the probe results, so a test prices a busy card or a foreign
+ * engine without a live nvidia-smi or ps. An absent probe result runs the live
+ * probe; a present one (including an explicit null GPU reading) is used as
+ * given.
+ */
+export interface ProviderStatusOptions {
+    processes?: ProcessLine[];
+    gpuUsage?: GpuUsageProbe | null;
 }
 /**
  * LaunchResult is the answer to a launch call: the plan that was started,
@@ -143,6 +154,7 @@ export interface LocalInferService {
     estimate(config: Config, hw: HardwareProfile, engineId?: string): Promise<EstimateResult>;
     detectHardware(): Promise<HardwareProfile>;
     detectOsReserve(config?: Config, options?: DetectOsReserveOptions): Promise<ReserveResolution>;
+    providerStatuses(providers: readonly ProviderRef[], options?: ProviderStatusOptions): Promise<Record<string, ProviderStatus>>;
     guidelines(config: Config, hw: HardwareProfile, engineId?: string): Promise<GuidelineResult[]>;
     deps(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<readonly SystemDep[]>;
     installString(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<string>;
