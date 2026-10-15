@@ -1,6 +1,9 @@
 {
-  "name": "@dsh/dsh-plugin-local-infer",
+  "name": "dsh-plugin-local-infer",
   "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "DeepSeek Harness plugin that manages local inference engines (llama.cpp, NInfer, Hyper-Qwen, Strata): configure, size, launch, and publish a local engine as a DSH model. Installable bundle that mounts the localInfer service, engine providers, model-facing tools, and the Web UI as one profile layer.",
   "keywords": [
     "dsh",
@@ -19,7 +22,6 @@
   ],
   "license": "MIT",
   "type": "module",
-  "private": true,
   "packageManager": "pnpm@12.11.2",
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
