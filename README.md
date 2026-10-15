@@ -1,5 +1,7 @@
 # dsh-plugin-local-infer
 
+[中文 (Chinese)](docs/zh/README.md)
+
 > For those who want more performance out of their specific hardware than what Unsloth gives out of the box.
 
 A DeepSeek Harness plugin that manages local inference engines:
