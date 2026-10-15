@@ -2667,11 +2667,18 @@ window.__ModuleLoader__.load({
         // The note reports the answer the route returned.
         var launchBody = () => {
           var platform = (draft.platform || {})[draft.engine];
-          return JSON.stringify({
+          var body = {
             engine: draft.engine,
             config: draft.config,
             platform: platform,
-          });
+          };
+          // The provider entry the draft edits: the route persists the launch
+          // record (and the stop's clear) on that entry, so a restart re-links
+          // the entry's engine. Absent while the draft is not a provider.
+          if (editingProviderId !== null) {
+            body.providerId = editingProviderId;
+          }
+          return JSON.stringify(body);
         };
 
         var onLaunch = react.useCallback(() => {
@@ -2710,7 +2717,7 @@ window.__ModuleLoader__.load({
             .then(() => {
               launchingState[1](false);
             });
-        }, [draft, launching, t]);
+        }, [draft, launching, editingProviderId, t]);
 
         var onStop = react.useCallback(() => {
           if (draft === null || stopping) {
@@ -2742,7 +2749,7 @@ window.__ModuleLoader__.load({
             .then(() => {
               stoppingState[1](false);
             });
-        }, [draft, stopping, t]);
+        }, [draft, stopping, editingProviderId, t]);
 
         // The per-entry launch: a card entry's own Launch control drives its
         // own engine, not the form's draft. It records a start time and the
@@ -2785,6 +2792,9 @@ window.__ModuleLoader__.load({
                 engine: provider.engine,
                 config: provider.config || {},
                 platform: provider.platform ? { [provider.engine]: provider.platform } : {},
+                // The entry's own id: the route persists the launch record on
+                // this entry, so a restart re-links the entry's engine.
+                providerId: provider.id,
               }),
             })
               .then((response) => response.json().then((body) => ({ ok: response.ok, body: body })))
@@ -2824,6 +2834,9 @@ window.__ModuleLoader__.load({
                 engine: provider.engine,
                 config: provider.config || {},
                 platform: provider.platform ? { [provider.engine]: provider.platform } : {},
+                // The entry's own id: the stop clears the launch record on
+                // this entry, so a recycled pid cannot re-link it.
+                providerId: provider.id,
               }),
             })
               .then(() => {

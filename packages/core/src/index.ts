@@ -47,6 +47,16 @@ export {
   parseNvidiaSmiGpuUsage,
   resolveOsReserve,
 } from './reserve.ts'
+export {
+  commandMatchesArgv,
+  launchRecordFromPlan,
+  reLinkRecord,
+} from './launch-record.ts'
+export type {
+  ProviderLaunchRecord,
+  ReLinkInput,
+  ReLinkOutcome,
+} from './launch-record.ts'
 export type {
   EngineLaunchSignature,
   GpuUsageProbe,

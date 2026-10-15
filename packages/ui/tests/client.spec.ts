@@ -260,6 +260,15 @@ describe('dsh/client.js browser carrier', () => {
     expect(source).toContain('entryLaunchState')
   })
 
+  it('pins the launch record contract the restart re-link prices', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // The card's launch and stop bodies carry the provider entry's id, so the
+    // route persists (or clears) the launch record on that entry and a DSH
+    // restart re-links a surviving engine to its config.
+    expect(source).toContain('providerId: provider.id')
+    expect(source).toContain('body.providerId = editingProviderId')
+  })
+
   it('pins the provider Edit to Cancel swap while a provider is being edited', () => {
     const source = readFileSync(fileURLToPath(clientPath), 'utf8')
     // The provider the editing form is open for shows a Cancel button (which

@@ -43,6 +43,7 @@ import {
   LLM_PI_AI_NAMESPACE,
   matchLaunchSignature,
   modelGuidelines,
+  reLinkRecord,
   computeProviderStatuses,
   modelRowsFrom,
   parseNvidiaSmiGpu,
@@ -78,8 +79,10 @@ import type {
   Preset,
   PresetSource,
   ProcessLine,
+  ProviderLaunchRecord,
   ProviderRef,
   ProviderStatus,
+  ReLinkOutcome,
   RegisterResult,
   ReserveResolution,
   ResolvedDefaults,
@@ -594,6 +597,18 @@ export class LocalInfer extends Service implements LocalInferService {
     if (health.detail !== undefined) {
       launchResult.detail = health.detail
     }
+    // The launch record the route persists for the provider config entry: the
+    // engine's pid and the DSH process pid that launched it. The parent pid is
+    // only written when the host process identifies as DSH, so a non-DSH host
+    // never claims an engine it did not launch (the re-link rule reads a
+    // missing parent as foreign after a restart).
+    const handlePid = deployResult.handle?.pid
+    if (handlePid !== undefined && handlePid > 0) {
+      launchResult.pid = handlePid
+      if (dshProcessIdentifies(process.pid)) {
+        launchResult.parentPid = process.pid
+      }
+    }
     // Read the engine's captured output after the health poll, so the result
     // carries the log lines the engine printed while it came up. The route
     // persists these as the last run and writes them to the configured file.
@@ -602,6 +617,55 @@ export class LocalInfer extends Service implements LocalInferService {
       launchResult.logs = handleLogs
     }
     return launchResult
+  }
+
+  /**
+   * reLinkProviders re-links the engines a previous DSH process started for
+   * the stored provider config entries, so a DSH restart re-adopts a
+   * surviving engine instead of reading it as a foreign process. Each record
+   * is priced by the core re-link rule: the engine pid must be alive and its
+   * command line must still carry the record's launch arguments, and the
+   * record's parent pid must be the current DSH pid or a previous DSH pid
+   * that is no longer running (a live previous pid is a DSH clone that owns
+   * the engine, and an unknown parent is a user-launched engine). An adopted
+   * engine is re-marked plugin-launched (the OS-reserve default) and tied to
+   * its model (the provider-status detector's green dot); a dead engine
+   * reads as dead, so the caller clears the record and a recycled pid cannot
+   * re-link. The options inject the process probes, so a test prices a live
+   * or dead engine without a live process table.
+   */
+  async reLinkProviders(
+    entries: readonly { id: string; record: ProviderLaunchRecord }[],
+    options?: {
+      processAlive?: (pid: number) => boolean
+      commandLine?: (pid: number) => string | undefined
+    },
+  ): Promise<Record<string, ReLinkOutcome>> {
+    const processAlive = options?.processAlive ?? isProcessAlive
+    const commandLine = options?.commandLine ?? readProcessCommandLine
+    const outcomes: Record<string, ReLinkOutcome> = {}
+    for (const entry of entries) {
+      const outcome = reLinkRecord({
+        record: entry.record,
+        currentDshPid: process.pid,
+        processAlive,
+        commandLine,
+      })
+      outcomes[entry.id] = outcome
+      if (outcome === 'adopted') {
+        // The re-adopted engine is plugin-launched again, so the OS-reserve
+        // resolver keeps its 3 GiB default and the provider-status detector
+        // ties its port to the model the record names.
+        this.launchedEngines.add(entry.record.engineId)
+        if (entry.record.port !== undefined && entry.record.modelId !== undefined) {
+          this.launchedModels.set(entry.record.port, {
+            engineId: entry.record.engineId,
+            modelId: entry.record.modelId,
+          })
+        }
+      }
+    }
+    return outcomes
   }
 
   /**
@@ -1319,6 +1383,57 @@ function readProcEnviron(pid: number): Record<string, string> | undefined {
     }
   }
   return Object.keys(env).length > 0 ? env : undefined
+}
+
+/**
+ * isProcessAlive reports whether a pid names a running process: a signal-0
+ * send that throws ESRCH reads as dead, and EPERM (the process exists but the
+ * signal is not permitted) reads as alive. The re-link rule prices the engine
+ * pid and the record's parent pid through it.
+ */
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+/**
+ * readProcessCommandLine reads one process's command line out of its /proc
+ * cmdline file (NUL-separated argv). Any failure (no /proc on macOS, the
+ * process exited, a permission) degrades to undefined, which the re-link rule
+ * reads as a neutral command-line element rather than a mismatch.
+ */
+function readProcessCommandLine(pid: number): string | undefined {
+  let raw: string
+  try {
+    raw = readFileSync(`/proc/${pid}/cmdline`, 'utf8')
+  } catch {
+    return undefined
+  }
+  const args = raw.split('\0').filter((part) => part !== '')
+  return args.length > 0 ? args.join(' ') : undefined
+}
+
+/**
+ * dshProcessIdentifies reports whether a process's command line carries the
+ * dsh marker (the host runs from the @deepseek-ai/dsh package, so its argv
+ * names it). The launch step runs it on the host's own pid before writing
+ * the record's parent pid, so a host that is not DSH never claims an engine
+ * it did not launch. A pid the host cannot read degrades to its own argv
+ * when it is the host process, so a host without /proc still prices itself.
+ */
+function dshProcessIdentifies(pid: number): boolean {
+  const commandLine = readProcessCommandLine(pid)
+  if (commandLine !== undefined) {
+    return commandLine.toLowerCase().includes('dsh')
+  }
+  if (pid === process.pid) {
+    return process.argv.join(' ').toLowerCase().includes('dsh')
+  }
+  return false
 }
 
 /**

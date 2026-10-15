@@ -15,7 +15,7 @@
  * @module @dsh/dsh-plugin-local-infer/ui/route
  */
 import type { Context } from '@deepseek-ai/cordis';
-import type { Config, DefaultProvenance, HardwareProfile, InstallResult, ProviderStatus, RegisterResult, VramModel, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
+import type { Config, DefaultProvenance, HardwareProfile, InstallResult, ProviderLaunchRecord, ProviderStatus, RegisterResult, VramModel, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
 import type { DownloadResult, LaunchResult, LocalInferService } from '@dsh/dsh-plugin-local-infer/service';
 import type { EngineInfo } from '../../providers/lib/index.js';
 import type { DepsModel } from './deps.ts';
@@ -169,16 +169,18 @@ export interface StoredPlatformConfig {
 /**
  * StoredProviderConfig is one saved provider model+engine config the card
  * lists: a stable id the card edits and deletes against, the engine and the
- * full parameter config it serves, and the per-engine platform config the
- * deploy step consumes. A Save adds a new entry (or updates one by id), so
- * the card lists every provider the user has configured, not just the one
- * currently being edited.
+ * full parameter config it serves, the per-engine platform config the deploy
+ * step consumes, and the launch record the launch step persists when it
+ * starts the entry's engine (the engine pid, start time, launch arguments,
+ * and the DSH process pid that launched it). The record is what a DSH
+ * restart re-links a surviving engine to its config; a stop clears it.
  */
 export interface StoredProviderConfig {
     id: string;
     engine: string;
     config: Config;
     platform: StoredPlatformConfig;
+    launch?: ProviderLaunchRecord;
 }
 export interface StoredConfig {
     engine: string;
@@ -307,19 +309,25 @@ export declare function chatTemplateDownloadFor(localInfer: LocalInferService, r
  * LaunchRequest is the query the card sends for the launch and stop routes: the
  * engine and the config the plan renders from. `platform` carries the card's
  * unsaved Engine Directory / Engine Fork edits for the engine, so a launch uses
- * them without a prior save. Absent values fall back to the stored config, the
+ * them without a prior save. `providerId` names the saved provider entry the
+ * launch drives, so the route persists the launch record (or clears it on a
+ * stop) on that entry. Absent values fall back to the stored config, the
  * same rule the summary route applies.
  */
 export interface LaunchRequest {
     engine?: string;
     config?: Config;
     platform?: StoredPlatformConfig;
+    providerId?: string;
 }
 /**
  * launchEngine renders the plan the registered adapter produces for the config
  * and the detected hardware, then runs the service's launch entry point
  * (deploy, then the health poll). The detail the launch returns names the
- * broken step when the engine does not come up.
+ * broken step when the engine does not come up. The launch step persists the
+ * launch record (the engine pid, start time, launch arguments, and the DSH
+ * process pid that launched it) on the request's provider entry, so a DSH
+ * restart can re-link a surviving engine to its config.
  */
 export declare function launchEngine(localInfer: LocalInferService, request: LaunchRequest): Promise<LaunchResult>;
 /**
@@ -332,7 +340,10 @@ export declare function launchEngine(localInfer: LocalInferService, request: Lau
 export declare function persistLaunchLogs(result: LaunchResult, engineId: string, config: Config): void;
 /**
  * stopEngine renders the same plan and runs the service's stop entry point, so
- * the stop step targets the exact container or process the launch started.
+ * the stop step targets the exact container or process the launch started. The
+ * stop then clears the target entry's launch record (the engine pid and the
+ * previous-pid list with it), so a recycled pid cannot re-link an engine the
+ * user just stopped.
  */
 export declare function stopEngine(localInfer: LocalInferService, request: LaunchRequest): Promise<void>;
 /**

@@ -1,4 +1,4 @@
-import type { CommandOutcome, Config, DefaultModel, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, GpuUsageProbe, HardwareProfile, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, ProviderRef, ProviderStatus, RegisterResult, ReserveResolution, ReserveSource, ResolvedDefaults, SettingsOp, SystemDep, VramBreakdown, VramModel, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
+import type { CommandOutcome, Config, DefaultModel, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, GpuUsageProbe, HardwareProfile, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, ProviderLaunchRecord, ProviderRef, ProviderStatus, ReLinkOutcome, RegisterResult, ReserveResolution, ReserveSource, ResolvedDefaults, SettingsOp, SystemDep, VramBreakdown, VramModel, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
 /**
  * EstimateResult is the answer to an estimate call: the full VRAM breakdown,
  * the one-word verdict the meter renders, the source the numbers came from,
@@ -43,12 +43,19 @@ export interface ProviderStatusOptions {
  * captured log output (stdout and stderr) when the deploy step read it. The
  * route persists the logs as the last run and writes them to the configured
  * log file, so the card's Logs section shows the run even after a reload.
+ * `pid` is the engine process the deploy step started (absent when the
+ * deploy pulls an image only), and `parentPid` is the DSH process pid that
+ * launched the engine (absent when the host process did not identify as
+ * DSH), the two fields the route persists as the provider entry's launch
+ * record for the restart re-link.
  */
 export interface LaunchResult {
     plan: LaunchPlan;
     healthy: boolean;
     detail?: string;
     logs?: string;
+    pid?: number;
+    parentPid?: number;
 }
 /**
  * LaunchOptions tunes the launch health poll: the interval between attempts
@@ -202,6 +209,13 @@ export interface LocalInferService {
     runInstall(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<InstallResult>;
     launch(plan: LaunchPlan, options?: LaunchOptions): Promise<LaunchResult>;
     stop(plan: LaunchPlan): Promise<void>;
+    reLinkProviders(entries: readonly {
+        id: string;
+        record: ProviderLaunchRecord;
+    }[], options?: {
+        processAlive?: (pid: number) => boolean;
+        commandLine?: (pid: number) => string | undefined;
+    }): Promise<Record<string, ReLinkOutcome>>;
     registerModel(plan: LaunchPlan, model: ModelRow, options?: RegisterModelOptions): Promise<RegisterResult>;
     removeModel(providerId: string, modelId: string): Promise<void>;
     resolveDefaults(engineId: string, modelId: string, hw: HardwareProfile, explicit?: Config): Promise<ResolvedDefaults>;

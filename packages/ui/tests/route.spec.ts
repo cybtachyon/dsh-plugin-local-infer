@@ -14,8 +14,10 @@ import type {
   LaunchPlan,
   ModelDirectoryEntry,
   ModelRow,
+  ProviderLaunchRecord,
   ProviderRef,
   ProviderStatus,
+  ReLinkOutcome,
   RegisterResult,
   SystemDep,
   VramBreakdown,
@@ -144,6 +146,9 @@ function stubService(
     providerStatuses?: (
       providers: readonly ProviderRef[],
     ) => Promise<Record<string, ProviderStatus>>
+    reLinkProviders?: (
+      entries: readonly { id: string; record: ProviderLaunchRecord }[],
+    ) => Promise<Record<string, ReLinkOutcome>>
   } = {},
 ): LocalInferService {
   return {
@@ -173,6 +178,9 @@ function stubService(
     stop: async () => {
       /* the route test asserts the call, not the effect */
     },
+    reLinkProviders: async (entries) =>
+      (await extras.reLinkProviders?.(entries)) ??
+      Object.fromEntries(entries.map((entry) => [entry.id, 'adopted' as ReLinkOutcome])),
     registerModel: async (
       plan: LaunchPlan,
       model: ModelRow,
@@ -493,6 +501,122 @@ describe('launch and stop route helpers', () => {
     await expect(launchEngine(service, { engine: 'strata' })).rejects.toThrow(
       expect.objectContaining<RouteError>({ status: 404 }),
     )
+  })
+
+  it('persists the launch record on the provider entry the launch names', async () => {
+    writeConfig('ninfer', { model: 'qwen3-27b' }, false, {}, true, [
+      { id: 'p1', engine: 'ninfer', config: { model: 'qwen3-27b' }, platform: {} },
+    ])
+    const service = stubService([], {
+      launchResult: {
+        plan: {
+          engineId: 'ninfer',
+          kind: 'process',
+          argv: ['ninfer-serve', '/models/m.ninfer', '--port', '18020'],
+          port: 18020,
+          modelId: 'qwen3-27b',
+          healthUrl: 'http://127.0.0.1:18020/health',
+        },
+        healthy: true,
+        pid: 12345,
+        parentPid: 999,
+      },
+    })
+    await launchEngine(service, {
+      engine: 'ninfer',
+      config: { model: 'qwen3-27b' },
+      providerId: 'p1',
+    })
+    // The record the restart re-link prices: the engine pid, the DSH parent
+    // pid, the launch arguments, and the previous-pid list the core builder
+    // seeds from the parent pid.
+    const record = readConfig().providers[0]?.launch
+    expect(record?.pid).toBe(12345)
+    expect(record?.parentPid).toBe(999)
+    expect(record?.argv).toEqual(['ninfer-serve', '/models/m.ninfer', '--port', '18020'])
+    expect(record?.previousPids).toEqual([999])
+    expect(record?.engineId).toBe('ninfer')
+    expect(record?.port).toBe(18020)
+    expect(record?.modelId).toBe('qwen3-27b')
+    expect(typeof record?.startedAt).toBe('string')
+  })
+
+  it('persists the launch record on the engine+model entry when the launch names no provider', async () => {
+    writeConfig('ninfer', { model: 'qwen3-27b' }, false, {}, true, [
+      { id: 'p1', engine: 'ninfer', config: { model: 'qwen3-27b' }, platform: {} },
+    ])
+    const service = stubService([], {
+      launchResult: {
+        plan: {
+          engineId: 'ninfer',
+          kind: 'process',
+          argv: ['ninfer-serve'],
+          port: 18020,
+          healthUrl: 'http://127.0.0.1:18020/health',
+        },
+        healthy: true,
+        pid: 12345,
+        parentPid: 999,
+      },
+    })
+    // No providerId: the route falls back to the stored entry with the same
+    // engine and model.
+    await launchEngine(service, { engine: 'ninfer', config: { model: 'qwen3-27b' } })
+    expect(readConfig().providers[0]?.launch?.pid).toBe(12345)
+  })
+
+  it('persists no launch record when the deploy started no tracked process', async () => {
+    writeConfig('ninfer', { model: 'qwen3-27b' }, false, {}, true, [
+      { id: 'p1', engine: 'ninfer', config: { model: 'qwen3-27b' }, platform: {} },
+    ])
+    const service = stubService([], {
+      launchResult: {
+        plan: {
+          engineId: 'ninfer',
+          kind: 'process',
+          port: 18020,
+          healthUrl: 'http://127.0.0.1:18020/health',
+        },
+        healthy: true,
+      },
+    })
+    await launchEngine(service, {
+      engine: 'ninfer',
+      config: { model: 'qwen3-27b' },
+      providerId: 'p1',
+    })
+    expect(readConfig().providers[0]?.launch).toBeUndefined()
+  })
+
+  it('clears the launch record on a stop of the named provider', async () => {
+    writeConfig('ninfer', { model: 'qwen3-27b' }, false, {}, true, [
+      {
+        id: 'p1',
+        engine: 'ninfer',
+        config: { model: 'qwen3-27b' },
+        platform: {},
+        launch: {
+          pid: 12345,
+          startedAt: '2026-10-14T12:00:00.000Z',
+          argv: ['ninfer-serve'],
+          parentPid: 999,
+          previousPids: [888, 999],
+          engineId: 'ninfer',
+          port: 18020,
+          modelId: 'qwen3-27b',
+        },
+      },
+    ])
+    const service = stubService([], { engines: [fakeAdapter('ninfer')] })
+    await stopEngine(service, {
+      engine: 'ninfer',
+      config: { model: 'qwen3-27b' },
+      providerId: 'p1',
+    })
+    // The record (the previous-pid list with it) is gone, so a recycled pid
+    // cannot re-link an engine the user just stopped.
+    const stored = readConfig()
+    expect(stored.providers[0]?.launch).toBeUndefined()
   })
 })
 
@@ -1483,6 +1607,59 @@ describe('provider list round trip', () => {
     ])
   })
 
+  it('re-links recorded providers in the summary and clears the dead records', async () => {
+    writeConfig('ninfer', { model: 'qwen3-27b' }, false, {}, true, [
+      {
+        id: 'p1',
+        engine: 'ninfer',
+        config: { model: 'qwen3-27b' },
+        platform: {},
+        launch: {
+          pid: 12345,
+          startedAt: '2026-10-14T12:00:00.000Z',
+          argv: ['ninfer-serve'],
+          parentPid: 999,
+          previousPids: [999],
+          engineId: 'ninfer',
+          port: 18020,
+          modelId: 'qwen3-27b',
+        },
+      },
+      {
+        id: 'p2',
+        engine: 'ninfer',
+        config: { model: 'qwen3-27b' },
+        platform: {},
+        launch: {
+          pid: 54321,
+          startedAt: '2026-10-14T12:00:00.000Z',
+          argv: ['ninfer-serve'],
+          parentPid: 999,
+          previousPids: [999],
+          engineId: 'ninfer',
+          port: 18021,
+          modelId: 'qwen3-27b',
+        },
+      },
+    ])
+    const reLinked: string[] = []
+    const service = stubService([], {
+      providerStatuses: async () => ({ p1: 'running', p2: 'stopped' }),
+      reLinkProviders: async (entries) => {
+        reLinked.push(...entries.map((entry) => entry.id))
+        return { p1: 'adopted', p2: 'dead' }
+      },
+    })
+    await buildSummary(service, { engine: 'ninfer', config: {} })
+    // The summary prices every recorded provider through the re-link, and a
+    // dead engine clears its record (the previous-pid list with it) so a
+    // recycled pid cannot re-link.
+    expect(reLinked).toEqual(['p1', 'p2'])
+    const stored = readConfig()
+    expect(stored.providers[0]?.launch?.pid).toBe(12345)
+    expect(stored.providers[1]?.launch).toBeUndefined()
+  })
+
   it('sets the Unknown Engine(s) readout when a provider reads as unsure', async () => {
     // A foreign engine the detector saw but could not tie to a model reads as
     // unsure, so the meter's "Unknown Engine(s)" section names the VRAM those
@@ -1553,6 +1730,45 @@ describe('provider list round trip', () => {
     expect(stored.providers).toHaveLength(1)
     expect(stored.providers[0]?.id).toBe('p1')
     expect(stored.providers[0]?.config).toEqual({ model: 'qwen3-35b' })
+  })
+
+  it('carries the launch record over when a save updates the entry in place', async () => {
+    // Editing a running provider's config must not drop the record the
+    // restart re-link prices, so the save keeps the entry's launch record.
+    writeConfig('ninfer', { model: 'qwen3-27b' }, false, {}, true, [
+      {
+        id: 'p1',
+        engine: 'ninfer',
+        config: { model: 'qwen3-27b' },
+        platform: {},
+        launch: {
+          pid: 12345,
+          startedAt: '2026-10-14T12:00:00.000Z',
+          argv: ['ninfer-serve'],
+          parentPid: 999,
+          previousPids: [999],
+          engineId: 'ninfer',
+          port: 18020,
+          modelId: 'qwen3-27b',
+        },
+      },
+    ])
+    const service = stubService([])
+    const list = routes(service)
+    const save = find(list, '/local-infer/save')
+    const res = fakeRes()
+    await save.handler(
+      fakeReq(
+        'POST',
+        '/local-infer/save',
+        JSON.stringify({ id: 'p1', engine: 'ninfer', config: { model: 'qwen3-35b' } }),
+      ),
+      res,
+    )
+    expect(res.status).toBe(200)
+    const stored = readConfig()
+    expect(stored.providers[0]?.config).toEqual({ model: 'qwen3-35b' })
+    expect(stored.providers[0]?.launch?.pid).toBe(12345)
   })
 
   it('removes a provider by id through the delete route', async () => {

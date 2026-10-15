@@ -20,7 +20,7 @@ import { dirname, join } from 'node:path';
 // Relative, not the root package subpath: a self-referencing bare specifier
 // only resolves when the package sits inside a node_modules tree, so a
 // local-path or pnpm-linked install of this repo would fail the import.
-import { CHAT_TEMPLATE_FILE, buildModelEntry, checkDeps, DEFAULT_LOG_PATH_TEMPLATE, hfChatTemplateCommand, hfDownloadCommand, modelArtifactPath, modelEntriesForEngine, providerIdFor, renderInstallString, resolveLogPath, } from '../../core/lib/index.js';
+import { CHAT_TEMPLATE_FILE, buildModelEntry, checkDeps, DEFAULT_LOG_PATH_TEMPLATE, hfChatTemplateCommand, hfDownloadCommand, launchRecordFromPlan, modelArtifactPath, modelEntriesForEngine, providerIdFor, renderInstallString, resolveLogPath, } from '../../core/lib/index.js';
 import { CHAT_TEMPLATE_OPTIONS, defaultModelFor, defaultModelsForEngine, ENGINES, } from '../../providers/lib/index.js';
 import { renderDeps } from "./deps.js";
 import { renderForm } from "./form.js";
@@ -141,9 +141,57 @@ function parseProviders(raw) {
         const engine = typeof fields.engine === 'string' ? fields.engine : 'ninfer';
         const config = fields.config && typeof fields.config === 'object' ? fields.config : {};
         const platform = parseStoredPlatformConfig(fields.platform) ?? {};
-        providers.push({ id: fields.id, engine, config, platform });
+        const provider = { id: fields.id, engine, config, platform };
+        const launch = parseLaunchRecord(fields.launch);
+        if (launch !== undefined) {
+            provider.launch = launch;
+        }
+        providers.push(provider);
     }
     return providers;
+}
+/**
+ * parseLaunchRecord reads one stored launch record, keeping only the fields
+ * the re-link rule prices (the engine pid, the start time, the argv, the
+ * parent and previous pids, and the engine/model/port the detector ties the
+ * engine to). A record that is not an object, or that names no integer pid
+ * or engine id, is dropped, so a by-hand edit never poisons the re-link.
+ */
+function parseLaunchRecord(raw) {
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+        return undefined;
+    }
+    const fields = raw;
+    if (typeof fields.pid !== 'number' || !Number.isInteger(fields.pid)) {
+        return undefined;
+    }
+    if (typeof fields.startedAt !== 'string' || fields.startedAt === '') {
+        return undefined;
+    }
+    if (typeof fields.engineId !== 'string' || fields.engineId.trim() === '') {
+        return undefined;
+    }
+    const record = {
+        pid: fields.pid,
+        startedAt: fields.startedAt,
+        argv: Array.isArray(fields.argv)
+            ? fields.argv.filter((part) => typeof part === 'string')
+            : [],
+        previousPids: Array.isArray(fields.previousPids)
+            ? fields.previousPids.filter((part) => typeof part === 'number')
+            : [],
+        engineId: fields.engineId,
+    };
+    if (typeof fields.parentPid === 'number') {
+        record.parentPid = fields.parentPid;
+    }
+    if (typeof fields.modelId === 'string' && fields.modelId !== '') {
+        record.modelId = fields.modelId;
+    }
+    if (typeof fields.port === 'number') {
+        record.port = fields.port;
+    }
+    return record;
 }
 /**
  * newProviderId mints the stable id a new provider entry carries: a
@@ -305,6 +353,30 @@ export async function buildSummary(localInfer, request) {
             hfCli,
             downloadCommand: hfChatTemplateCommand(chatTemplateValue, modelDir),
         };
+    }
+    // The restart re-link: a provider entry whose launch record names a still-
+    // running engine (the DSH that launched it died, and the engine re-parented
+    // to init) is re-adopted as plugin-launched, so its status dot reads as
+    // running for its model and the OS-reserve resolver keeps the default. A
+    // record whose engine is dead is cleared (the previous-pid list with it),
+    // so a recycled pid cannot re-link to a config whose engine is down.
+    const recorded = stored.providers.filter((provider) => provider.launch !== undefined);
+    if (recorded.length > 0) {
+        const outcomes = await localInfer.reLinkProviders(recorded.map((provider) => ({ id: provider.id, record: provider.launch })));
+        if (recorded.some((provider) => outcomes[provider.id] === 'dead')) {
+            const providers = stored.providers.map((provider) => {
+                if (provider.launch === undefined || outcomes[provider.id] !== 'dead') {
+                    return provider;
+                }
+                return {
+                    id: provider.id,
+                    engine: provider.engine,
+                    config: provider.config,
+                    platform: provider.platform,
+                };
+            });
+            writeConfig(stored.engine, stored.config, stored.allowRunDeps, stored.platform, stored.showHelp, providers, stored.logPath, stored.lastLogs);
+        }
     }
     // The provider list the card renders as collapsed entries: each saved
     // config's engine and model feed the detector, which resolves the running-
@@ -602,7 +674,10 @@ function resolveAdapter(localInfer, engineId) {
  * launchEngine renders the plan the registered adapter produces for the config
  * and the detected hardware, then runs the service's launch entry point
  * (deploy, then the health poll). The detail the launch returns names the
- * broken step when the engine does not come up.
+ * broken step when the engine does not come up. The launch step persists the
+ * launch record (the engine pid, start time, launch arguments, and the DSH
+ * process pid that launched it) on the request's provider entry, so a DSH
+ * restart can re-link a surviving engine to its config.
  */
 export async function launchEngine(localInfer, request) {
     const stored = readConfig();
@@ -619,7 +694,67 @@ export async function launchEngine(localInfer, request) {
     }
     const result = await localInfer.launch(adapter.renderLaunch(config, hardware));
     persistLaunchLogs(result, engineId, config);
+    persistLaunchRecord(result, engineId, config, request.providerId);
     return result;
+}
+/**
+ * findLaunchTarget resolves the stored provider entry a launch or stop
+ * targets: the entry the request names by id, or (an id the card does not
+ * send, a launch of the active config) the stored entry with the same engine
+ * and model. A launch with no resolvable entry persists no record, which
+ * reads as "no provider config to re-link" after a restart.
+ */
+function findLaunchTarget(stored, engineId, providerId, config) {
+    if (providerId !== undefined) {
+        const byId = stored.providers.find((entry) => entry.id === providerId);
+        if (byId !== undefined)
+            return byId;
+    }
+    const model = typeof config.model === 'string' ? config.model : undefined;
+    if (model === undefined)
+        return undefined;
+    return stored.providers.find((entry) => entry.engine === engineId &&
+        (typeof entry.config.model === 'string' ? entry.config.model : undefined) === model);
+}
+/**
+ * persistLaunchRecord stores a launch's record on the target provider entry:
+ * the engine pid the deploy step started, the start time, the plan's argv,
+ * the DSH process pid the launch ran under (only when it identified as DSH),
+ * and the previous-pid list the re-link rule prices (the entry's own list
+ * plus the current DSH pid, capped by the core builder). A launch whose
+ * deploy started no tracked process (a compose up) persists nothing, and a
+ * launch with no resolvable entry persists nothing.
+ */
+function persistLaunchRecord(result, engineId, config, providerId) {
+    if (result.pid === undefined)
+        return;
+    const stored = readConfig();
+    const target = findLaunchTarget(stored, engineId, providerId, config);
+    if (target === undefined)
+        return;
+    const record = launchRecordFromPlan(result.plan, result.pid, result.parentPid, target.launch?.previousPids ?? []);
+    const providers = stored.providers.map((entry) => entry.id === target.id ? { ...entry, launch: record } : entry);
+    writeConfig(stored.engine, stored.config, stored.allowRunDeps, stored.platform, stored.showHelp, providers, stored.logPath, stored.lastLogs);
+}
+/**
+ * clearLaunchRecord removes the target provider entry's launch record (the
+ * engine pid and the previous-pid list with it), so a stopped engine's pid
+ * cannot be re-linked to its config by a recycled pid. A stop with no
+ * resolvable entry, or an entry that carries no record, is a no-op.
+ */
+function clearLaunchRecord(engineId, config, providerId) {
+    const stored = readConfig();
+    const target = findLaunchTarget(stored, engineId, providerId, config);
+    if (target === undefined || target.launch === undefined)
+        return;
+    const providers = stored.providers.map((entry) => {
+        if (entry.id !== target.id)
+            return entry;
+        // Rebuild the entry without the launch key, so the record (including the
+        // previous-pid list) is gone from the file, not just ignored.
+        return { id: entry.id, engine: entry.engine, config: entry.config, platform: entry.platform };
+    });
+    writeConfig(stored.engine, stored.config, stored.allowRunDeps, stored.platform, stored.showHelp, providers, stored.logPath, stored.lastLogs);
 }
 /**
  * persistLaunchLogs stores a launch's captured output as the last run and
@@ -648,7 +783,10 @@ export function persistLaunchLogs(result, engineId, config) {
 }
 /**
  * stopEngine renders the same plan and runs the service's stop entry point, so
- * the stop step targets the exact container or process the launch started.
+ * the stop step targets the exact container or process the launch started. The
+ * stop then clears the target entry's launch record (the engine pid and the
+ * previous-pid list with it), so a recycled pid cannot re-link an engine the
+ * user just stopped.
  */
 export async function stopEngine(localInfer, request) {
     const stored = readConfig();
@@ -657,6 +795,7 @@ export async function stopEngine(localInfer, request) {
     const adapter = resolveAdapter(localInfer, engineId);
     const hardware = await localInfer.detectHardware();
     await localInfer.stop(adapter.renderLaunch(config, hardware));
+    clearLaunchRecord(engineId, config, request.providerId);
 }
 /**
  * resolveContextWindow picks the context window the registrar publishes: the
@@ -848,7 +987,10 @@ export function registerLocalInferRoute(scope, localInfer) {
                 // place, an absent id mints a new id and prepends the entry, so a Save
                 // always adds (or refreshes) a card entry at the top of the list. The
                 // provider's platform config is the per-engine entry the deploy step
-                // reads, so a provider never carries a field it cannot price.
+                // reads, so a provider never carries a field it cannot price. A save
+                // that updates an entry in place carries the entry's launch record
+                // over, so editing a running provider's config never drops the record
+                // the restart re-link prices.
                 const stored = readConfig();
                 const provider = {
                     id: providerId ?? newProviderId(),
@@ -856,6 +998,12 @@ export function registerLocalInferRoute(scope, localInfer) {
                     config,
                     platform: platform[engine] ?? {},
                 };
+                if (providerId !== undefined) {
+                    const existing = stored.providers.find((entry) => entry.id === providerId);
+                    if (existing?.launch !== undefined) {
+                        provider.launch = existing.launch;
+                    }
+                }
                 const providers = providerId !== undefined
                     ? stored.providers.map((entry) => (entry.id === providerId ? provider : entry))
                     : [provider, ...stored.providers];
@@ -1119,7 +1267,9 @@ export function registerLocalInferRoute(scope, localInfer) {
     };
     // The launch and stop routes share a POST body parser: the engine, config,
     // and platform override the plan renders from, falling back to the stored
-    // config per key. The stop route ignores the platform key.
+    // config per key. The stop route ignores the platform key. `providerId`
+    // names the saved provider entry the launch record (or its stop's clear)
+    // targets.
     const launchRequestFromBody = (body) => {
         const request = {};
         if (typeof body.engine === 'string') {
@@ -1131,6 +1281,9 @@ export function registerLocalInferRoute(scope, localInfer) {
         const platform = parseStoredPlatformConfig(body.platform);
         if (platform !== undefined) {
             request.platform = platform;
+        }
+        if (typeof body.providerId === 'string' && body.providerId.trim() !== '') {
+            request.providerId = body.providerId;
         }
         return request;
     };

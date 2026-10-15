@@ -12,6 +12,8 @@ export type { ComboOption, ConstraintResult, EnumOption, ParameterForm, Paramete
 export { DEFAULT_OS_RESERVE_MIB, estimateVram, KV_PAGE_TOKENS, pageRoundUp, TIGHT_HEADROOM_BYTES, } from './estimator.ts';
 export type { EstimateContext, EstimateOptions, SpeculationTerms, VramBreakdown, VramContribution, VramEstimate, VramModel, VramVerdict, } from './estimator.ts';
 export { GPU_USAGE_BUSY_THRESHOLD, matchLaunchSignature, parseNvidiaSmiGpuUsage, resolveOsReserve, } from './reserve.ts';
+export { commandMatchesArgv, launchRecordFromPlan, reLinkRecord, } from './launch-record.ts';
+export type { ProviderLaunchRecord, ReLinkInput, ReLinkOutcome, } from './launch-record.ts';
 export type { EngineLaunchSignature, GpuUsageProbe, ProcessLine, ReserveResolution, ReserveSource, } from './reserve.ts';
 export { computeProviderStatuses, isGpuBusy, } from './status.ts';
 export type { ProviderRef, ProviderStatus, ProviderStatusInput, RunningEngineRef, } from './status.ts';

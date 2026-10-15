@@ -19,6 +19,7 @@ import type {
   ParameterSpec,
   Preset,
   ProcessLine,
+  ProviderLaunchRecord,
   ProviderRef,
   SystemDep,
   VramModel,
@@ -1155,6 +1156,140 @@ describe('ctx.localInfer provider statuses', () => {
       processes: [NINFER_LINE],
     })
     expect(statuses).toEqual({ a: 'unsure' })
+  })
+})
+
+describe('ctx.localInfer launch records and restart re-link', () => {
+  const NINFER_SIG: EngineLaunchSignature = { binary: 'ninfer-serve', port: 18020 }
+  const NINFER_LINE: ProcessLine = {
+    pid: 12345,
+    command: 'ninfer-serve /models/model.ninfer --host 127.0.0.1 --port 18020',
+  }
+  const GPU_IDLE: GpuUsageProbe = { usedMiB: 2048, totalMiB: 24576 }
+
+  /** An adapter whose deploy starts a tracked process the launch records. */
+  class PidLaunchingAdapter extends StubAdapter {
+    constructor(readonly pid: number) {
+      super('ninfer')
+    }
+    launchSignature(): EngineLaunchSignature {
+      return NINFER_SIG
+    }
+    async deploy(_plan: LaunchPlan): Promise<DeployResult> {
+      return { ok: true, handle: { pid: this.pid, kill: () => undefined } }
+    }
+    async healthCheck(_plan: LaunchPlan): Promise<HealthResult> {
+      return { healthy: true, status: 200 }
+    }
+  }
+
+  function plan(): LaunchPlan {
+    return {
+      engineId: 'ninfer',
+      kind: 'process',
+      argv: ['ninfer-serve', '/models/model.ninfer', '--port', '18020'],
+      port: 18020,
+      modelId: 'qwen3-27b',
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+  }
+
+  function record(overrides: Partial<ProviderLaunchRecord> = {}): ProviderLaunchRecord {
+    const base: ProviderLaunchRecord = {
+      pid: 12345,
+      startedAt: '2026-10-14T12:00:00.000Z',
+      argv: ['ninfer-serve', '/models/model.ninfer', '--port', '18020'],
+      parentPid: 999,
+      previousPids: [999],
+      engineId: 'ninfer',
+      modelId: 'qwen3-27b',
+      port: 18020,
+    }
+    return { ...base, ...overrides } as ProviderLaunchRecord
+  }
+
+  it('records the engine pid and the DSH parent pid on a successful launch', async () => {
+    const ctx = await seam()
+    ctx.localInfer.registerEngine(new PidLaunchingAdapter(12345))
+    const result = await ctx.localInfer.launch(plan())
+    expect(result.pid).toBe(12345)
+    // The host process identifies as DSH in this workspace, so the parent
+    // pid is the host's own pid the re-link rule prices after a restart.
+    expect(result.parentPid).toBe(process.pid)
+  })
+
+  it('omits the pid when the deploy step starts no tracked process', async () => {
+    const ctx = await seam()
+    ctx.localInfer.registerEngine(new StubAdapter('ninfer'))
+    const result = await ctx.localInfer.launch(plan())
+    expect(result.pid).toBeUndefined()
+    expect(result.parentPid).toBeUndefined()
+  })
+
+  it('re-links an engine the current DSH pid launched', async () => {
+    const ctx = await seam()
+    // Register the engine so providerStatuses has an adapter signature to
+    // probe the process table against; the re-link then ties the port to the
+    // model the record names.
+    ctx.localInfer.registerEngine(new PidLaunchingAdapter(12345))
+    const entries = [{ id: 'a', record: record({ parentPid: process.pid, previousPids: [process.pid] }) }]
+    const outcomes = await ctx.localInfer.reLinkProviders(entries, {
+      processAlive: (pid) => pid === 12345 || pid === process.pid,
+      commandLine: (pid) => (pid === 12345 ? NINFER_LINE.command : undefined),
+    })
+    expect(outcomes).toEqual({ a: 'adopted' })
+    expect(ctx.localInfer.launchedEngineIds()).toEqual(['ninfer'])
+    // The re-adopted engine ties its port to the model, so the provider
+    // status detector reads the matching config as running.
+    const statuses = await ctx.localInfer.providerStatuses(
+      [{ id: 'a', engine: 'ninfer', model: 'qwen3-27b' }],
+      { gpuUsage: GPU_IDLE, processes: [NINFER_LINE] },
+    )
+    expect(statuses).toEqual({ a: 'running' })
+  })
+
+  it('re-links an engine a previous DSH pid launched when that pid is dead', async () => {
+    const ctx = await seam()
+    const entries = [{ id: 'a', record: record({ parentPid: 999, previousPids: [888, 999] }) }]
+    const outcomes = await ctx.localInfer.reLinkProviders(entries, {
+      // The engine is alive; the parent 999 is not (the DSH that launched it
+      // died and the engine re-parented to init).
+      processAlive: (pid) => pid === 12345,
+      commandLine: (pid) => (pid === 12345 ? NINFER_LINE.command : undefined),
+    })
+    expect(outcomes).toEqual({ a: 'adopted' })
+    expect(ctx.localInfer.launchedEngineIds()).toEqual(['ninfer'])
+  })
+
+  it('does not adopt an engine a still-running previous DSH pid owns', async () => {
+    const ctx = await seam()
+    const entries = [{ id: 'a', record: record({ parentPid: 999, previousPids: [999] }) }]
+    const outcomes = await ctx.localInfer.reLinkProviders(entries, {
+      // The parent 999 is a live DSH clone: the engine is not this DSH's.
+      processAlive: (pid) => pid === 12345 || pid === 999,
+      commandLine: (pid) => (pid === 12345 ? NINFER_LINE.command : undefined),
+    })
+    expect(outcomes).toEqual({ a: 'foreign' })
+    expect(ctx.localInfer.launchedEngineIds()).toEqual([])
+  })
+
+  it('reads a dead engine as dead and a recycled pid as foreign', async () => {
+    const ctx = await seam()
+    const entries = [
+      // The dead entry's pid is not in the alive set, so the record clears.
+      { id: 'dead', record: record({ pid: 54321 }) },
+      // The recycled entry's pid is alive but runs a different command line.
+      {
+        id: 'recycled',
+        record: record({ parentPid: process.pid, previousPids: [process.pid] }),
+      },
+    ]
+    const outcomes = await ctx.localInfer.reLinkProviders(entries, {
+      processAlive: (pid) => pid === 12345,
+      commandLine: (pid) => (pid === 12345 ? 'vim PLAN.md' : undefined),
+    })
+    expect(outcomes).toEqual({ dead: 'dead', recycled: 'foreign' })
+    expect(ctx.localInfer.launchedEngineIds()).toEqual([])
   })
 })
 

@@ -18,7 +18,7 @@
  * @module @dsh/dsh-plugin-local-infer/service
  */
 import { Context, Service } from '@deepseek-ai/cordis';
-import type { Config, DefaultModel, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, GpuUsageProbe, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, ProviderRef, ProviderStatus, RegisterResult, ReserveResolution, ResolvedDefaults, SystemDep, VramModel } from '@dsh/dsh-plugin-local-infer/core';
+import type { Config, DefaultModel, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, GpuUsageProbe, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, ProviderLaunchRecord, ProviderRef, ProviderStatus, ReLinkOutcome, RegisterResult, ReserveResolution, ResolvedDefaults, SystemDep, VramModel } from '@dsh/dsh-plugin-local-infer/core';
 import type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, RegisterModelOptions } from './types.ts';
 export type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, ProviderStatusOptions, RegisterModelOptions, SettingsDescribeResult, SettingsForms, SettingsNamespaceDescriptor, } from './types.ts';
 declare module '@deepseek-ai/cordis' {
@@ -188,6 +188,28 @@ export declare class LocalInfer extends Service implements LocalInferService {
      * UI shows the broken step rather than a blank panel.
      */
     launch(plan: LaunchPlan, options?: LaunchOptions): Promise<LaunchResult>;
+    /**
+     * reLinkProviders re-links the engines a previous DSH process started for
+     * the stored provider config entries, so a DSH restart re-adopts a
+     * surviving engine instead of reading it as a foreign process. Each record
+     * is priced by the core re-link rule: the engine pid must be alive and its
+     * command line must still carry the record's launch arguments, and the
+     * record's parent pid must be the current DSH pid or a previous DSH pid
+     * that is no longer running (a live previous pid is a DSH clone that owns
+     * the engine, and an unknown parent is a user-launched engine). An adopted
+     * engine is re-marked plugin-launched (the OS-reserve default) and tied to
+     * its model (the provider-status detector's green dot); a dead engine
+     * reads as dead, so the caller clears the record and a recycled pid cannot
+     * re-link. The options inject the process probes, so a test prices a live
+     * or dead engine without a live process table.
+     */
+    reLinkProviders(entries: readonly {
+        id: string;
+        record: ProviderLaunchRecord;
+    }[], options?: {
+        processAlive?: (pid: number) => boolean;
+        commandLine?: (pid: number) => string | undefined;
+    }): Promise<Record<string, ReLinkOutcome>>;
     /**
      * stop signals the engine a launch started: it resolves the adapter by the
      * plan's engineId and runs the adapter's stop step (kill the tracked process,

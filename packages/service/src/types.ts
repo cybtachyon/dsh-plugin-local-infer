@@ -16,8 +16,10 @@ import type {
   Preset,
   PresetSource,
   ProcessLine,
+  ProviderLaunchRecord,
   ProviderRef,
   ProviderStatus,
+  ReLinkOutcome,
   RegisterResult,
   ReserveResolution,
   ReserveSource,
@@ -76,12 +78,19 @@ export interface ProviderStatusOptions {
  * captured log output (stdout and stderr) when the deploy step read it. The
  * route persists the logs as the last run and writes them to the configured
  * log file, so the card's Logs section shows the run even after a reload.
+ * `pid` is the engine process the deploy step started (absent when the
+ * deploy pulls an image only), and `parentPid` is the DSH process pid that
+ * launched the engine (absent when the host process did not identify as
+ * DSH), the two fields the route persists as the provider entry's launch
+ * record for the restart re-link.
  */
 export interface LaunchResult {
   plan: LaunchPlan
   healthy: boolean
   detail?: string
   logs?: string
+  pid?: number
+  parentPid?: number
 }
 
 /**
@@ -255,6 +264,13 @@ export interface LocalInferService {
   runInstall(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<InstallResult>
   launch(plan: LaunchPlan, options?: LaunchOptions): Promise<LaunchResult>
   stop(plan: LaunchPlan): Promise<void>
+  reLinkProviders(
+    entries: readonly { id: string; record: ProviderLaunchRecord }[],
+    options?: {
+      processAlive?: (pid: number) => boolean
+      commandLine?: (pid: number) => string | undefined
+    },
+  ): Promise<Record<string, ReLinkOutcome>>
   registerModel(
     plan: LaunchPlan,
     model: ModelRow,
