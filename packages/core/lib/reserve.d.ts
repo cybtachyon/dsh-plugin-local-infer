@@ -29,11 +29,13 @@ export interface EngineLaunchSignature {
 }
 /**
  * ProcessLine is one running-process row the detector feeds the matcher: the
- * full command line and, when the detector read it (the Linux /proc environ),
- * the process's env. A line without env data degrades the env-key element to
- * neutral, so a host the detector cannot read never reads as "no match".
+ * process id, the full command line, and, when the detector read it (the
+ * Linux /proc environ), the process's env. A line without env data degrades
+ * the env-key element to neutral, so a host the detector cannot read never
+ * reads as "no match". The pid names the process the kill command targets.
  */
 export interface ProcessLine {
+    pid: number;
     command: string;
     env?: Record<string, string>;
 }

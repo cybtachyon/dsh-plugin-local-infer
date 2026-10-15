@@ -13,6 +13,10 @@ export interface DshModelEntry {
   contextWindow: number
   baseURL: string
   apiKeyEnv: string
+  // The request modalities the model accepts. A vision engine publishes
+  // ['text', 'image']; a text-only engine publishes ['text']. Absent reads as
+  // the DSH default (text).
+  input?: string[]
 }
 
 /**
@@ -37,6 +41,11 @@ export interface ModelRow {
   id: string
   name: string
   contextWindow: number
+  // The request modalities the model accepts. A vision engine publishes
+  // ['text', 'image']; a text-only engine publishes ['text']. The registrar
+  // copies it into the DshModelEntry it writes, so the DSH model row carries
+  // the same input types the engine serves.
+  input?: string[]
 }
 
 /**
@@ -139,7 +148,7 @@ export function buildModelEntry(plan: LaunchPlan, model: ModelRow): DshModelEntr
   const buildMode: 'local' | 'docker' = plan.kind === 'docker' ? 'docker' : 'local'
   const modeLabel = buildMode === 'docker' ? 'Docker' : 'Local'
   const modelName = model.name !== '' ? model.name : modelSlug(model.id)
-  return {
+  const entry: DshModelEntry = {
     providerId: providerIdFor(plan.engineId, model.id, buildMode),
     modelId: model.id,
     name: `${engineDisplayName(plan.engineId)} (${modeLabel}): ${modelName}`,
@@ -147,6 +156,12 @@ export function buildModelEntry(plan: LaunchPlan, model: ModelRow): DshModelEntr
     baseURL: `http://127.0.0.1:${plan.port}/v1`,
     apiKeyEnv: apiKeyEnvFor(plan.engineId),
   }
+  // exactOptionalPropertyTypes: carry the input modalities only when the row
+  // names them, so a text-only registration never writes an empty list.
+  if (model.input !== undefined) {
+    entry.input = model.input
+  }
+  return entry
 }
 
 /**
@@ -190,6 +205,12 @@ export function providerRegistrationOps(
     id: entry.modelId,
     name: entry.name,
     contextWindow: entry.contextWindow,
+  }
+  // The DSH model row carries the same input modalities the entry names, so a
+  // vision engine publishes ['text', 'image'] and a text-only engine
+  // ['text']. Absent reads as the DSH default.
+  if (entry.input !== undefined) {
+    row.input = entry.input
   }
   return [
     { op: 'set', path: [...providerPath, 'apiKeyEnv'], value: entry.apiKeyEnv },

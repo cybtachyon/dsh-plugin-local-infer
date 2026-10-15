@@ -855,11 +855,58 @@ describe('ctx.localInfer model registration (Phase 6)', () => {
     expect(fake.sections['llm-pi-ai']).toBeUndefined()
     expect(fake.calls).toEqual([])
   })
+
+  it('reads modelIsRegistered through the SettingsForms bare-array describe contract', async () => {
+    // The reflect fallback reaches the SettingsForms service directly, whose
+    // describe answers with the bare descriptor array (not the typert envelope
+    // or the plain object). The registrar must read that contract too, so a
+    // registered model is seen and the card's Remove button can appear.
+    const ctx = await seam()
+    const sections: Record<string, { value: Record<string, unknown>; revision: number }> = {}
+    function section(ns: string) {
+      let s = sections[ns]
+      if (s === undefined) { s = { value: {}, revision: 0 }; sections[ns] = s }
+      return s
+    }
+    function applyOp(stored: { value: Record<string, unknown> }, op: { op: 'set'; path: string[]; value: unknown } | { op: 'unset'; path: string[] }) {
+      if (op.op === 'set') {
+        let target: Record<string, unknown> = stored.value
+        for (let i = 0; i < op.path.length - 1; i++) {
+          const key = op.path[i]
+          if (target[key] === null || typeof target[key] !== 'object') target[key] = {}
+          target = target[key] as Record<string, unknown>
+        }
+        target[op.path[op.path.length - 1]] = op.value
+      } else {
+        let target: Record<string, unknown> | undefined = stored.value
+        for (let i = 0; i < op.path.length - 1; i++) target = target?.[op.path[i]] as Record<string, unknown> | undefined
+        if (target !== undefined) delete target[op.path[op.path.length - 1]]
+      }
+    }
+    const arraySettings = {
+      // The SettingsForms contract: describe answers with the bare array.
+      describe: () => Object.entries(sections).map(([ns, s]) => ({ ns, revision: s.revision, value: s.value })),
+      mutate: async (ns: string, ops: readonly ({ op: 'set'; path: string[]; value: unknown } | { op: 'unset'; path: string[] })[], expectedRevision?: number) => {
+        const stored = section(ns)
+        if (expectedRevision !== undefined && expectedRevision !== stored.revision) return { ok: false, error: { message: 'conflict' } }
+        for (const op of ops) applyOp(stored, op)
+        stored.revision += 1
+        return { ok: true, value: {} }
+      },
+    }
+    ctx.reflect.provide('settings', arraySettings)
+    expect(await ctx.localInfer.modelIsRegistered('ninfer-local-qwen38-27b', 'Qwen3.8-27B')).toBe(false)
+    await ctx.localInfer.registerModel(plan(), MODEL)
+    expect(await ctx.localInfer.modelIsRegistered('ninfer-local-qwen38-27b', 'Qwen3.8-27B')).toBe(true)
+    await ctx.localInfer.removeModel('ninfer-local-qwen38-27b', 'Qwen3.8-27B')
+    expect(await ctx.localInfer.modelIsRegistered('ninfer-local-qwen38-27b', 'Qwen3.8-27B')).toBe(false)
+  })
 })
 
 describe('ctx.localInfer OS reserve (Phase 10)', () => {
   const NINFER_SIG: EngineLaunchSignature = { binary: 'ninfer-serve', port: 18020 }
   const FOREIGN_LINE: ProcessLine = {
+    pid: 12345,
     command: 'ninfer-serve /models/model.ninfer --host 127.0.0.1 --port 18020',
   }
   const GPU_BUSY: GpuUsageProbe = { usedMiB: 18000, totalMiB: 24576 }
@@ -1023,6 +1070,7 @@ describe('ctx.localInfer OS reserve (Phase 10)', () => {
 describe('ctx.localInfer provider statuses', () => {
   const NINFER_SIG: EngineLaunchSignature = { binary: 'ninfer-serve', port: 18020 }
   const NINFER_LINE: ProcessLine = {
+    pid: 12345,
     command: 'ninfer-serve /models/model.ninfer --host 127.0.0.1 --port 18020',
   }
   const GPU_BUSY: GpuUsageProbe = { usedMiB: 24576, totalMiB: 24576 }

@@ -153,12 +153,14 @@ export interface SettingsRemoteResponse<T> {
  * so the seam is declared structurally here.
  */
 /**
- * SettingsDescribeAnswer is the typert remote describe answer in either
- * contract: the { ok, value } envelope the current host answers with, or the
- * plain SettingsDescribeResult a host that predates the envelope answers with.
- * The registrar reads both, so it works against either.
+ * SettingsDescribeAnswer is the settings describe answer in any of the three
+ * contracts the registrar reaches: the { ok, value } typert remote envelope the
+ * current host answers with, the plain SettingsDescribeResult a host that
+ * predates the envelope answers with, and the bare descriptor array the
+ * SettingsForms service the reflect fallback reaches answers with. The
+ * registrar reads all three, so it works against any seam.
  */
-export type SettingsDescribeAnswer = SettingsRemoteResponse<SettingsDescribeResult> | SettingsDescribeResult;
+export type SettingsDescribeAnswer = SettingsRemoteResponse<SettingsDescribeResult> | SettingsDescribeResult | readonly SettingsNamespaceDescriptor[];
 export interface SettingsForms {
     describe(options?: {
         redactSecrets?: boolean;
@@ -190,6 +192,10 @@ export interface LocalInferService {
     detectHardware(): Promise<HardwareProfile>;
     detectOsReserve(config?: Config, options?: DetectOsReserveOptions): Promise<ReserveResolution>;
     providerStatuses(providers: readonly ProviderRef[], options?: ProviderStatusOptions): Promise<Record<string, ProviderStatus>>;
+    unsureBannerKillCommands(options?: {
+        processes?: ProcessLine[];
+        gpuUsage?: GpuUsageProbe | null;
+    }): Promise<string[]>;
     guidelines(config: Config, hw: HardwareProfile, engineId?: string): Promise<GuidelineResult[]>;
     deps(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<readonly SystemDep[]>;
     installString(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<string>;
@@ -203,6 +209,8 @@ export interface LocalInferService {
     defaultModelDirectory(): string;
     hfCliAvailable(options?: HfCliOptions): Promise<string | null>;
     downloadModel(entry: DefaultModel, directory: string, options?: DownloadModelOptions): Promise<DownloadResult>;
+    downloadChatTemplate(repo: string, directory: string, options?: DownloadModelOptions): Promise<DownloadResult>;
+    modelIsRegistered(providerId: string, modelId: string): Promise<boolean>;
     listModelDirectory(directory: string): ModelDirectoryEntry[];
 }
 //# sourceMappingURL=types.d.ts.map

@@ -38,24 +38,26 @@ describe('matchLaunchSignature', () => {
 
   it('matches a local engine process by binary and port', () => {
     const line: ProcessLine = {
+      pid: 1,
       command: 'ninfer-serve /models/model.ninfer --host 127.0.0.1 --port 18020',
     }
     expect(matchLaunchSignature(line, signature)).toBe(true)
   })
 
   it('rejects a process whose command line lacks the binary marker', () => {
-    const line: ProcessLine = { command: 'llama-server --port 18020' }
+    const line: ProcessLine = { pid: 2, command: 'llama-server --port 18020' }
     expect(matchLaunchSignature(line, signature)).toBe(false)
   })
 
   it('rejects a process on a different port', () => {
-    const line: ProcessLine = { command: 'ninfer-serve model.ninfer --port 18021' }
+    const line: ProcessLine = { pid: 3, command: 'ninfer-serve model.ninfer --port 18021' }
     expect(matchLaunchSignature(line, signature)).toBe(false)
   })
 
   it('reads a port inside a docker -p mapping as a standalone number', () => {
     const docker: EngineLaunchSignature = { binary: 'ghcr.io/iamwavecut/ninfer-all', port: 18020 }
     const line: ProcessLine = {
+      pid: 4,
       command:
         'docker run --rm --gpus all -p 127.0.0.1:18020:8080 ghcr.io/iamwavecut/ninfer-all serve',
     }
@@ -63,13 +65,14 @@ describe('matchLaunchSignature', () => {
   })
 
   it('does not read a longer port number as the signature port', () => {
-    const line: ProcessLine = { command: 'ninfer-serve model.ninfer --port 180200' }
+    const line: ProcessLine = { pid: 5, command: 'ninfer-serve model.ninfer --port 180200' }
     expect(matchLaunchSignature(line, signature)).toBe(false)
   })
 
   it('matches on the binary alone when the signature declares no port', () => {
     const bare: EngineLaunchSignature = { binary: 'docker compose' }
     const line: ProcessLine = {
+      pid: 6,
       command: 'docker compose -f docker-compose.yml --profile single up',
     }
     expect(matchLaunchSignature(line, bare)).toBe(true)
@@ -81,17 +84,18 @@ describe('matchLaunchSignature', () => {
       envKeys: ['VLLM_USE_V1', 'VLLM_WORKER_MULTIPROC_METHOD'],
     }
     const hit: ProcessLine = {
+      pid: 7,
       command: 'vllm serve model',
       env: { VLLM_USE_V1: '1' },
     }
-    const miss: ProcessLine = { command: 'vllm serve model', env: { PATH: '/usr/bin' } }
+    const miss: ProcessLine = { pid: 8, command: 'vllm serve model', env: { PATH: '/usr/bin' } }
     expect(matchLaunchSignature(hit, withEnv)).toBe(true)
     expect(matchLaunchSignature(miss, withEnv)).toBe(false)
   })
 
   it('treats the env element as neutral when the line carries no env data', () => {
     const withEnv: EngineLaunchSignature = { binary: 'vllm', envKeys: ['VLLM_USE_V1'] }
-    const noEnv: ProcessLine = { command: 'vllm serve model' }
+    const noEnv: ProcessLine = { pid: 9, command: 'vllm serve model' }
     expect(matchLaunchSignature(noEnv, withEnv)).toBe(true)
   })
 })

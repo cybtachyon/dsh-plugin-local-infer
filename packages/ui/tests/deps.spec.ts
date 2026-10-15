@@ -67,4 +67,30 @@ describe('renderDeps', () => {
     expect(model.deps[0]?.status).toBe('failed')
     expect(model.allSatisfied).toBe(false)
   })
+
+  it('carries the chat-template row through while a selected template is missing', () => {
+    const model = renderDeps({
+      ...input,
+      checks: [],
+      chatTemplate: {
+        repo: 'froggeric/Qwen-Fixed-Chat-Templates',
+        present: false,
+        hfCli: false,
+        downloadCommand:
+          'hf download froggeric/Qwen-Fixed-Chat-Templates chat_template.jinja --local-dir /models',
+      },
+    })
+    expect(model.chatTemplate).toEqual({
+      repo: 'froggeric/Qwen-Fixed-Chat-Templates',
+      present: false,
+      hfCli: false,
+      downloadCommand:
+        'hf download froggeric/Qwen-Fixed-Chat-Templates chat_template.jinja --local-dir /models',
+    })
+  })
+
+  it('leaves the chat-template key off when no template is missing', () => {
+    const model = renderDeps({ ...input, checks: [] })
+    expect('chatTemplate' in model).toBe(false)
+  })
 })

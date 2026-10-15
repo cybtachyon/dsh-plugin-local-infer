@@ -92,7 +92,9 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     label: 'Port',
     description:
       'The loopback port the engine serves its OpenAI endpoint and health check on. The registrar publishes it as the model base URL.',
-    form: { kind: 'number', min: 1, max: 65535, step: 1 },
+    // The port is a typed number, not a range strip: a 1..65535 drag slider is
+    // noise, so `slider: false` renders the plain number entry only.
+    form: { kind: 'number', min: 1, max: 65535, step: 1, slider: false },
     // 18020 is the port the qwen-ninfer launcher binds, so the form seeds the
     // value the adapter's own fallback uses when a config names no port.
     defaultValue: 18020,
@@ -138,7 +140,17 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     label: 'KV capacity',
     description:
       'The shared KV pool across concurrent requests. Leave unset to size the pool from max-context.',
-    form: { kind: 'number', min: 256, step: 256, unit: 'tokens' },
+    form: {
+      kind: 'number',
+      min: 256,
+      step: 256,
+      unit: 'tokens',
+      // The range strip caps at the live max-context value (the pool cannot
+      // outgrow the context it serves), re-priced on every form render so a
+      // max-context edit moves the cap without touching the current value.
+      // The number entry stays uncapped, so a typed value is never hard-limited.
+      sliderMax: (_hw, config) => (typeof config.maxContext === 'number' ? config.maxContext : 0),
+    },
     group: 'Memory',
     toArgv: (value) => ['--kv-capacity', String(value)],
   },
@@ -147,7 +159,16 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     label: 'Host KV MiB',
     description:
       'Pinned host RAM for the host KV tier. Retains inactive conversations when device memory is under pressure.',
-    form: { kind: 'number', min: 0, step: 1024, unit: 'MiB' },
+    form: {
+      kind: 'number',
+      min: 0,
+      step: 1024,
+      unit: 'MiB',
+      // The range strip caps at half the host RAM (the pool cannot outgrow the
+      // machine it pins), while the number entry stays uncapped so a typed
+      // value is never hard-limited by the slider.
+      sliderMax: (hw) => Math.max(0, Math.floor((hw.hostRamGiB ?? 0) * 0.5 * 1024)),
+    },
     group: 'Memory',
     toArgv: (value) => ['--host-kv-mib', String(value)],
   },
@@ -313,7 +334,7 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     key: 'chatTemplate',
     label: 'Chat template',
     description:
-      'Overrides the artifact built-in Jinja chat template. Pick a known template from the dropdown or type a custom path. Changes take effect after a restart.',
+      'Overrides the artifact built-in Jinja chat template. Pick a preset from the dropdown, or choose Custom and type a local path or HF repo reference. Changes take effect after a restart.',
     form: { kind: 'combo', options: [...CHAT_TEMPLATE_OPTIONS] },
     group: 'Engine',
     toArgv: (value) => (value ? ['--chat-template', String(value)] : []),

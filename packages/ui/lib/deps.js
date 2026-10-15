@@ -20,7 +20,7 @@ export function renderDeps(input) {
         status: check.status,
         requiresSudo: check.dep.requiresSudo,
     }));
-    return {
+    const model = {
         engineId: input.engineId,
         buildMode: input.buildMode,
         packageManager: input.packageManager,
@@ -29,5 +29,11 @@ export function renderDeps(input) {
         installString: input.installString,
         runAllowed: input.runAllowed,
     };
+    // The chat-template row only lands while a selected template is missing; a
+    // present template (or no template selected) leaves the key off.
+    if (input.chatTemplate !== undefined) {
+        model.chatTemplate = input.chatTemplate;
+    }
+    return model;
 }
 //# sourceMappingURL=deps.js.map

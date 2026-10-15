@@ -37,11 +37,27 @@ export type ConstraintResult =
  * ParameterForm is the closed union of control kinds the renderer switches on:
  * checkbox, dropdown, slider plus number, text, a directory/file picker, and a
  * dropdown plus free-text combo for known-options fields (the chat template).
+ *
+ * A number form carries two optional render hints. `slider` (default true)
+ * turns the paired range control off, leaving a plain number entry for fields
+ * like a port where a 1..65535 drag strip is noise. `sliderMax` prices the
+ * range control's cap from the detected hardware and the live config (the
+ * host-KV pool caps at half the host RAM; the KV-capacity pool caps at the
+ * max-context value) while the paired number entry keeps the form's static
+ * `max` (or none), so a typed value is never hard-capped by the slider.
  */
 export type ParameterForm =
   | { kind: 'boolean' }
   | { kind: 'enum'; options: EnumOption[] }
-  | { kind: 'number'; min?: number; max?: number; step?: number; unit?: string }
+  | {
+      kind: 'number'
+      min?: number
+      max?: number
+      step?: number
+      unit?: string
+      slider?: boolean
+      sliderMax?: (hw: HardwareProfile, config: Config) => number
+    }
   | { kind: 'text'; placeholder?: string }
   | { kind: 'path' }
   | { kind: 'combo'; options: ComboOption[] }

@@ -21,7 +21,7 @@ import type {
   VramModel,
   VramVerdict,
 } from '@dsh/dsh-plugin-local-infer/core'
-import { DEFAULT_LOG_PATH_TEMPLATE, resolveLogPath } from '@dsh/dsh-plugin-local-infer/core'
+import { DEFAULT_LOG_PATH_TEMPLATE, providerIdFor, resolveLogPath } from '@dsh/dsh-plugin-local-infer/core'
 import type {
   DownloadResult,
   LaunchResult,
@@ -134,6 +134,9 @@ function stubService(
     hfCliPath?: string | null
     onDownload?: (args: { entry: DefaultModel; directory: string }) => void
     downloadResult?: DownloadResult
+    onDownloadChatTemplate?: (args: { repo: string; directory: string }) => void
+    chatTemplateDownloadResult?: DownloadResult
+    modelIsRegisteredResult?: boolean
     modelEntries?: ModelDirectoryEntry[]
     providerStatuses?: (
       providers: readonly ProviderRef[],
@@ -151,6 +154,7 @@ function stubService(
     detectOsReserve: async () => ({ reserveMiB: 3072, source: 'default' }),
     providerStatuses: async (providers: readonly ProviderRef[]) =>
       (await extras.providerStatuses?.(providers)) ?? {},
+    unsureBannerKillCommands: async () => [],
     launchedEngineIds: () => [],
     guidelines: async () => guidelines,
     registeredVramModels: () => (extras.models ?? []),
@@ -212,6 +216,11 @@ function stubService(
       extras.onDownload?.({ entry, directory })
       return extras.downloadResult ?? { ok: true }
     },
+    downloadChatTemplate: async (repo: string, directory: string) => {
+      extras.onDownloadChatTemplate?.({ repo, directory })
+      return extras.chatTemplateDownloadResult ?? { ok: true }
+    },
+    modelIsRegistered: async () => extras.modelIsRegisteredResult ?? false,
     listModelDirectory: () => extras.modelEntries ?? [],
   } as unknown as LocalInferService
 }
@@ -594,9 +603,28 @@ describe('register and unregister route helpers', () => {
       agentDefault: true,
     })
     expect(result.ok).toBe(true)
-    expect(seen?.model).toEqual({ id: 'Qwen3.8-27B', name: 'Qwen3.8-27B', contextWindow: 32768 })
+    // The vision flag is unset, so the model row publishes the text-only
+    // input types.
+    expect(seen?.model).toEqual({
+      id: 'Qwen3.8-27B',
+      name: 'Qwen3.8-27B',
+      contextWindow: 32768,
+      input: ['text'],
+    })
     expect(seen?.options).toEqual({ agentDefault: true })
     expect(seen?.plan.engineId).toBe('ninfer')
+  })
+
+  it('publishes the Image input type when the vision flag is set', async () => {
+    let seen: { plan: LaunchPlan; model: ModelRow; options?: RegisterModelOptions } | undefined
+    const service = stubService([], {
+      engines: [fakeAdapter('ninfer', { id: 'Qwen3.8-27B', name: 'Qwen3.8-27B' })],
+      onRegister: (args) => {
+        seen = args
+      },
+    })
+    await registerFor(service, { engine: 'ninfer', config: { vision: true } })
+    expect(seen?.model?.input).toEqual(['text', 'image'])
   })
 
   it('falls back to the plan model id when the adapter declares no modelRef', async () => {
@@ -626,6 +654,32 @@ describe('register and unregister route helpers', () => {
     const result = await unregisterFor(service, { engine: 'ninfer', config: {} })
     expect(result).toEqual({ removed: true })
     expect(seen).toEqual({ providerId: 'ninfer-local-qwen38-27b', modelId: 'Qwen3.8-27B' })
+  })
+
+  it('removes the exact provider and model the register step wrote, across the full flow', async () => {
+    let registered: { providerId: string; modelId: string } | undefined
+    let removed: { providerId: string; modelId: string } | undefined
+    const service = stubService([], {
+      engines: [fakeAdapter('ninfer', { id: 'Qwen3.8-27B', name: 'Qwen3.8-27B' })],
+      onRegister: (args) => {
+        // The register step writes the row through buildModelEntry, so the
+        // provider id derives from the plan engine id and the row model id.
+        registered = {
+          providerId: providerIdFor(args.plan.engineId, args.model.id, 'local'),
+          modelId: args.model.id,
+        }
+      },
+      onRemove: (args) => {
+        removed = args
+      },
+    })
+    const config = { model: 'qwen3-27b', maxContext: 32768 }
+    await registerFor(service, { engine: 'ninfer', config })
+    const result = await unregisterFor(service, { engine: 'ninfer', config })
+    expect(result).toEqual({ removed: true })
+    // The unregister step must target the exact entry the register step wrote,
+    // so the DSH settings row is removed, not left behind.
+    expect(removed).toEqual(registered)
   })
 
   it('refuses to register an engine no adapter serves with a 404', async () => {
@@ -757,6 +811,7 @@ describe('route handlers over a fake web server', () => {
       '/local-infer/deps',
       '/local-infer/install',
       '/local-infer/download',
+      '/local-infer/chat-template',
       '/local-infer/launch',
       '/local-infer/stop',
       '/local-infer/register',
@@ -851,6 +906,7 @@ describe('route handlers over a fake web server', () => {
         route.path === '/local-infer/provider-delete' ||
         route.path === '/local-infer/install' ||
         route.path === '/local-infer/download' ||
+        route.path === '/local-infer/chat-template' ||
         route.path === '/local-infer/launch' ||
         route.path === '/local-infer/stop' ||
         route.path === '/local-infer/register' ||
@@ -1096,6 +1152,50 @@ describe('route handler error branches', () => {
     expect(res.status).toBe(404)
     expect(JSON.parse(res.body).error).toContain('no default model')
   })
+
+  it('serves the chat-template route and maps the service answer through', async () => {
+    let seen: { repo: string; directory: string } | undefined
+    const service = stubService([], {
+      onDownloadChatTemplate: (args) => {
+        seen = args
+      },
+    })
+    const list = routes(service)
+    const chatTemplate = find(list, '/local-infer/chat-template')
+    const res = fakeRes()
+    await chatTemplate.handler(
+      fakeReq(
+        'POST',
+        '/local-infer/chat-template',
+        JSON.stringify({
+          engine: 'ninfer',
+          template: 'froggeric/Qwen-Fixed-Chat-Templates',
+          directory: '/custom/models',
+        }),
+      ),
+      res,
+    )
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual({ ok: true })
+    expect(seen?.repo).toBe('froggeric/Qwen-Fixed-Chat-Templates')
+    expect(seen?.directory).toBe('/custom/models')
+  })
+
+  it('answers 400 for a chat template that is not an HF repo reference', async () => {
+    const list = routes(stubService([]))
+    const chatTemplate = find(list, '/local-infer/chat-template')
+    const res = fakeRes()
+    await chatTemplate.handler(
+      fakeReq(
+        'POST',
+        '/local-infer/chat-template',
+        JSON.stringify({ template: '/local/path/chat_template.jinja' }),
+      ),
+      res,
+    )
+    expect(res.status).toBe(400)
+    expect(JSON.parse(res.body).error).toContain('HF repo reference')
+  })
 })
 
 describe('model defaults, status, and download read model', () => {
@@ -1165,6 +1265,31 @@ describe('model defaults, status, and download read model', () => {
       hfCli: false,
       downloadCommand: `hf download neroued/Qwen3.8-27B-nvfp4-NInfer qwen3_8_27b_nvfp4.ninfer --local-dir ${MODEL_DIR}`,
     })
+  })
+
+  it('carries the chat-template status for an HF repo reference, null for a local path', async () => {
+    const withTemplate = await buildSummary(stubService([], { hfCliPath: '/usr/bin/hf' }), {
+      engine: 'ninfer',
+      config: { chatTemplate: 'froggeric/Qwen-Fixed-Chat-Templates' },
+    })
+    expect(withTemplate.chatTemplateStatus).toEqual({
+      repo: 'froggeric/Qwen-Fixed-Chat-Templates',
+      label: 'Froggeric22 (Qwen fixed chat templates)',
+      present: false,
+      hfCli: true,
+      downloadCommand: `hf download froggeric/Qwen-Fixed-Chat-Templates chat_template.jinja --local-dir ${MODEL_DIR}`,
+    })
+
+    // A local path is not an HF repo reference, so the status reads as null.
+    const withPath = await buildSummary(stubService([]), {
+      engine: 'ninfer',
+      config: { chatTemplate: '/models/chat_template.jinja' },
+    })
+    expect(withPath.chatTemplateStatus).toBeNull()
+
+    // No template selected reads as null too.
+    const noTemplate = await buildSummary(stubService([]), { engine: 'ninfer', config: {} })
+    expect(noTemplate.chatTemplateStatus).toBeNull()
   })
 
   it('reports the hf CLI detected when the probe finds it', async () => {
@@ -1423,5 +1548,17 @@ describe('provider list round trip', () => {
     const res = fakeRes()
     await del.handler(fakeReq('POST', '/local-infer/provider-delete', JSON.stringify({})), res)
     expect(res.status).toBe(400)
+  })
+
+  it('sets registered to true when modelIsRegistered returns true', async () => {
+    const service = stubService([], { modelIsRegisteredResult: true })
+    const summary = await buildSummary(service, { engine: 'ninfer', config: {} })
+    expect(summary.registered).toBe(true)
+  })
+
+  it('sets registered to false when modelIsRegistered returns false', async () => {
+    const service = stubService([], { modelIsRegisteredResult: false })
+    const summary = await buildSummary(service, { engine: 'ninfer', config: {} })
+    expect(summary.registered).toBe(false)
   })
 })

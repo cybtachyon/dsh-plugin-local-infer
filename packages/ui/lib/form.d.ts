@@ -5,13 +5,17 @@
  * mapping from `form` kind to control kind stays unit-testable here.
  * @module @dsh/dsh-plugin-local-infer/ui/form
  */
-import type { ComboOption, Config, EnumOption, ParameterForm, ParameterSpec } from '@dsh/dsh-plugin-local-infer/core';
+import type { ComboOption, Config, EnumOption, HardwareProfile, ParameterForm, ParameterSpec } from '@dsh/dsh-plugin-local-infer/core';
 /**
  * The control kinds the panel switches on: checkbox, dropdown, slider plus
  * number input, text, a directory/file picker, and a dropdown plus free-text
  * combo. The mapping from `ParameterForm` to a control is the form-type
  * awareness the plan requires; a new form kind is a new control, never a new
  * renderer branch per engine.
+ *
+ * A slider control carries `slider` (false renders the number entry without
+ * the range strip, the port field's case) and `sliderMax` (the hardware-priced
+ * cap for the range strip, distinct from the number entry's static `max`).
  */
 export type FormControl = {
     kind: 'checkbox';
@@ -24,6 +28,8 @@ export type FormControl = {
     max?: number;
     step?: number;
     unit?: string;
+    slider?: boolean;
+    sliderMax?: number;
 } | {
     kind: 'text';
     placeholder?: string;
@@ -69,9 +75,13 @@ export declare const GENERAL_GROUP = "General";
 /**
  * Maps one `ParameterForm` to the control the panel renders for it. The
  * switch is exhaustive over the closed form union, so a new form kind is a
- * compile error until its control lands here.
+ * compile error until its control lands here. `hw` and `config` price a number
+ * form's `sliderMax` (the host-KV pool caps the range strip at half the host
+ * RAM; the KV-capacity pool caps at the live max-context value); the number
+ * entry's static `max` is unaffected, so a typed value is never hard-capped by
+ * the slider.
  */
-export declare function controlFor(form: ParameterForm): FormControl;
+export declare function controlFor(form: ParameterForm, hw?: HardwareProfile, config?: Config): FormControl;
 /**
  * Resolves the value a field shows: the config value when the config carries
  * one, else the spec default. An explicit `undefined` in the config falls
@@ -84,5 +94,5 @@ export declare function resolveValue(spec: ParameterSpec, config: Config): unkno
  * A field whose `requires` names a missing dependency renders disabled with
  * that message, which is how the form expresses cross-param gating.
  */
-export declare function renderForm(specs: readonly ParameterSpec[], config: Config): FormModel;
+export declare function renderForm(specs: readonly ParameterSpec[], config: Config, hw?: HardwareProfile): FormModel;
 //# sourceMappingURL=form.d.ts.map

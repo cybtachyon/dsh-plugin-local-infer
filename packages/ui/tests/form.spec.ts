@@ -51,6 +51,41 @@ describe('controlFor', () => {
     expect('max' in control).toBe(false)
     expect('step' in control).toBe(false)
   })
+
+  it('renders a number entry without the range strip when slider is false', () => {
+    const control = controlFor({ kind: 'number', min: 1, max: 65535, slider: false })
+    expect(control).toEqual({ kind: 'slider', min: 1, max: 65535, slider: false })
+  })
+
+  it('leaves the slider hint off the control when the spec omits it', () => {
+    const control = controlFor({ kind: 'number', min: 0 })
+    expect('slider' in control).toBe(false)
+  })
+
+  it('prices the sliderMax from the hardware profile when the form declares it', () => {
+    const hw = { hostRamGiB: 32, dockerAvailable: false, wsl2: false, os: 'linux' as const, cpuThreads: 8 }
+    const form = {
+      kind: 'number' as const,
+      min: 0,
+      step: 1024,
+      unit: 'MiB',
+      sliderMax: (profile: { hostRamGiB?: number }) =>
+        Math.max(0, Math.floor((profile.hostRamGiB ?? 0) * 0.5 * 1024)),
+    }
+    const control = controlFor(form, hw)
+    expect(control.sliderMax).toBe(16384)
+    // The static max stays off the number entry, so a typed value is uncapped.
+    expect('max' in control).toBe(false)
+  })
+
+  it('leaves sliderMax off the control when no hardware profile is passed', () => {
+    const form = {
+      kind: 'number' as const,
+      sliderMax: () => 128,
+    }
+    const control = controlFor(form)
+    expect('sliderMax' in control).toBe(false)
+  })
 })
 
 describe('resolveValue', () => {
@@ -103,6 +138,24 @@ describe('renderForm', () => {
     const on = renderForm([gated], { spec: 'mtp' })
     expect(on.sections[0]!.fields[0]!.disabled).toBe(false)
     expect(on.sections[0]!.fields[0]!.disabledReason).toBeNull()
+  })
+
+  it('renders the port as a number entry and caps the host-KV slider at half the host RAM', () => {
+    const hw = {
+      hostRamGiB: 32,
+      dockerAvailable: false,
+      wsl2: false,
+      os: 'linux' as const,
+      cpuThreads: 8,
+    }
+    const model = renderForm(NINFER_PARAMETERS, {}, hw)
+    const port = model.sections[0]!.fields[0]!
+    expect(port.control).toMatchObject({ kind: 'slider', slider: false })
+    const kv = model.sections[1]!.fields.find((field) => field.key === 'hostKvMib')!
+    // 32 GiB of host RAM caps the range strip at 16384 MiB (half), while the
+    // number entry stays uncapped (no static max on the control).
+    expect(kv.control.sliderMax).toBe(16384)
+    expect('max' in (kv.control as { max?: number })).toBe(false)
   })
 
   it('renders the NInfer surface as five sections in first-appearance order', () => {

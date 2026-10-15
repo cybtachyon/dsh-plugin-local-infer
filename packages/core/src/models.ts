@@ -64,6 +64,24 @@ export function hfDownloadCommand(entry: DefaultModel, directory: string): strin
 }
 
 /**
+ * The chat template file the hf CLI pulls into the model directory. The
+ * NInfer deploy step and the template download route both target this name, so
+ * a template the user selects lands where the engine reads it.
+ */
+export const CHAT_TEMPLATE_FILE = 'chat_template.jinja'
+
+/**
+ * hfChatTemplateCommand renders the hf CLI download for one chat template repo
+ * reference into the model directory: the repo, the template file, and the
+ * `--local-dir` target. The string is the single source the template download
+ * route runs and the card shows beside its Download button and in the System
+ * dependencies box when the auto-download is unavailable.
+ */
+export function hfChatTemplateCommand(repo: string, directory: string): string {
+  return `hf download ${repo} ${CHAT_TEMPLATE_FILE} --local-dir ${directory}`
+}
+
+/**
  * ModelDirectoryEntry is one top-level entry of a model directory listing:
  * the entry name, whether it is a directory, and for directories whether the
  * entry holds a `.safetensors` weight file, the marker of a usable Hugging

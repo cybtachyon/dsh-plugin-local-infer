@@ -43,6 +43,22 @@ export function hfDownloadCommand(entry, directory) {
     return `hf download ${repo}${file} --local-dir ${directory}`;
 }
 /**
+ * The chat template file the hf CLI pulls into the model directory. The
+ * NInfer deploy step and the template download route both target this name, so
+ * a template the user selects lands where the engine reads it.
+ */
+export const CHAT_TEMPLATE_FILE = 'chat_template.jinja';
+/**
+ * hfChatTemplateCommand renders the hf CLI download for one chat template repo
+ * reference into the model directory: the repo, the template file, and the
+ * `--local-dir` target. The string is the single source the template download
+ * route runs and the card shows beside its Download button and in the System
+ * dependencies box when the auto-download is unavailable.
+ */
+export function hfChatTemplateCommand(repo, directory) {
+    return `hf download ${repo} ${CHAT_TEMPLATE_FILE} --local-dir ${directory}`;
+}
+/**
  * modelEntriesForEngine filters a model directory listing down to the model
  * entries the engine's Model dropdown offers: NInfer takes `.ninfer`
  * artifacts, llama.cpp takes `.gguf` files, and Hyper-Qwen takes the repo

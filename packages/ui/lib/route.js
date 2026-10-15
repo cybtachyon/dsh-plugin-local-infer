@@ -20,12 +20,29 @@ import { dirname, join } from 'node:path';
 // Relative, not the root package subpath: a self-referencing bare specifier
 // only resolves when the package sits inside a node_modules tree, so a
 // local-path or pnpm-linked install of this repo would fail the import.
-import { checkDeps, DEFAULT_LOG_PATH_TEMPLATE, hfDownloadCommand, modelArtifactPath, modelEntriesForEngine, providerIdFor, renderInstallString, resolveLogPath, } from '../../core/lib/index.js';
-import { defaultModelFor, defaultModelsForEngine, ENGINES, } from '../../providers/lib/index.js';
+import { CHAT_TEMPLATE_FILE, buildModelEntry, checkDeps, DEFAULT_LOG_PATH_TEMPLATE, hfChatTemplateCommand, hfDownloadCommand, modelArtifactPath, modelEntriesForEngine, providerIdFor, renderInstallString, resolveLogPath, } from '../../core/lib/index.js';
+import { CHAT_TEMPLATE_OPTIONS, defaultModelFor, defaultModelsForEngine, ENGINES, } from '../../providers/lib/index.js';
 import { renderDeps } from "./deps.js";
 import { renderForm } from "./form.js";
 import { renderMeter } from "./meter.js";
 import { renderWarnings } from "./warnings.js";
+/**
+ * isHfRepoReference reports whether a chat template value is a Hugging Face
+ * repo reference (an owner/name pair) rather than a local path: it carries a
+ * slash and does not start with one. Only repo references are auto-downloaded
+ * into the model directory; a local path is used in place.
+ */
+function isHfRepoReference(value) {
+    return value !== '' && !value.startsWith('/') && value.includes('/');
+}
+/**
+ * chatTemplateLabel resolves the display label for a chat template repo: the
+ * preset's label when the repo is a shipped preset, else the repo itself.
+ */
+function chatTemplateLabel(repo) {
+    const preset = CHAT_TEMPLATE_OPTIONS.find((option) => option.value === repo);
+    return preset?.label ?? repo;
+}
 /**
  * The config file the route owns. It sits under the dsh home so a web user and
  * a CLI user share one file, the way modsearch shares ~/.modsearch.
@@ -245,6 +262,24 @@ export async function buildSummary(localInfer, request) {
             downloadCommand: hfDownloadCommand(entry, modelDir),
         };
     }
+    // The chat-template status checks the selected template against the model
+    // directory and probes the hf CLI, so the card auto-downloads an absent
+    // template (and the System dependencies box shows the download command when
+    // the CLI is missing). Only HF repo references are downloadable; a local
+    // path or an empty template reads as null.
+    const chatTemplateValue = typeof config.chatTemplate === 'string' ? config.chatTemplate : '';
+    let chatTemplateStatus = null;
+    if (isHfRepoReference(chatTemplateValue)) {
+        const present = existsSync(join(modelDir, CHAT_TEMPLATE_FILE));
+        const hfCli = (await localInfer.hfCliAvailable()) !== null;
+        chatTemplateStatus = {
+            repo: chatTemplateValue,
+            label: chatTemplateLabel(chatTemplateValue),
+            present,
+            hfCli,
+            downloadCommand: hfChatTemplateCommand(chatTemplateValue, modelDir),
+        };
+    }
     // The provider list the card renders as collapsed entries: each saved
     // config's engine and model feed the detector, which resolves the running-
     // state its status dot paints. A provider the detector cannot tie to a
@@ -267,12 +302,45 @@ export async function buildSummary(localInfer, request) {
         config: provider.config,
         platform: provider.platform,
     }));
+    // The "unsure" banner: shown when no provider is confirmed running but at
+    // least one reads as unsure (a foreign engine the detector saw but could
+    // not tie to a model, or a busy card). The banner offers bash kill commands
+    // for the engine processes the detector saw holding VRAM, so the user can
+    // stop a provider launched in another session.
+    const anyRunning = providers.some((p) => p.status === 'running');
+    const anyUnsure = providers.some((p) => p.status === 'unsure');
+    const unsureBanner = !anyRunning && anyUnsure
+        ? {
+            message: 'Unable to link to a provider (it may have been launched in another session). \n To stop, run:',
+            killCommands: await localInfer.unsureBannerKillCommands(),
+        }
+        : null;
+    // The registered flag tells the card whether the current config's provider
+    // and model are already in the DSH settings, so the Remove button shows
+    // only when there is something to remove. A profile without the settings
+    // seam (a host that predates the typert remote) or a host without the
+    // engine adapter registered reads as unregistered.
+    let registered = false;
+    try {
+        const regAdapter = resolveAdapter(localInfer, engine.id);
+        const regPlan = regAdapter.renderLaunch(config, hardware);
+        const regRow = resolveModelRow(regAdapter, regPlan, config);
+        const regEntry = buildModelEntry(regPlan, regRow);
+        registered = await localInfer.modelIsRegistered(regEntry.providerId, regRow.id);
+    }
+    catch {
+        // A missing adapter, a missing settings seam, or a refused read all
+        // read as unregistered, which hides the Remove button (a no-op removal).
+    }
     return {
         engines: ENGINES.map((entry) => ({ id: entry.id, label: entry.label, supports: entry.supports })),
         models: localInfer.registeredVramModels().map((model) => ({ id: model.id, source: model.source })),
         hardware,
         engineId: engine.id,
-        formModel: renderForm(engine.parameters, config),
+        // The hardware profile prices the form's hardware-dependent controls (the
+        // host-KV slider cap), so the render model and the meter agree on the
+        // machine they run on.
+        formModel: renderForm(engine.parameters, config, hardware),
         meterModel: renderMeter(estimate.breakdown, estimate.verdict, hardware.gpu?.vramGiB ?? 0, estimate.source, estimate.reserveSource),
         verdict: estimate.verdict,
         warningsModel: renderWarnings(guidelineResults),
@@ -286,11 +354,14 @@ export async function buildSummary(localInfer, request) {
             url: entry.url,
         })),
         modelStatus,
+        chatTemplateStatus,
         modelFiles,
         showHelp: stored.showHelp,
         providers,
         logPath: stored.logPath,
         lastLogs: stored.lastLogs,
+        unsureBanner,
+        registered,
     };
 }
 /**
@@ -381,14 +452,38 @@ export async function buildDeps(localInfer, request) {
     const hardware = await localInfer.detectHardware();
     const deps = await localInfer.deps(engine.id, buildMode, hardware);
     const checks = await checkDeps(deps, hardware);
-    return renderDeps({
+    // The chat-template row: when a selected template is an HF repo reference
+    // and its file is not in the model directory, the System dependencies box
+    // shows the download command (the auto-download's fallback when the CLI is
+    // missing or the fetch failed). A present template, a local path, or no
+    // template leaves the row off.
+    const modelDirectory = localInfer.defaultModelDirectory();
+    const rawModelDir = config.modelDirectory;
+    const modelDir = typeof rawModelDir === 'string' && rawModelDir.trim() !== '' ? rawModelDir : modelDirectory;
+    const chatTemplateValue = typeof config.chatTemplate === 'string' ? config.chatTemplate : '';
+    let chatTemplate;
+    if (isHfRepoReference(chatTemplateValue) && !existsSync(join(modelDir, CHAT_TEMPLATE_FILE))) {
+        chatTemplate = {
+            repo: chatTemplateValue,
+            present: false,
+            hfCli: (await localInfer.hfCliAvailable()) !== null,
+            downloadCommand: hfChatTemplateCommand(chatTemplateValue, modelDir),
+        };
+    }
+    // exactOptionalPropertyTypes: the chat-template row only lands while a
+    // selected template is missing, so the key is included conditionally.
+    const depsInput = {
         engineId: engine.id,
         buildMode,
         packageManager: hardware.packageManager ?? null,
         checks,
         installString: renderInstallString(deps, hardware),
         runAllowed: stored.allowRunDeps,
-    });
+    };
+    if (chatTemplate !== undefined) {
+        depsInput.chatTemplate = chatTemplate;
+    }
+    return renderDeps(depsInput);
 }
 /**
  * runInstallFor is the Play/Run path: it refuses with a 409 while the
@@ -434,6 +529,31 @@ export async function downloadFor(localInfer, request) {
             ? storedDir
             : localInfer.defaultModelDirectory();
     return localInfer.downloadModel(entry, directory);
+}
+/**
+ * chatTemplateDownloadFor runs the hf CLI download for the request's chat
+ * template: it resolves the template repo reference from the request or the
+ * stored config's chatTemplate (a 400 when neither names an HF repo
+ * reference), resolves the directory against the request, the stored config,
+ * and the plugin's default model directory in that order, and runs the
+ * download through the service.
+ */
+export async function chatTemplateDownloadFor(localInfer, request) {
+    const stored = readConfig();
+    let template = typeof request.template === 'string' ? request.template : '';
+    if (template.trim() === '') {
+        template = typeof stored.config.chatTemplate === 'string' ? stored.config.chatTemplate : '';
+    }
+    if (!isHfRepoReference(template)) {
+        throw new RouteError(400, `the chat template must be an HF repo reference, got "${template || '(none)'}"`);
+    }
+    const storedDir = stored.config.modelDirectory;
+    const directory = typeof request.directory === 'string' && request.directory.trim() !== ''
+        ? request.directory
+        : typeof storedDir === 'string' && storedDir.trim() !== ''
+            ? storedDir
+            : localInfer.defaultModelDirectory();
+    return localInfer.downloadChatTemplate(template, directory);
 }
 /**
  * resolveAdapter picks the registered engine adapter an engine id routes to. A
@@ -555,8 +675,31 @@ export async function registerFor(localInfer, request) {
     const plan = adapter.renderLaunch(config, hardware);
     const row = resolveModelRow(adapter, plan, config);
     row.contextWindow = resolveContextWindow(config, localInfer.registeredVramModels());
+    // The vision flag publishes the Image input type on the DSH model row, so a
+    // vision engine advertises ['text', 'image'] and a text-only engine
+    // ['text']. The registrar copies it into the entry it writes.
+    row.input = config.vision === true ? ['text', 'image'] : ['text'];
     const options = request?.agentDefault === true ? { agentDefault: true } : undefined;
     return localInfer.registerModel(plan, row, options);
+}
+/**
+ * syncRegisteredModel re-runs the registration for a saved config when the
+ * model is already registered in the DSH settings, so the registered model's
+ * input types (the vision flag) stay in step with the saved config. A model
+ * that is not registered (a fresh save) is a no-op, and a profile without the
+ * settings seam throws, which the save route catches and swallows so the save
+ * itself never fails on a sync that cannot run.
+ */
+export async function syncRegisteredModel(localInfer, engine, config) {
+    const adapter = resolveAdapter(localInfer, engine);
+    const hardware = await localInfer.detectHardware();
+    const plan = adapter.renderLaunch(config, hardware);
+    const row = resolveModelRow(adapter, plan, config);
+    const buildMode = plan.kind === 'docker' ? 'docker' : 'local';
+    const providerId = providerIdFor(adapter.id, row.id, buildMode);
+    if (await localInfer.modelIsRegistered(providerId, row.id)) {
+        await registerFor(localInfer, { engine, config });
+    }
 }
 /**
  * unregisterFor runs the service's removeModel entry point for the engine's
@@ -571,8 +714,12 @@ export async function unregisterFor(localInfer, request) {
     const hardware = await localInfer.detectHardware();
     const plan = adapter.renderLaunch(config, hardware);
     const row = resolveModelRow(adapter, plan, config);
-    const buildMode = plan.kind === 'docker' ? 'docker' : 'local';
-    await localInfer.removeModel(providerIdFor(adapter.id, row.id, buildMode), row.id);
+    // The removal must target the exact entry the register step wrote, so the
+    // provider id is computed through buildModelEntry (the same function the
+    // register step uses) rather than a parallel providerIdFor call, which
+    // could drift if plan.engineId and adapter.id ever diverge.
+    const entry = buildModelEntry(plan, row);
+    await localInfer.removeModel(entry.providerId, row.id);
     return { removed: true };
 }
 /**
@@ -693,6 +840,16 @@ export function registerLocalInferRoute(scope, localInfer) {
                     logPath,
                     lastLogs: stored.lastLogs,
                 });
+                // A Save on an already-registered model re-runs the registration, so
+                // the DSH model row's input types (the vision flag) stay in step with
+                // the config the user just saved. Best-effort: a profile without the
+                // settings seam, or an engine no adapter serves, leaves the save intact.
+                try {
+                    await syncRegisteredModel(localInfer, engine, config);
+                }
+                catch {
+                    // A sync that cannot run is a no-op for the save.
+                }
                 send(200, await buildSummary(localInfer, { engine, config }));
             }
             catch (error) {
@@ -868,6 +1025,56 @@ export function registerLocalInferRoute(scope, localInfer) {
                     request.directory = body.directory;
                 }
                 send(200, await downloadFor(localInfer, request));
+            }
+            catch (error) {
+                if (error instanceof RouteError) {
+                    send(error.status, { error: error.message });
+                    return;
+                }
+                send(500, { error: String(error?.message ?? error) });
+            }
+        },
+    };
+    // The chat-template download route: the card's auto-download (and the
+    // System-dependencies fallback) pulls a selected template into the model
+    // directory through this route, so a picked preset works out of the box.
+    const chatTemplate = {
+        name: 'local-infer-chat-template',
+        kind: 'exact',
+        path: '/local-infer/chat-template',
+        handler: async (req, res) => {
+            const send = (status, body) => {
+                res.writeHead(status, { 'content-type': 'application/json' });
+                res.end(JSON.stringify(body));
+            };
+            if (req.method !== 'POST') {
+                res.writeHead(405).end();
+                return;
+            }
+            try {
+                const chunks = [];
+                let total = 0;
+                for await (const chunk of req) {
+                    total += chunk.length;
+                    if (total > 64 * 1024) {
+                        send(413, { error: 'chat template payload too large' });
+                        req.destroy();
+                        return;
+                    }
+                    chunks.push(chunk);
+                }
+                const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+                const request = {};
+                if (typeof body.engine === 'string') {
+                    request.engine = body.engine;
+                }
+                if (typeof body.template === 'string') {
+                    request.template = body.template;
+                }
+                if (typeof body.directory === 'string') {
+                    request.directory = body.directory;
+                }
+                send(200, await chatTemplateDownloadFor(localInfer, request));
             }
             catch (error) {
                 if (error instanceof RouteError) {
@@ -1071,6 +1278,7 @@ export function registerLocalInferRoute(scope, localInfer) {
         const disposeDeps = scope.webServer.register(deps);
         const disposeInstall = scope.webServer.register(install);
         const disposeDownload = scope.webServer.register(download);
+        const disposeChatTemplate = scope.webServer.register(chatTemplate);
         const disposeLaunch = scope.webServer.register(launch);
         const disposeStop = scope.webServer.register(stop);
         const disposeRegister = scope.webServer.register(register);
@@ -1082,6 +1290,7 @@ export function registerLocalInferRoute(scope, localInfer) {
             disposeDeps();
             disposeInstall();
             disposeDownload();
+            disposeChatTemplate();
             disposeLaunch();
             disposeStop();
             disposeRegister();

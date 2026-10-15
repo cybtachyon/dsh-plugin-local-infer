@@ -22,7 +22,7 @@ export type { FormControl, FormFieldModel, FormModel, FormSectionModel, } from '
 export { renderMeter } from './meter.ts';
 export type { MeterModel, MeterSegment } from './meter.ts';
 export { renderDeps } from './deps.ts';
-export type { DepItemModel, DepsModel } from './deps.ts';
+export type { ChatTemplateDepModel, DepItemModel, DepsModel } from './deps.ts';
 export { renderWarnings, toneFor } from './warnings.ts';
 export type { WarningBannerModel, WarningModel, WarningsModel, WarningTone, } from './warnings.ts';
 /**

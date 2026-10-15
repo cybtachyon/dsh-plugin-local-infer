@@ -12,6 +12,7 @@ export interface DshModelEntry {
     contextWindow: number;
     baseURL: string;
     apiKeyEnv: string;
+    input?: string[];
 }
 /**
  * RegisterResult reports whether the model was published, with the entry it
@@ -34,6 +35,7 @@ export interface ModelRow {
     id: string;
     name: string;
     contextWindow: number;
+    input?: string[];
 }
 /**
  * SettingsOp is one path-addressed settings edit: a set writes a value at a

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CHAT_TEMPLATE_FILE,
+  hfChatTemplateCommand,
   hfDownloadCommand,
   modelArtifactPath,
   modelEntriesForEngine,
@@ -67,6 +69,20 @@ describe('hfDownloadCommand', () => {
   it('renders a whole-repo download for an entry without a file', () => {
     expect(hfDownloadCommand(NO_FILE, '/models')).toBe(
       'hf download born2bewild/Qwen3.8-27B-W4A16-AutoRound-fast --local-dir /models',
+    )
+  })
+})
+
+describe('hfChatTemplateCommand', () => {
+  it('renders the repo, the template file, and the local-dir target', () => {
+    expect(hfChatTemplateCommand('froggeric/Qwen-Fixed-Chat-Templates', '/models')).toBe(
+      `hf download froggeric/Qwen-Fixed-Chat-Templates ${CHAT_TEMPLATE_FILE} --local-dir /models`,
+    )
+  })
+
+  it('targets a custom repo reference into the model directory', () => {
+    expect(hfChatTemplateCommand('acme/my-templates', '/home/user/.dsh/models')).toBe(
+      `hf download acme/my-templates ${CHAT_TEMPLATE_FILE} --local-dir /home/user/.dsh/models`,
     )
   })
 })

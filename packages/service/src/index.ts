@@ -37,6 +37,7 @@ import {
   detectPackageManager,
   evaluateGuidelines,
   estimateVram,
+  hfChatTemplateCommand,
   hfDownloadCommand,
   isGpuBusy,
   LLM_PI_AI_NAMESPACE,
@@ -450,6 +451,47 @@ export class LocalInfer extends Service implements LocalInferService {
   }
 
   /**
+   * unsureBannerKillCommands returns the bash kill commands for the engine
+   * processes the detector saw holding VRAM, for the "unsure" banner the card
+   * shows when no provider is confirmed running but at least one reads as
+   * unsure. A process is included when its command line carries an engine
+   * binary marker and the card's VRAM usage is above 30% of the total (the
+   * threshold below which a foreign engine is not considered to be holding
+   * the card). The commands are one `kill <pid>` per matching process, in
+   * pid order. An empty list means no matching process was seen, so the
+   * banner's text area renders empty.
+   */
+  async unsureBannerKillCommands(
+    options?: { processes?: ProcessLine[]; gpuUsage?: GpuUsageProbe | null },
+  ): Promise<string[]> {
+    const markers: string[] = []
+    for (const adapter of this.engineRegistry.values()) {
+      const signature = adapter.launchSignature?.()
+      if (signature !== undefined) markers.push(signature.binary)
+    }
+    const processes =
+      options?.processes !== undefined ? options.processes : await probeProcesses(markers)
+    const gpuUsage = options?.gpuUsage !== undefined ? options.gpuUsage : await probeGpuUsage()
+    // The 30% threshold: below it the card is not busy enough to attribute
+    // to a foreign engine, so no kill command is offered.
+    if (
+      gpuUsage === null ||
+      gpuUsage === undefined ||
+      gpuUsage.totalMiB <= 0 ||
+      gpuUsage.usedMiB / gpuUsage.totalMiB < 0.3
+    ) {
+      return []
+    }
+    const commands: string[] = []
+    for (const line of processes) {
+      if (markers.some((marker) => line.command.includes(marker))) {
+        commands.push(`kill ${line.pid}`)
+      }
+    }
+    return commands
+  }
+
+  /**
    * guidelines runs the full guideline engine over a config and a hardware
    * profile: the registered named guidelines, every per-spec hardware
    * constraint of the registered engines, and the model-aware rules that
@@ -750,6 +792,39 @@ export class LocalInfer extends Service implements LocalInferService {
   }
 
   /**
+   * downloadChatTemplate pulls the chat template file for one HF repo
+   * reference into the model directory, so a selected template (the Froggeric
+   * set, a custom repo) works out of the box. It shares the model download's
+   * recursive directory creation, runner, and long timeout: a template is a
+   * small file, but the hf CLI's cold start and auth are the same cost.
+   */
+  async downloadChatTemplate(
+    repo: string,
+    directory: string,
+    options?: DownloadModelOptions,
+  ): Promise<DownloadResult> {
+    mkdirSync(directory, { recursive: true })
+    const runner = options?.runner ?? downloadRunner
+    const result = await runner(hfChatTemplateCommand(repo, directory))
+    if (result.ok) return { ok: true }
+    return { ok: false, detail: `chat template download failed: ${result.detail ?? 'unknown'}` }
+  }
+
+  /**
+   * modelIsRegistered reports whether a provider entry with the named model is
+   * already registered in the DSH settings, so the save route can sync the
+   * registered model's input types (the vision flag) without duplicating a
+   * fresh registration. A provider the section does not carry reads as
+   * unregistered.
+   */
+  async modelIsRegistered(providerId: string, modelId: string): Promise<boolean> {
+    const settings = this.settings()
+    const llm = await this.descriptor(settings, LLM_PI_AI_NAMESPACE)
+    const rows = modelRowsFrom(llm?.value, providerId)
+    return rows.some((row) => row.id === modelId)
+  }
+
+  /**
    * listModelDirectory lists the top-level entries of a model directory, the
    * data the Model dropdown's directory scan draws from. Dot entries (the
    * `.cache` the hf CLI keeps) never name a model, so they are skipped. A
@@ -936,20 +1011,22 @@ export class LocalInfer extends Service implements LocalInferService {
     settings: SettingsForms,
     ns: string,
   ): Promise<SettingsNamespaceDescriptor | undefined> {
-    // The dsh settings seam is a typert remote: describe is async and answers
-    // with a { ok, value, error } envelope, so the read is awaited and the
-    // business value unwrapped before the namespace view is picked out.
+    // The dsh settings seam answers describe in three contracts, so the read
+    // is awaited and the namespace list unwrapped before the entry is picked:
+    // the typert remote envelope carries the result under `value`, a host that
+    // predates the envelope answers with the plain object, and the SettingsForms
+    // service the reflect fallback reaches answers with the bare descriptor
+    // array. Read all three, so the registrar works against any seam.
     const response = await settings.describe({ redactSecrets: true })
-    // A seam that answers with the plain object (a host that predates the
-    // typert remote envelope) carries the namespaces at the top level; the
-    // envelope shape carries them under `value`. Read both, so the registrar
-    // works against either contract.
-    const result: SettingsDescribeResult | undefined =
-      'namespaces' in response
-        ? (response as SettingsDescribeResult)
-        : (response as SettingsRemoteResponse<SettingsDescribeResult>).value
-    if (result === undefined) return undefined
-    return result.namespaces.find((entry) => entry.ns === ns)
+    let namespaces: readonly SettingsNamespaceDescriptor[] | undefined
+    if (Array.isArray(response)) {
+      namespaces = response
+    } else if ('namespaces' in response) {
+      namespaces = (response as SettingsDescribeResult).namespaces
+    } else {
+      namespaces = (response as SettingsRemoteResponse<SettingsDescribeResult>).value?.namespaces
+    }
+    return namespaces?.find((entry) => entry.ns === ns)
   }
 
   /**
@@ -1216,7 +1293,7 @@ async function probeProcesses(markers: readonly string[]): Promise<ProcessLine[]
     const env = markers.some(marker => command.includes(marker))
       ? readProcEnviron(pid)
       : undefined
-    lines.push({ command, ...(env !== undefined ? { env } : {}) })
+    lines.push({ pid, command, ...(env !== undefined ? { env } : {}) })
   }
   return lines
 }

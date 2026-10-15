@@ -259,4 +259,76 @@ describe('dsh/client.js browser carrier', () => {
     expect(source).toContain('onStopEntry')
     expect(source).toContain('entryLaunchState')
   })
+
+  it('pins the provider Edit to Cancel swap while a provider is being edited', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // The provider the editing form is open for shows a Cancel button (which
+    // collapses the form back to Edit and discards its changes); every other
+    // provider shows the Edit button that opens it.
+    expect(source).toContain('onCancelProvider')
+    expect(source).toContain('cancelLabel')
+    expect(source).toContain('editingId === provider.id')
+  })
+
+  it('pins the port number entry without a range strip and the hardware-priced slider cap', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // A slider control with slider:false (the port field) renders the number
+    // entry alone; the range strip's cap is the hardware-priced sliderMax when
+    // the form declares one (the host-KV pool caps at half the host RAM), else
+    // the static max.
+    expect(source).toContain('control.slider === false')
+    expect(source).toContain('control.sliderMax')
+  })
+
+  it('pins the chat template preset plus custom split and the auto-download', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // The chat template is split into a preset dropdown (shipped presets plus a
+    // Custom entry) and a "Custom Chat template" text field that shows while the
+    // preset is Custom. The auto-download pulls an absent template through the
+    // /local-infer/chat-template route, and the System dependencies box carries
+    // the download command when the CLI is unavailable.
+    expect(source).toContain('ChatTemplateField')
+    expect(source).toContain('chatTemplatePreset')
+    expect(source).toContain('customChatTemplate')
+    expect(source).toContain('onDownloadTemplate')
+    expect(source).toContain('chatTemplateStatus')
+    expect(source).toContain('templateAbsent')
+    expect(source).toContain('templateInstructions')
+  })
+
+  it('pins the Save handler clearing the editing provider so the button reverts to Edit', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // A successful Save collapses the form and clears the editing provider id,
+    // so the provider entry's button reverts from Cancel back to Edit, the
+    // same rule the Discard handler applies.
+    expect(source).toContain('editingProviderIdState[1](null)')
+  })
+
+  it('pins the Remove handler keying off the same config as Register', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // The unregister request carries draft.config, the same config the
+    // register step sent, so the provider and model ids the removal derives
+    // are identical to the ones the registration published, and the DSH
+    // settings row is actually removed.
+    expect(source).toContain('engine: draft.engine, config: draft.config')
+  })
+
+  it('pins the Discard handler collapsing the form back to the entry list', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // A "New provider" then "Discard" sequence must not leave the form open in
+    // 'new' mode. The Discard handler collapses the form back to the provider
+    // entry list, the same rule the Save handler applies.
+    expect(source).toContain('providerFormModeState[1](\'collapsed\')')
+  })
+
+  it('pins the unsure banner with kill commands at the top of the card', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // The "unsure" banner renders at the top of the card (before the section
+    // title) when data.unsureBanner is present: the message and a read-only
+    // text area with the bash kill commands for the engine processes the
+    // detector saw holding VRAM.
+    expect(source).toContain('data.unsureBanner')
+    expect(source).toContain('unsureBanner')
+    expect(source).toContain('killCommands')
+  })
 })

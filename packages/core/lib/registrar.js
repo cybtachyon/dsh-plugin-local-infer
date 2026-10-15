@@ -61,7 +61,7 @@ export function buildModelEntry(plan, model) {
     const buildMode = plan.kind === 'docker' ? 'docker' : 'local';
     const modeLabel = buildMode === 'docker' ? 'Docker' : 'Local';
     const modelName = model.name !== '' ? model.name : modelSlug(model.id);
-    return {
+    const entry = {
         providerId: providerIdFor(plan.engineId, model.id, buildMode),
         modelId: model.id,
         name: `${engineDisplayName(plan.engineId)} (${modeLabel}): ${modelName}`,
@@ -69,6 +69,12 @@ export function buildModelEntry(plan, model) {
         baseURL: `http://127.0.0.1:${plan.port}/v1`,
         apiKeyEnv: apiKeyEnvFor(plan.engineId),
     };
+    // exactOptionalPropertyTypes: carry the input modalities only when the row
+    // names them, so a text-only registration never writes an empty list.
+    if (model.input !== undefined) {
+        entry.input = model.input;
+    }
+    return entry;
 }
 /**
  * upsertModelRow returns the models list with the row written: a row the id
@@ -107,6 +113,12 @@ export function providerRegistrationOps(entry, rows) {
         name: entry.name,
         contextWindow: entry.contextWindow,
     };
+    // The DSH model row carries the same input modalities the entry names, so a
+    // vision engine publishes ['text', 'image'] and a text-only engine
+    // ['text']. Absent reads as the DSH default.
+    if (entry.input !== undefined) {
+        row.input = entry.input;
+    }
     return [
         { op: 'set', path: [...providerPath, 'apiKeyEnv'], value: entry.apiKeyEnv },
         { op: 'set', path: [...providerPath, 'api'], value: 'openai-completions' },

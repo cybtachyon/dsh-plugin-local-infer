@@ -137,6 +137,21 @@ export declare class LocalInfer extends Service implements LocalInferService {
         gpuUsage?: GpuUsageProbe | null;
     }): Promise<Record<string, ProviderStatus>>;
     /**
+     * unsureBannerKillCommands returns the bash kill commands for the engine
+     * processes the detector saw holding VRAM, for the "unsure" banner the card
+     * shows when no provider is confirmed running but at least one reads as
+     * unsure. A process is included when its command line carries an engine
+     * binary marker and the card's VRAM usage is above 30% of the total (the
+     * threshold below which a foreign engine is not considered to be holding
+     * the card). The commands are one `kill <pid>` per matching process, in
+     * pid order. An empty list means no matching process was seen, so the
+     * banner's text area renders empty.
+     */
+    unsureBannerKillCommands(options?: {
+        processes?: ProcessLine[];
+        gpuUsage?: GpuUsageProbe | null;
+    }): Promise<string[]>;
+    /**
      * guidelines runs the full guideline engine over a config and a hardware
      * profile: the registered named guidelines, every per-spec hardware
      * constraint of the registered engines, and the model-aware rules that
@@ -241,6 +256,22 @@ export declare class LocalInfer extends Service implements LocalInferService {
      * broken step.
      */
     downloadModel(entry: DefaultModel, directory: string, options?: DownloadModelOptions): Promise<DownloadResult>;
+    /**
+     * downloadChatTemplate pulls the chat template file for one HF repo
+     * reference into the model directory, so a selected template (the Froggeric
+     * set, a custom repo) works out of the box. It shares the model download's
+     * recursive directory creation, runner, and long timeout: a template is a
+     * small file, but the hf CLI's cold start and auth are the same cost.
+     */
+    downloadChatTemplate(repo: string, directory: string, options?: DownloadModelOptions): Promise<DownloadResult>;
+    /**
+     * modelIsRegistered reports whether a provider entry with the named model is
+     * already registered in the DSH settings, so the save route can sync the
+     * registered model's input types (the vision flag) without duplicating a
+     * fresh registration. A provider the section does not carry reads as
+     * unregistered.
+     */
+    modelIsRegistered(providerId: string, modelId: string): Promise<boolean>;
     /**
      * listModelDirectory lists the top-level entries of a model directory, the
      * data the Model dropdown's directory scan draws from. Dot entries (the

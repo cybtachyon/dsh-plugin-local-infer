@@ -12,22 +12,41 @@ export const GENERAL_GROUP = 'General';
 /**
  * Maps one `ParameterForm` to the control the panel renders for it. The
  * switch is exhaustive over the closed form union, so a new form kind is a
- * compile error until its control lands here.
+ * compile error until its control lands here. `hw` and `config` price a number
+ * form's `sliderMax` (the host-KV pool caps the range strip at half the host
+ * RAM; the KV-capacity pool caps at the live max-context value); the number
+ * entry's static `max` is unaffected, so a typed value is never hard-capped by
+ * the slider.
  */
-export function controlFor(form) {
+export function controlFor(form, hw, config) {
     switch (form.kind) {
         case 'boolean':
             return { kind: 'checkbox' };
         case 'enum':
             return { kind: 'dropdown', options: form.options };
-        case 'number':
-            return {
-                kind: 'slider',
-                ...(form.min !== undefined ? { min: form.min } : {}),
-                ...(form.max !== undefined ? { max: form.max } : {}),
-                ...(form.step !== undefined ? { step: form.step } : {}),
-                ...(form.unit !== undefined ? { unit: form.unit } : {}),
-            };
+        case 'number': {
+            const control = { kind: 'slider' };
+            if (form.min !== undefined)
+                control.min = form.min;
+            if (form.max !== undefined)
+                control.max = form.max;
+            if (form.step !== undefined)
+                control.step = form.step;
+            if (form.unit !== undefined)
+                control.unit = form.unit;
+            // The slider hint is explicit: a form that names `slider: false` renders
+            // the number entry without the range strip. Absent reads as a slider.
+            if (form.slider === false)
+                control.slider = false;
+            // The priced cap only lands when the form declares it and the caller
+            // passed a profile; a missing profile leaves the strip uncapped. The
+            // config rides through so a cap that tracks a live field (the KV pool
+            // tracking max-context) re-prices on every form render.
+            if (form.sliderMax !== undefined && hw !== undefined) {
+                control.sliderMax = form.sliderMax(hw, config ?? {});
+            }
+            return control;
+        }
         case 'text':
             return {
                 kind: 'text',
@@ -54,7 +73,7 @@ export function resolveValue(spec, config) {
  * A field whose `requires` names a missing dependency renders disabled with
  * that message, which is how the form expresses cross-param gating.
  */
-export function renderForm(specs, config) {
+export function renderForm(specs, config, hw) {
     const sections = [];
     const byGroup = new Map();
     for (const spec of specs) {
@@ -71,7 +90,7 @@ export function renderForm(specs, config) {
             label: spec.label,
             description: spec.description,
             group,
-            control: controlFor(spec.form),
+            control: controlFor(spec.form, hw, config),
             value: resolveValue(spec, config),
             disabled: reason !== null,
             disabledReason: reason,

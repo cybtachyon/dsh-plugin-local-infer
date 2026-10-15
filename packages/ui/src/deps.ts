@@ -22,10 +22,25 @@ export interface DepItemModel {
 }
 
 /**
+ * ChatTemplateDepModel is the chat-template row the panel's System
+ * dependencies box draws when a selected template is not present in the model
+ * directory: the repo reference, whether the template is present, whether the
+ * hf CLI is available, and the download command the box shows (the auto-
+ * download's fallback when the CLI is missing or the fetch failed).
+ */
+export interface ChatTemplateDepModel {
+  repo: string
+  present: boolean
+  hfCli: boolean
+  downloadCommand: string
+}
+
+/**
  * DepsModel is the whole panel: the dep list, the install string the Copy
  * button hands to the clipboard, the package manager the string was rendered
  * for (null when none was detected), the Play/Run trust gate (allowRunDeps),
- * and the "Get" gate (allSatisfied).
+ * the "Get" gate (allSatisfied), and the chat-template row (present only
+ * while a selected template is missing from the model directory).
  */
 export interface DepsModel {
   engineId: string
@@ -35,6 +50,7 @@ export interface DepsModel {
   allSatisfied: boolean
   installString: string
   runAllowed: boolean
+  chatTemplate?: ChatTemplateDepModel
 }
 
 /**
@@ -50,6 +66,7 @@ export function renderDeps(input: {
   checks: DepCheck[]
   installString: string
   runAllowed: boolean
+  chatTemplate?: ChatTemplateDepModel
 }): DepsModel {
   const deps: DepItemModel[] = input.checks.map(check => ({
     id: check.dep.id,
@@ -57,7 +74,7 @@ export function renderDeps(input: {
     status: check.status,
     requiresSudo: check.dep.requiresSudo,
   }))
-  return {
+  const model: DepsModel = {
     engineId: input.engineId,
     buildMode: input.buildMode,
     packageManager: input.packageManager,
@@ -66,4 +83,10 @@ export function renderDeps(input: {
     installString: input.installString,
     runAllowed: input.runAllowed,
   }
+  // The chat-template row only lands while a selected template is missing; a
+  // present template (or no template selected) leaves the key off.
+  if (input.chatTemplate !== undefined) {
+    model.chatTemplate = input.chatTemplate
+  }
+  return model
 }

@@ -88,7 +88,7 @@ window.__ModuleLoader__.load({
         unregistered: 'removed',
         unregisterFailed: 'remove failed',
         launch: 'Launch',
-        launching: 'launching...',
+        launching: 'Launching...',
         launchFailed: 'launch failed',
         runningOn: 'running on port',
         notHealthy: 'not healthy',
@@ -122,17 +122,29 @@ window.__ModuleLoader__.load({
         providers: 'Providers',
         newProvider: 'New provider',
         edit: 'Edit',
+        cancel: 'Cancel',
         delete: 'Delete',
         deleteProvider: 'Delete provider',
         statusRunning: 'running',
         statusStopped: 'stopped',
         statusUnsure: 'status unknown',
+        unsureBanner:
+          'Unable to link to a provider (it may have been launched in another session). \n To stop, run:',
         registerNeedsSave: 'Save the Provider configuration before registering with DSH.',
         logs: 'Logs',
         logLocation: 'Log location',
         entryLaunch: 'Launch',
         entryStop: 'Stop',
         entryLogs: 'Logs',
+        chatTemplatePreset: 'Chat template preset',
+        customChatTemplate: 'Custom Chat template',
+        custom: 'Custom',
+        templateAbsent: 'Chat template not in the model directory',
+        templateInstructions: 'Download the chat template with the hf CLI:',
+        templateDownload: 'Download template',
+        templateDownloading: 'downloading template...',
+        templateDownloaded: 'template download complete',
+        templateDownloadFailed: 'template download failed',
       },
       zh: {
         section: '引擎设置',
@@ -221,17 +233,28 @@ window.__ModuleLoader__.load({
         providers: '提供方',
         newProvider: '新增提供方',
         edit: '编辑',
+        cancel: '取消',
         delete: '删除',
         deleteProvider: '删除提供方',
         statusRunning: '运行中',
         statusStopped: '已停止',
         statusUnsure: '状态未知',
+        unsureBanner: '无法关联到提供方（它可能在另一个会话中启动）。\n如需停止，请运行：',
         registerNeedsSave: '注册到 DSH 之前请先保存该提供方配置。',
         logs: '日志',
         logLocation: '日志位置',
         entryLaunch: '启动',
         entryStop: '停止',
         entryLogs: '日志',
+        chatTemplatePreset: '聊天模板预设',
+        customChatTemplate: '自定义聊天模板',
+        custom: '自定义',
+        templateAbsent: '聊天模板不在模型目录中',
+        templateInstructions: '使用 hf CLI 下载聊天模板:',
+        templateDownload: '下载模板',
+        templateDownloading: '模板下载中…',
+        templateDownloaded: '模板下载完成',
+        templateDownloadFailed: '模板下载失败',
       },
     };
 
@@ -867,13 +890,24 @@ window.__ModuleLoader__.load({
             },
             engineLabel + ': ' + modelLabel,
           ),
-          renderButton(
-            react,
-            primitives,
-            'ghost',
-            { onClick: function () { opts.onEdit(provider); } },
-            opts.editLabel,
-          ),
+          // The provider the editing form is open for shows a Cancel button
+          // (which collapses the form back to Edit and discards its changes);
+          // every other provider shows the Edit button that opens it.
+          opts.editingId === provider.id
+            ? renderButton(
+                react,
+                primitives,
+                'ghost',
+                { onClick: function () { opts.onCancel(provider); } },
+                opts.cancelLabel,
+              )
+            : renderButton(
+                react,
+                primitives,
+                'ghost',
+                { onClick: function () { opts.onEdit(provider); } },
+                opts.editLabel,
+              ),
           renderButton(
             react,
             primitives,
@@ -936,11 +970,111 @@ window.__ModuleLoader__.load({
       });
     }
 
+    // The chat-template control, split from the old finicky free-text combo
+    // into a preset dropdown (the shipped presets plus a "Custom" entry) and a
+    // "Custom Chat template" text field that shows while the preset is
+    // Custom. The single config value (the effective --chat-template) is
+    // derived: a known preset value selects that preset, a non-preset value
+    // selects Custom, and an empty value selects the blank row. The local
+    // custom-mode flag keeps the text field open after a Custom selection even
+    // while the value is still empty, so a fresh selection is ready to type.
+    function ChatTemplateField(props) {
+      var react = props.react;
+      var field = props.field;
+      var control = props.control;
+      var onValue = props.onValue;
+      var t = props.t;
+      var value = field.value;
+      var options = control.options || [];
+      var isPreset = options.some(function (option) {
+        return String(option.value) === String(value);
+      });
+      var valueIsEmpty = value === undefined || value === null || value === '';
+      // The custom-mode flag starts from the value: a non-preset, non-empty
+      // value is a custom template, so the text field opens ready.
+      var customModeInit = !valueIsEmpty && !isPreset;
+      var customModeState = react.useState(customModeInit);
+      var customMode = customModeState[0];
+      var setCustomMode = customModeState[1];
+
+      var presetItems = [{ id: '', label: t.modelAuto }].concat(
+        options.map(function (option) {
+          return {
+            id: String(option.value),
+            label: option.note ? option.label + ' · ' + option.note : option.label,
+          };
+        }),
+      ).concat([{ id: 'custom', label: t.custom }]);
+
+      var presetValue = isPreset && !valueIsEmpty ? String(value) : customMode ? 'custom' : '';
+      var presetLabel =
+        (presetItems.find(function (item) {
+          return item.id === presetValue;
+        }) || {}).label || t.modelAuto;
+
+      var customValue = valueIsEmpty ? '' : String(value);
+
+      var presetSelect = renderSelect(react, props.primitives, {
+        value: presetValue,
+        label: presetLabel,
+        items: presetItems,
+        onSelect: function (id) {
+          if (id === 'custom') {
+            // Switch to custom mode: keep the current custom value if it is
+            // one, else start empty. The text field opens ready to type.
+            setCustomMode(true);
+            if (valueIsEmpty || isPreset) {
+              onValue(field.key, '');
+            }
+          } else if (id === '') {
+            setCustomMode(false);
+            onValue(field.key, undefined);
+          } else {
+            setCustomMode(false);
+            onValue(field.key, id);
+          }
+        },
+        disabled: field.disabled,
+      });
+
+      return react.createElement(
+        'div',
+        { style: { display: 'flex', flexDirection: 'column', gap: 6, flex: 1, minWidth: 0 } },
+        react.createElement(
+          'div',
+          { style: ROW_STYLE },
+          react.createElement('label', { style: LABEL_STYLE }, t.chatTemplatePreset),
+          presetSelect,
+        ),
+        customMode
+          ? react.createElement(
+              'div',
+              { style: ROW_STYLE },
+              react.createElement('label', { style: LABEL_STYLE }, t.customChatTemplate),
+              react.createElement('input', {
+                style: Object.assign(
+                  {},
+                  INPUT_STYLE,
+                  field.disabled ? { opacity: 0.5 } : {},
+                ),
+                type: 'text',
+                value: customValue,
+                placeholder: 'local path or HF repo reference',
+                disabled: field.disabled,
+                onChange: function (event) {
+                  onValue(field.key, event.target.value);
+                },
+              }),
+            )
+          : null,
+      );
+    }
+
     // One rendered field: the control the `control` model names, greyed out
     // with its reason while `disabled` is set, the per-field description
     // beneath the row while `help` is on, and the inline guideline warnings
     // anchored to the field's key beneath it.
-    function renderField(react, field, onValue, inlineWarnings, primitives, help) {
+    function renderField(react, field, onValue, inlineWarnings, primitives, help, t) {
       var value = field.value;
       var common = {
         key: field.key,
@@ -949,6 +1083,9 @@ window.__ModuleLoader__.load({
       };
       var control = field.control;
       var input;
+      // A combo field (the chat template) renders its own labeled preset and
+      // custom rows, so the outer field label is omitted for it.
+      var comboField = false;
       if (control.kind === 'checkbox') {
         // The checkbox is a bare native control, not a field: it keeps the
         // browser's box size (the 32px input style would stretch it).
@@ -988,83 +1125,92 @@ window.__ModuleLoader__.load({
         // the spin buttons, and the slider and the estimate follow. The
         // unit moves to a small label beside the input, because a native
         // number input cannot carry suffix text.
+        //
+        // The range strip's cap is the hardware-priced sliderMax when the
+        // form declares one (the host-KV pool caps at half the host RAM),
+        // else the static max, else 100. The number entry keeps the static
+        // max (or none), so a typed value is never hard-capped by the
+        // slider. A form with slider:false (the port field) renders the
+        // number entry alone, no drag strip.
         var numeric = typeof value === 'number' ? value : undefined;
-        input = react.createElement(
-          'span',
-          { style: { display: 'flex', alignItems: 'center', gap: 8, flex: 1 } },
-          react.createElement('input',
-            Object.assign(
+        var sliderCap =
+          control.sliderMax !== undefined
+            ? control.sliderMax
+            : control.max !== undefined
+              ? control.max
+              : 100;
+        var unitLabel = control.unit
+          ? react.createElement(
+              'span',
               {
-                // colorScheme keeps the native slider UI on the device
-                // scheme, the same reason the inputs carry it.
                 style: {
-                  flex: 1,
-                  accentColor: 'var(--dsw-alias-accent, #0a84ff)',
-                  colorScheme: 'light dark',
+                  width: 48,
+                  flex: 'none',
+                  fontSize: 11,
+                  color: 'var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))',
                 },
-                disabled: field.disabled,
               },
-              {
-                type: 'range',
-                min: control.min !== undefined ? control.min : 0,
-                max: control.max !== undefined ? control.max : 100,
-                step: control.step !== undefined ? control.step : 1,
-                value: numeric !== undefined ? numeric : control.min !== undefined ? control.min : 0,
-                onChange: (event) => onValue(field.key, Number(event.target.value)),
-              },
-            ),
-          ),
-          react.createElement(NumberField, {
-            react: react,
-            field: field,
-            control: control,
-            onValue: onValue,
-          }),
-          control.unit
-            ? react.createElement(
-                'span',
+              control.unit,
+            )
+          : null;
+        var numberEntry = react.createElement(NumberField, {
+          react: react,
+          field: field,
+          control: control,
+          onValue: onValue,
+        });
+        if (control.slider === false) {
+          // A plain number entry: no range strip (the port field's case).
+          input = react.createElement(
+            'span',
+            { style: { display: 'flex', alignItems: 'center', gap: 8, flex: 1 } },
+            numberEntry,
+            unitLabel,
+          );
+        } else {
+          input = react.createElement(
+            'span',
+            { style: { display: 'flex', alignItems: 'center', gap: 8, flex: 1 } },
+            react.createElement('input',
+              Object.assign(
                 {
+                  // colorScheme keeps the native slider UI on the device
+                  // scheme, the same reason the inputs carry it.
                   style: {
-                    width: 48,
-                    flex: 'none',
-                    fontSize: 11,
-                    color: 'var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))',
+                    flex: 1,
+                    accentColor: 'var(--dsw-alias-accent, #0a84ff)',
+                    colorScheme: 'light dark',
                   },
+                  disabled: field.disabled,
                 },
-                control.unit,
-              )
-            : null,
-        );
-      } else if (control.kind === 'combo') {
-        // Dropdown plus free text as one native control: the datalist suggests
-        // the known options and the input accepts any value, a local path or
-        // an HF repo reference.
-        var listId = 'local-infer-combo-' + field.key;
-        input = react.createElement(
-          'div',
-          { style: { flex: 1, minWidth: 0 } },
-          react.createElement(
-            'input',
-            Object.assign({}, common, {
-              type: 'text',
-              list: listId,
-              value: value === undefined || value === null ? '' : String(value),
-              placeholder: 'known template, path, or HF repo',
-              onChange: (event) => onValue(field.key, event.target.value),
-            }),
-          ),
-          react.createElement(
-            'datalist',
-            { id: listId },
-            (control.options || []).map((option) =>
-              react.createElement(
-                'option',
-                { key: option.value, value: option.value },
-                option.note ? option.label + ' · ' + option.note : option.label,
+                {
+                  type: 'range',
+                  min: control.min !== undefined ? control.min : 0,
+                  max: sliderCap,
+                  step: control.step !== undefined ? control.step : 1,
+                  value: numeric !== undefined ? numeric : control.min !== undefined ? control.min : 0,
+                  onChange: (event) => onValue(field.key, Number(event.target.value)),
+                },
               ),
             ),
-          ),
-        );
+            numberEntry,
+            unitLabel,
+          );
+        }
+      } else if (control.kind === 'combo') {
+        // The chat template: a preset dropdown (shipped presets plus a Custom
+        // entry) and a "Custom Chat template" text field that shows while the
+        // preset is Custom. The ChatTemplateField owns both rows and the
+        // single effective value, so the finicky free-text combo is gone.
+        comboField = true;
+        input = react.createElement(ChatTemplateField, {
+          react: react,
+          field: field,
+          control: control,
+          onValue: onValue,
+          primitives: primitives,
+          t: t,
+        });
       } else {
         // text and picker both render a free-text input; the browser has no
         // native directory picker, so the path is typed.
@@ -1078,27 +1224,33 @@ window.__ModuleLoader__.load({
           }),
         );
       }
+      // A combo field (the chat template) renders its own labeled preset and
+      // custom rows, so it skips the outer field label and the disabled-reason
+      // span (the text field greys itself out while disabled).
+      var body = comboField
+        ? input
+        : react.createElement(
+            'div',
+            { style: ROW_STYLE },
+            react.createElement('label', { style: LABEL_STYLE }, field.label),
+            input,
+            field.disabled && field.disabledReason
+              ? react.createElement(
+                  'span',
+                  {
+                    style: {
+                      fontSize: 11,
+                      color: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))',
+                    },
+                  },
+                  field.disabledReason,
+                )
+              : null,
+          );
       return react.createElement(
         'div',
         { key: field.key, style: { marginTop: 6 } },
-        react.createElement(
-          'div',
-          { style: ROW_STYLE },
-          react.createElement('label', { style: LABEL_STYLE }, field.label),
-          input,
-          field.disabled && field.disabledReason
-            ? react.createElement(
-                'span',
-                {
-                  style: {
-                    fontSize: 11,
-                    color: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))',
-                  },
-                },
-                field.disabledReason,
-              )
-            : null,
-        ),
+        body,
         help ? renderHelpRow(react, field.description) : null,
         (inlineWarnings || []).map((warning) =>
           react.createElement(
@@ -1299,6 +1451,37 @@ window.__ModuleLoader__.load({
               ),
             )
           : null,
+        // The chat-template row: shown while a selected template is missing
+        // from the model directory (the auto-download's fallback when the hf
+        // CLI is unavailable or the fetch failed). It names the download
+        // command so the user can run it by hand.
+        deps.chatTemplate
+          ? react.createElement(
+              'div',
+              { style: { marginTop: 8 } },
+              react.createElement(
+                'div',
+                {
+                  style: {
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: 'var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))',
+                  },
+                },
+                t.templateAbsent,
+              ),
+              react.createElement(
+                'div',
+                { style: { fontSize: 12, marginTop: 4 } },
+                t.templateInstructions,
+              ),
+              react.createElement(
+                'pre',
+                { style: INSTALL_BLOCK_STYLE },
+                deps.chatTemplate.downloadCommand,
+              ),
+            )
+          : null,
         react.createElement(
           'div',
           { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 } },
@@ -1396,6 +1579,14 @@ window.__ModuleLoader__.load({
         // reports the answer the route returned.
         var downloadingState = react.useState(false);
         var downloadNoteState = react.useState('');
+        // The chat-template download state. The auto-download (and the manual
+        // button) pulls a selected template through the
+        // /local-infer/chat-template route; the note reports the answer, and
+        // the requested-repos ref keeps a re-render from re-firing a download
+        // that is already in flight or already landed.
+        var templateDownloadingState = react.useState(false);
+        var templateDownloadNoteState = react.useState('');
+        var templateRequestedRef = react.useRef({});
         // The help toggle: show the per-field descriptions. The initial value
         // is the default (visible); the summary's stored preference wins on
         // load, and the "?" button flips it through the save route.
@@ -1448,6 +1639,8 @@ window.__ModuleLoader__.load({
         var lifecycleNote = lifecycleNoteState[0];
         var downloading = downloadingState[0];
         var downloadNote = downloadNoteState[0];
+        var templateDownloading = templateDownloadingState[0];
+        var templateDownloadNote = templateDownloadNoteState[0];
         var help = helpState[0];
         var dirty = dirtyState[0];
         var editingProviderId = editingProviderIdState[0];
@@ -1665,6 +1858,87 @@ window.__ModuleLoader__.load({
           [draft, downloading, t, fetchSummary],
         );
 
+        // The chat-template download: pulls the selected template (the
+        // draft's chatTemplate value) into the model directory through the
+        // /local-infer/chat-template route, so a picked preset works out of
+        // the box. The requested-repos ref marks the repo in flight, so the
+        // auto-download effect and a manual click do not double-fire.
+        var onDownloadTemplate = react.useCallback(
+          (repo) => {
+            if (draft === null || templateDownloading || repo === '' || repo === undefined) {
+              return;
+            }
+            if (templateRequestedRef.current[repo]) {
+              return;
+            }
+            templateRequestedRef.current[repo] = true;
+            templateDownloadingState[1](true);
+            templateDownloadNoteState[1]('');
+            fetch('/local-infer/chat-template', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                engine: draft.engine,
+                template: repo,
+                directory:
+                  typeof draft.config.modelDirectory === 'string'
+                    ? draft.config.modelDirectory
+                    : undefined,
+              }),
+            })
+              .then((response) => response.json().then((body) => ({ ok: response.ok, body: body })))
+              .then(({ ok, body }) => {
+                if (ok && body.ok) {
+                  templateDownloadNoteState[1](t.templateDownloaded);
+                  fetchSummary(draft.engine, draft.config);
+                } else {
+                  templateDownloadNoteState[1](
+                    t.templateDownloadFailed + (body.detail ? ': ' + body.detail : ''),
+                  );
+                  // A failed download clears the mark, so a later retry (the
+                  // button, or a re-select) can fire again.
+                  templateRequestedRef.current[repo] = false;
+                }
+              })
+              .catch((error) => {
+                templateDownloadNoteState[1](
+                  t.templateDownloadFailed + (error && error.message ? ': ' + error.message : ''),
+                );
+                templateRequestedRef.current[repo] = false;
+              })
+              .then(() => {
+                templateDownloadingState[1](false);
+              });
+          },
+          [draft, templateDownloading, t, fetchSummary],
+        );
+
+        // The auto-download: when the summary reports a selected template that
+        // is absent from the model directory and the hf CLI is available, pull
+        // it once so the preset works out of the box. A present template, a
+        // missing CLI (the System dependencies box shows the command), or a
+        // repo already requested reads as a no-op.
+        var chatTemplateRepo =
+          data && data.chatTemplateStatus && data.chatTemplateStatus.repo
+            ? data.chatTemplateStatus.repo
+            : '';
+        react.useEffect(() => {
+          var status = data && data.chatTemplateStatus;
+          if (
+            status === null ||
+            status === undefined ||
+            status.present ||
+            !status.hfCli ||
+            status.repo === ''
+          ) {
+            return;
+          }
+          if (templateRequestedRef.current[status.repo]) {
+            return;
+          }
+          onDownloadTemplate(status.repo);
+        }, [chatTemplateRepo]);
+
         // The help toggle: flip the local state and persist the preference
         // through the save route, so it survives a reload. The save response
         // carries the fresh summary, so the data and the draft resync from
@@ -1791,8 +2065,11 @@ window.__ModuleLoader__.load({
               // The config is now persisted, so the Register gate opens and the
               // provider list (next.providers) reflects the new entry. The form
               // collapses back to the entry list, so the saved provider shows as
-              // a card and the "New provider" control is clickable again.
+              // a card and the "New provider" control is clickable again. The
+              // editing provider id clears, so the provider entry's button
+              // reverts from Cancel back to Edit, the same rule Discard applies.
               dirtyState[1](false);
+              editingProviderIdState[1](null);
               providerFormModeState[1]('collapsed');
               noteState[1](t.saved);
               savingState[1](false);
@@ -1809,6 +2086,10 @@ window.__ModuleLoader__.load({
           lifecycleNoteState[1]('');
           dirtyState[1](false);
           editingProviderIdState[1](null);
+          // Collapse the form back to the provider entry list, the same rule the
+          // Save handler applies, so a "New provider" then "Discard" sequence
+          // does not leave the form open in 'new' mode.
+          providerFormModeState[1]('collapsed');
           load();
         }, [load]);
 
@@ -1841,6 +2122,27 @@ window.__ModuleLoader__.load({
             fetchDeps(provider.engine, provider.config || {});
           },
           [draft, fetchSummary, fetchDeps],
+        );
+
+        // Cancel collapses the editing form back to the provider entry list
+        // (the "Edit" button) and discards the provider's staged changes: the
+        // form reloads from the stored config, so nothing the user typed in the
+        // edit is kept. A no provider is being edited is a no-op.
+        var onCancelProvider = react.useCallback(
+          (_provider) => {
+            noteState[1]('');
+            depsNoteState[1]('');
+            lifecycleNoteState[1]('');
+            dirtyState[1](false);
+            editingProviderIdState[1](null);
+            providerFormModeState[1](
+              (data && data.providers && data.providers.length > 0) ? 'collapsed' : 'new',
+            );
+            // Discard the staged edit by reloading the stored config, so the
+            // form and the readouts return to the last-saved state.
+            load();
+          },
+          [data, load],
         );
 
         var onNewProvider = react.useCallback(
@@ -2045,6 +2347,9 @@ window.__ModuleLoader__.load({
                     ' as ' +
                     body.entry.providerId,
                 );
+                // Re-fetch the summary so the registered flag flips to true
+                // and the Remove button appears.
+                fetchSummary(draft.engine, draft.config);
               } else {
                 registerNoteState[1](
                   t.registerFailed + (body.error ? ': ' + body.error : ''),
@@ -2059,7 +2364,7 @@ window.__ModuleLoader__.load({
             .then(() => {
               registeringState[1](false);
             });
-        }, [draft, agentDefault, registering, t]);
+        }, [draft, agentDefault, registering, t, fetchSummary]);
 
         var onUnregister = react.useCallback(() => {
           if (draft === null || removing) {
@@ -2067,6 +2372,12 @@ window.__ModuleLoader__.load({
           }
           removingState[1](true);
           registerNoteState[1]('');
+          // The removal must target the exact entry the register step wrote.
+          // Both register and unregister key the provider and model ids off
+          // the same config, so sending draft.config here keeps the two in
+          // step: the model id resolveModelRow derives is identical to the
+          // one the registration published, and the DSH settings row is
+          // actually removed.
           fetch('/local-infer/unregister', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -2076,6 +2387,9 @@ window.__ModuleLoader__.load({
             .then(({ ok, body }) => {
               if (ok) {
                 registerNoteState[1](t.unregistered);
+                // Re-fetch the summary so the registered flag flips to false
+                // and the Remove button disappears.
+                fetchSummary(draft.engine, draft.config);
               } else {
                 registerNoteState[1](
                   t.unregisterFailed + (body.error ? ': ' + body.error : ''),
@@ -2090,7 +2404,7 @@ window.__ModuleLoader__.load({
             .then(() => {
               removingState[1](false);
             });
-        }, [draft, removing, t]);
+        }, [draft, removing, t, fetchSummary]);
 
         // The engine lifecycle actions. Launch runs the deploy and the health
         // poll through the /local-infer/launch route, and Stop signals the
@@ -2315,6 +2629,55 @@ window.__ModuleLoader__.load({
             null,
             '@keyframes dsh-local-infer-spin { to { transform: rotate(360deg); } }',
           ),
+          // The "unsure" banner: shown at the top of the card when no provider
+          // is confirmed running but at least one reads as unsure. The banner
+          // offers the message and a read-only text area with bash kill
+          // commands for the engine processes the detector saw holding VRAM,
+          // so the user can stop a provider launched in another session.
+          data.unsureBanner !== null && data.unsureBanner !== undefined
+            ? react.createElement(
+                'div',
+                {
+                  style: {
+                    marginBottom: 12,
+                    padding: 12,
+                    borderRadius: 8,
+                    backgroundColor: 'var(--dsw-alias-surface-secondary, rgba(0,0,0,0.04))',
+                    border: '1px solid var(--dsw-alias-stroke-secondary, rgba(0,0,0,0.08))',
+                  },
+                },
+                react.createElement(
+                  'div',
+                  {
+                    style: {
+                      fontSize: 12,
+                      lineHeight: 1.5,
+                      color: 'var(--dsw-alias-label-primary, rgba(0,0,0,0.8))',
+                      whiteSpace: 'pre-line',
+                    },
+                  },
+                  data.unsureBanner.message,
+                ),
+                data.unsureBanner.killCommands.length > 0
+                  ? react.createElement(
+                      'textarea',
+                      {
+                        readOnly: true,
+                        value: data.unsureBanner.killCommands.join('\n'),
+                        style: {
+                          marginTop: 8,
+                          width: '100%',
+                          minHeight: 48,
+                          fontSize: 11,
+                          fontFamily: 'var(--dsw-alias-font-mono, monospace)',
+                          colorScheme: 'light dark',
+                          resize: 'vertical',
+                        },
+                      },
+                    )
+                  : null,
+              )
+            : null,
           // The card header: the section title plus the circular "?" button
           // that shows or hides the per-field descriptions. The preference
           // persists through the save route, so it survives a reload.
@@ -2351,6 +2714,8 @@ window.__ModuleLoader__.load({
           (data.providers || []).length > 0
             ? renderProviderList(react, primitives, data.providers || [], {
                 onEdit: onEditProvider,
+                onCancel: onCancelProvider,
+                editingId: editingProviderId,
                 onDelete: onDeleteProvider,
                 deletingId: deletingProviderId,
                 engines: data.engines || [],
@@ -2359,6 +2724,7 @@ window.__ModuleLoader__.load({
                 statusStopped: t.statusStopped,
                 statusUnsure: t.statusUnsure,
                 editLabel: t.edit,
+                cancelLabel: t.cancel,
                 deleteLabel: t.delete,
                 launchState: entryLaunch,
                 onLaunchEntry: onLaunchEntry,
@@ -2561,6 +2927,56 @@ window.__ModuleLoader__.load({
             ? react.createElement('div', { style: { fontSize: 12 } }, downloadNote)
             : null,
           (() => {
+            // The chat-template status row: it shows while the selected
+            // template is absent from the model directory. With the hf CLI
+            // detected it names the download command and offers a Download
+            // button that runs it (the auto-download effect fires it first);
+            // without the CLI it shows the command as copyable text, the same
+            // command the System dependencies box carries.
+            var status = data.chatTemplateStatus;
+            if (status === null || status === undefined || status.present) {
+              return null;
+            }
+            return react.createElement(
+              'div',
+              null,
+              react.createElement(
+                'div',
+                { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 } },
+                react.createElement(
+                  'span',
+                  {
+                    style: {
+                      flex: 1,
+                      minWidth: 0,
+                      fontSize: 12,
+                      wordBreak: 'break-all',
+                      fontFamily: 'var(--dsw-alias-font-mono, ui-monospace, monospace)',
+                    },
+                  },
+                  (status.hfCli ? t.hfCliDetected : t.noHfCli) + ' ' + status.downloadCommand,
+                ),
+                status.hfCli
+                  ? renderButton(
+                      react,
+                      primitives,
+                      'ghost',
+                      {
+                        onClick: function () {
+                          onDownloadTemplate(status.repo);
+                        },
+                        disabled: templateDownloading,
+                      },
+                      templateDownloading ? t.templateDownloading : t.templateDownload,
+                    )
+                  : null,
+              ),
+              templateDownloadNote !== ''
+                ? react.createElement('div', { style: { fontSize: 12 } }, templateDownloadNote)
+                : null,
+            );
+          })(),
+          (() => {
             // The Engine platform section: the per-engine Engine Directory and
             // Engine Fork (§3.10) the deploy step's clone/build step consumes.
             // These ride the platform map, not the config, so an engine switch
@@ -2636,6 +3052,7 @@ window.__ModuleLoader__.load({
                       inlineWarnings[field.key],
                       primitives,
                       help,
+                      t,
                     ),
                   ),
                 ),
@@ -2794,13 +3211,15 @@ window.__ModuleLoader__.load({
               onChange: (next) => agentDefaultState[1](next),
               label: t.registerDefault,
             }),
-            renderButton(
-              react,
-              primitives,
-              'ghost',
-              { onClick: onUnregister, disabled: removing },
-              t.unregister,
-            ),
+            data !== null && data.registered === true
+              ? renderButton(
+                  react,
+                  primitives,
+                  'ghost',
+                  { onClick: onUnregister, disabled: removing },
+                  t.unregister,
+                )
+              : null,
           ),
           // While the config is unsaved, the help line names the gate: a
           // provider must be saved before it can register. It rides the same

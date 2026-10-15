@@ -142,6 +142,8 @@ export {
   runInstall,
 } from './deps.ts'
 export {
+  CHAT_TEMPLATE_FILE,
+  hfChatTemplateCommand,
   hfDownloadCommand,
   modelArtifactPath,
   modelEntriesForEngine,

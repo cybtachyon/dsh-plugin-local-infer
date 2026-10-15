@@ -76,11 +76,17 @@ export interface LocalInferSummary {
     modelDirectory: string;
     modelDefaults: ModelDefaultModel[];
     modelStatus: ModelStatusModel | null;
+    chatTemplateStatus: ChatTemplateStatusModel | null;
     modelFiles: string[];
     showHelp: boolean;
     providers: ProviderSummaryEntry[];
     logPath: string;
     lastLogs: string;
+    unsureBanner: {
+        message: string;
+        killCommands: string[];
+    } | null;
+    registered: boolean;
 }
 /**
  * ProviderSummaryEntry is the card-facing view of one saved provider config:
@@ -116,6 +122,20 @@ export interface ModelStatusModel {
     modelId: string;
     label: string;
     url: string;
+    present: boolean;
+    hfCli: boolean;
+    downloadCommand: string;
+}
+/**
+ * ChatTemplateStatusModel is the answer to "is the selected chat template in
+ * the model directory": the repo reference, its display label, whether the
+ * template file is present, whether the hf CLI is available, and the download
+ * command the card runs (and the System dependencies box shows when the auto-
+ * download is unavailable).
+ */
+export interface ChatTemplateStatusModel {
+    repo: string;
+    label: string;
     present: boolean;
     hfCli: boolean;
     downloadCommand: string;
@@ -264,6 +284,26 @@ export interface DownloadRequest {
  */
 export declare function downloadFor(localInfer: LocalInferService, request: DownloadRequest): Promise<DownloadResult>;
 /**
+ * ChatTemplateDownloadRequest is the query the card sends for the chat-template
+ * download route: the engine, the template repo reference, and the directory
+ * the hf CLI targets. Absent values fall back to the stored config, the same
+ * rule the summary route applies.
+ */
+export interface ChatTemplateDownloadRequest {
+    engine?: string;
+    template?: string;
+    directory?: string;
+}
+/**
+ * chatTemplateDownloadFor runs the hf CLI download for the request's chat
+ * template: it resolves the template repo reference from the request or the
+ * stored config's chatTemplate (a 400 when neither names an HF repo
+ * reference), resolves the directory against the request, the stored config,
+ * and the plugin's default model directory in that order, and runs the
+ * download through the service.
+ */
+export declare function chatTemplateDownloadFor(localInfer: LocalInferService, request: ChatTemplateDownloadRequest): Promise<DownloadResult>;
+/**
  * LaunchRequest is the query the card sends for the launch and stop routes: the
  * engine and the config the plan renders from. `platform` carries the card's
  * unsaved Engine Directory / Engine Fork edits for the engine, so a launch uses
@@ -324,6 +364,15 @@ export declare function resolveContextWindow(config: Config, models: readonly Vr
  * model it published.
  */
 export declare function registerFor(localInfer: LocalInferService, request?: RegisterRequest): Promise<RegisterResult>;
+/**
+ * syncRegisteredModel re-runs the registration for a saved config when the
+ * model is already registered in the DSH settings, so the registered model's
+ * input types (the vision flag) stay in step with the saved config. A model
+ * that is not registered (a fresh save) is a no-op, and a profile without the
+ * settings seam throws, which the save route catches and swallows so the save
+ * itself never fails on a sync that cannot run.
+ */
+export declare function syncRegisteredModel(localInfer: LocalInferService, engine: string, config: Config): Promise<void>;
 /**
  * unregisterFor runs the service's removeModel entry point for the engine's
  * provider and the model row the register step resolved, so the removal
