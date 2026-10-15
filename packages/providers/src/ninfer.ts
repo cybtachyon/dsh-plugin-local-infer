@@ -268,7 +268,23 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     label: 'Default max tokens',
     description:
       'Caps the response length when a request names no max. Raises it for long answers; the engine still honours a per-request cap.',
-    form: { kind: 'number', min: 1, step: 1, unit: 'tokens' },
+    form: {
+      kind: 'number',
+      // A response under 1024 tokens is too short to be useful, so the floor
+      // is 1024, not 1.
+      min: 1024,
+      step: 1,
+      unit: 'tokens',
+      // The range strip caps at 12.5% of the live max-context value (the
+      // default response cannot outgrow the quarter of context it is priced
+      // against), re-priced on every form render so a max-context edit moves
+      // the cap without touching the current value. The number entry stays
+      // uncapped, so a typed value is never hard-limited by the slider.
+      sliderMax: (_hw, config) => {
+        const ctx = typeof config.maxContext === 'number' ? config.maxContext : 0
+        return Math.max(0, Math.floor(ctx * 0.125))
+      },
+    },
     group: 'Sampling',
     toArgv: (value) => ['--default-max-tokens', String(value)],
   },
@@ -296,7 +312,30 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     label: 'Prefill chunk',
     description:
       'The prompt-chunk size for prefill, in multiples of 128. The engine tunes it to the GPU; leave unset for the automatic size.',
-    form: { kind: 'number', min: 128, step: 128, unit: 'tokens' },
+    form: {
+      kind: 'number',
+      min: 128,
+      step: 128,
+      unit: 'tokens',
+      // The range strip caps at the response budget the engine can prefill:
+      // the default max tokens minus the default thinking budget (a chunk
+      // cannot outgrow the response it serves, and the thinking budget is
+      // reserved out of it). When that budget is not positive (no max tokens
+      // set, or the thinking budget swallows it) the strip falls back to 10%
+      // of the live max-context value. Re-priced on every form render.
+      sliderMax: (_hw, config) => {
+        const maxTokens =
+          typeof config.defaultMaxTokens === 'number' ? config.defaultMaxTokens : 0
+        const thinking =
+          typeof config.defaultThinkingBudget === 'number' ? config.defaultThinkingBudget : 0
+        const fromBudget = maxTokens - thinking
+        if (fromBudget > 0) {
+          return fromBudget
+        }
+        const ctx = typeof config.maxContext === 'number' ? config.maxContext : 0
+        return Math.max(0, Math.floor(ctx * 0.1))
+      },
+    },
     group: 'Engine',
     toArgv: (value) => ['--prefill-chunk', String(value)],
   },

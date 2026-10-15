@@ -242,6 +242,24 @@ function chatTemplateLabel(repo: string): string {
 }
 
 /**
+ * resolveModelRegistryId maps the card's model value onto the VramModel
+ * registry key the estimator prices. The card's Model field carries either a
+ * registry key (a default-model selection) or an artifact file name (a
+ * directory-scan selection, e.g. a .ninfer file); the default list maps the
+ * file name to the registry key the estimator knows, so a scanned model prices
+ * a real VramModel rather than reading as not-measured. A value that is
+ * already a registry key passes through, and a missing value falls back to
+ * the engine's first default model.
+ */
+function resolveModelRegistryId(engineId: string, model: unknown): string {
+  if (typeof model === 'string' && model !== '') {
+    const entry = defaultModelsForEngine(engineId).find((candidate) => candidate.file === model)
+    return entry?.modelId ?? model
+  }
+  return defaultModelsForEngine(engineId)[0]?.modelId ?? engineId
+}
+
+/**
  * DefaultsModel is the resolved-defaults read model the card draws: the
  * starting config the defaults resolver produced and the per-key provenance
  * that names the source that supplied each value (a preset, the user, or a
@@ -525,18 +543,26 @@ export async function buildSummary(
       : { ...rawConfig, modelDirectory }
   const modelDir = typeof config.modelDirectory === 'string' ? config.modelDirectory : modelDirectory
   const hardware = await localInfer.detectHardware()
-  // The engine id rides into both entry points: the estimate's OS-reserve
-  // resolution runs the plugin-launched check against it, and the
-  // model-aware guidelines price the same usable budget the meter does.
-  const estimate = await localInfer.estimate(config, hardware, engine.id)
-  const guidelineResults = await localInfer.guidelines(config, hardware, engine.id)
-  // The defaults list is the Model field's "Defaults" special case: a config
-  // with no model names the engine's first default model, so the meter, the
-  // form seed, and the model status all price the same starting model.
-  const engineDefaults = defaultModelsForEngine(engine.id)
-  const modelId =
-    typeof config.model === 'string' ? config.model : (engineDefaults[0]?.modelId ?? engine.id)
-  const defaults = await localInfer.resolveDefaults(engine.id, modelId, hardware, config)
+  // The model value the card carries maps onto the VramModel registry key the
+  // estimator prices: a default-model selection is already a registry key, a
+  // directory-scan selection is an artifact file name the default list maps
+  // to its registry key, and a missing value falls back to the engine's first
+  // default model. Pricing the resolved key is what keeps the meter from
+  // reading as not-measured (an empty chart) on a scanned model.
+  const modelId = resolveModelRegistryId(engine.id, config.model)
+  const pricedConfig: Config = { ...config, model: modelId }
+  // Resolve the starting config over the registered presets and the engine's
+  // parameter surface, so the estimate and the model-aware guidelines price a
+  // sane budget (the preset's kvDtype and max-context) rather than a bare
+  // config that names no KV format. The resolved config carries the explicit
+  // values the user set over the preset defaults, and the engine's first
+  // default model when the user named none. The engine id rides into both
+  // entry points: the estimate's OS-reserve resolution runs the plugin-
+  // launched check against it, and the model-aware guidelines price the same
+  // usable budget the meter does.
+  const defaults = await localInfer.resolveDefaults(engine.id, modelId, hardware, pricedConfig)
+  const estimate = await localInfer.estimate(defaults.config, hardware, engine.id)
+  const guidelineResults = await localInfer.guidelines(defaults.config, hardware, engine.id)
   // The directory scan lists the model files the selected engine can serve
   // straight from the model directory, so the card's Model dropdown offers
   // them beside the defaults. A missing directory reads as an empty list.
@@ -645,6 +671,12 @@ export async function buildSummary(
       hardware.gpu?.vramGiB ?? 0,
       estimate.source,
       estimate.reserveSource,
+      // The "Unknown Engine(s)" readout shows the VRAM the detector's foreign
+      // engine programs are holding: the OS-reserve segment is the GPU's used
+      // VRAM when a foreign engine is detected, so the readout names the
+      // footprint a provider launched in another session is eating off the
+      // card. Absent when no provider reads as unsure.
+      anyUnsure ? { bytes: estimate.breakdown.reserve } : null,
     ),
     verdict: estimate.verdict,
     warningsModel: renderWarnings(guidelineResults),
@@ -652,7 +684,7 @@ export async function buildSummary(
     platformConfigs: stored.platform,
     defaults: { config: defaults.config, provenance: defaults.provenance },
     modelDirectory,
-    modelDefaults: engineDefaults.map((entry) => ({
+    modelDefaults: defaultModelsForEngine(engine.id).map((entry) => ({
       id: entry.modelId,
       label: entry.label,
       url: entry.url,

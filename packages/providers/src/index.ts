@@ -65,6 +65,8 @@ export {
   STRATA_DOCKER_IMAGE,
   StrataAdapter,
   LlamaCppAdapter,
+  customArgEnv,
+  customArgFlags,
   envFromSpecs,
   flagsFromSpecs,
   nodeLifecycleHost,

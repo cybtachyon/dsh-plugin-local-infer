@@ -36,6 +36,16 @@ export interface MeterSegment {
  * reserve source the dark reserve segment's readout renders (the 3 GiB
  * default, a config value, a foreign engine, or the GPU-usage fallback).
  */
+/**
+ * UnknownEnginesModel is the "Unknown Engine(s)" readout the meter draws when
+ * the detector saw engine programs holding VRAM it could not tie to a
+ * confirmed provider: the total VRAM those programs are taking up, so the
+ * user sees the footprint a foreign engine is eating off the card.
+ */
+export interface UnknownEnginesModel {
+  bytes: number
+}
+
 export interface MeterModel {
   segments: MeterSegment[]
   cardBytes: number
@@ -43,6 +53,7 @@ export interface MeterModel {
   largestFittingContext: number | null
   source: 'measured' | 'estimated' | 'not-measured'
   reserveSource: ReserveSource
+  unknownEngines: UnknownEnginesModel | null
 }
 
 /**
@@ -60,6 +71,7 @@ export function renderMeter(
   vramGiB: number,
   source: 'measured' | 'estimated' | 'not-measured',
   reserveSource: ReserveSource = 'default',
+  unknownEngines: UnknownEnginesModel | null = null,
 ): MeterModel {
   const cardBytes = vramGiB * 1024 * 1024 * 1024
   const percentOf = (bytes: number): number =>
@@ -81,5 +93,6 @@ export function renderMeter(
     largestFittingContext: breakdown.largestFittingContext,
     source: verdict.status === 'not-measured' ? 'not-measured' : source,
     reserveSource,
+    unknownEngines,
   }
 }

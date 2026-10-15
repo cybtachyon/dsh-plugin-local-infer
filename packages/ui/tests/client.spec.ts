@@ -331,4 +331,23 @@ describe('dsh/client.js browser carrier', () => {
     expect(source).toContain('unsureBanner')
     expect(source).toContain('killCommands')
   })
+
+  it('pins the Custom Arguments table the card renders before System dependencies', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // The section is a key/value table (parameter, value, the + / - controls)
+    // the user fills with extra launch flags. The rows live in the draft
+    // config's customArgs field, so a Save persists them and the next engine
+    // launch appends them to the command line.
+    expect(source).toContain('renderCustomArgsPanel')
+    expect(source).toContain('onCustomArgs')
+    expect(source).toContain('customArgs')
+    expect(source).toContain('customArgsTitle')
+    expect(source).toContain('customArgKeyHeader')
+    expect(source).toContain('customArgValueHeader')
+    // The first row is cleared, not removed; a lower row is removed; + adds a
+    // row. The action verbs pin that behavior.
+    expect(source).toContain("'clear'")
+    expect(source).toContain("'remove'")
+    expect(source).toContain("'add'")
+  })
 })

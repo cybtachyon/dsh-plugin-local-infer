@@ -5,3 +5,16 @@
  * estimator, adapters, or guidelines.
  */
 export type Config = Record<string, unknown>
+
+/**
+ * CustomArg is one row of the card's Custom Arguments table: a parameter or
+ * flag the user adds to the engine's launch command, and the optional value it
+ * takes. A row with a key and no value is a bare flag; a row with a value is a
+ * flag-plus-argument pair. The card stores these under `config.customArgs` and
+ * the adapters append them to the launch argv (or the compose env) on the next
+ * engine launch.
+ */
+export interface CustomArg {
+  key: string
+  value?: string
+}

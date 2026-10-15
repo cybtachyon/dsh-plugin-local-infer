@@ -9,6 +9,8 @@ import {
   STRATA_DOCKER_IMAGE,
   StrataAdapter,
   LlamaCppAdapter,
+  customArgEnv,
+  customArgFlags,
   envFromSpecs,
   flagsFromSpecs,
   nodeLifecycleHost,
@@ -122,6 +124,45 @@ describe('NInferAdapter.renderLaunch', () => {
     const plan = adapter.renderLaunch({ port: 18020 }, HW)
     expect(plan.modelId).toBe('qwen3-27b')
     expect(plan.argv?.[1]).toBe(NINFER_MODEL_ARTIFACTS['qwen3-27b']!.file)
+  })
+
+  it('appends the card custom args to the process argv after the spec flags', () => {
+    const { host } = stubHost()
+    const adapter = new NInferAdapter(host)
+    const plan = adapter.renderLaunch(
+      {
+        port: 18020,
+        customArgs: [
+          { key: '--flash-attn', value: '1' },
+          { key: '--verbose' },
+        ],
+      },
+      HW,
+    )
+    const argv = plan.argv ?? []
+    // The custom rows land after the spec flags: a valued row is a flag pair,
+    // a bare row is a lone flag.
+    const flagIndex = argv.indexOf('--flash-attn')
+    expect(flagIndex).toBeGreaterThan(-1)
+    expect(argv[flagIndex + 1]).toBe('1')
+    expect(argv).toContain('--verbose')
+  })
+
+  it('appends the card custom args to the docker argv after the spec flags', () => {
+    const { host } = stubHost()
+    const adapter = new NInferAdapter(host)
+    const plan = adapter.renderLaunch(
+      {
+        buildMode: 'docker',
+        port: 18020,
+        customArgs: [{ key: '--flash-attn', value: '1' }],
+      },
+      HW,
+    )
+    const argv = plan.argv ?? []
+    const flagIndex = argv.indexOf('--flash-attn')
+    expect(flagIndex).toBeGreaterThan(-1)
+    expect(argv[flagIndex + 1]).toBe('1')
   })
 
   it('launches a directory-scanned .ninfer file as-is', () => {
@@ -453,6 +494,25 @@ describe('HyperQwenAdapter', () => {
     )
   })
 
+  it('merges the card custom args into the compose env', () => {
+    const { host } = stubHost()
+    const adapter = new HyperQwenAdapter(host)
+    const plan = adapter.renderLaunch(
+      {
+        spec: 'dflash2',
+        port: 18020,
+        customArgs: [{ key: 'EXTRA_FLAG', value: 'on' }, { key: 'BARE' }],
+      },
+      HW,
+    )
+    // The custom rows merge into the spec env: a valued row becomes an env var,
+    // a bare row (no value) is skipped.
+    expect(plan.env).toEqual(
+      expect.objectContaining({ SPEC: 'dflash2', EXTRA_FLAG: 'on' }),
+    )
+    expect(plan.env).not.toHaveProperty('BARE')
+  })
+
   it('deploys with compose up and stops with compose down', async () => {
     const { host, state } = stubHost()
     const adapter = new HyperQwenAdapter(host)
@@ -517,6 +577,50 @@ describe('spec flag and env helpers', () => {
     // A numeric default (gpuUtil 0.93) is spelled into the env.
     expect(env.GPU_UTIL).toBe('0.93')
   })
+
+  it('customArgFlags spells a valued row as a flag pair and a bare row as a lone flag', () => {
+    const flags = customArgFlags({
+      customArgs: [
+        { key: '--flash-attn', value: '1' },
+        { key: '--verbose' },
+      ],
+    })
+    expect(flags).toEqual(['--flash-attn', '1', '--verbose'])
+  })
+
+  it('customArgFlags drops blank keys, non-objects, and empty values', () => {
+    const flags = customArgFlags({
+      customArgs: [
+        { key: '   ' },
+        { key: '--ok', value: '' },
+        null,
+        42,
+        { key: '--bare' },
+      ],
+    })
+    // The blank key and the non-objects drop; a valueless --ok stays a lone flag.
+    expect(flags).toEqual(['--ok', '--bare'])
+  })
+
+  it('customArgFlags reads a missing or non-array customArgs as no flags', () => {
+    expect(customArgFlags({})).toEqual([])
+    expect(customArgFlags({ customArgs: 'not-an-array' })).toEqual([])
+  })
+
+  it('customArgEnv maps valued rows to env vars and skips the bare rows', () => {
+    const env = customArgEnv({
+      customArgs: [
+        { key: 'EXTRA', value: 'on' },
+        { key: 'BARE' },
+      ],
+    })
+    expect(env).toEqual({ EXTRA: 'on' })
+  })
+
+  it('customArgEnv reads a missing or non-array customArgs as an empty map', () => {
+    expect(customArgEnv({})).toEqual({})
+    expect(customArgEnv({ customArgs: 5 })).toEqual({})
+  })
 })
 
 describe('pollHealth', () => {
@@ -559,6 +663,22 @@ describe('LlamaCppAdapter', () => {
     expect(argv).toContain('q8_0')
     expect(argv).toContain('--port')
     expect(argv).toContain('8080')
+  })
+
+  it('appends the card custom args to the process argv after the spec flags', () => {
+    const { host } = stubHost()
+    const adapter = new LlamaCppAdapter(host)
+    const plan = adapter.renderLaunch(
+      {
+        port: 8080,
+        customArgs: [{ key: '--n-gpu-layers', value: '99' }],
+      },
+      HW,
+    )
+    const argv = plan.argv ?? []
+    const flagIndex = argv.indexOf('--n-gpu-layers')
+    expect(flagIndex).toBeGreaterThan(-1)
+    expect(argv[flagIndex + 1]).toBe('99')
   })
 
   it('renders a docker plan with the ggml image, a named container, and the host port map', () => {
@@ -800,6 +920,20 @@ describe('StrataAdapter', () => {
     // docker run --rm --gpus all --name <c> -p <map> <image> = 10 elements.
     const plan = adapter.renderLaunch({}, HW)
     expect(plan.argv).toHaveLength(10)
+  })
+
+  it('appends the card custom args to the docker argv after the image', () => {
+    const { host } = stubHost()
+    const adapter = new StrataAdapter(host)
+    const plan = adapter.renderLaunch(
+      { port: 8090, customArgs: [{ key: '--device', value: 'cuda:1' }] },
+      HW,
+    )
+    const argv = plan.argv ?? []
+    const imageIndex = argv.indexOf(STRATA_DOCKER_IMAGE)
+    expect(imageIndex).toBeGreaterThan(-1)
+    expect(argv[imageIndex + 1]).toBe('--device')
+    expect(argv[imageIndex + 2]).toBe('cuda:1')
   })
 
   it('pulls the image and stops the named container', async () => {

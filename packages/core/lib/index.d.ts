@@ -5,7 +5,7 @@
  * engine, model, or rule is data and a thin subclass, never a core rewire.
  * @module @dsh/dsh-plugin-local-infer/core
  */
-export type { Config } from './config.ts';
+export type { Config, CustomArg } from './config.ts';
 export { detectHardware, parseNvidiaSmiGpu, } from './hardware.ts';
 export type { GpuProfile, GpuProbe, HardwareProfile, HardwareProbes, } from './hardware.ts';
 export type { ComboOption, ConstraintResult, EnumOption, ParameterForm, ParameterSpec, } from './parameter.ts';

@@ -158,6 +158,55 @@ describe('renderForm', () => {
     expect('max' in (kv.control as { max?: number })).toBe(false)
   })
 
+  it('caps the default-max-tokens slider at 12.5% of max-context with a 1024 floor', () => {
+    const hw = {
+      hostRamGiB: 32,
+      dockerAvailable: false,
+      wsl2: false,
+      os: 'linux' as const,
+      cpuThreads: 8,
+    }
+    const model = renderForm(NINFER_PARAMETERS, { maxContext: 32768 }, hw)
+    const maxTokens = model.sections
+      .flatMap((section) => section.fields)
+      .find((field) => field.key === 'defaultMaxTokens')!
+    // The 1024 floor lands on the control, and the range strip caps at 12.5%
+    // of the live max-context value (32768 -> 4096), re-priced on every render.
+    expect(maxTokens.control).toMatchObject({ kind: 'slider', min: 1024 })
+    expect(maxTokens.control.sliderMax).toBe(4096)
+    // A typed value is never hard-capped by the slider, so the number entry
+    // carries no static max.
+    expect('max' in (maxTokens.control as { max?: number })).toBe(false)
+  })
+
+  it('caps the prefill-chunk slider at max-tokens minus thinking budget, falling back to 10% of max-context', () => {
+    const hw = {
+      hostRamGiB: 32,
+      dockerAvailable: false,
+      wsl2: false,
+      os: 'linux' as const,
+      cpuThreads: 8,
+    }
+    // The response budget (max tokens minus the thinking budget) caps the
+    // strip when it is positive: 4096 - 1024 = 3072.
+    const withBudget = renderForm(
+      NINFER_PARAMETERS,
+      { defaultMaxTokens: 4096, defaultThinkingBudget: 1024, maxContext: 32768 },
+      hw,
+    )
+    const prefill = withBudget.sections
+      .flatMap((section) => section.fields)
+      .find((field) => field.key === 'prefillChunk')!
+    expect(prefill.control.sliderMax).toBe(3072)
+    // A missing max tokens (or a thinking budget that swallows it) falls back
+    // to 10% of the live max-context value (32768 -> 3276).
+    const fallback = renderForm(NINFER_PARAMETERS, { maxContext: 32768 }, hw)
+    const prefillFallback = fallback.sections
+      .flatMap((section) => section.fields)
+      .find((field) => field.key === 'prefillChunk')!
+    expect(prefillFallback.control.sliderMax).toBe(3276)
+  })
+
   it('renders the NInfer surface as five sections in first-appearance order', () => {
     const model = renderForm(NINFER_PARAMETERS, {})
     // The port spec opens the surface, so the Engine section (port, prefill,

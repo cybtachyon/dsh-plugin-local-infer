@@ -31,7 +31,7 @@ export { ENGINES } from "./engines.js";
 export { ENGINE_DEP_PLANS, SYSTEM_DEPS } from "./deps.js";
 export { BUILTIN_PRESETS, PRESET_SOURCES, extractJsonBlock } from "./presets.js";
 export { DEFAULT_MODELS, defaultModelFor, defaultModelsForEngine } from "./model-defaults.js";
-export { HyperQwenAdapter, LLAMACPP_DOCKER_IMAGE, NINFER_DOCKER_IMAGE, NINFER_MODEL_ARTIFACTS, NInferAdapter, STRATA_DOCKER_IMAGE, StrataAdapter, LlamaCppAdapter, envFromSpecs, flagsFromSpecs, nodeLifecycleHost, pollHealth, } from "./adapters.js";
+export { HyperQwenAdapter, LLAMACPP_DOCKER_IMAGE, NINFER_DOCKER_IMAGE, NINFER_MODEL_ARTIFACTS, NInferAdapter, STRATA_DOCKER_IMAGE, StrataAdapter, LlamaCppAdapter, customArgEnv, customArgFlags, envFromSpecs, flagsFromSpecs, nodeLifecycleHost, pollHealth, } from "./adapters.js";
 export { KV_CACHE_TYPE_OPTIONS, LLAMACPP_MODEL_ARTIFACTS, LLAMACPP_PARAMETERS, llamaCppModelKey, } from "./llamacpp.js";
 export { STRATA_PARAMETERS } from "./strata.js";
 /**

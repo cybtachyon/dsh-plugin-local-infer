@@ -17,7 +17,7 @@
  * through from the service's estimate, so the reserve readout names where
  * the dark segment's value came from.
  */
-export function renderMeter(breakdown, verdict, vramGiB, source, reserveSource = 'default') {
+export function renderMeter(breakdown, verdict, vramGiB, source, reserveSource = 'default', unknownEngines = null) {
     const cardBytes = vramGiB * 1024 * 1024 * 1024;
     const percentOf = (bytes) => cardBytes > 0 ? Math.max(0, Math.min(100, (bytes / cardBytes) * 100)) : 0;
     // The bar reads against the full card the way the NInfer calculator draws
@@ -37,6 +37,7 @@ export function renderMeter(breakdown, verdict, vramGiB, source, reserveSource =
         largestFittingContext: breakdown.largestFittingContext,
         source: verdict.status === 'not-measured' ? 'not-measured' : source,
         reserveSource,
+        unknownEngines,
     };
 }
 //# sourceMappingURL=meter.js.map

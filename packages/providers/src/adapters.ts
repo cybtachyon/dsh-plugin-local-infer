@@ -111,6 +111,54 @@ export function flagsFromSpecs(
 }
 
 /**
+ * customArgFlags turns the card's Custom Arguments rows (`config.customArgs`)
+ * into the flat flag list the adapters append to the launch argv. Each row is
+ * a key (a flag, e.g. `--kv-dtype`) and an optional value: a row with a value
+ * contributes `[key, value]`, a bare row contributes `[key]`. A row with a
+ * blank key contributes nothing, and a non-array `customArgs` (an older config
+ * that predates the key) reads as no custom args, so an engine that never had
+ * the section launches unchanged.
+ */
+export function customArgFlags(config: Config): string[] {
+  const raw = config.customArgs
+  if (!Array.isArray(raw)) return []
+  const flags: string[] = []
+  for (const entry of raw) {
+    if (entry === null || typeof entry !== 'object') continue
+    const key = (entry as { key?: unknown }).key
+    if (typeof key !== 'string' || key.trim() === '') continue
+    flags.push(key)
+    const value = (entry as { value?: unknown }).value
+    if (typeof value === 'string' && value !== '') {
+      flags.push(value)
+    }
+  }
+  return flags
+}
+
+/**
+ * customArgEnv turns the card's Custom Arguments rows (`config.customArgs`)
+ * into the environment map the compose adapter appends to the plan's env: each
+ * row's key becomes an env var set to its value. A row with no value is skipped,
+ * because an empty env var is not a meaningful override. A non-array
+ * `customArgs` (an older config that predates the key) reads as no custom args.
+ */
+export function customArgEnv(config: Config): Record<string, string> {
+  const raw = config.customArgs
+  if (!Array.isArray(raw)) return {}
+  const env: Record<string, string> = {}
+  for (const entry of raw) {
+    if (entry === null || typeof entry !== 'object') continue
+    const key = (entry as { key?: unknown }).key
+    const value = (entry as { value?: unknown }).value
+    if (typeof key !== 'string' || key.trim() === '') continue
+    if (typeof value !== 'string' || value === '') continue
+    env[key] = value
+  }
+  return env
+}
+
+/**
  * envFromSpecs turns a spec surface and a config into the environment map: each
  * spec's `toEnv` runs over the config value (falling back to the spec
  * default). A spec with no `toEnv` contributes nothing.
@@ -310,6 +358,7 @@ export class NInferAdapter extends EngineAdapter {
           ? `${file}:${containerModelPath}`
           : `${dirname(modelPath)}:/models`
       const containerName = `ninfer-${port}`
+      const customArgs = customArgFlags(config)
       return {
         engineId: this.id,
         kind: 'docker',
@@ -335,6 +384,7 @@ export class NInferAdapter extends EngineAdapter {
           '--model-id',
           artifact.modelId,
           ...flags,
+          ...customArgs,
         ],
         env: {},
         containerName,
@@ -345,6 +395,7 @@ export class NInferAdapter extends EngineAdapter {
       }
     }
     const modelPath = modelDirectory === '' ? file : join(modelDirectory, file)
+    const customArgs = customArgFlags(config)
     return {
       engineId: this.id,
       kind: 'process',
@@ -358,6 +409,7 @@ export class NInferAdapter extends EngineAdapter {
         '--model-id',
         artifact.modelId,
         ...flags,
+        ...customArgs,
       ],
       env: {},
       modelId,
@@ -545,7 +597,10 @@ export class HyperQwenAdapter extends EngineAdapter {
   renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan {
     const port = this.port(config)
     const profile = this.profile(config)
-    const env = envFromSpecs(HYPERQWEN_PARAMETERS, config)
+    // The spec env and the card's Custom Arguments merge into one env map: the
+    // spec keys are the .env the compose file reads, and the custom rows are
+    // the user's own overrides appended after them.
+    const env = { ...envFromSpecs(HYPERQWEN_PARAMETERS, config), ...customArgEnv(config) }
     const composeFile =
       typeof config.composeFile === 'string' ? config.composeFile : 'docker-compose.yml'
     return {
@@ -661,6 +716,7 @@ export class LlamaCppAdapter extends EngineAdapter {
           ? `${file}:${containerModelPath}`
           : `${dirname(modelPath)}:/models`
       const containerName = `llamacpp-${port}`
+      const customArgs = customArgFlags(config)
       return {
         engineId: this.id,
         kind: 'docker',
@@ -680,6 +736,7 @@ export class LlamaCppAdapter extends EngineAdapter {
           '--model',
           containerModelPath,
           ...flags,
+          ...customArgs,
         ],
         env: {},
         containerName,
@@ -690,6 +747,7 @@ export class LlamaCppAdapter extends EngineAdapter {
       }
     }
     const modelPath = modelDirectory === '' ? file : join(modelDirectory, file)
+    const customArgs = customArgFlags(config)
     return {
       engineId: this.id,
       kind: 'process',
@@ -702,6 +760,7 @@ export class LlamaCppAdapter extends EngineAdapter {
         '--port',
         String(port),
         ...flags,
+        ...customArgs,
       ],
       env: {},
       modelId,
@@ -844,6 +903,7 @@ export class StrataAdapter extends EngineAdapter {
   renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan {
     const port = this.port(config)
     const containerName = `strata-${port}`
+    const customArgs = customArgFlags(config)
     return {
       engineId: this.id,
       kind: 'docker',
@@ -858,6 +918,7 @@ export class StrataAdapter extends EngineAdapter {
         '-p',
         `127.0.0.1:${port}:8080`,
         STRATA_DOCKER_IMAGE,
+        ...customArgs,
       ],
       env: {},
       containerName,

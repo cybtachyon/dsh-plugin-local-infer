@@ -6,7 +6,7 @@
  * @module @dsh/dsh-plugin-local-infer/core
  */
 
-export type { Config } from './config.ts'
+export type { Config, CustomArg } from './config.ts'
 export {
   detectHardware,
   parseNvidiaSmiGpu,

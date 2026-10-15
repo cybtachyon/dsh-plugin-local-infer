@@ -2,6 +2,7 @@ import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
 import type {
   Config,
   DefaultModel,
@@ -22,12 +23,14 @@ import type {
   VramVerdict,
 } from '@dsh/dsh-plugin-local-infer/core'
 import { DEFAULT_LOG_PATH_TEMPLATE, providerIdFor, resolveLogPath } from '@dsh/dsh-plugin-local-infer/core'
+import { LocalInfer } from '@dsh/dsh-plugin-local-infer/service'
 import type {
   DownloadResult,
   LaunchResult,
   LocalInferService,
   RegisterModelOptions,
 } from '@dsh/dsh-plugin-local-infer/service'
+import { apply as applyProviders } from '@dsh/dsh-plugin-local-infer/providers'
 import {
   buildDeps,
   buildSummary,
@@ -1480,6 +1483,33 @@ describe('provider list round trip', () => {
     ])
   })
 
+  it('sets the Unknown Engine(s) readout when a provider reads as unsure', async () => {
+    // A foreign engine the detector saw but could not tie to a model reads as
+    // unsure, so the meter's "Unknown Engine(s)" section names the VRAM those
+    // programs are holding (the OS-reserve segment, the GPU's used VRAM).
+    writeConfig('ninfer', { model: 'qwen3-27b' }, false, {}, true, [
+      { id: 'p1', engine: 'ninfer', config: { model: 'qwen3-27b' }, platform: {} },
+    ])
+    const service = stubService([], {
+      providerStatuses: async () => ({ p1: 'unsure' }),
+    })
+    const summary = await buildSummary(service, { engine: 'ninfer', config: {} })
+    expect(summary.meterModel.unknownEngines).toEqual({ bytes: 10 })
+  })
+
+  it('omits the Unknown Engine(s) readout when no provider reads as unsure', async () => {
+    // A confirmed-running provider (or no providers at all) means no foreign
+    // engine, so the section stays out of the meter.
+    writeConfig('ninfer', { model: 'qwen3-27b' }, false, {}, true, [
+      { id: 'p1', engine: 'ninfer', config: { model: 'qwen3-27b' }, platform: {} },
+    ])
+    const service = stubService([], {
+      providerStatuses: async () => ({ p1: 'running' }),
+    })
+    const summary = await buildSummary(service, { engine: 'ninfer', config: {} })
+    expect(summary.meterModel.unknownEngines).toBeNull()
+  })
+
   it('adds a new provider entry at the top of the list on a save without an id', async () => {
     // Clear the file the earlier test wrote, so a fresh save starts from an
     // empty list and the new entry is the only one.
@@ -1560,5 +1590,67 @@ describe('provider list round trip', () => {
     const service = stubService([], { modelIsRegisteredResult: false })
     const summary = await buildSummary(service, { engine: 'ninfer', config: {} })
     expect(summary.registered).toBe(false)
+  })
+})
+
+describe('VRAM estimator on the sane default configs', () => {
+  // A real LocalInfer service with the NInfer measured VramModels registered,
+  // so the estimate resolves a model the way the running plugin does. The
+  // stub service prices a fixed breakdown, so it never exercises the model
+  // resolution the empty-meter bug lives in. detectHardware is pinned to the
+  // suite's 24 GiB card, so the meter prices a real budget without a live
+  // nvidia-smi probe.
+  class FixedHwLocalInfer extends LocalInfer {
+    async detectHardware() {
+      return HW
+    }
+  }
+
+  async function realService() {
+    const ctx = new Context()
+    await ctx.plugin(FixedHwLocalInfer)
+    // Register the NInfer measured VramModels, the built-in presets, and the
+    // engine adapters, so the estimate resolves a real model and the defaults
+    // resolver prices a sane budget (the preset's kvDtype and max-context).
+    applyProviders(ctx)
+    return ctx.localInfer
+  }
+
+  it('prices the default config (no model) against the engine first default model', async () => {
+    const service = await realService()
+    // The default config names no model, so the summary prices the engine's
+    // first default model (qwen3-27b) rather than reading as not-measured.
+    const summary = await buildSummary(service, { engine: 'ninfer', config: {} })
+    expect(summary.meterModel.source).not.toBe('not-measured')
+    expect(summary.meterModel.segments.some((segment) => segment.bytes > 0)).toBe(true)
+  })
+
+  it('prices each registered NInfer default model so the chart renders', async () => {
+    const service = await realService()
+    // The NInfer default list names qwen3-27b and qwen3-27b-swift15, both of
+    // which carry a measured VramModel, so each selection prices a real
+    // budget and the meter's segments are non-zero.
+    for (const modelId of ['qwen3-27b', 'qwen3-27b-swift15']) {
+      const summary = await buildSummary(service, {
+        engine: 'ninfer',
+        config: { model: modelId },
+      })
+      expect(summary.meterModel.source).not.toBe('not-measured')
+      expect(summary.meterModel.segments.some((segment) => segment.bytes > 0)).toBe(true)
+    }
+  })
+
+  it('prices a directory-scanned model file through its registry key', async () => {
+    const service = await realService()
+    // The card's Model field can carry an artifact file name from the
+    // directory scan (a .ninfer file), not a registry key. The default list
+    // maps that file to the registry key the estimator knows, so a scanned
+    // model prices a real VramModel rather than reading as not-measured.
+    const summary = await buildSummary(service, {
+      engine: 'ninfer',
+      config: { model: 'qwen3_8_27b_swift15abl_nvfp4full-dflash2.ninfer' },
+    })
+    expect(summary.meterModel.source).not.toBe('not-measured')
+    expect(summary.meterModel.segments.some((segment) => segment.bytes > 0)).toBe(true)
   })
 })

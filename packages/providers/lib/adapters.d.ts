@@ -35,6 +35,24 @@ export declare const NINFER_MODEL_ARTIFACTS: Record<string, NInferModelArtifact>
  */
 export declare function flagsFromSpecs(specs: readonly ParameterSpec[], config: Config): string[];
 /**
+ * customArgFlags turns the card's Custom Arguments rows (`config.customArgs`)
+ * into the flat flag list the adapters append to the launch argv. Each row is
+ * a key (a flag, e.g. `--kv-dtype`) and an optional value: a row with a value
+ * contributes `[key, value]`, a bare row contributes `[key]`. A row with a
+ * blank key contributes nothing, and a non-array `customArgs` (an older config
+ * that predates the key) reads as no custom args, so an engine that never had
+ * the section launches unchanged.
+ */
+export declare function customArgFlags(config: Config): string[];
+/**
+ * customArgEnv turns the card's Custom Arguments rows (`config.customArgs`)
+ * into the environment map the compose adapter appends to the plan's env: each
+ * row's key becomes an env var set to its value. A row with no value is skipped,
+ * because an empty env var is not a meaningful override. A non-array
+ * `customArgs` (an older config that predates the key) reads as no custom args.
+ */
+export declare function customArgEnv(config: Config): Record<string, string>;
+/**
  * envFromSpecs turns a spec surface and a config into the environment map: each
  * spec's `toEnv` runs over the config value (falling back to the spec
  * default). A spec with no `toEnv` contributes nothing.

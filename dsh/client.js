@@ -59,6 +59,9 @@ window.__ModuleLoader__.load({
         reserveExplicit: '(config)',
         reserveForeign: '(foreign engine)',
         reserveGpuBusy: '(GPU busy)',
+        unknownEnginesTitle: 'Unknown Engine(s)',
+        unknownEnginesBody:
+          'held by engine program(s) the detector could not tie to a provider. Stop them to free this VRAM.',
         over: 'Over budget',
         tight: 'Fits tightly',
         guidelineOne: 'hardware guideline',
@@ -145,6 +148,17 @@ window.__ModuleLoader__.load({
         templateDownloading: 'downloading template...',
         templateDownloaded: 'template download complete',
         templateDownloadFailed: 'template download failed',
+        customArgsTitle: 'Custom arguments',
+        customArgKeyHeader: 'Parameter / Flag',
+        customArgValueHeader: 'Value (optional)',
+        customArgAddRemoveHeader: ' + / - ',
+        customArgKeyPlaceholder: '--kv-dtype',
+        customArgValuePlaceholder: 'int8',
+        customArgAdd: 'Add a row',
+        customArgRemove: 'Remove this row',
+        customArgClear: 'Clear this row',
+        customArgHelp:
+          'Extra flags appended to the engine launch command after saving.'
       },
       zh: {
         section: '引擎设置',
@@ -173,6 +187,8 @@ window.__ModuleLoader__.load({
         reserveExplicit: '(配置)',
         reserveForeign: '(外部引擎)',
         reserveGpuBusy: '(GPU 繁忙)',
+        unknownEnginesTitle: '未知引擎',
+        unknownEnginesBody: '被检测器无法关联到提供方的引擎程序占用。停止它们以释放此 VRAM。',
         over: '超出预算',
         tight: '勉强可容纳',
         guidelineOne: '硬件准则',
@@ -255,6 +271,17 @@ window.__ModuleLoader__.load({
         templateDownloading: '模板下载中…',
         templateDownloaded: '模板下载完成',
         templateDownloadFailed: '模板下载失败',
+        customArgsTitle: '自定义参数',
+        customArgKeyHeader: '参数 / 标志',
+        customArgValueHeader: '值 (可选)',
+        customArgAddRemoveHeader: ' + / - ',
+        customArgKeyPlaceholder: '例如 --kv-dtype',
+        customArgValuePlaceholder: '例如 int8',
+        customArgAdd: '添加一行',
+        customArgRemove: '删除此行',
+        customArgClear: '清空此行',
+        customArgHelp:
+          '保存后追加到引擎启动命令的额外标志。首行只清空不删除；+ 添加一行，下方行的 - 删除该行。',
       },
     };
 
@@ -277,7 +304,10 @@ window.__ModuleLoader__.load({
     var SEGMENT_COLORS = {
       weights: '#4f8ff7',
       kv: '#34c38f',
-      overhead: '#f7b84f',
+      // Teal, not the orange it used to be: the orange read as a warning next
+      // to the workspace purple and the free gray, so the sequence-state
+      // segment now sits in the cool end of the palette.
+      overhead: '#14b8a6',
       workspace: '#b07ff7',
       free: '#d9d9d9',
       reserve: '#1c1c1c',
@@ -421,6 +451,27 @@ window.__ModuleLoader__.load({
       whiteSpace: 'pre-wrap',
       wordBreak: 'break-all',
       fontFamily: 'var(--dsw-alias-font-mono, ui-monospace, monospace)',
+    };
+    // The Custom Arguments table. A three-column grid (parameter, value, the
+    // + / - controls) the user fills with extra launch flags. The header row
+    // reads the tertiary section label; the inputs reuse the card's Input atom
+    // tokens, and the + / - controls are the compact ghost buttons.
+    var CUSTOM_ARGS_GRID_STYLE = {
+      display: 'grid',
+      gridTemplateColumns: '1fr 1fr auto',
+      gap: 6,
+      alignItems: 'center',
+      marginTop: 4,
+    };
+    var CUSTOM_ARGS_HEADER_STYLE = {
+      fontSize: 11,
+      fontWeight: 600,
+      color: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))',
+    };
+    var CUSTOM_ARGS_BUTTONS_STYLE = {
+      display: 'flex',
+      gap: 4,
+      justifyContent: 'flex-end',
     };
     // The circular "?" button in the card header. It toggles the per-field
     // descriptions; the preference persists through the save route, so it
@@ -879,7 +930,13 @@ window.__ModuleLoader__.load({
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
               },
-              title: engineLabel + ': ' + modelLabel,
+              title:
+                engineLabel +
+                ': ' +
+                modelLabel +
+                ' (' +
+                (statusToLabel[provider.status] || provider.status) +
+                ')',
               'aria-label':
                 engineLabel +
                 ': ' +
@@ -888,7 +945,12 @@ window.__ModuleLoader__.load({
                 (statusToLabel[provider.status] || provider.status) +
                 ')',
             },
-            engineLabel + ': ' + modelLabel,
+            engineLabel +
+              ': ' +
+              modelLabel +
+              ' (' +
+              (statusToLabel[provider.status] || provider.status) +
+              ')',
           ),
           // The provider the editing form is open for shows a Cancel button
           // (which collapses the form back to Edit and discards its changes);
@@ -1365,6 +1427,33 @@ window.__ModuleLoader__.load({
           ),
         ),
       );
+      // The "Unknown Engine(s)" section: a yellow readout that names the VRAM
+      // the detector's foreign engine programs are holding, so the user sees
+      // the footprint a provider launched in another session is eating off
+      // the card. Absent when no provider reads as unsure.
+      var unknownEngines =
+        meter.unknownEngines !== null && meter.unknownEngines !== undefined
+          ? react.createElement(
+              'div',
+              {
+                style: {
+                  marginTop: 8,
+                  padding: '6px 8px',
+                  borderRadius: 6,
+                  fontSize: 12,
+                  background: 'var(--dsw-alias-fill-warning, rgba(255,199,0,0.12))',
+                  border: '1px solid var(--dsw-alias-border-warning, rgba(255,199,0,0.4))',
+                  color: 'var(--dsw-alias-label-warning, #b45309)',
+                },
+              },
+              react.createElement('div', { style: { fontWeight: 600, marginBottom: 2 } }, t.unknownEnginesTitle),
+              react.createElement(
+                'span',
+                null,
+                (meter.unknownEngines.bytes / 1024 / 1024 / 1024).toFixed(2) + ' GiB ' + t.unknownEnginesBody,
+              ),
+            )
+          : null;
       return react.createElement(
         'div',
         { style: { marginTop: 8 } },
@@ -1372,6 +1461,103 @@ window.__ModuleLoader__.load({
         bar,
         legend,
         readout,
+        unknownEngines,
+      );
+    }
+
+    // The Custom Arguments panel: a three-column table of key/value rows the
+    // user fills with extra launch flags, plus the + / - controls. The rows
+    // live in the draft config's `customArgs` field, so a Save persists them
+    // and the next engine launch appends them to the command line. The panel
+    // is a pure draw of the rows; the +/- actions ride in as a callback so the
+    // row edits stay in the card's draft, not the panel.
+    //
+    // The first row is the permanent row: its "-" clears the key and value
+    // (it never disappears, so the table always has at least one row). A lower
+    // row's "-" removes that row entirely. Every row's "+" appends a fresh row.
+    function renderCustomArgsPanel(react, primitives, args, onCustomArgs, t, help) {
+      // Always show at least one row: an empty (or absent) customArgs reads as a
+      // single blank row the user can fill.
+      var rows =
+        args && args.length > 0
+          ? args
+          : [{ key: '', value: '' }];
+      var body = rows.map(function (arg, index) {
+        var key = arg && typeof arg.key === 'string' ? arg.key : '';
+        var value = arg && typeof arg.value === 'string' ? arg.value : '';
+        var isFirst = index === 0;
+        return react.createElement(
+          'div',
+          { key: 'arg-row-' + index, style: { display: 'contents' } },
+          react.createElement('input', {
+            type: 'text',
+            style: INPUT_STYLE,
+            value: key,
+            placeholder: t.customArgKeyPlaceholder,
+            'aria-label': t.customArgKeyHeader,
+            onChange: function (event) {
+              onCustomArgs('key', index, event.target.value);
+            },
+          }),
+          react.createElement('input', {
+            type: 'text',
+            style: INPUT_STYLE,
+            value: value,
+            placeholder: t.customArgValuePlaceholder,
+            'aria-label': t.customArgValueHeader,
+            onChange: function (event) {
+              onCustomArgs('value', index, event.target.value);
+            },
+          }),
+          react.createElement(
+            'div',
+            { style: CUSTOM_ARGS_BUTTONS_STYLE },
+            renderButton(
+              react,
+              primitives,
+              'ghost',
+              {
+                type: 'button',
+                onClick: function () {
+                  onCustomArgs('add');
+                },
+                'aria-label': t.customArgAdd,
+              },
+              '+',
+            ),
+            renderButton(
+              react,
+              primitives,
+              'ghost',
+              {
+                type: 'button',
+                onClick: function () {
+                  onCustomArgs(isFirst ? 'clear' : 'remove', index);
+                },
+                'aria-label': isFirst ? t.customArgClear : t.customArgRemove,
+              },
+              '-',
+            ),
+          ),
+        );
+      });
+      return react.createElement(
+        'div',
+        { style: { marginTop: 8 } },
+        react.createElement('div', { style: SECTION_STYLE }, t.customArgsTitle),
+        help ? renderHelpRow(react, t.customArgHelp) : null,
+        react.createElement(
+          'div',
+          { style: CUSTOM_ARGS_GRID_STYLE, gridTemplateRows: 'auto' },
+          react.createElement('div', { style: CUSTOM_ARGS_HEADER_STYLE }, t.customArgKeyHeader),
+          react.createElement('div', { style: CUSTOM_ARGS_HEADER_STYLE }, t.customArgValueHeader),
+          react.createElement(
+            'div',
+            { style: Object.assign({}, CUSTOM_ARGS_HEADER_STYLE, { textAlign: 'right' }) },
+            t.customArgAddRemoveHeader,
+          ),
+          body,
+        ),
       );
     }
 
@@ -1573,6 +1759,11 @@ window.__ModuleLoader__.load({
         // does.
         var launchingState = react.useState(false);
         var stoppingState = react.useState(false);
+        // Whether the draft's engine is confirmed running, so the single
+        // Launch/Stop control reads as Stop while the engine is up and Launch
+        // while it is down, the same toggle the per-entry control does. A
+        // healthy launch sets it, a stop clears it.
+        var draftRunningState = react.useState(false);
         var lifecycleNoteState = react.useState('');
         // The model download state. The Download button runs the hf CLI
         // download through the /local-infer/download route, and the note
@@ -1636,6 +1827,7 @@ window.__ModuleLoader__.load({
         var agentDefault = agentDefaultState[0];
         var launching = launchingState[0];
         var stopping = stoppingState[0];
+        var draftRunning = draftRunningState[0];
         var lifecycleNote = lifecycleNoteState[0];
         var downloading = downloadingState[0];
         var downloadNote = downloadNoteState[0];
@@ -2002,6 +2194,61 @@ window.__ModuleLoader__.load({
           [],
         );
 
+        // The Custom Arguments table edits. The rows live in the draft config's
+        // `customArgs` field (a list of {key, value}), so a Save persists them
+        // and the next engine launch appends them to the command line. The
+        // action is 'key'/'value' (edit a row), 'add' (append a row), 'clear'
+        // (blank the first row, the permanent one), or 'remove' (drop a lower
+        // row). The table always keeps at least one row: removing the last
+        // lower row leaves a single blank row, and 'clear' blanks the first.
+        var onCustomArgs = react.useCallback(
+          (action, index, value) => {
+            noteState[1]('');
+            dirtyState[1](true);
+            draftState[1]((current) => {
+              var raw =
+                current.config && Array.isArray(current.config.customArgs)
+                  ? current.config.customArgs
+                  : [];
+              var args = raw.map(function (entry) {
+                return {
+                  key: entry && typeof entry.key === 'string' ? entry.key : '',
+                  value: entry && typeof entry.value === 'string' ? entry.value : '',
+                };
+              });
+              if (args.length === 0) {
+                args = [{ key: '', value: '' }];
+              }
+              switch (action) {
+                case 'key':
+                  args[index] = Object.assign({}, args[index], { key: value });
+                  break;
+                case 'value':
+                  args[index] = Object.assign({}, args[index], { value: value });
+                  break;
+                case 'add':
+                  args = args.concat([{ key: '', value: '' }]);
+                  break;
+                case 'clear':
+                  args[0] = { key: '', value: '' };
+                  break;
+                case 'remove':
+                  args = args.filter(function (_entry, i) {
+                    return i !== index;
+                  });
+                  if (args.length === 0) {
+                    args = [{ key: '', value: '' }];
+                  }
+                  break;
+              }
+              var config = Object.assign({}, current.config);
+              config.customArgs = args;
+              return { engine: current.engine, config: config, platform: current.platform || {} };
+            });
+          },
+          [],
+        );
+
         var onEngine = react.useCallback(
           (engine) => {
             noteState[1]('');
@@ -2191,9 +2438,14 @@ window.__ModuleLoader__.load({
               .then((next) => {
                 dataState[1](next);
                 // The deleted provider is gone, so stop editing it if the form
-                // was showing it.
+                // was showing it, and collapse the form back to the provider
+                // entry list (the "New provider" form when the delete leaves
+                // no entries), the same rule the Cancel handler applies.
                 if (editingProviderId === providerId) {
                   editingProviderIdState[1](null);
+                  providerFormModeState[1](
+                    next.providers && next.providers.length > 0 ? 'collapsed' : 'new',
+                  );
                 }
                 deletingProviderIdState[1](null);
               })
@@ -2440,6 +2692,9 @@ window.__ModuleLoader__.load({
                   lifecycleNoteState[1](
                     t.runningOn + ' ' + (body.plan && body.plan.port ? body.plan.port : ''),
                   );
+                  // A healthy launch means the draft's engine is up, so the
+                  // single Launch/Stop control reads as Stop from here on.
+                  draftRunningState[1](true);
                 } else {
                   lifecycleNoteState[1](t.notHealthy + (body.detail ? ': ' + body.detail : ''));
                 }
@@ -2472,6 +2727,9 @@ window.__ModuleLoader__.load({
             .then(({ ok, body }) => {
               if (ok) {
                 lifecycleNoteState[1](t.stopped);
+                // A successful stop means the draft's engine is down, so the
+                // single Launch/Stop control reads as Launch from here on.
+                draftRunningState[1](false);
               } else {
                 lifecycleNoteState[1](t.stopFailed + (body.error ? ': ' + body.error : ''));
               }
@@ -3109,6 +3367,18 @@ window.__ModuleLoader__.load({
                 (data.verdict.status === 'over' ? t.over : t.tight) + ': ' + data.verdict.detail,
               )
             : null,
+          // The Custom Arguments table: the extra launch flags the user adds,
+          // stored in the draft config's customArgs field and appended to the
+          // engine command on the next launch. It sits just before the System
+          // dependencies panel, the way the plan places it.
+          renderCustomArgsPanel(
+            react,
+            primitives,
+            draft.config ? draft.config.customArgs : null,
+            onCustomArgs,
+            t,
+            help,
+          ),
           renderDepsPanel(
             react,
             deps,
@@ -3160,34 +3430,51 @@ window.__ModuleLoader__.load({
               }),
             ),
           ),
-          // The engine lifecycle row: Launch runs the deploy and the health
-          // poll through the /local-infer/launch route, and Stop signals the
-          // tracked process or container through /local-infer/stop. Launch
-          // stays disabled while a launch is in flight or while the deps
-          // panel reports a missing host dependency, the same gate the panel's
-          // "Get" button reads. The note reports the answer the route
-          // returned, so a failed deploy names its broken step.
+          // The engine lifecycle row: a single Launch/Stop control that
+          // toggles like the per-entry control. It reads as Launch while the
+          // draft's engine is down, Stop while a healthy launch set draftRunning,
+          // and an in-flight Throbber (disabled) while a launch or stop is in
+          // flight. Launch stays disabled while the deps panel reports a
+          // missing host dependency, the same gate the panel's "Get" button
+          // reads. The note reports the answer the route returned.
           react.createElement(
             'div',
             { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 } },
-            renderButton(
-              react,
-              primitives,
-              'primary',
-              {
-                onClick: onLaunch,
-                disabled:
-                  launching || stopping || (deps !== null && deps.allSatisfied !== true),
-              },
-              launching ? t.launching : t.launch,
-            ),
-            renderButton(
-              react,
-              primitives,
-              'ghost',
-              { onClick: onStop, disabled: stopping || launching },
-              stopping ? t.stopping : t.stop,
-            ),
+            launching
+              ? react.createElement(
+                  'button',
+                  {
+                    type: 'button',
+                    disabled: true,
+                    style: Object.assign(
+                      { display: 'inline-flex', alignItems: 'center', gap: 4, opacity: 0.7 },
+                      GHOST_BUTTON,
+                    ),
+                    'aria-label': t.launching,
+                  },
+                  renderThrobber(react, primitives),
+                  react.createElement('span', null, t.launching),
+                )
+              : stopping
+                ? renderButton(
+                    react,
+                    primitives,
+                    'ghost',
+                    { onClick: function () {}, disabled: true },
+                    t.stopping,
+                  )
+                : draftRunning
+                  ? renderButton(react, primitives, 'ghost', { onClick: onStop }, t.stop)
+                  : renderButton(
+                      react,
+                      primitives,
+                      'primary',
+                      {
+                        onClick: onLaunch,
+                        disabled: deps !== null && deps.allSatisfied !== true,
+                      },
+                      t.launch,
+                    ),
           ),
           lifecycleNote
             ? react.createElement('div', { style: { fontSize: 12 } }, lifecycleNote)

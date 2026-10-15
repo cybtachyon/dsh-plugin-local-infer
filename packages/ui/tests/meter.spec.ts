@@ -81,4 +81,27 @@ describe('renderMeter', () => {
     const defaulted = renderMeter(breakdown(), fits, 24, 'measured')
     expect(defaulted.reserveSource).toBe('default')
   })
+
+  it('carries the Unknown Engine(s) readout when unsure programs hold VRAM', () => {
+    // A foreign engine holding 4 GiB: the readout names that footprint so the
+    // user sees the VRAM a provider launched in another session is eating.
+    const model = renderMeter(
+      breakdown(),
+      fits,
+      24,
+      'measured',
+      'foreign-process',
+      { bytes: 4 * GiB },
+    )
+    expect(model.unknownEngines).toEqual({ bytes: 4 * GiB })
+  })
+
+  it('omits the Unknown Engine(s) readout when no provider reads as unsure', () => {
+    // Absent (the default) and explicit null both read as no foreign engine,
+    // so the section stays out of the meter.
+    const absent = renderMeter(breakdown(), fits, 24, 'measured')
+    expect(absent.unknownEngines).toBeNull()
+    const explicitNull = renderMeter(breakdown(), fits, 24, 'measured', 'default', null)
+    expect(explicitNull.unknownEngines).toBeNull()
+  })
 })
