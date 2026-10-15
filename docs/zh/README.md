@@ -4,6 +4,10 @@
 
 > 面向那些希望从特定硬件中获得比 Unsloth 开箱即用更高性能的用户。
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/cybtachyon/dsh-plugin-local-infer/blob/main/LICENSE)
+[![DSH 0.2.1-alpha.2](https://img.shields.io/badge/DSH-0.2.1--alpha.2-blue)](https://www.npmjs.com/package/@deepseek-ai/dsh)
+[![Type: DSH Plugin](https://img.shields.io/badge/Type-DSH%20Plugin-8A2BE2)](https://github.com/topics/dsh-plugin)
+
 一个 DeepSeek Harness 插件，用于管理本地推理引擎：
 
 - llama.cpp

@@ -4,6 +4,10 @@
 
 > For those who want more performance out of their specific hardware than what Unsloth gives out of the box.
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/cybtachyon/dsh-plugin-local-infer/blob/main/LICENSE)
+[![DSH 0.2.1-alpha.2](https://img.shields.io/badge/DSH-0.2.1--alpha.2-blue)](https://www.npmjs.com/package/@deepseek-ai/dsh)
+[![Type: DSH Plugin](https://img.shields.io/badge/Type-DSH%20Plugin-8A2BE2)](https://github.com/topics/dsh-plugin)
+
 A DeepSeek Harness plugin that manages local inference engines:
 
 - llama.cpp
