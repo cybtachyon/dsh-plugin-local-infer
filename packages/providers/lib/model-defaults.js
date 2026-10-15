@@ -8,7 +8,7 @@
  * The list is the single source the card's Model dropdown, the model
  * presence check, and the hf CLI download route read. Adding a model is a
  * data edit here, never a route or card rewire.
- * @module @dsh/dsh-plugin-local-infer/providers/model-defaults
+ * @module dsh-plugin-local-infer/providers/model-defaults
  */
 /**
  * DEFAULT_MODELS is the default model list, in the order the card lists them.

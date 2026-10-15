@@ -7,7 +7,7 @@
  *
  * The render models (form, meter, warnings) are pure data the panel draws
  * from; Phase 8 wires them into one panel with the lifecycle controls.
- * @module @dsh/dsh-plugin-local-infer/ui
+ * @module dsh-plugin-local-infer/ui
  */
 import type { Context } from '@deepseek-ai/cordis';
 export declare const name = "local-infer-ui";

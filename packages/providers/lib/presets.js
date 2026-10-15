@@ -11,7 +11,7 @@
  * bridge pulls and the pure extractor that turns the fetched page into a
  * preset. The service runs the fetch and tags the result with the URL and the
  * fetch date.
- * @module @dsh/dsh-plugin-local-infer/providers/presets
+ * @module dsh-plugin-local-infer/providers/presets
  */
 /**
  * The hardware class every built-in preset is sourced for: a 24 GiB Ampere

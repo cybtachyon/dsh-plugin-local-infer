@@ -3,7 +3,7 @@
  * Every engine and model composes these same primitives; the estimator and the
  * guideline engine consume the declarations a ParameterSpec carries, so a new
  * engine, model, or rule is data and a thin subclass, never a core rewire.
- * @module @dsh/dsh-plugin-local-infer/core
+ * @module dsh-plugin-local-infer/core
  */
 
 export type { Config, CustomArg } from './config.ts'

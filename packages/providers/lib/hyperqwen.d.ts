@@ -4,9 +4,9 @@
  * `docker-compose.yml`, and the `single-user`/`batch` start scripts. The
  * concepts mirror the NInfer surface; the spelling is a `.env` key the
  * `HyperQwenAdapter` (Phase 5) writes into the compose environment.
- * @module @dsh/dsh-plugin-local-infer/providers/hyperqwen
+ * @module dsh-plugin-local-infer/providers/hyperqwen
  */
-import type { EnumOption, ParameterSpec } from '@dsh/dsh-plugin-local-infer/core';
+import type { EnumOption, ParameterSpec } from 'dsh-plugin-local-infer/core';
 /**
  * The speculative-decoding backends Hyper-Qwen serves. The launcher's own
  * default is `mtp`; the single-user speed profile sets `dflash2`.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { DepCheck, SystemDep } from '@dsh/dsh-plugin-local-infer/core'
+import type { DepCheck, SystemDep } from 'dsh-plugin-local-infer/core'
 import { renderDeps } from '../src/deps.ts'
 
 function dep(id: string, overrides: Partial<SystemDep> = {}): SystemDep {

@@ -23,16 +23,16 @@ import type {
   VramBreakdown,
   VramModel,
   VramVerdict,
-} from '@dsh/dsh-plugin-local-infer/core'
-import { DEFAULT_LOG_PATH_TEMPLATE, providerIdFor, resolveLogPath } from '@dsh/dsh-plugin-local-infer/core'
-import { LocalInfer } from '@dsh/dsh-plugin-local-infer/service'
+} from 'dsh-plugin-local-infer/core'
+import { DEFAULT_LOG_PATH_TEMPLATE, providerIdFor, resolveLogPath } from 'dsh-plugin-local-infer/core'
+import { LocalInfer } from 'dsh-plugin-local-infer/service'
 import type {
   DownloadResult,
   LaunchResult,
   LocalInferService,
   RegisterModelOptions,
-} from '@dsh/dsh-plugin-local-infer/service'
-import { apply as applyProviders } from '@dsh/dsh-plugin-local-infer/providers'
+} from 'dsh-plugin-local-infer/service'
+import { apply as applyProviders } from 'dsh-plugin-local-infer/providers'
 import {
   buildDeps,
   buildSummary,
@@ -50,7 +50,7 @@ import {
   unregisterFor,
   writeConfig,
 } from '../src/route.ts'
-import type { EngineInfo } from '@dsh/dsh-plugin-local-infer/providers'
+import type { EngineInfo } from 'dsh-plugin-local-infer/providers'
 
 const HW: HardwareProfile = {
   os: 'linux',

@@ -5,13 +5,13 @@ import {
   renderForm,
   resolveValue,
 } from '../src/form.ts'
-import { NINFER_PARAMETERS } from '@dsh/dsh-plugin-local-infer/providers'
+import { NINFER_PARAMETERS } from 'dsh-plugin-local-infer/providers'
 import type {
   ComboOption,
   Config,
   EnumOption,
   ParameterSpec,
-} from '@dsh/dsh-plugin-local-infer/core'
+} from 'dsh-plugin-local-infer/core'
 
 const ENUM_OPTIONS: EnumOption[] = [
   { value: 'a', label: 'A' },

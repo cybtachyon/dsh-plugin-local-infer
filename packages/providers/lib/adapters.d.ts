@@ -5,7 +5,7 @@
  * injectable `LifecycleHost`, so the tests stub the host and never run a real
  * build, docker, or network in CI. The node implementation
  * (`nodeLifecycleHost`) is what the service wires in on a live host.
- * @module @dsh/dsh-plugin-local-infer/providers/adapters
+ * @module dsh-plugin-local-infer/providers/adapters
  */
 import { EngineAdapter } from '../../core/lib/index.js';
 import type { Config, DebugLogger, DeployResult, EngineLaunchSignature, EnginePlatformConfig, HealthCheckOptions, HealthResult, HardwareProfile, LaunchPlan, LifecycleHost, ParameterSpec } from '../../core/lib/index.js';

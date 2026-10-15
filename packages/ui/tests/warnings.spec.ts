@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { GuidelineResult } from '@dsh/dsh-plugin-local-infer/core'
+import type { GuidelineResult } from 'dsh-plugin-local-infer/core'
 import { renderWarnings, toneFor } from '../src/warnings.ts'
 
 const over: GuidelineResult = {

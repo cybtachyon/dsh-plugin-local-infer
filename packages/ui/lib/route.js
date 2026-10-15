@@ -12,7 +12,7 @@
  * ~/.dsh/local-infer/config.json, shared with the CLI, so the browser never
  * sees a secret it did not store. The routes are held by an effect, so they
  * go when the plugin does.
- * @module @dsh/dsh-plugin-local-infer/ui/route
+ * @module dsh-plugin-local-infer/ui/route
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';

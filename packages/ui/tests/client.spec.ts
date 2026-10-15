@@ -125,7 +125,7 @@ describe('dsh/client.js browser carrier', () => {
     stubFetch(404)
     await import(clientPath.href)
     expect(loaded).toBeDefined()
-    expect(loaded?.id).toBe('@dsh/dsh-plugin-local-infer')
+    expect(loaded?.id).toBe('dsh-plugin-local-infer')
     const plugin = loadPlugin()
     expect(typeof plugin.apply).toBe('function')
     expect(plugin.inject).toEqual([])

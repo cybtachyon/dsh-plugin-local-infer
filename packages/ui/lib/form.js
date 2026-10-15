@@ -3,7 +3,7 @@
  * `group`, and a field per `ParameterSpec`. The model is pure data, so the
  * panel (Phase 8) renders it without touching the domain model, and the
  * mapping from `form` kind to control kind stays unit-testable here.
- * @module @dsh/dsh-plugin-local-infer/ui/form
+ * @module dsh-plugin-local-infer/ui/form
  */
 /**
  * The group label a spec without a `group` renders under.

@@ -7,7 +7,7 @@
  *
  * The data is the surface; the `NInferAdapter` (Phase 5) composes it into a
  * `LaunchPlan`. Adding a flag here is a data edit, never a core rewire.
- * @module @dsh/dsh-plugin-local-infer/providers/ninfer
+ * @module dsh-plugin-local-infer/providers/ninfer
  */
 /**
  * The KV cache quantization formats NInfer serves, in the order the form

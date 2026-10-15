@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import LocalInfer from '@dsh/dsh-plugin-local-infer/service'
+import LocalInfer from 'dsh-plugin-local-infer/service'
 import localInferTool, { apply, inject, name } from '../src/index.ts'
 
 describe('local-infer-tool scaffold', () => {

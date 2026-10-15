@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { VramBreakdown, VramVerdict } from '@dsh/dsh-plugin-local-infer/core'
+import type { VramBreakdown, VramVerdict } from 'dsh-plugin-local-infer/core'
 import { renderMeter } from '../src/meter.ts'
 
 const GiB = 1024 * 1024 * 1024

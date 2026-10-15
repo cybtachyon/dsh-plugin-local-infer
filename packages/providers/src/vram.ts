@@ -6,10 +6,10 @@
  * parameter counts. The provenance note on each model names the exact weight
  * artifact the figures apply to, because the runtime also recognizes other
  * weight profiles with different resident sizes.
- * @module @dsh/dsh-plugin-local-infer/providers/vram
+ * @module dsh-plugin-local-infer/providers/vram
  */
 
-import type { Config, VramModel } from '@dsh/dsh-plugin-local-infer/core'
+import type { Config, VramModel } from 'dsh-plugin-local-infer/core'
 
 /**
  * DFlash2's CUDA-graph allowance is a step in context, measured at 8,192 /

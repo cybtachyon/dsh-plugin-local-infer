@@ -8,7 +8,7 @@
  * guidelines. The engine adapters land in Phase 5. Phase 7 registers the
  * built-in preset data (the NInfer measured and Hyper-Qwen profile presets)
  * that the defaults resolver resolves against.
- * @module @dsh/dsh-plugin-local-infer/providers
+ * @module dsh-plugin-local-infer/providers
  */
 import { createNodeLifecycleHost, HyperQwenAdapter, LlamaCppAdapter, NInferAdapter, StrataAdapter, } from "./adapters.js";
 import { createDshDebugLogger } from "./debug.js";

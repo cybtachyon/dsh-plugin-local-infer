@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { BUILTIN_PRESETS, PRESET_SOURCES, extractJsonBlock } from '../src/index.ts'
-import type { Preset } from '@dsh/dsh-plugin-local-infer/core'
+import type { Preset } from 'dsh-plugin-local-infer/core'
 
 describe('BUILTIN_PRESETS', () => {
   it('ships the NInfer measured presets for the 24 GiB sm86 card', () => {

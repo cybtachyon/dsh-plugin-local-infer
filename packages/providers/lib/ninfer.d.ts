@@ -7,9 +7,9 @@
  *
  * The data is the surface; the `NInferAdapter` (Phase 5) composes it into a
  * `LaunchPlan`. Adding a flag here is a data edit, never a core rewire.
- * @module @dsh/dsh-plugin-local-infer/providers/ninfer
+ * @module dsh-plugin-local-infer/providers/ninfer
  */
-import type { ComboOption, EnumOption, ParameterSpec } from '@dsh/dsh-plugin-local-infer/core';
+import type { ComboOption, EnumOption, ParameterSpec } from 'dsh-plugin-local-infer/core';
 /**
  * The KV cache quantization formats NInfer serves, in the order the form
  * dropdown lists them. `note` carries the tradeoff text the dropdown shows

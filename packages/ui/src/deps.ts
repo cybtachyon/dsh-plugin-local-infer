@@ -5,10 +5,10 @@
  * "Get" gate the plan names (disabled until every dep reports satisfied).
  * The model is pure data the card draws, so the mapping stays unit-testable
  * here.
- * @module @dsh/dsh-plugin-local-infer/ui/deps
+ * @module dsh-plugin-local-infer/ui/deps
  */
 
-import type { DepCheck, DepStatus } from '@dsh/dsh-plugin-local-infer/core'
+import type { DepCheck, DepStatus } from 'dsh-plugin-local-infer/core'
 
 /**
  * DepItemModel is one row of the panel's dep list: the dep id, the purpose

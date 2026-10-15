@@ -20,13 +20,16 @@
 // table predates the primitives seed keep the native controls through the
 // require fallback in mountCard.
 window.__ModuleLoader__.load({
-  id: '@dsh/dsh-plugin-local-infer',
+  id: 'dsh-plugin-local-infer',
   factory: (require) => {
     var module = { exports: {} };
     var exports = module.exports;
 
-    // The Plugins page dispatches a bundle's configuration by npm package name.
-    var PACKAGE_NAME = '@dsh/dsh-plugin-local-infer';
+    // The Plugins page dispatches a bundle's configuration by the bundle's
+    // manifest name (the root package.json "name" field, unscoped for git-URL
+    // installs), which is the key the package inventory uses for the
+    // plugins.bundle.config slot.
+    var PACKAGE_NAME = 'dsh-plugin-local-infer';
 
     // The card's copy. Two short label sets rather than a locale bundle: the
     // card has a couple of dozen strings, and a bundle would be more machinery
@@ -816,7 +819,7 @@ window.__ModuleLoader__.load({
     // The per-entry Launch control: a card entry's own lifecycle button, shown
     // alongside its Edit and Delete controls. Idle reads as a Launch button
     // that starts the entry's engine; a launch in flight shows a disabled
-    // control with the Throbber inside; a healthy engine reads as an enabled
+    // control with the spinner inside; a healthy engine reads as an enabled
     // Stop; a launch that timed out reads as a red Logs control that opens the
     // entry for editing, the same action as Edit.
     function renderEntryLaunchButton(react, primitives, provider, opts) {
@@ -1011,12 +1014,16 @@ window.__ModuleLoader__.load({
       );
     }
 
-    // The DSH Throbber (a spinner) the per-entry Launch button shows while a
-    // launch is in flight, with a CSS border-spin as the fallback a host
-    // without the seed keeps.
+    // The DSH loading indicator the per-entry Launch button shows while a
+    // launch is in flight: the StateDot ongoing spinner (the primitives'
+    // shared loader) with a CSS border-spin as the fallback a host without the
+    // seed keeps.
     function renderThrobber(react, primitives) {
-      if (primitives && typeof primitives.Throbber === 'function') {
-        return react.createElement(primitives.Throbber, { size: 'sm' });
+      if (primitives && typeof primitives.StateDot === 'function') {
+        return react.createElement(primitives.StateDot, {
+          state: 'ongoing',
+          size: 12,
+        });
       }
       return react.createElement('span', {
         style: {
@@ -1810,7 +1817,7 @@ window.__ModuleLoader__.load({
         var logPathState = react.useState('');
         // The per-entry launch state: a map from provider id to the entry's
         // lifecycle ('launching', 'running', 'failed') and the start time a
-        // launch began, so a card entry can show its Throbber, Stop, or red
+        // launch began, so a card entry can show its spinner, Stop, or red
         // Logs control. Absent entries read as idle (a plain Launch button).
         var entryLaunchState = react.useState({});
         var data = dataState[0];
@@ -2753,7 +2760,7 @@ window.__ModuleLoader__.load({
 
         // The per-entry launch: a card entry's own Launch control drives its
         // own engine, not the form's draft. It records a start time and the
-        // 'launching' state (the Throbber), then reads the launch result's
+        // 'launching' state (the spinner), then reads the launch result's
         // healthy flag: a 200 before the route's health-poll timeout reads as
         // 'running' (the control becomes Stop), a timeout reads as 'failed'
         // (the control becomes a red Logs that opens the entry for editing).
@@ -2770,7 +2777,7 @@ window.__ModuleLoader__.load({
             );
             // The route's health-poll can run up to two minutes, and a build
             // step before it can run longer still, so a slow or hung route
-            // would leave the control on the Throbber forever. A client-side
+            // would leave the control on the spinner forever. A client-side
             // deadline just past the route's cap forces the control to the red
             // Logs state so the entry can be opened and fixed.
             var settled = false;
@@ -2893,7 +2900,7 @@ window.__ModuleLoader__.load({
         return react.createElement(
           'div',
           { style: CARD_STYLE },
-          // The keyframes the Throbber fallback spinner animates with. Injected
+          // The keyframes the fallback spinner animates with. Injected
           // once per card so a host without the DSH seed still shows a spin.
           react.createElement(
             'style',
@@ -3446,7 +3453,7 @@ window.__ModuleLoader__.load({
           // The engine lifecycle row: a single Launch/Stop control that
           // toggles like the per-entry control. It reads as Launch while the
           // draft's engine is down, Stop while a healthy launch set draftRunning,
-          // and an in-flight Throbber (disabled) while a launch or stop is in
+          // and an in-flight spinner (disabled) while a launch or stop is in
           // flight. Launch stays disabled while the deps panel reports a
           // missing host dependency, the same gate the panel's "Get" button
           // reads. The note reports the answer the route returned.

@@ -3,14 +3,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { EngineAdapter } from '@dsh/dsh-plugin-local-infer/core'
+import { EngineAdapter } from 'dsh-plugin-local-infer/core'
 import type {
   Config,
   HardwareProfile,
   ParameterSpec,
   Preset,
   PresetSource,
-} from '@dsh/dsh-plugin-local-infer/core'
+} from 'dsh-plugin-local-infer/core'
 import LocalInfer from '../src/index.ts'
 
 const HW: HardwareProfile = {

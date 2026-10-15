@@ -5,9 +5,9 @@
  * concrete EngineAdapter (Phase 5) composes it into a LaunchPlan. The registry
  * is the single list the Web card offers, so adding an engine is a data edit
  * here, never a rewire of the card.
- * @module @dsh/dsh-plugin-local-infer/providers/engines
+ * @module dsh-plugin-local-infer/providers/engines
  */
-import type { ParameterSpec } from '@dsh/dsh-plugin-local-infer/core';
+import type { ParameterSpec } from 'dsh-plugin-local-infer/core';
 export interface EngineInfo {
     id: string;
     label: string;

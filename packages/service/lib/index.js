@@ -15,7 +15,7 @@
  * Phase 6 over the dsh settings seam, and `resolveDefaults` and
  * `fetchPreset` by Phase 7 over the core defaults resolver and the
  * mod-search bridge.
- * @module @dsh/dsh-plugin-local-infer/service
+ * @module dsh-plugin-local-infer/service
  */
 import { exec, execFile, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';

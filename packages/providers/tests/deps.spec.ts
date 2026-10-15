@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { renderInstallString } from '@dsh/dsh-plugin-local-infer/core'
-import type { HardwareProfile } from '@dsh/dsh-plugin-local-infer/core'
-import LocalInfer from '@dsh/dsh-plugin-local-infer/service'
+import { renderInstallString } from 'dsh-plugin-local-infer/core'
+import type { HardwareProfile } from 'dsh-plugin-local-infer/core'
+import LocalInfer from 'dsh-plugin-local-infer/service'
 import { ENGINE_DEP_PLANS, SYSTEM_DEPS } from '../src/deps.ts'
 
 const APT: HardwareProfile = {

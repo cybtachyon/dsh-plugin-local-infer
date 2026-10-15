@@ -9,9 +9,9 @@
  *
  * The dnf and brew blocks are the plan's "flagged when untested" sets: they
  * name the right packages but have not been run on a live host.
- * @module @dsh/dsh-plugin-local-infer/providers/deps
+ * @module dsh-plugin-local-infer/providers/deps
  */
-import type { EngineDepPlan, HardwareProfile } from '@dsh/dsh-plugin-local-infer/core';
+import type { EngineDepPlan, HardwareProfile } from 'dsh-plugin-local-infer/core';
 /**
  * The named host deps every engine plan composes. The install blocks are the
  * copy/paste commands the user runs; envAfter carries the per-manager export

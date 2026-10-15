@@ -9,9 +9,9 @@
  * "exceeds usable VRAM" and "spec needs draft weights" rules) live in the
  * core `modelGuidelines` and run in the service, because they price against
  * a model, not against the hardware alone.
- * @module @dsh/dsh-plugin-local-infer/providers/guidelines
+ * @module dsh-plugin-local-infer/providers/guidelines
  */
-import type { Guideline } from '@dsh/dsh-plugin-local-infer/core';
+import type { Guideline } from 'dsh-plugin-local-infer/core';
 /**
  * One pinned Host StateImage, in bytes. The NInfer measured figure for the
  * 27B artifact (195,897,344 B, the README's Host StateImage size), used as

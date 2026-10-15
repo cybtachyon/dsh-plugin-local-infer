@@ -1,4 +1,4 @@
-// Host carrier for the @dsh/dsh-plugin-local-infer client half.
+// Host carrier for the dsh-plugin-local-infer client half.
 //
 // The bare package has no host logic of its own; its four host entries are the
 // /service, /providers, /tool, and /ui subpaths. This no-op module exists so

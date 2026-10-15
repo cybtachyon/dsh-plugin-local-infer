@@ -9,9 +9,9 @@
  * `LaunchPlan`. Adding a flag here is a data edit, never a core rewire. The
  * engine is not present on the reference host, so the surface is the
  * specified set the plan names, verified when the binary lands.
- * @module @dsh/dsh-plugin-local-infer/providers/llamacpp
+ * @module dsh-plugin-local-infer/providers/llamacpp
  */
-import type { Config, EnumOption, ParameterSpec } from '@dsh/dsh-plugin-local-infer/core';
+import type { Config, EnumOption, ParameterSpec } from 'dsh-plugin-local-infer/core';
 /**
  * The KV cache quantization formats llama.cpp serves. `f16` is the full-
  * precision default; the smaller tiers trade a little quality for a longer

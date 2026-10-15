@@ -7,7 +7,7 @@ import {
   SPEC_GATE_MESSAGE,
   SPEC_OPTIONS,
 } from '../src/ninfer.ts'
-import type { ParameterSpec } from '@dsh/dsh-plugin-local-infer/core'
+import type { ParameterSpec } from 'dsh-plugin-local-infer/core'
 
 // The same opener test the local-infer/behavior-first-description eslint rule
 // runs, so a description that slips past the lint gate also fails the suite.

@@ -11,9 +11,9 @@
  * bridge pulls and the pure extractor that turns the fetched page into a
  * preset. The service runs the fetch and tags the result with the URL and the
  * fetch date.
- * @module @dsh/dsh-plugin-local-infer/providers/presets
+ * @module dsh-plugin-local-infer/providers/presets
  */
-import type { Config, Preset, PresetSource } from '@dsh/dsh-plugin-local-infer/core';
+import type { Config, Preset, PresetSource } from 'dsh-plugin-local-infer/core';
 /**
  * BUILTIN_PRESETS is the combined preset list the providers register with the
  * seam. Adding a preset is a data edit here, never a resolver change.

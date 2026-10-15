@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import LocalInfer from '@dsh/dsh-plugin-local-infer/service'
-import localInferProviders from '@dsh/dsh-plugin-local-infer/providers'
-import localInferTool from '@dsh/dsh-plugin-local-infer/tool'
-import localInferUi from '@dsh/dsh-plugin-local-infer/ui'
+import LocalInfer from 'dsh-plugin-local-infer/service'
+import localInferProviders from 'dsh-plugin-local-infer/providers'
+import localInferTool from 'dsh-plugin-local-infer/tool'
+import localInferUi from 'dsh-plugin-local-infer/ui'
 
 /**
  * The Phase 0 exit criterion: the empty plugin bundle loads into a DSH profile

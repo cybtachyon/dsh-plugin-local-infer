@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-local-infer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publishConfig": {
     "access": "public"
   },
@@ -63,6 +63,8 @@
   },
   "files": [
     "cordis.patch.yml",
+    "docs/zh/README.md",
+    "docs/screenshot-20261014.png",
     "dsh/client.js",
     "dsh/host.js",
     "packages/core/package.json",
@@ -82,7 +84,7 @@
     "packages/ui/lib/**/*.d.ts"
   ],
   "peerDependencies": {
-    "@deepseek-ai/cordis": ">=4.0.1"
+    "@deepseek-ai/cordis": ">=4.0.5-alpha.2"
   },
   "scripts": {
     "build": "tsc -b",

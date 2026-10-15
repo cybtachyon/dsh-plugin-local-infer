@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { estimateVram } from '@dsh/dsh-plugin-local-infer/core'
-import type { HardwareProfile } from '@dsh/dsh-plugin-local-infer/core'
+import { estimateVram } from 'dsh-plugin-local-infer/core'
+import type { HardwareProfile } from 'dsh-plugin-local-infer/core'
 import { NINFER_VRAM_MODELS, ninferVramModel } from '../src/vram.ts'
 
 const HW_3090: HardwareProfile = {

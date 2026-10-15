@@ -1,6 +1,6 @@
 {
-  "name": "@dsh/dsh-plugin-local-infer-ui",
-  "version": "0.1.0",
+  "name": "dsh-plugin-local-infer-ui",
+  "version": "0.1.1",
   "description": "Web UI for the dsh local-inference plugin: the form-type-aware parameter form, the live VRAM Est. meter, the red hardware-warning banner, the engine lifecycle controls (build / deploy / stop), and the register-as-model confirmation",
   "keywords": [
     "dsh",
@@ -29,9 +29,9 @@
     "access": "public"
   },
   "dependencies": {
-    "@dsh/dsh-plugin-local-infer-core": "workspace:^",
-    "@dsh/dsh-plugin-local-infer-service": "workspace:^",
-    "@dsh/dsh-plugin-local-infer-providers": "workspace:^"
+    "dsh-plugin-local-infer-core": "workspace:^",
+    "dsh-plugin-local-infer-service": "workspace:^",
+    "dsh-plugin-local-infer-providers": "workspace:^"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.1"

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { EngineAdapter, estimateVram } from '@dsh/dsh-plugin-local-infer/core'
+import { EngineAdapter, estimateVram } from 'dsh-plugin-local-infer/core'
 import type {
   Config,
   DefaultModel,
@@ -23,7 +23,7 @@ import type {
   ProviderRef,
   SystemDep,
   VramModel,
-} from '@dsh/dsh-plugin-local-infer/core'
+} from 'dsh-plugin-local-infer/core'
 import LocalInfer, { LocalInferError, runHardwareProbes } from '../src/index.ts'
 
 const HW: HardwareProfile = { dockerAvailable: false, wsl2: false, os: 'linux', cpuThreads: 4 }

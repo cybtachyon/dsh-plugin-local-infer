@@ -1,4 +1,4 @@
-import type { CommandOutcome, Config, DefaultModel, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, GpuUsageProbe, HardwareProfile, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, ProviderLaunchRecord, ProviderRef, ProviderStatus, ReLinkOutcome, RegisterResult, ReserveResolution, ReserveSource, ResolvedDefaults, SettingsOp, SystemDep, VramBreakdown, VramModel, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
+import type { CommandOutcome, Config, DefaultModel, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, GpuUsageProbe, HardwareProfile, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, ProviderLaunchRecord, ProviderRef, ProviderStatus, ReLinkOutcome, RegisterResult, ReserveResolution, ReserveSource, ResolvedDefaults, SettingsOp, SystemDep, VramBreakdown, VramModel, VramVerdict } from 'dsh-plugin-local-infer/core';
 /**
  * EstimateResult is the answer to an estimate call: the full VRAM breakdown,
  * the one-word verdict the meter renders, the source the numbers came from,

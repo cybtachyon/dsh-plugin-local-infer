@@ -1,5 +1,5 @@
 {
-  "name": "@dsh/dsh-plugin-local-infer-service",
+  "name": "dsh-plugin-local-infer-service",
   "version": "0.1.0",
   "description": "Service Definition for the dsh local-inference capability seam (ctx.localInfer): the engine, preset, and guideline registries plus the orchestration entry points (estimate, guidelines, deps, installString, runInstall, launch, registerModel). Carries no store of its own.",
   "keywords": [
@@ -30,7 +30,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@dsh/dsh-plugin-local-infer-core": "workspace:^"
+    "dsh-plugin-local-infer-core": "workspace:^"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.1"

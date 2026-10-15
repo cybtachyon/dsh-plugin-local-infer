@@ -12,11 +12,11 @@
  * ~/.dsh/local-infer/config.json, shared with the CLI, so the browser never
  * sees a secret it did not store. The routes are held by an effect, so they
  * go when the plugin does.
- * @module @dsh/dsh-plugin-local-infer/ui/route
+ * @module dsh-plugin-local-infer/ui/route
  */
 import type { Context } from '@deepseek-ai/cordis';
-import type { Config, DefaultProvenance, HardwareProfile, InstallResult, ProviderLaunchRecord, ProviderStatus, RegisterResult, VramModel, VramVerdict } from '@dsh/dsh-plugin-local-infer/core';
-import type { DownloadResult, LaunchResult, LocalInferService } from '@dsh/dsh-plugin-local-infer/service';
+import type { Config, DefaultProvenance, HardwareProfile, InstallResult, ProviderLaunchRecord, ProviderStatus, RegisterResult, VramModel, VramVerdict } from 'dsh-plugin-local-infer/core';
+import type { DownloadResult, LaunchResult, LocalInferService } from 'dsh-plugin-local-infer/service';
 import type { EngineInfo } from '../../providers/lib/index.js';
 import type { DepsModel } from './deps.ts';
 import type { FormModel } from './form.ts';

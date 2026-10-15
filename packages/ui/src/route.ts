@@ -12,7 +12,7 @@
  * ~/.dsh/local-infer/config.json, shared with the CLI, so the browser never
  * sees a secret it did not store. The routes are held by an effect, so they
  * go when the plugin does.
- * @module @dsh/dsh-plugin-local-infer/ui/route
+ * @module dsh-plugin-local-infer/ui/route
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -31,13 +31,13 @@ import type {
   RegisterResult,
   VramModel,
   VramVerdict,
-} from '@dsh/dsh-plugin-local-infer/core'
+} from 'dsh-plugin-local-infer/core'
 import type {
   DownloadResult,
   LaunchResult,
   LocalInferService,
   RegisterModelOptions,
-} from '@dsh/dsh-plugin-local-infer/service'
+} from 'dsh-plugin-local-infer/service'
 // Relative, not the root package subpath: a self-referencing bare specifier
 // only resolves when the package sits inside a node_modules tree, so a
 // local-path or pnpm-linked install of this repo would fail the import.

@@ -31,11 +31,11 @@
     // Source-to-source resolution across this workspace, so a test never loads
     // a second copy of a module singleton through built `lib/`.
     "paths": {
-      "@dsh/dsh-plugin-local-infer/core": ["./packages/core/src"],
-      "@dsh/dsh-plugin-local-infer/service": ["./packages/service/src"],
-      "@dsh/dsh-plugin-local-infer/providers": ["./packages/providers/src"],
-      "@dsh/dsh-plugin-local-infer/tool": ["./packages/tool/src"],
-      "@dsh/dsh-plugin-local-infer/ui": ["./packages/ui/src"]
+      "dsh-plugin-local-infer/core": ["./packages/core/src"],
+      "dsh-plugin-local-infer/service": ["./packages/service/src"],
+      "dsh-plugin-local-infer/providers": ["./packages/providers/src"],
+      "dsh-plugin-local-infer/tool": ["./packages/tool/src"],
+      "dsh-plugin-local-infer/ui": ["./packages/ui/src"]
     }
   }
 }

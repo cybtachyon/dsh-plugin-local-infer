@@ -15,7 +15,7 @@
  * Phase 6 over the dsh settings seam, and `resolveDefaults` and
  * `fetchPreset` by Phase 7 over the core defaults resolver and the
  * mod-search bridge.
- * @module @dsh/dsh-plugin-local-infer/service
+ * @module dsh-plugin-local-infer/service
  */
 
 import { exec, execFile, spawn } from 'node:child_process'
@@ -90,7 +90,7 @@ import type {
   SettingsOp,
   SystemDep,
   VramModel,
-} from '@dsh/dsh-plugin-local-infer/core'
+} from 'dsh-plugin-local-infer/core'
 import type {
   DetectOsReserveOptions,
   DownloadModelOptions,

@@ -8,7 +8,7 @@
  * In the scaffold this plugin is a no-op placeholder that injects the seam so
  * the bundle loads with zero tools. Phase 8 registers the four tools and the
  * prompt section.
- * @module @dsh/dsh-plugin-local-infer/tool
+ * @module dsh-plugin-local-infer/tool
  */
 
 import type { Context } from '@deepseek-ai/cordis'

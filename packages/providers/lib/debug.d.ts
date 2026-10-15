@@ -3,7 +3,7 @@
  * the two ways DSH enables debug mode (the HARNESS_LOG_LEVEL environment
  * variable and the DSH logger level config) into a single DebugLogger the
  * engine adapters use to capture the full build-to-launch command sequence.
- * @module @dsh/dsh-plugin-local-infer/providers/debug
+ * @module dsh-plugin-local-infer/providers/debug
  */
 import { Context } from '@deepseek-ai/cordis';
 import { type DebugLogger } from '../../core/lib/index.js';

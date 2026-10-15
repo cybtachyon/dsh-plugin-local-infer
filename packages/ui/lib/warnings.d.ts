@@ -5,9 +5,9 @@
  * panel (Phase 8) renders it without touching the domain model, and the
  * level-to-tone mapping stays unit-testable here. An `error` result renders
  * red; `warn` renders amber; `info` renders neutral.
- * @module @dsh/dsh-plugin-local-infer/ui/warnings
+ * @module dsh-plugin-local-infer/ui/warnings
  */
-import type { GuidelineLevel, GuidelineResult } from '@dsh/dsh-plugin-local-infer/core';
+import type { GuidelineLevel, GuidelineResult } from 'dsh-plugin-local-infer/core';
 /**
  * WarningTone is the panel's color class for a fired guideline: red for an
  * error, amber for a warning, neutral for an info.

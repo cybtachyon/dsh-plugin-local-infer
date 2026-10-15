@@ -5,7 +5,7 @@
  * "Get" gate the plan names (disabled until every dep reports satisfied).
  * The model is pure data the card draws, so the mapping stays unit-testable
  * here.
- * @module @dsh/dsh-plugin-local-infer/ui/deps
+ * @module dsh-plugin-local-infer/ui/deps
  */
 /**
  * renderDeps maps the checkDeps results and the rendered install string to

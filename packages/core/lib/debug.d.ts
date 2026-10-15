@@ -6,7 +6,7 @@
  * DSH logger level config (`logger: { levels: { default: 3 } }`) that a DSH
  * `--patch` overlay applies. The logger is a no-op outside debug mode, so the
  * command path stays allocation-free in normal operation.
- * @module @dsh/dsh-plugin-local-infer/core/debug
+ * @module dsh-plugin-local-infer/core/debug
  */
 /**
  * DebugLogger reports one engine command the plugin issued. The host calls it

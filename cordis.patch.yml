@@ -1,4 +1,4 @@
-# The @dsh/dsh-plugin-local-infer bundle patch: mounts the whole local-inference
+# The dsh-plugin-local-infer bundle patch: mounts the whole local-inference
 # capability as ONE layer over an existing dsh profile.
 #
 # Row order carries no load semantics — activation is service-availability
@@ -14,29 +14,29 @@
     # this row is what makes the client half reachable. The host module is a
     # no-op; the capability lives in the four subpath rows below.
     - id: local-infer
-      name: '@dsh/dsh-plugin-local-infer'
+      name: 'dsh-plugin-local-infer'
 
     # Service Definition: publishes ctx.localInfer, the engine/preset/guideline
     # registries, and the orchestration entry points (estimate, guidelines,
     # deps, installString, runInstall, launch, registerModel). Carries no store
     # of its own.
     - id: local-infer-service
-      name: '@dsh/dsh-plugin-local-infer/service'
+      name: 'dsh-plugin-local-infer/service'
 
     # Service Providers: the concrete engine adapters (ninfer, hyperqwen,
     # llamacpp, strata), the NInfer VramModel, the built-in presets, the
     # built-in guidelines, and the per-OS SystemDep install command data. Each
     # registers itself with ctx.localInfer.
     - id: local-infer-providers
-      name: '@dsh/dsh-plugin-local-infer/providers'
+      name: 'dsh-plugin-local-infer/providers'
 
     # Consumer: the model-facing local_infer_* tools (estimate, launch, status,
     # register), their system-prompt section, and their per-tool timeout budgets.
     - id: local-infer-tool
-      name: '@dsh/dsh-plugin-local-infer/tool'
+      name: 'dsh-plugin-local-infer/tool'
 
     # Web UI: the parameter form (form-type aware), the VRAM meter, the
     # red-warning banner, the engine lifecycle controls, and the register-as-
     # model confirmation.
     - id: local-infer-ui
-      name: '@dsh/dsh-plugin-local-infer/ui'
+      name: 'dsh-plugin-local-infer/ui'

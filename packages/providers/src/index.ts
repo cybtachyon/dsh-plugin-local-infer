@@ -8,13 +8,13 @@
  * guidelines. The engine adapters land in Phase 5. Phase 7 registers the
  * built-in preset data (the NInfer measured and Hyper-Qwen profile presets)
  * that the defaults resolver resolves against.
- * @module @dsh/dsh-plugin-local-infer/providers
+ * @module dsh-plugin-local-infer/providers
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 // The service's `declare module` adds `localInfer` to the cordis Context; the
 // type import loads that augmentation without a runtime edge.
-import type { LocalInferService } from '@dsh/dsh-plugin-local-infer/service'
+import type { LocalInferService } from 'dsh-plugin-local-infer/service'
 import {
   createNodeLifecycleHost,
   HyperQwenAdapter,

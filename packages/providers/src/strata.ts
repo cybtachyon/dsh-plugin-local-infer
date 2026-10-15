@@ -4,10 +4,10 @@
  * available. The surface is empty until then, so the form renders no fields
  * and the adapter renders a bare docker plan; adding a spec here is a data
  * edit, never an adapter rewire.
- * @module @dsh/dsh-plugin-local-infer/providers/strata
+ * @module dsh-plugin-local-infer/providers/strata
  */
 
-import type { ParameterSpec } from '@dsh/dsh-plugin-local-infer/core'
+import type { ParameterSpec } from 'dsh-plugin-local-infer/core'
 
 /**
  * The Strata `ParameterSpec` surface, empty until the engine's flag set lands.

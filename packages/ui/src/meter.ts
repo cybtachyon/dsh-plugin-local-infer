@@ -6,14 +6,14 @@
  * as authoritative. The model is pure data, so the panel (Phase 8) renders
  * it without touching the domain model, and the mapping stays unit-testable
  * here.
- * @module @dsh/dsh-plugin-local-infer/ui/meter
+ * @module dsh-plugin-local-infer/ui/meter
  */
 
 import type {
   ReserveSource,
   VramBreakdown,
   VramVerdict,
-} from '@dsh/dsh-plugin-local-infer/core'
+} from 'dsh-plugin-local-infer/core'
 
 /**
  * MeterSegment is one segment of the to-scale bar. `percent` is the share of

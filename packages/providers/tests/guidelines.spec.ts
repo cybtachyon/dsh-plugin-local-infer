@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import LocalInfer from '@dsh/dsh-plugin-local-infer/service'
+import LocalInfer from 'dsh-plugin-local-infer/service'
 import { BUILTIN_GUIDELINES, HOST_STATE_IMAGE_BYTES } from '../src/guidelines.ts'
-import type { Guideline, HardwareProfile } from '@dsh/dsh-plugin-local-infer/core'
+import type { Guideline, HardwareProfile } from 'dsh-plugin-local-infer/core'
 
 const baseHw: HardwareProfile = {
   dockerAvailable: true,

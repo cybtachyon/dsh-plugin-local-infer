@@ -9,7 +9,7 @@
  *
  * The dnf and brew blocks are the plan's "flagged when untested" sets: they
  * name the right packages but have not been run on a live host.
- * @module @dsh/dsh-plugin-local-infer/providers/deps
+ * @module dsh-plugin-local-infer/providers/deps
  */
 import { execFile } from 'node:child_process';
 /**
