@@ -88,6 +88,20 @@ export const SPEC_GATE_MESSAGE = 'Pick a speculation backend first (mtp, dflash,
  */
 export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
   {
+    key: 'port',
+    label: 'Port',
+    description:
+      'The loopback port the engine serves its OpenAI endpoint and health check on. The registrar publishes it as the model base URL.',
+    form: { kind: 'number', min: 1, max: 65535, step: 1 },
+    // 18020 is the port the qwen-ninfer launcher binds, so the form seeds the
+    // value the adapter's own fallback uses when a config names no port.
+    defaultValue: 18020,
+    group: 'Engine',
+    // The port contributes no flag of its own: renderLaunch spells the local
+    // `--port` and the docker host-port mapping from this value, and the
+    // health URL and container name derive from it too.
+  },
+  {
     key: 'kvDtype',
     label: 'KV cache format',
     description:
@@ -145,6 +159,15 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     form: { kind: 'number', min: 0, step: 1, unit: 'slots' },
     group: 'Memory',
     toArgv: (value) => ['--host-state-slots', String(value)],
+  },
+  {
+    key: 'mediaLiveMib',
+    label: 'Media live MiB',
+    description:
+      'Pinned host RAM reserved for live media (vision) decode. Retains the in-flight image and video buffers outside the GPU workspace.',
+    form: { kind: 'number', min: 0, step: 1024, unit: 'MiB' },
+    group: 'Memory',
+    toArgv: (value) => ['--media-live-mib', String(value)],
   },
   {
     key: 'gdnStateFp16',
@@ -218,6 +241,34 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: 0.05,
     group: 'Sampling',
     toArgv: (value) => ['--min-p', String(value)],
+  },
+  {
+    key: 'defaultMaxTokens',
+    label: 'Default max tokens',
+    description:
+      'Caps the response length when a request names no max. Raises it for long answers; the engine still honours a per-request cap.',
+    form: { kind: 'number', min: 1, step: 1, unit: 'tokens' },
+    group: 'Sampling',
+    toArgv: (value) => ['--default-max-tokens', String(value)],
+  },
+  {
+    key: 'defaultThinkingBudget',
+    label: 'Default thinking budget',
+    description:
+      'Reserves reasoning tokens for a thinking model when a request names no budget. Higher budgets spend more time reasoning per turn.',
+    form: { kind: 'number', min: 0, step: 1, unit: 'tokens' },
+    group: 'Sampling',
+    toArgv: (value) => ['--default-thinking-budget', String(value)],
+  },
+  {
+    key: 'preserveThinking',
+    label: 'Preserve thinking',
+    description:
+      'Keeps the reasoning trace in the context across turns instead of dropping it, so a multi-turn conversation builds on its own prior reasoning.',
+    form: { kind: 'boolean' },
+    defaultValue: false,
+    group: 'Sampling',
+    toArgv: (value) => (value === true ? ['--preserve-thinking'] : []),
   },
   {
     key: 'prefillChunk',

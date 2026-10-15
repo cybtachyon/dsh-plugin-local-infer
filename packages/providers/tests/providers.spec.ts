@@ -44,6 +44,7 @@ describe('local-infer-providers scaffold', () => {
     ])
     expect(ctx.localInfer.registeredVramModels().map((model) => model.id)).toEqual([
       'qwen3-27b',
+      'qwen3-27b-swift15',
       'qwen3-35b',
     ])
   })

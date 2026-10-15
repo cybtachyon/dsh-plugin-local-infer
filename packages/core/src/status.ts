@@ -61,56 +61,44 @@ export function isGpuBusy(usage?: GpuUsageProbe | null): boolean {
 /**
  * computeProviderStatuses resolves each saved provider's running-state from
  * the detector's answer. The order is the plan's contract:
- * 1. A busy card (VRAM at 75% or more) reads as unsure for every provider,
- *    because a full card cannot be attributed to a single model.
- * 2. No engine running at all reads as unsure for every provider: the
- *    detector saw nothing, so it cannot tell a stopped engine from a
- *    detection miss.
- * 3. With at least one engine running, a provider whose engine is not among
- *    the running set is stopped (red). A provider whose engine is running
- *    is running (green) only when the detector tied that engine to the
- *    provider's exact model; an engine the detector saw but could not tie
- *    to a model reads as unsure (yellow), which is the "all configs with
- *    that engine are unsure, the rest are red" case.
+ * 1. A provider whose engine the process probe confirmed running is running
+ *    (green) when the detector tied that engine to the provider's exact model,
+ *    and unsure (yellow) when the engine serves an unidentified or a
+ *    different model. A running engine using its VRAM does not read as a busy
+ *    card, so the dot is green, not the unattributable yellow.
+ * 2. A provider whose engine is not running falls back to the card state: a
+ *    busy card (a foreign engine holding the VRAM at 75% or more) reads as
+ *    unsure, because a full card cannot be attributed to a single model, and
+ *    a quiet card reads as stopped (red): the process probe saw no engine, so
+ *    a saved config whose engine is down is stopped.
  */
 export function computeProviderStatuses(
   input: ProviderStatusInput,
 ): Record<string, ProviderStatus> {
   const statuses: Record<string, ProviderStatus> = {}
-  if (input.gpuBusy || input.running.length === 0) {
-    for (const provider of input.providers) {
-      statuses[provider.id] = 'unsure'
-    }
-    return statuses
-  }
   for (const provider of input.providers) {
     const matches = input.running.filter((ref) => ref.engineId === provider.engine)
-    if (matches.length === 0) {
-      statuses[provider.id] = 'stopped'
-      continue
-    }
-    // The engine is running. The question is which model it serves: the
-    // detector's identified model, if it tied one, else unknown.
-    const identified = matches.find((ref) => ref.modelId !== undefined && ref.modelId !== '')
-    if (identified === undefined) {
-      // Engine running but no model identified: the "engine running, model
-      // unknown" case, which reads as unsure for this engine's configs.
+    if (matches.length > 0) {
+      // The engine is running. The question is which model it serves: the
+      // detector's identified model, if it tied one, else unknown.
+      const identified = matches.find((ref) => ref.modelId !== undefined && ref.modelId !== '')
+      if (
+        identified !== undefined &&
+        provider.model !== undefined &&
+        identified.modelId === provider.model
+      ) {
+        statuses[provider.id] = 'running'
+        continue
+      }
+      // The engine is running but the model is not identified, the provider
+      // names no model, or the engine serves a different model: unsure, not
+      // a guess.
       statuses[provider.id] = 'unsure'
       continue
     }
-    if (provider.model !== undefined && identified.modelId === provider.model) {
-      statuses[provider.id] = 'running'
-      continue
-    }
-    if (provider.model === undefined) {
-      // The provider names no model, so it cannot be confirmed against the
-      // identified one: unsure rather than a guess.
-      statuses[provider.id] = 'unsure'
-      continue
-    }
-    // The engine serves an identified model that is not this provider's:
-    // the provider's model is not the one live, so it reads as stopped.
-    statuses[provider.id] = 'stopped'
+    // No engine of this provider's is running. A busy card (a foreign engine
+    // holding the VRAM) reads as unsure; a quiet card reads as stopped.
+    statuses[provider.id] = input.gpuBusy ? 'unsure' : 'stopped'
   }
   return statuses
 }

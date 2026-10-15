@@ -8,7 +8,7 @@
  * @module @dsh/dsh-plugin-local-infer/providers/adapters
  */
 import { EngineAdapter } from '../../core/lib/index.js';
-import type { Config, DeployResult, EngineLaunchSignature, EnginePlatformConfig, HealthCheckOptions, HealthResult, HardwareProfile, LaunchPlan, LifecycleHost, ParameterSpec } from '../../core/lib/index.js';
+import type { Config, DebugLogger, DeployResult, EngineLaunchSignature, EnginePlatformConfig, HealthCheckOptions, HealthResult, HardwareProfile, LaunchPlan, LifecycleHost, ParameterSpec } from '../../core/lib/index.js';
 /**
  * NInferModelArtifact is the per-model deploy data: the `.ninfer` artifact
  * file, the Hugging Face repo the model download pulls it from, and the
@@ -41,10 +41,20 @@ export declare function flagsFromSpecs(specs: readonly ParameterSpec[], config: 
  */
 export declare function envFromSpecs(specs: readonly ParameterSpec[], config: Config): Record<string, string>;
 /**
- * The node `LifecycleHost`: `run` through the system shell (a 10-minute cap, so
- * a hung CUDA build cannot hang the panel), `spawn` a detached child the stop
- * step can signal, and `fetch` the health URL. A fetch that throws (no route,
- * connection refused) reads as status 0, which the poll treats as not-ready.
+ * createNodeLifecycleHost builds the node `LifecycleHost`: `run` through the
+ * system shell (a 10-minute cap, so a hung CUDA build cannot hang the panel),
+ * `spawn` a detached child the stop step can signal, and `fetch` the health
+ * URL. A fetch that throws (no route, connection refused) reads as status 0,
+ * which the poll treats as not-ready. When `debug` is provided, the host logs
+ * every command it issues (each `run` line and each `spawn` argv) through it,
+ * so a DSH debug-mode host captures the full build-to-launch sequence.
+ */
+export declare function createNodeLifecycleHost(debug?: DebugLogger): LifecycleHost;
+/**
+ * nodeLifecycleHost is the default live host the service wires in: the node
+ * implementation with no debug logger, so a normal (non-debug) run logs no
+ * commands. The providers' apply step swaps in a debug-aware host when DSH is
+ * in debug mode.
  */
 export declare const nodeLifecycleHost: LifecycleHost;
 /**
@@ -90,6 +100,16 @@ export declare class NInferAdapter extends EngineAdapter {
     private port;
     private planKey;
     private downloadModel;
+    /**
+     * resolveChatTemplate rewrites a --chat-template flag that carries an HF repo
+     * reference into the local file the engine reads. A value with a slash that
+     * is not an absolute path (the combo control's known choices) is a repo the
+     * deploy step downloads into the model directory; an already-local path is
+     * left as-is. The download is best-effort: a template that is already on
+     * disk is used without a re-fetch, and a missing hf CLI leaves the flag
+     * untouched so the engine reports the missing template itself.
+     */
+    private resolveChatTemplate;
 }
 /**
  * HyperQwenAdapter is the docker-compose engine. `renderLaunch` renders a

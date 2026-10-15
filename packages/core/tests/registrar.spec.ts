@@ -34,16 +34,19 @@ function plan(engineId: string, port: number): LaunchPlan {
 
 describe('registrar entry derivation', () => {
   it('derives the provider id, the API-key env name, and the base URL from the plan', () => {
-    expect(providerIdFor('ninfer')).toBe('ninfer-local')
-    expect(providerIdFor('hyperqwen')).toBe('hyperqwen-local')
+    // The provider id is the engine, build mode, and model slug; the display
+    // name is the engine, the mode in parentheses, and the model name.
+    expect(providerIdFor('ninfer', 'Qwen3.8-27B', 'local')).toBe('ninfer-local-qwen38-27b')
+    expect(providerIdFor('hyperqwen', 'Qwen3.8-27B', 'local')).toBe('hyperqwen-local-qwen38-27b')
+    expect(providerIdFor('ninfer', 'Qwen3.8-27B', 'docker')).toBe('ninfer-docker-qwen38-27b')
     expect(apiKeyEnvFor('ninfer')).toBe('NINFER_LOCAL_API_KEY')
     expect(apiKeyEnvFor('hyper-qwen')).toBe('HYPER_QWEN_LOCAL_API_KEY')
 
     const entry = buildModelEntry(PLAN, { id: 'Qwen3.8-27B', name: 'Qwen3.8-27B', contextWindow: 262144 })
     expect(entry).toEqual({
-      providerId: 'ninfer-local',
+      providerId: 'ninfer-local-qwen38-27b',
       modelId: 'Qwen3.8-27B',
-      name: 'Qwen3.8-27B',
+      name: 'Ninfer (Local): Qwen3.8-27B',
       contextWindow: 262144,
       baseURL: 'http://127.0.0.1:18020/v1',
       apiKeyEnv: 'NINFER_LOCAL_API_KEY',
@@ -91,15 +94,15 @@ describe('registrar settings ops', () => {
     ]
     const ops = providerRegistrationOps(entry, existing)
     expect(ops).toEqual([
-      { op: 'set', path: ['providers', 'ninfer-local', 'apiKeyEnv'], value: 'NINFER_LOCAL_API_KEY' },
-      { op: 'set', path: ['providers', 'ninfer-local', 'api'], value: 'openai-completions' },
-      { op: 'set', path: ['providers', 'ninfer-local', 'baseURL'], value: 'http://127.0.0.1:18020/v1' },
+      { op: 'set', path: ['providers', 'ninfer-local-qwen38-27b', 'apiKeyEnv'], value: 'NINFER_LOCAL_API_KEY' },
+      { op: 'set', path: ['providers', 'ninfer-local-qwen38-27b', 'api'], value: 'openai-completions' },
+      { op: 'set', path: ['providers', 'ninfer-local-qwen38-27b', 'baseURL'], value: 'http://127.0.0.1:18020/v1' },
       {
         op: 'set',
-        path: ['providers', 'ninfer-local', 'models'],
+        path: ['providers', 'ninfer-local-qwen38-27b', 'models'],
         value: [
           { id: 'Qwen3.8-35B-A3B', name: 'Qwen3.8-35B-A3B', contextWindow: 131072 },
-          { id: 'Qwen3.8-27B', name: 'Qwen3.8-27B', contextWindow: 262144 },
+          { id: 'Qwen3.8-27B', name: 'Ninfer (Local): Qwen3.8-27B', contextWindow: 262144 },
         ],
       },
     ])

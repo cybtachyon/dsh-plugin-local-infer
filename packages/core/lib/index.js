@@ -9,11 +9,12 @@ export { detectHardware, parseNvidiaSmiGpu, } from "./hardware.js";
 export { DEFAULT_OS_RESERVE_MIB, estimateVram, KV_PAGE_TOKENS, pageRoundUp, TIGHT_HEADROOM_BYTES, } from "./estimator.js";
 export { GPU_USAGE_BUSY_THRESHOLD, matchLaunchSignature, parseNvidiaSmiGpuUsage, resolveOsReserve, } from "./reserve.js";
 export { computeProviderStatuses, isGpuBusy, } from "./status.js";
-export { DEFAULT_LOG_PATH_TEMPLATE, LOG_TEMPLATE_ENGINE, LOG_TEMPLATE_HOME, LOG_TEMPLATE_MODEL, LOG_TEMPLATE_TIMESTAMP, formatLogTimestamp, resolveLogPath, slugifyModelName, } from "./logs.js";
+export { DEFAULT_LOG_PATH_TEMPLATE, LOG_FILE_NAME_TEMPLATE, LOG_TEMPLATE_ENGINE, LOG_TEMPLATE_HOME, LOG_TEMPLATE_MODEL, LOG_TEMPLATE_TIMESTAMP, formatLogTimestamp, resolveLogPath, slugifyModelName, } from "./logs.js";
 export { EngineAdapter } from "./adapter.js";
+export { NOOP_DEBUG_LOGGER, createCommandDebugLogger, isHarnessLogDebug, } from "./debug.js";
 export { constraintId, evaluateGuidelines, modelGuidelines } from "./guideline.js";
 export { hardwareClass, presetFromFetch, resolveDefaults, WILDCARD_HARDWARE_CLASS, } from "./defaults.js";
-export { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, apiKeyEnvFor, buildModelEntry, LLM_PI_AI_NAMESPACE, modelRowsFrom, providerIdFor, providerRegistrationOps, providerRemovalOps, removeModelRow, upsertModelRow, } from "./registrar.js";
+export { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, apiKeyEnvFor, buildModelEntry, LLM_PI_AI_NAMESPACE, modelRowsFrom, modelSlug, providerIdFor, providerRegistrationOps, providerRemovalOps, removeModelRow, upsertModelRow, } from "./registrar.js";
 export { checkDeps, detectPackageManager, planDeps, renderInstallString, runInstall, } from "./deps.js";
 export { hfDownloadCommand, modelArtifactPath, modelEntriesForEngine, repoIdFromUrl, repoNameFromUrl, } from "./models.js";
 //# sourceMappingURL=index.js.map

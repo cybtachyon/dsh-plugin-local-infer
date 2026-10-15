@@ -114,6 +114,71 @@ export const NINFER_VRAM_MODELS = [
         },
         specKey: specKeyFor27b,
     },
+    // The Swift 1.5 ablated 27B the local launcher bootstraps. It is the same
+    // 27B base model as `qwen3-27b`, so the meter prices it from the 27B measured
+    // profile; the Swift 1.5 ablation changes the weights, not the per-token KV
+    // terms, so the 27B profile is a sound floor for the meter.
+    {
+        id: 'qwen3-27b-swift15',
+        source: 'measured',
+        weightsBytes: 17093490688,
+        workspaceBytes: 159981568,
+        nativeMaxContext: 262144,
+        seqFixedBytes: 166438656,
+        seqPerToken: 0.0625,
+        kvBytesPerToken: {
+            bf16: 65536,
+            int8: 33792,
+            fp8: 33024,
+            rk8v4: 26112,
+            rk4v4: 17920,
+            k8v4: 25728,
+            nvfp4: 18432,
+        },
+        speculation: {
+            none: {
+                kvRatio: 1,
+                kvExtraPerToken: 0,
+                graphBytes: () => 12582912,
+                seqFixedBytes: 166438656,
+                seqPerToken: 0.0625,
+                weightsGiB: 15.92,
+            },
+            mtp3: {
+                kvRatio: 1.062988281,
+                kvExtraPerToken: 0,
+                graphBytes: () => 90177536,
+                seqFixedBytes: 175693056,
+                seqPerToken: 0.125,
+                weightsGiB: 16.34,
+            },
+            'mtp3+head': {
+                kvRatio: 1.062988281,
+                kvExtraPerToken: 0,
+                graphBytes: () => 90177536,
+                seqFixedBytes: 175693056,
+                seqPerToken: 0.125,
+                weightsGiB: 16.67,
+            },
+            'dflash2-7': {
+                kvRatio: 1,
+                kvExtraPerToken: 0,
+                graphBytes: dflash2GraphBytes,
+                seqFixedBytes: 279090432,
+                seqPerToken: 0.0625,
+                weightsGiB: 17.99,
+            },
+            'dflash2-7+head': {
+                kvRatio: 1,
+                kvExtraPerToken: 0,
+                graphBytes: dflash2GraphBytes,
+                seqFixedBytes: 279090432,
+                seqPerToken: 0.0625,
+                weightsGiB: 18.33,
+            },
+        },
+        specKey: specKeyFor27b,
+    },
     {
         id: 'qwen3-35b',
         source: 'measured',

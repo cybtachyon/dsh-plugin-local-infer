@@ -83,6 +83,7 @@ import type {
   ReserveResolution,
   ResolvedDefaults,
   RunningEngineRef,
+  SettingsOp,
   SystemDep,
   VramModel,
 } from '@dsh/dsh-plugin-local-infer/core'
@@ -98,8 +99,10 @@ import type {
   LaunchResult,
   LocalInferService,
   RegisterModelOptions,
+  SettingsDescribeResult,
   SettingsForms,
   SettingsNamespaceDescriptor,
+  SettingsRemoteResponse,
 } from './types.ts'
 
 export type {
@@ -115,6 +118,7 @@ export type {
   LocalInferService,
   ProviderStatusOptions,
   RegisterModelOptions,
+  SettingsDescribeResult,
   SettingsForms,
   SettingsNamespaceDescriptor,
 } from './types.ts'
@@ -601,20 +605,12 @@ export class LocalInfer extends Service implements LocalInferService {
   ): Promise<RegisterResult> {
     const settings = this.settings()
     const entry = buildModelEntry(plan, model)
-    const llm = this.descriptor(settings, LLM_PI_AI_NAMESPACE)
+    const llm = await this.descriptor(settings, LLM_PI_AI_NAMESPACE)
     const rows = modelRowsFrom(llm?.value, entry.providerId)
-    await settings.mutate(
-      LLM_PI_AI_NAMESPACE,
-      providerRegistrationOps(entry, rows),
-      llm?.revision,
-    )
+    await this.mutateSettings(settings, LLM_PI_AI_NAMESPACE, providerRegistrationOps(entry, rows), llm?.revision)
     if (options?.agentDefault === true) {
-      const agent = this.descriptor(settings, AGENT_DEFAULT_MODEL_NAMESPACE)
-      await settings.mutate(
-        AGENT_DEFAULT_MODEL_NAMESPACE,
-        agentDefaultOps(entry.providerId, model.id),
-        agent?.revision,
-      )
+      const agent = await this.descriptor(settings, AGENT_DEFAULT_MODEL_NAMESPACE)
+      await this.mutateSettings(settings, AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps(entry.providerId, model.id), agent?.revision)
     }
     return { ok: true, entry }
   }
@@ -628,21 +624,17 @@ export class LocalInfer extends Service implements LocalInferService {
    */
   async removeModel(providerId: string, modelId: string): Promise<void> {
     const settings = this.settings()
-    const llm = this.descriptor(settings, LLM_PI_AI_NAMESPACE)
+    const llm = await this.descriptor(settings, LLM_PI_AI_NAMESPACE)
     const rows = modelRowsFrom(llm?.value, providerId)
     // A provider the section does not carry removes nothing: a stop with
     // nothing registered stays quiet, so no write and no revision bump.
     if (rows.length > 0) {
       const ops = providerRemovalOps(providerId, removeModelRow(rows, modelId))
-      await settings.mutate(LLM_PI_AI_NAMESPACE, ops, llm?.revision)
+      await this.mutateSettings(settings, LLM_PI_AI_NAMESPACE, ops, llm?.revision)
     }
-    const agent = this.descriptor(settings, AGENT_DEFAULT_MODEL_NAMESPACE)
+    const agent = await this.descriptor(settings, AGENT_DEFAULT_MODEL_NAMESPACE)
     if (agent !== undefined && agentDefaultPointsAt(agent.value, providerId, modelId)) {
-      await settings.mutate(
-        AGENT_DEFAULT_MODEL_NAMESPACE,
-        agentDefaultUnsetOps(),
-        agent.revision,
-      )
+      await this.mutateSettings(settings, AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultUnsetOps(), agent.revision)
     }
   }
 
@@ -907,7 +899,25 @@ export class LocalInfer extends Service implements LocalInferService {
    * published model.
    */
   private settings(): SettingsForms {
-    const settings = (this.ctx as Context & { settings?: SettingsForms }).settings
+    // Read the dsh settings service through the typert remote `settings`
+    // namespace, the seam the Web UI's settings controller exposes. A direct
+    // `ctx.settings` read throws "cannot get property without inject" when the
+    // seam is absent; the remote accessor returns undefined instead, which the
+    // stable code a headless profile should surface.
+    // The typert remote accessor is added at runtime by the dsh settings
+    // controller, so it is not on the cordis Context type. Cast through
+    // unknown to reach it, and read it in a try so a profile without the
+    // typert protocol (a headless install) falls through to the stable code.
+    // A test context without a typert remote exposes the seam through the
+    // reflect store instead, so the reflect lookup is the fallback.
+    let remote: { settings?: SettingsForms } | undefined
+    try {
+      remote = (this.ctx as unknown as { remote?: { settings?: SettingsForms } }).remote
+    } catch {
+      remote = undefined
+    }
+    const settings =
+      remote?.settings ?? (this.ctx.reflect.get('settings') as SettingsForms | undefined)
     if (settings === undefined) {
       throw new LocalInferError(
         'the dsh settings service is not available in this profile',
@@ -922,11 +932,48 @@ export class LocalInfer extends Service implements LocalInferService {
    * secret redaction, because the registrar prices the section it edits and
    * a secret value must never ride into the core's pure ops.
    */
-  private descriptor(
+  private async descriptor(
     settings: SettingsForms,
     ns: string,
-  ): SettingsNamespaceDescriptor | undefined {
-    return settings.describe({ redactSecrets: true }).find((entry) => entry.ns === ns)
+  ): Promise<SettingsNamespaceDescriptor | undefined> {
+    // The dsh settings seam is a typert remote: describe is async and answers
+    // with a { ok, value, error } envelope, so the read is awaited and the
+    // business value unwrapped before the namespace view is picked out.
+    const response = await settings.describe({ redactSecrets: true })
+    // A seam that answers with the plain object (a host that predates the
+    // typert remote envelope) carries the namespaces at the top level; the
+    // envelope shape carries them under `value`. Read both, so the registrar
+    // works against either contract.
+    const result: SettingsDescribeResult | undefined =
+      'namespaces' in response
+        ? (response as SettingsDescribeResult)
+        : (response as SettingsRemoteResponse<SettingsDescribeResult>).value
+    if (result === undefined) return undefined
+    return result.namespaces.find((entry) => entry.ns === ns)
+  }
+
+  /**
+   * mutateSettings applies a path-addressed edit through the typert remote
+   * settings seam and surfaces a refusal as a stable code. The controller
+   * classifies provider refusals (a conflict, a rejected write) into the
+   * envelope's message, so the registrar reports the reason, not a bare throw.
+   */
+  private async mutateSettings(
+    settings: SettingsForms,
+    ns: string,
+    ops: readonly SettingsOp[],
+    expectedRevision?: number,
+  ): Promise<void> {
+    const response = await settings.mutate(ns, ops, expectedRevision)
+    // A seam that answers with no envelope (a host that predates the typert
+    // remote settings namespace) reports a successful write by returning
+    // nothing; only a { ok: false, error } envelope is a refusal.
+    if (response !== undefined && !response.ok) {
+      throw new LocalInferError(
+        response.error?.message ?? 'settings mutation failed',
+        'LOCAL_INFER_SETTINGS_MUTATE_FAILED',
+      )
+    }
   }
 
   /**

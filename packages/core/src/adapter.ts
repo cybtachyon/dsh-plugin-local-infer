@@ -1,5 +1,6 @@
 import type { CommandOutcome } from './deps.ts'
 import type { Config } from './config.ts'
+import type { DebugLogger } from './debug.ts'
 import type { HardwareProfile } from './hardware.ts'
 import type { ParameterSpec } from './parameter.ts'
 import type { SystemDep } from './deps.ts'
@@ -69,12 +70,15 @@ export interface FetchResult {
  * LifecycleHost is the injectable execution surface an adapter drives its
  * deploy, health-check, and stop steps through. The providers ship a node
  * implementation (child_process plus fetch); the tests stub it, so no real
- * build, docker, or network run in CI.
+ * build, docker, or network run in CI. `debug`, when present, receives every
+ * command the host issues (each `run` line and each `spawn` argv), so a host in
+ * DSH debug mode captures the full build-to-launch sequence the plugin runs.
  */
 export interface LifecycleHost {
   run(command: string): Promise<CommandOutcome>
   spawn(argv: readonly string[], env: Record<string, string>, cwd?: string): ProcessHandle
   fetch(url: string): Promise<FetchResult>
+  debug?: DebugLogger
 }
 
 /**

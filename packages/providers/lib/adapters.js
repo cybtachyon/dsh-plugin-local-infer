@@ -26,6 +26,14 @@ export const NINFER_MODEL_ARTIFACTS = {
         repo: 'neroued/Qwen3.8-27B-nvfp4-NInfer',
         modelId: 'Qwen3.8-27B',
     },
+    // The Swift 1.5 ablated 27B the local launcher bootstraps: the nvfp4-full
+    // DFlash2 artifact the qwen-ninfer script serves. It reuses the 27B model id
+    // the engine advertises, so a chat turn routes to the same alias.
+    'qwen3-27b-swift15': {
+        file: 'qwen3_8_27b_swift15abl_nvfp4full-dflash2.ninfer',
+        repo: 'kaushikvira/Qwen3.8-27B-swift15-uncensored-ajgazin-nvfp4full-dflash2-NInfer-v3',
+        modelId: 'Qwen3.8-27B',
+    },
     'qwen3-35b': {
         file: 'qwen3_8_35b_a3b.ninfer',
         repo: 'Neroued/Qwen3.8-35B-A3B-NInfer',
@@ -82,64 +90,82 @@ export function envFromSpecs(specs, config) {
     return env;
 }
 /**
- * The node `LifecycleHost`: `run` through the system shell (a 10-minute cap, so
- * a hung CUDA build cannot hang the panel), `spawn` a detached child the stop
- * step can signal, and `fetch` the health URL. A fetch that throws (no route,
- * connection refused) reads as status 0, which the poll treats as not-ready.
+ * createNodeLifecycleHost builds the node `LifecycleHost`: `run` through the
+ * system shell (a 10-minute cap, so a hung CUDA build cannot hang the panel),
+ * `spawn` a detached child the stop step can signal, and `fetch` the health
+ * URL. A fetch that throws (no route, connection refused) reads as status 0,
+ * which the poll treats as not-ready. When `debug` is provided, the host logs
+ * every command it issues (each `run` line and each `spawn` argv) through it,
+ * so a DSH debug-mode host captures the full build-to-launch sequence.
  */
-export const nodeLifecycleHost = {
-    async run(command) {
-        return new Promise(resolve => {
-            exec(command, { timeout: 600_000 }, (error, stdout, stderr) => {
-                if (error === null) {
-                    resolve({ ok: true });
-                    return;
-                }
-                const detail = `${stderr ?? ''}${stdout ?? ''}${String(error)}`.trim().slice(-1024);
-                resolve({ ok: false, detail });
+export function createNodeLifecycleHost(debug) {
+    // The debug logger is a no-op outside debug mode, so the guard reads as
+    // "log when a real sink is wired" and the command path stays quiet otherwise.
+    const log = debug ?? undefined;
+    return {
+        async run(command) {
+            log?.(`run: ${command}`);
+            return new Promise(resolve => {
+                exec(command, { timeout: 600_000 }, (error, stdout, stderr) => {
+                    if (error === null) {
+                        resolve({ ok: true });
+                        return;
+                    }
+                    const detail = `${stderr ?? ''}${stdout ?? ''}${String(error)}`.trim().slice(-1024);
+                    resolve({ ok: false, detail });
+                });
             });
-        });
-    },
-    spawn(argv, env, cwd) {
-        const child = nodeSpawn(argv[0] ?? '', argv.slice(1), {
-            env: { ...process.env, ...env },
-            cwd,
-            detached: true,
-            // Pipe the child's stdout and stderr so the launch step can surface the
-            // engine's log output in the card and write it to the configured log
-            // file; stdin stays ignored.
-            stdio: ['ignore', 'pipe', 'pipe'],
-        });
-        child.unref();
-        // Accumulate the child's output into a single string the handle exposes.
-        // The cap keeps a chatty engine from growing the host's memory without
-        // bound; the tail is what the log file and the card keep.
-        let logs = '';
-        const append = (chunk) => {
-            logs = (logs + chunk.toString('utf8')).slice(-65536);
-        };
-        child.stdout?.on('data', append);
-        child.stderr?.on('data', append);
-        return {
-            pid: child.pid ?? -1,
-            kill: () => {
-                child.kill('SIGTERM');
-            },
-            get logs() {
-                return logs;
-            },
-        };
-    },
-    async fetch(url) {
-        try {
-            const response = await fetch(url);
-            return { status: response.status, ok: response.ok };
-        }
-        catch {
-            return { status: 0, ok: false };
-        }
-    },
-};
+        },
+        spawn(argv, env, cwd) {
+            log?.(`spawn: ${argv.join(' ')}${cwd !== undefined ? ` (cwd: ${cwd})` : ''}`);
+            const child = nodeSpawn(argv[0] ?? '', argv.slice(1), {
+                env: { ...process.env, ...env },
+                cwd,
+                detached: true,
+                // Pipe the child's stdout and stderr so the launch step can surface the
+                // engine's log output in the card and write it to the configured log
+                // file; stdin stays ignored.
+                stdio: ['ignore', 'pipe', 'pipe'],
+            });
+            child.unref();
+            // Accumulate the child's output into a single string the handle exposes.
+            // The cap keeps a chatty engine from growing the host's memory without
+            // bound; the tail is what the log file and the card keep.
+            let logs = '';
+            const append = (chunk) => {
+                logs = (logs + chunk.toString('utf8')).slice(-65536);
+            };
+            child.stdout?.on('data', append);
+            child.stderr?.on('data', append);
+            return {
+                pid: child.pid ?? -1,
+                kill: () => {
+                    child.kill('SIGTERM');
+                },
+                get logs() {
+                    return logs;
+                },
+            };
+        },
+        async fetch(url) {
+            try {
+                const response = await fetch(url);
+                return { status: response.status, ok: response.ok };
+            }
+            catch {
+                return { status: 0, ok: false };
+            }
+        },
+        ...(log !== undefined ? { debug: log } : {}),
+    };
+}
+/**
+ * nodeLifecycleHost is the default live host the service wires in: the node
+ * implementation with no debug logger, so a normal (non-debug) run logs no
+ * commands. The providers' apply step swaps in a debug-aware host when DSH is
+ * in debug mode.
+ */
+export const nodeLifecycleHost = createNodeLifecycleHost();
 /**
  * pollHealth polls a plan's health URL until a 200 or the attempt cap, the
  * same loop the qwen-ninfer launcher runs. A poll interval of 0 skips the
@@ -291,9 +317,18 @@ export class NInferAdapter extends EngineAdapter {
             if (engineDir !== undefined) {
                 const fork = platform?.engineFork;
                 if (fork !== undefined) {
-                    const clone = await this.host.run(`git clone ${fork} ${engineDir}`);
-                    if (!clone.ok) {
-                        return { ok: false, detail: `git clone failed: ${clone.detail ?? 'unknown'}` };
+                    // Mirror the qwen-ninfer launcher: an existing checkout (a .git under
+                    // the engine directory) is updated in place with a best-effort fetch
+                    // and a hard reset to the fork's master, then built as-is; a missing
+                    // checkout is a fresh clone. The fetch is best-effort (a `; true`
+                    // pins the branch to success) so an offline host still builds the
+                    // checkout it has; only a missing checkout that cannot be cloned
+                    // fails the step.
+                    const sync = await this.host.run(`if [ -d ${engineDir}/.git ]; then ` +
+                        `git -C ${engineDir} fetch ${fork} 2>/dev/null && git -C ${engineDir} reset --hard ${fork}/master 2>/dev/null; true; ` +
+                        `else git clone ${fork} ${engineDir}; fi`);
+                    if (!sync.ok) {
+                        return { ok: false, detail: `git sync failed: ${sync.detail ?? 'unknown'}` };
                     }
                 }
                 const build = await this.host.run(`cmake -S ${engineDir} -B ${engineDir}/build -G Ninja -DCMAKE_BUILD_TYPE=Release && ` +
@@ -305,6 +340,13 @@ export class NInferAdapter extends EngineAdapter {
             const download = await this.downloadModel(plan);
             if (!download.ok)
                 return download;
+            // A chat template the user picked as an HF repo reference (the combo
+            // control's known choices) is not a path the engine can read, so the
+            // deploy step downloads it into the model directory and rewrites the
+            // --chat-template flag to the local file before the spawn.
+            const templateResult = await this.resolveChatTemplate(plan);
+            if (!templateResult.ok)
+                return templateResult;
             const handle = this.host.spawn(plan.argv ?? [], plan.env ?? {}, engineDir);
             this.children.set(this.planKey(plan), handle);
             return { ok: true, handle };
@@ -352,6 +394,48 @@ export class NInferAdapter extends EngineAdapter {
         if (!download.ok) {
             return { ok: false, detail: `model download failed: ${download.detail ?? 'unknown'}` };
         }
+        return { ok: true };
+    }
+    /**
+     * resolveChatTemplate rewrites a --chat-template flag that carries an HF repo
+     * reference into the local file the engine reads. A value with a slash that
+     * is not an absolute path (the combo control's known choices) is a repo the
+     * deploy step downloads into the model directory; an already-local path is
+     * left as-is. The download is best-effort: a template that is already on
+     * disk is used without a re-fetch, and a missing hf CLI leaves the flag
+     * untouched so the engine reports the missing template itself.
+     */
+    async resolveChatTemplate(plan) {
+        const argv = plan.argv;
+        if (argv === undefined)
+            return { ok: true };
+        const index = argv.indexOf('--chat-template');
+        if (index === -1)
+            return { ok: true };
+        const value = argv[index + 1];
+        if (value === undefined)
+            return { ok: true };
+        // An absolute path (a leading /) is already local; a value with no slash
+        // is a bare file name the engine resolves against its own directory.
+        if (value.startsWith('/') || !value.includes('/'))
+            return { ok: true };
+        // An HF repo reference: download the template file into the model
+        // directory and point the flag at the local copy.
+        const target = plan.modelDirectory ?? '.';
+        const localPath = `${target.endsWith('/') ? '' : `${target}/`}chat_template.jinja`;
+        // A template already on disk skips the re-fetch; the hf CLI is optional,
+        // so a download failure is reported but does not abort the launch.
+        const probe = await this.host.run(`[ -f ${localPath} ]`);
+        if (!probe.ok) {
+            const download = await this.host.run(`hf download ${value} chat_template.jinja --local-dir ${target}`);
+            if (!download.ok) {
+                return {
+                    ok: false,
+                    detail: `chat template download failed: ${download.detail ?? 'unknown'}`,
+                };
+            }
+        }
+        argv[index + 1] = localPath;
         return { ok: true };
     }
 }
@@ -545,9 +629,16 @@ export class LlamaCppAdapter extends EngineAdapter {
             if (engineDir !== undefined) {
                 const fork = platform?.engineFork;
                 if (fork !== undefined) {
-                    const clone = await this.host.run(`git clone ${fork} ${engineDir}`);
-                    if (!clone.ok) {
-                        return { ok: false, detail: `git clone failed: ${clone.detail ?? 'unknown'}` };
+                    // Mirror the qwen-ninfer launcher: an existing checkout is updated in
+                    // place with a best-effort fetch and a hard reset to the fork's
+                    // master, then built as-is; a missing checkout is a fresh clone. The
+                    // fetch is best-effort (a `; true` pins the branch to success) so an
+                    // offline host still builds the checkout it has.
+                    const sync = await this.host.run(`if [ -d ${engineDir}/.git ]; then ` +
+                        `git -C ${engineDir} fetch ${fork} 2>/dev/null && git -C ${engineDir} reset --hard ${fork}/master 2>/dev/null; true; ` +
+                        `else git clone ${fork} ${engineDir}; fi`);
+                    if (!sync.ok) {
+                        return { ok: false, detail: `git sync failed: ${sync.detail ?? 'unknown'}` };
                     }
                 }
                 const build = await this.host.run(`cmake -S ${engineDir} -B ${engineDir}/build -G Ninja -DCMAKE_BUILD_TYPE=Release && ` +

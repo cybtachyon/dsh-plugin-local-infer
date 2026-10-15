@@ -641,11 +641,20 @@ describe('ctx.localInfer model registration (Phase 6)', () => {
     const settings = {
       describe: (options?: { redactSecrets?: boolean }) => {
         void options
-        return Object.entries(sections).map(([ns, stored]) => ({
-          ns,
-          revision: stored.revision,
-          value: stored.value,
-        }))
+        // The dsh settings seam is a typert remote, so describe is async and
+        // answers with a { ok, value } envelope; the fake mirrors that contract.
+        return Promise.resolve({
+          ok: true,
+          value: {
+            writable: true,
+            hasDocument: true,
+            namespaces: Object.entries(sections).map(([ns, stored]) => ({
+              ns,
+              revision: stored.revision,
+              value: stored.value,
+            })),
+          },
+        })
       },
       mutate: async (
         ns: string,
@@ -657,13 +666,17 @@ describe('ctx.localInfer model registration (Phase 6)', () => {
       ) => {
         const stored = section(ns)
         if (expectedRevision !== undefined && expectedRevision !== stored.revision) {
-          throw new Error(`settings conflict on ${ns}`)
+          return {
+            ok: false,
+            error: { message: `settings conflict on ${ns}` },
+          }
         }
         for (const op of ops) {
           applyOp(stored, op)
         }
         stored.revision += 1
         calls.push({ ns, revision: expectedRevision })
+        return { ok: true, value: {} }
       },
     }
     return { settings, sections, calls }
@@ -671,7 +684,11 @@ describe('ctx.localInfer model registration (Phase 6)', () => {
 
   function withSettings(ctx: Context, seed: Record<string, unknown> = {}) {
     const fake = fakeSettings(seed)
-    ;(ctx as unknown as { settings?: unknown }).settings = fake.settings
+    // Mount the seam in the reflect store, the fallback the service's
+    // settings() reader uses when a context carries no typert remote (a live
+    // host exposes the dsh settings controller through ctx.remote.settings,
+    // which a bare test context does not).
+    ctx.reflect.provide('settings', fake.settings)
     return fake
   }
 
@@ -685,6 +702,9 @@ describe('ctx.localInfer model registration (Phase 6)', () => {
   }
 
   const MODEL = { id: 'Qwen3.8-27B', name: 'Qwen3.8-27B', contextWindow: 262144 }
+  // The registrar writes the display name (engine, mode, model) into the
+  // model row, so the row DSH stores is not the bare model name.
+  const MODEL_ROW = { id: 'Qwen3.8-27B', name: 'Ninfer (Local): Qwen3.8-27B', contextWindow: 262144 }
 
   it('upserts the provider entry through the settings seam', async () => {
     const ctx = await seam()
@@ -692,9 +712,9 @@ describe('ctx.localInfer model registration (Phase 6)', () => {
     const result = await ctx.localInfer.registerModel(plan(), MODEL)
     expect(result.ok).toBe(true)
     expect(result.entry).toEqual({
-      providerId: 'ninfer-local',
+      providerId: 'ninfer-local-qwen38-27b',
       modelId: 'Qwen3.8-27B',
-      name: 'Qwen3.8-27B',
+      name: 'Ninfer (Local): Qwen3.8-27B',
       contextWindow: 262144,
       baseURL: 'http://127.0.0.1:18020/v1',
       apiKeyEnv: 'NINFER_LOCAL_API_KEY',
@@ -702,11 +722,11 @@ describe('ctx.localInfer model registration (Phase 6)', () => {
     const llm = fake.sections['llm-pi-ai']
     expect(llm?.value.providers).toEqual(
       expect.objectContaining({
-        'ninfer-local': expect.objectContaining({
+        'ninfer-local-qwen38-27b': expect.objectContaining({
           api: 'openai-completions',
           baseURL: 'http://127.0.0.1:18020/v1',
           apiKeyEnv: 'NINFER_LOCAL_API_KEY',
-          models: [MODEL],
+          models: [MODEL_ROW],
         }),
       }),
     )
@@ -724,22 +744,26 @@ describe('ctx.localInfer model registration (Phase 6)', () => {
     // The same model again: the list stays one row, not two.
     await ctx.localInfer.registerModel(plan(), { ...MODEL, contextWindow: 131072 })
     let models = (fake.sections['llm-pi-ai']?.value.providers as Record<string, { models: unknown[] }>)[
-      'ninfer-local'
+      'ninfer-local-qwen38-27b'
     ]?.models
     expect(models).toHaveLength(1)
     expect((models?.[0] as { contextWindow: number }).contextWindow).toBe(131072)
 
-    // A second model appends, so a provider can serve several local models.
+    // A second model writes its own provider (the provider id carries the
+    // model slug), so the first provider keeps its single row.
     await ctx.localInfer.registerModel(plan(), {
       id: 'Qwen3.8-35B-A3B',
       name: 'Qwen3.8-35B-A3B',
       contextWindow: 131072,
     })
     models = (fake.sections['llm-pi-ai']?.value.providers as Record<string, { models: unknown[] }>)[
-      'ninfer-local'
+      'ninfer-local-qwen38-27b'
     ]?.models
-    expect(models?.map((row) => (row as { id: string }).id)).toEqual([
-      'Qwen3.8-27B',
+    expect(models?.map((row) => (row as { id: string }).id)).toEqual(['Qwen3.8-27B'])
+    const secondProvider = (
+      fake.sections['llm-pi-ai']?.value.providers as Record<string, { models: unknown[] }>
+    )['ninfer-local-qwen38-35b-a3b']
+    expect(secondProvider?.models?.map((row) => (row as { id: string }).id)).toEqual([
       'Qwen3.8-35B-A3B',
     ])
   })
@@ -749,7 +773,7 @@ describe('ctx.localInfer model registration (Phase 6)', () => {
     const fake = withSettings(ctx)
     await ctx.localInfer.registerModel(plan(), MODEL, { agentDefault: true })
     expect(fake.sections['agent-default-model']?.value).toEqual({
-      provider: 'ninfer-local',
+      provider: 'ninfer-local-qwen38-27b',
       model: 'Qwen3.8-27B',
     })
     // Without the option the agent default section stays untouched.
@@ -764,7 +788,7 @@ describe('ctx.localInfer model registration (Phase 6)', () => {
     const fake = withSettings(ctx, {
       'llm-pi-ai': {
         providers: {
-          'ninfer-local': {
+          'ninfer-local-qwen38-27b': {
             api: 'openai-completions',
             baseURL: 'http://127.0.0.1:18020/v1',
             models: [
@@ -782,7 +806,7 @@ describe('ctx.localInfer model registration (Phase 6)', () => {
     await ctx.localInfer.registerModel(plan(), MODEL)
     const provider = (
       fake.sections['llm-pi-ai']?.value.providers as Record<string, Record<string, unknown>>
-    )['ninfer-local']
+    )['ninfer-local-qwen38-27b']
     // The upsert replaced the row it owns, and the extra field the settings
     // editor added to the same row survives the read-back.
     expect(provider?.models).toHaveLength(1)
@@ -794,7 +818,7 @@ describe('ctx.localInfer model registration (Phase 6)', () => {
     const ctx = await seam()
     const fake = withSettings(ctx)
     await ctx.localInfer.registerModel(plan(), MODEL, { agentDefault: true })
-    await ctx.localInfer.removeModel('ninfer-local', 'Qwen3.8-27B')
+    await ctx.localInfer.removeModel('ninfer-local-qwen38-27b', 'Qwen3.8-27B')
     // The last model went, so the provider row is unset and only the empty
     // providers map the write created remains.
     expect(fake.sections['llm-pi-ai']?.value).toEqual({ providers: {} })
@@ -811,14 +835,15 @@ describe('ctx.localInfer model registration (Phase 6)', () => {
       { id: 'Qwen3.8-35B-A3B', name: 'Qwen3.8-35B-A3B', contextWindow: 131072 },
       { agentDefault: true },
     )
-    await ctx.localInfer.removeModel('ninfer-local', 'Qwen3.8-27B')
-    const provider = (
-      fake.sections['llm-pi-ai']?.value.providers as Record<string, Record<string, unknown>>
-    )['ninfer-local']
-    expect((provider?.models as { id: string }[]).map((row) => row.id)).toEqual(['Qwen3.8-35B-A3B'])
-    // The agent default points at the surviving model, so it stays.
+    await ctx.localInfer.removeModel('ninfer-local-qwen38-27b', 'Qwen3.8-27B')
+    // The removed model was the only row in its provider, so the provider row
+    // is unset; the second model lives in its own provider and survives.
+    const providers = fake.sections['llm-pi-ai']?.value.providers as Record<string, { models: unknown[] }> | undefined
+    expect(providers?.['ninfer-local-qwen38-27b']).toBeUndefined()
+    expect(providers?.['ninfer-local-qwen38-35b-a3b']?.models?.map((row) => (row as { id: string }).id)).toEqual(['Qwen3.8-35B-A3B'])
+    // The agent default points at the surviving provider, so it stays.
     expect(fake.sections['agent-default-model']?.value).toEqual({
-      provider: 'ninfer-local',
+      provider: 'ninfer-local-qwen38-35b-a3b',
       model: 'Qwen3.8-35B-A3B',
     })
   })
@@ -826,7 +851,7 @@ describe('ctx.localInfer model registration (Phase 6)', () => {
   it('reads a removal of an unregistered model as a no-op', async () => {
     const ctx = await seam()
     const fake = withSettings(ctx)
-    await ctx.localInfer.removeModel('ninfer-local', 'absent')
+    await ctx.localInfer.removeModel('ninfer-local-qwen38-27b', 'absent')
     expect(fake.sections['llm-pi-ai']).toBeUndefined()
     expect(fake.calls).toEqual([])
   })
@@ -1012,7 +1037,7 @@ describe('ctx.localInfer provider statuses', () => {
     }
   }
 
-  it('reads every provider as unsure when no engine is running', async () => {
+  it('reads every provider as stopped when no engine is running', async () => {
     const ctx = await seam()
     ctx.localInfer.registerEngine(new SigningAdapter('ninfer', NINFER_SIG))
     const providers: ProviderRef[] = [
@@ -1023,7 +1048,7 @@ describe('ctx.localInfer provider statuses', () => {
       gpuUsage: GPU_IDLE,
       processes: [{ command: 'vim PLAN.md' }],
     })
-    expect(statuses).toEqual({ a: 'unsure', b: 'unsure' })
+    expect(statuses).toEqual({ a: 'stopped', b: 'stopped' })
   })
 
   it('reads a foreign engine as unsure for its configs and stopped for the rest', async () => {
@@ -1064,12 +1089,13 @@ describe('ctx.localInfer provider statuses', () => {
       { id: 'b', engine: 'ninfer', model: 'qwen3-35b' },
     ]
     // The plugin launched ninfer with qwen3-27b, so the matching provider
-    // reads as running and the other model reads as stopped.
+    // reads as running and the other model reads as unsure (the engine serves
+    // a different model, so b cannot be confirmed).
     const statuses = await ctx.localInfer.providerStatuses(providers, {
       gpuUsage: GPU_IDLE,
       processes: [NINFER_LINE],
     })
-    expect(statuses).toEqual({ a: 'running', b: 'stopped' })
+    expect(statuses).toEqual({ a: 'running', b: 'unsure' })
   })
 
   it('reads every provider as unsure when the card is busy', async () => {

@@ -16,11 +16,13 @@ import type { Context } from '@deepseek-ai/cordis'
 // type import loads that augmentation without a runtime edge.
 import type { LocalInferService } from '@dsh/dsh-plugin-local-infer/service'
 import {
+  createNodeLifecycleHost,
   HyperQwenAdapter,
   LlamaCppAdapter,
   NInferAdapter,
   StrataAdapter,
 } from './adapters.ts'
+import { createDshDebugLogger } from './debug.ts'
 import { ENGINE_DEP_PLANS } from './deps.ts'
 import { BUILTIN_GUIDELINES } from './guidelines.ts'
 import { BUILTIN_PRESETS } from './presets.ts'
@@ -102,10 +104,16 @@ export function apply(ctx: Context): void {
   for (const preset of BUILTIN_PRESETS) {
     localInfer.registerPreset(preset)
   }
-  localInfer.registerEngine(new NInferAdapter())
-  localInfer.registerEngine(new HyperQwenAdapter())
-  localInfer.registerEngine(new LlamaCppAdapter())
-  localInfer.registerEngine(new StrataAdapter())
+  // The engine adapters share one lifecycle host. When DSH is in debug mode
+  // (the HARNESS_LOG_LEVEL env var or the DSH logger level config), the host
+  // logs every command it issues to an engine, from build to launch, through
+  // the cordis logger's debug method. A normal run wires the no-debug host, so
+  // the command path stays quiet.
+  const host = createNodeLifecycleHost(createDshDebugLogger(ctx))
+  localInfer.registerEngine(new NInferAdapter(host))
+  localInfer.registerEngine(new HyperQwenAdapter(host))
+  localInfer.registerEngine(new LlamaCppAdapter(host))
+  localInfer.registerEngine(new StrataAdapter(host))
 }
 
 const plugin = { name, inject, apply }

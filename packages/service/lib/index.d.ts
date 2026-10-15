@@ -20,7 +20,7 @@
 import { Context, Service } from '@deepseek-ai/cordis';
 import type { Config, DefaultModel, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, GpuUsageProbe, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, ProviderRef, ProviderStatus, RegisterResult, ReserveResolution, ResolvedDefaults, SystemDep, VramModel } from '@dsh/dsh-plugin-local-infer/core';
 import type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, RegisterModelOptions } from './types.ts';
-export type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, ProviderStatusOptions, RegisterModelOptions, SettingsForms, SettingsNamespaceDescriptor, } from './types.ts';
+export type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, ProviderStatusOptions, RegisterModelOptions, SettingsDescribeResult, SettingsForms, SettingsNamespaceDescriptor, } from './types.ts';
 declare module '@deepseek-ai/cordis' {
     interface Context {
         localInfer: LocalInferService;
@@ -302,6 +302,13 @@ export declare class LocalInfer extends Service implements LocalInferService {
      * a secret value must never ride into the core's pure ops.
      */
     private descriptor;
+    /**
+     * mutateSettings applies a path-addressed edit through the typert remote
+     * settings seam and surfaces a refusal as a stable code. The controller
+     * classifies provider refusals (a conflict, a rejected write) into the
+     * envelope's message, so the registrar reports the reason, not a bare throw.
+     */
+    private mutateSettings;
     /**
      * Picks the VramModel an estimate prices against: the one the config names
      * by `model`, or the single registered model when the config names none.

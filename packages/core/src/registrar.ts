@@ -81,12 +81,33 @@ export interface DshModelRegistrar {
 }
 
 /**
- * providerIdFor derives the provider id the registrar writes for an engine:
- * the engine id plus a -local suffix, the naming the profile patch layer
- * uses for local engines.
+ * modelSlug reduces a model id to a short, stable slug: lowercased, dots
+ * dropped (model version separators), other non-alphanumerics mapped to
+ * single dashes, and truncated to 24 characters so a long model id does not
+ * bloat the provider id.
  */
-export function providerIdFor(engineId: string): string {
-  return `${engineId}-local`
+export function modelSlug(modelId: string): string {
+  const slug = modelId
+    .toLowerCase()
+    .replace(/\./g, '')
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return slug.length > 24 ? slug.slice(0, 24) : slug
+}
+
+/**
+ * providerIdFor derives the provider id the registrar writes for an engine
+ * and model: the engine id, the build mode (local or docker), and the model
+ * slug, so a profile can carry the same engine in both build modes and
+ * several models per engine without a collision.
+ */
+export function providerIdFor(
+  engineId: string,
+  modelId: string,
+  buildMode: 'local' | 'docker',
+): string {
+  return `${engineId}-${buildMode}-${modelSlug(modelId)}`
 }
 
 /**
@@ -99,16 +120,29 @@ export function apiKeyEnvFor(engineId: string): string {
 }
 
 /**
+ * engineDisplayName capitalizes the first letter of an engine id for the
+ * display name: `ninfer` reads as `Ninfer`, `hyperqwen` as `Hyperqwen`.
+ */
+function engineDisplayName(engineId: string): string {
+  return engineId.charAt(0).toUpperCase() + engineId.slice(1)
+}
+
+/**
  * buildModelEntry turns a launch plan and a model row into the DshModelEntry
- * the registrar writes: the provider id and the API-key env name derive from
- * the plan's engine id, and the base URL is the engine's OpenAI endpoint on
- * its port.
+ * the registrar writes. The provider id is the engine, build mode, and model
+ * slug; the display name is the engine, the build mode in parentheses, and
+ * the model name (falling back to the slug when the row carries none). The
+ * API-key env name derives from the engine id, and the base URL is the
+ * engine's OpenAI endpoint on its port.
  */
 export function buildModelEntry(plan: LaunchPlan, model: ModelRow): DshModelEntry {
+  const buildMode: 'local' | 'docker' = plan.kind === 'docker' ? 'docker' : 'local'
+  const modeLabel = buildMode === 'docker' ? 'Docker' : 'Local'
+  const modelName = model.name !== '' ? model.name : modelSlug(model.id)
   return {
-    providerId: providerIdFor(plan.engineId),
+    providerId: providerIdFor(plan.engineId, model.id, buildMode),
     modelId: model.id,
-    name: model.name,
+    name: `${engineDisplayName(plan.engineId)} (${modeLabel}): ${modelName}`,
     contextWindow: model.contextWindow,
     baseURL: `http://127.0.0.1:${plan.port}/v1`,
     apiKeyEnv: apiKeyEnvFor(plan.engineId),

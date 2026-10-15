@@ -763,7 +763,14 @@ window.__ModuleLoader__.load({
           react.createElement('span', null, opts.launchingLabel),
         );
       }
-      if (state !== undefined && state.status === 'running') {
+      // The Stop control reads from the provider status dot, not just the
+      // per-entry launch state: the launch state is lost when the user
+      // navigates away from the plugin page and back, so a running engine
+      // (a green dot) must keep the control as Stop, not reset to Launch.
+      if (
+        (state !== undefined && state.status === 'running') ||
+        provider.status === 'running'
+      ) {
         return renderButton(
           react,
           primitives,
@@ -774,13 +781,18 @@ window.__ModuleLoader__.load({
       }
       if (state !== undefined && state.status === 'failed') {
         // A launch that timed out: a red Logs control that opens the entry for
-        // editing, the same action as the Edit control.
+        // editing and clears the failed state, so the control reads as Launch
+        // again and the user can fix the config and re-launch.
         return react.createElement(
           'button',
           {
             type: 'button',
             onClick: function () {
-              opts.onEdit(provider);
+              if (typeof opts.onLogs === 'function') {
+                opts.onLogs(provider);
+              } else {
+                opts.onEdit(provider);
+              }
             },
             style: Object.assign(
               { color: 'var(--dsw-alias-label-error, #ff3b30)' },
@@ -2177,6 +2189,23 @@ window.__ModuleLoader__.load({
                 [provider.id]: { status: 'launching', startTime: Date.now() },
               }),
             );
+            // The route's health-poll can run up to two minutes, and a build
+            // step before it can run longer still, so a slow or hung route
+            // would leave the control on the Throbber forever. A client-side
+            // deadline just past the route's cap forces the control to the red
+            // Logs state so the entry can be opened and fixed.
+            var settled = false;
+            var deadline = setTimeout(function () {
+              if (settled) {
+                return;
+              }
+              settled = true;
+              entryLaunchState[1]((current) =>
+                Object.assign({}, current, {
+                  [provider.id]: { status: 'failed', startTime: Date.now() },
+                }),
+              );
+            }, 150000);
             fetch('/local-infer/launch', {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
@@ -2188,14 +2217,22 @@ window.__ModuleLoader__.load({
             })
               .then((response) => response.json().then((body) => ({ ok: response.ok, body: body })))
               .then(({ ok, body }) => {
+                settled = true;
+                clearTimeout(deadline);
                 var nextStatus = ok && body.healthy ? 'running' : 'failed';
                 entryLaunchState[1]((current) =>
                   Object.assign({}, current, {
                     [provider.id]: { status: nextStatus, startTime: Date.now() },
                   }),
                 );
+                // The provider status dots price the process probe on a
+                // summary fetch, so a launch that turned an engine healthy
+                // re-fetches the summary to repaint the dot from red to green.
+                fetchSummary(provider.engine, provider.config || {});
               })
               .catch(() => {
+                settled = true;
+                clearTimeout(deadline);
                 entryLaunchState[1]((current) =>
                   Object.assign({}, current, {
                     [provider.id]: { status: 'failed', startTime: Date.now() },
@@ -2203,7 +2240,7 @@ window.__ModuleLoader__.load({
                 );
               });
           },
-          [entryLaunch],
+          [entryLaunch, fetchSummary],
         );
 
         var onStopEntry = react.useCallback(
@@ -2229,6 +2266,23 @@ window.__ModuleLoader__.load({
               });
           },
           [],
+        );
+
+        // The per-entry Logs control: opening the logs loads the entry for
+        // editing AND clears the failed launch state, so the per-entry control
+        // reads as Launch again. The user fixes the config in the form and
+        // re-launches from the same entry, instead of being stuck on a
+        // non-actionable Logs control.
+        var onLogsEntry = react.useCallback(
+          (provider) => {
+            onEditProvider(provider);
+            entryLaunchState[1]((current) => {
+              var next = Object.assign({}, current);
+              delete next[provider.id];
+              return next;
+            });
+          },
+          [onEditProvider],
         );
 
         if (view === 'summary') {
@@ -2309,6 +2363,7 @@ window.__ModuleLoader__.load({
                 launchState: entryLaunch,
                 onLaunchEntry: onLaunchEntry,
                 onStopEntry: onStopEntry,
+                onLogs: onLogsEntry,
                 launchLabel: t.entryLaunch,
                 stopLabel: t.entryStop,
                 logsLabel: t.entryLogs,

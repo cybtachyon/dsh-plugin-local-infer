@@ -14,15 +14,17 @@ import type { ParameterSpec } from '@dsh/dsh-plugin-local-infer/core'
 const IS_STYLE = /^\s*(is|it is|this is|are|was|were)\s/i
 
 describe('NInfer parameter surface', () => {
-  it('carries the 17-spec surface with unique keys', () => {
+  it('carries the 22-spec surface with unique keys', () => {
     const keys = NINFER_PARAMETERS.map((spec) => spec.key)
     expect(new Set(keys).size).toBe(keys.length)
     expect(keys).toEqual([
+      'port',
       'kvDtype',
       'maxContext',
       'kvCapacity',
       'hostKvMib',
       'hostStateSlots',
+      'mediaLiveMib',
       'gdnStateFp16',
       'maxConcurrency',
       'spec',
@@ -30,6 +32,9 @@ describe('NInfer parameter surface', () => {
       'lmHeadDraft',
       'temperature',
       'minP',
+      'defaultMaxTokens',
+      'defaultThinkingBudget',
+      'preserveThinking',
       'prefillChunk',
       'vision',
       'structuredOutput',
@@ -47,6 +52,7 @@ describe('NInfer parameter surface', () => {
 
   it('maps each form kind to the control the plan assigns', () => {
     const kindFor = (key: string) => NINFER_PARAMETERS.find((spec) => spec.key === key)?.form.kind
+    expect(kindFor('port')).toBe('number')
     expect(kindFor('kvDtype')).toBe('enum')
     expect(kindFor('spec')).toBe('enum')
     expect(kindFor('deviceProfile')).toBe('enum')
@@ -84,6 +90,12 @@ describe('NInfer parameter surface', () => {
     expect(argvFor('deviceProfile', 'calibrate')).toEqual(['--device-profile', 'calibrate'])
     expect(argvFor('chatTemplate', '')).toEqual([])
     expect(argvFor('chatTemplate', '/tmp/qwen3_8.jinja')).toEqual(['--chat-template', '/tmp/qwen3_8.jinja'])
+    // The Swift 1.5 launcher flags the qwen-ninfer script passes.
+    expect(argvFor('defaultMaxTokens', 32768)).toEqual(['--default-max-tokens', '32768'])
+    expect(argvFor('mediaLiveMib', 2048)).toEqual(['--media-live-mib', '2048'])
+    expect(argvFor('defaultThinkingBudget', 16384)).toEqual(['--default-thinking-budget', '16384'])
+    expect(argvFor('preserveThinking', true)).toEqual(['--preserve-thinking'])
+    expect(argvFor('preserveThinking', false)).toEqual([])
   })
 
   it('gates nvfp4 KV on SM 89 and lets the 30-series card keep rk4v4', () => {

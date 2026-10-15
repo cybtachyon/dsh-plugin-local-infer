@@ -15,14 +15,16 @@ export { GPU_USAGE_BUSY_THRESHOLD, matchLaunchSignature, parseNvidiaSmiGpuUsage,
 export type { EngineLaunchSignature, GpuUsageProbe, ProcessLine, ReserveResolution, ReserveSource, } from './reserve.ts';
 export { computeProviderStatuses, isGpuBusy, } from './status.ts';
 export type { ProviderRef, ProviderStatus, ProviderStatusInput, RunningEngineRef, } from './status.ts';
-export { DEFAULT_LOG_PATH_TEMPLATE, LOG_TEMPLATE_ENGINE, LOG_TEMPLATE_HOME, LOG_TEMPLATE_MODEL, LOG_TEMPLATE_TIMESTAMP, formatLogTimestamp, resolveLogPath, slugifyModelName, } from './logs.ts';
+export { DEFAULT_LOG_PATH_TEMPLATE, LOG_FILE_NAME_TEMPLATE, LOG_TEMPLATE_ENGINE, LOG_TEMPLATE_HOME, LOG_TEMPLATE_MODEL, LOG_TEMPLATE_TIMESTAMP, formatLogTimestamp, resolveLogPath, slugifyModelName, } from './logs.ts';
 export { EngineAdapter } from './adapter.ts';
 export type { DeployResult, EnginePlatformConfig, FetchResult, HealthCheckOptions, HealthResult, LaunchPlan, LifecycleHost, ProcessHandle, } from './adapter.ts';
+export { NOOP_DEBUG_LOGGER, createCommandDebugLogger, isHarnessLogDebug, } from './debug.ts';
+export type { CreateCommandDebugLoggerArgs, DebugLogger, } from './debug.ts';
 export { constraintId, evaluateGuidelines, modelGuidelines } from './guideline.ts';
 export type { Guideline, GuidelineLevel, GuidelineResult } from './guideline.ts';
 export { hardwareClass, presetFromFetch, resolveDefaults, WILDCARD_HARDWARE_CLASS, } from './defaults.ts';
 export type { DefaultProvenance, DefaultsResolver, HardwareClass, Preset, PresetSource, ResolvedDefaults, } from './defaults.ts';
-export { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, apiKeyEnvFor, buildModelEntry, LLM_PI_AI_NAMESPACE, modelRowsFrom, providerIdFor, providerRegistrationOps, providerRemovalOps, removeModelRow, upsertModelRow, } from './registrar.ts';
+export { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, apiKeyEnvFor, buildModelEntry, LLM_PI_AI_NAMESPACE, modelRowsFrom, modelSlug, providerIdFor, providerRegistrationOps, providerRemovalOps, removeModelRow, upsertModelRow, } from './registrar.ts';
 export type { DshModelEntry, DshModelRegistrar, ModelRow, RegisterResult, SettingsOp, } from './registrar.ts';
 export { checkDeps, detectPackageManager, planDeps, renderInstallString, runInstall, } from './deps.ts';
 export { hfDownloadCommand, modelArtifactPath, modelEntriesForEngine, repoIdFromUrl, repoNameFromUrl, } from './models.ts';

@@ -107,22 +107,27 @@ describe('renderForm', () => {
 
   it('renders the NInfer surface as five sections in first-appearance order', () => {
     const model = renderForm(NINFER_PARAMETERS, {})
+    // The port spec opens the surface, so the Engine section (port, prefill,
+    // vision, structured output, device profile, chat template) renders first.
     expect(model.sections.map((section) => section.group)).toEqual([
+      'Engine',
       'Memory',
       'Concurrency',
       'Speculation',
       'Sampling',
-      'Engine',
     ])
     expect(model.sections.reduce((sum, section) => sum + section.fields.length, 0)).toBe(
       NINFER_PARAMETERS.length,
     )
     // The defaults land in the fields, and the speculation gate fires on the
     // default config (spec none).
-    const kv = model.sections[0]!.fields[0]!
+    const port = model.sections[0]!.fields[0]!
+    expect(port.key).toBe('port')
+    expect(port.value).toBe(18020)
+    const kv = model.sections[1]!.fields[0]!
     expect(kv.key).toBe('kvDtype')
     expect(kv.value).toBe('int8')
-    const draft = model.sections[2]!.fields.find((field) => field.key === 'draftTokens')!
+    const draft = model.sections[3]!.fields.find((field) => field.key === 'draftTokens')!
     expect(draft.disabled).toBe(true)
   })
 })

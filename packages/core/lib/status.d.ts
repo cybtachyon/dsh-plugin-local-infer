@@ -50,17 +50,16 @@ export declare function isGpuBusy(usage?: GpuUsageProbe | null): boolean;
 /**
  * computeProviderStatuses resolves each saved provider's running-state from
  * the detector's answer. The order is the plan's contract:
- * 1. A busy card (VRAM at 75% or more) reads as unsure for every provider,
- *    because a full card cannot be attributed to a single model.
- * 2. No engine running at all reads as unsure for every provider: the
- *    detector saw nothing, so it cannot tell a stopped engine from a
- *    detection miss.
- * 3. With at least one engine running, a provider whose engine is not among
- *    the running set is stopped (red). A provider whose engine is running
- *    is running (green) only when the detector tied that engine to the
- *    provider's exact model; an engine the detector saw but could not tie
- *    to a model reads as unsure (yellow), which is the "all configs with
- *    that engine are unsure, the rest are red" case.
+ * 1. A provider whose engine the process probe confirmed running is running
+ *    (green) when the detector tied that engine to the provider's exact model,
+ *    and unsure (yellow) when the engine serves an unidentified or a
+ *    different model. A running engine using its VRAM does not read as a busy
+ *    card, so the dot is green, not the unattributable yellow.
+ * 2. A provider whose engine is not running falls back to the card state: a
+ *    busy card (a foreign engine holding the VRAM at 75% or more) reads as
+ *    unsure, because a full card cannot be attributed to a single model, and
+ *    a quiet card reads as stopped (red): the process probe saw no engine, so
+ *    a saved config whose engine is down is stopped.
  */
 export declare function computeProviderStatuses(input: ProviderStatusInput): Record<string, ProviderStatus>;
 //# sourceMappingURL=status.d.ts.map

@@ -571,7 +571,8 @@ export async function unregisterFor(localInfer, request) {
     const hardware = await localInfer.detectHardware();
     const plan = adapter.renderLaunch(config, hardware);
     const row = resolveModelRow(adapter, plan, config);
-    await localInfer.removeModel(providerIdFor(adapter.id), row.id);
+    const buildMode = plan.kind === 'docker' ? 'docker' : 'local';
+    await localInfer.removeModel(providerIdFor(adapter.id, row.id, buildMode), row.id);
     return { removed: true };
 }
 /**

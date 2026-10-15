@@ -1,10 +1,17 @@
 /**
- * The log-path template the plugin stores in a provider config. The user edits
- * it in a text field; the launch step resolves the placeholders against the
- * engine, the model it serves, and the launch time. ${HOME} is the host home
- * directory, not a shell expansion the plugin performs.
+ * The log-directory the plugin stores in a provider config. The user edits it
+ * in a text field; the launch step saves each run's log file inside it, named
+ * from the fixed file-name template below. ${HOME} is the host home directory,
+ * not a shell expansion the plugin performs.
  */
-export declare const DEFAULT_LOG_PATH_TEMPLATE = "${HOME}/.dsh/local-infer/logs/{{engine}}-{{model-name-slugified-and-truncated}}-{{YYMMDDHHMMSS###}}.log";
+export declare const DEFAULT_LOG_PATH_TEMPLATE = "${HOME}/.dsh/local-infer/logs";
+/**
+ * LOG_FILE_NAME_TEMPLATE is the fixed file name a launch's log file carries,
+ * inside the user-edited log directory. The placeholders resolve against the
+ * engine, the model it serves, and the launch time, so concurrent launches of
+ * the same model keep distinct files.
+ */
+export declare const LOG_FILE_NAME_TEMPLATE = "{{engine}}-{{model-name-slugified-and-truncated}}-{{YYMMDDHHMMSS###}}.log";
 /**
  * The template placeholders, named so the resolver and the config field stay
  * in sync with the default the card shows.
@@ -27,10 +34,11 @@ export declare function slugifyModelName(name: string | undefined, maxLen?: numb
  */
 export declare function formatLogTimestamp(date: Date): string;
 /**
- * resolveLogPath fills a log-path template's placeholders with the engine id,
- * the slugified model name, and the timestamp token, and swaps ${HOME} for the
- * host home directory. A template with no placeholders is returned unchanged
- * (with ${HOME} still resolved), so a fully literal path works as-is.
+ * resolveLogPath resolves a user-edited log directory to the full path of a
+ * launch's log file. It swaps ${HOME} in the directory for the host home
+ * directory, then names the file from LOG_FILE_NAME_TEMPLATE against the
+ * engine id, the slugified model name, and the launch time, so each run keeps
+ * its own file inside the directory. A directory with no ${HOME} is used as-is.
  */
-export declare function resolveLogPath(template: string, engineId: string, modelId: string | undefined, date: Date, home: string): string;
+export declare function resolveLogPath(directory: string, engineId: string, modelId: string | undefined, date: Date, home: string): string;
 //# sourceMappingURL=logs.d.ts.map

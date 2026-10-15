@@ -121,18 +121,49 @@ export interface SettingsNamespaceDescriptor {
     value: unknown;
 }
 /**
+ * SettingsDescribeResult is the structural view of the dsh settings service's
+ * describe answer: whether the section is writable, whether a document exists,
+ * and the redacted namespace views the registrar reads and writes through.
+ */
+export interface SettingsDescribeResult {
+    writable: boolean;
+    hasDocument: boolean;
+    namespaces: readonly SettingsNamespaceDescriptor[];
+}
+/**
+ * SettingsRemoteResponse is the typert remote envelope every settings
+ * namespace method answers with: a business `value` on `ok`, or a `message`
+ * on a refusal. The typert protocol wraps the controller's plain answer in
+ * this shape, so the registrar must unwrap `value` before reading it.
+ */
+export interface SettingsRemoteResponse<T> {
+    ok: boolean;
+    value?: T;
+    error?: {
+        message: string;
+    };
+}
+/**
  * SettingsForms is the structural view of the dsh settings service the
  * registrar writes through (the same seam the Web UI's settings controller
- * exposes): describe reads the entries, and mutate applies path-addressed
- * edits with a revision guard, so a stale write is refused rather than
- * overwriting a concurrent change. The service package stays free of a
- * dsh-settings import, so the seam is declared structurally here.
+ * exposes, reached through the typert remote `settings` namespace): describe
+ * reads the redacted namespace views, and mutate applies path-addressed edits
+ * with a revision guard, so a stale write is refused rather than overwriting a
+ * concurrent change. The service package stays free of a dsh-settings import,
+ * so the seam is declared structurally here.
  */
+/**
+ * SettingsDescribeAnswer is the typert remote describe answer in either
+ * contract: the { ok, value } envelope the current host answers with, or the
+ * plain SettingsDescribeResult a host that predates the envelope answers with.
+ * The registrar reads both, so it works against either.
+ */
+export type SettingsDescribeAnswer = SettingsRemoteResponse<SettingsDescribeResult> | SettingsDescribeResult;
 export interface SettingsForms {
     describe(options?: {
         redactSecrets?: boolean;
-    }): readonly SettingsNamespaceDescriptor[];
-    mutate(ns: string, ops: readonly SettingsOp[], expectedRevision?: number): Promise<void>;
+    }): Promise<SettingsDescribeAnswer>;
+    mutate(ns: string, ops: readonly SettingsOp[], expectedRevision?: number): Promise<SettingsRemoteResponse<unknown> | undefined>;
 }
 /**
  * LocalInferService is the surface the service publishes on ctx.localInfer.

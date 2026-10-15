@@ -625,7 +625,7 @@ describe('register and unregister route helpers', () => {
     })
     const result = await unregisterFor(service, { engine: 'ninfer', config: {} })
     expect(result).toEqual({ removed: true })
-    expect(seen).toEqual({ providerId: 'ninfer-local', modelId: 'Qwen3.8-27B' })
+    expect(seen).toEqual({ providerId: 'ninfer-local-qwen38-27b', modelId: 'Qwen3.8-27B' })
   })
 
   it('refuses to register an engine no adapter serves with a 404', async () => {
@@ -835,7 +835,7 @@ describe('route handlers over a fake web server', () => {
     )
     expect(unregisterRes.status).toBe(200)
     expect(JSON.parse(unregisterRes.body)).toEqual({ removed: true })
-    expect(removed).toEqual({ providerId: 'ninfer-local', modelId: 'Qwen3.8-27B' })
+    expect(removed).toEqual({ providerId: 'ninfer-local-qwen38-27b', modelId: 'Qwen3.8-27B' })
   })
 
   it('answers 405 for the wrong method on every route', async () => {
@@ -1119,6 +1119,11 @@ describe('model defaults, status, and download read model', () => {
         id: 'qwen3-27b',
         label: 'Ninfer Qwen3.8-27B',
         url: 'https://huggingface.co/neroued/Qwen3.8-27B-nvfp4-NInfer',
+      },
+      {
+        id: 'qwen3-27b-swift15',
+        label: 'Ninfer Qwen3.8-27B (Swift 1.5)',
+        url: 'https://huggingface.co/kaushikvira/Qwen3.8-27B-swift15-uncensored-ajgazin-nvfp4full-dflash2-NInfer-v3',
       },
       {
         id: 'qwen36-35b',

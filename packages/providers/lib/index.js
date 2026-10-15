@@ -10,7 +10,8 @@
  * that the defaults resolver resolves against.
  * @module @dsh/dsh-plugin-local-infer/providers
  */
-import { HyperQwenAdapter, LlamaCppAdapter, NInferAdapter, StrataAdapter, } from "./adapters.js";
+import { createNodeLifecycleHost, HyperQwenAdapter, LlamaCppAdapter, NInferAdapter, StrataAdapter, } from "./adapters.js";
+import { createDshDebugLogger } from "./debug.js";
 import { ENGINE_DEP_PLANS } from "./deps.js";
 import { BUILTIN_GUIDELINES } from "./guidelines.js";
 import { BUILTIN_PRESETS } from "./presets.js";
@@ -58,10 +59,16 @@ export function apply(ctx) {
     for (const preset of BUILTIN_PRESETS) {
         localInfer.registerPreset(preset);
     }
-    localInfer.registerEngine(new NInferAdapter());
-    localInfer.registerEngine(new HyperQwenAdapter());
-    localInfer.registerEngine(new LlamaCppAdapter());
-    localInfer.registerEngine(new StrataAdapter());
+    // The engine adapters share one lifecycle host. When DSH is in debug mode
+    // (the HARNESS_LOG_LEVEL env var or the DSH logger level config), the host
+    // logs every command it issues to an engine, from build to launch, through
+    // the cordis logger's debug method. A normal run wires the no-debug host, so
+    // the command path stays quiet.
+    const host = createNodeLifecycleHost(createDshDebugLogger(ctx));
+    localInfer.registerEngine(new NInferAdapter(host));
+    localInfer.registerEngine(new HyperQwenAdapter(host));
+    localInfer.registerEngine(new LlamaCppAdapter(host));
+    localInfer.registerEngine(new StrataAdapter(host));
 }
 const plugin = { name, inject, apply };
 export default plugin;

@@ -16,12 +16,17 @@ const reservation = (estimate: ReturnType<typeof estimateVram>): number =>
 
 describe('NInfer VramModel data', () => {
   it('carries one measured model per Qwen artifact, keyed by the registry id', () => {
-    expect(NINFER_VRAM_MODELS.map(model => model.id)).toEqual(['qwen3-27b', 'qwen3-35b'])
+    expect(NINFER_VRAM_MODELS.map(model => model.id)).toEqual([
+      'qwen3-27b',
+      'qwen3-27b-swift15',
+      'qwen3-35b',
+    ])
     for (const model of NINFER_VRAM_MODELS) {
       expect(model.source).toBe('measured')
       expect(model.nativeMaxContext).toBe(262144)
     }
     expect(ninferVramModel('qwen3-27b')?.id).toBe('qwen3-27b')
+    expect(ninferVramModel('qwen3-27b-swift15')?.id).toBe('qwen3-27b-swift15')
     expect(ninferVramModel('qwen3-99b')).toBeUndefined()
   })
 

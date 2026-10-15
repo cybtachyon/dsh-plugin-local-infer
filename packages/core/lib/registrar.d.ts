@@ -73,11 +73,19 @@ export interface DshModelRegistrar {
     remove(providerId: string, modelId: string): Promise<void>;
 }
 /**
- * providerIdFor derives the provider id the registrar writes for an engine:
- * the engine id plus a -local suffix, the naming the profile patch layer
- * uses for local engines.
+ * modelSlug reduces a model id to a short, stable slug: lowercased, dots
+ * dropped (model version separators), other non-alphanumerics mapped to
+ * single dashes, and truncated to 24 characters so a long model id does not
+ * bloat the provider id.
  */
-export declare function providerIdFor(engineId: string): string;
+export declare function modelSlug(modelId: string): string;
+/**
+ * providerIdFor derives the provider id the registrar writes for an engine
+ * and model: the engine id, the build mode (local or docker), and the model
+ * slug, so a profile can carry the same engine in both build modes and
+ * several models per engine without a collision.
+ */
+export declare function providerIdFor(engineId: string, modelId: string, buildMode: 'local' | 'docker'): string;
 /**
  * apiKeyEnvFor derives the env-var name a local provider reads its optional
  * API key from: the engine id, uppercased and non-alphanumerics mapped to
@@ -86,9 +94,11 @@ export declare function providerIdFor(engineId: string): string;
 export declare function apiKeyEnvFor(engineId: string): string;
 /**
  * buildModelEntry turns a launch plan and a model row into the DshModelEntry
- * the registrar writes: the provider id and the API-key env name derive from
- * the plan's engine id, and the base URL is the engine's OpenAI endpoint on
- * its port.
+ * the registrar writes. The provider id is the engine, build mode, and model
+ * slug; the display name is the engine, the build mode in parentheses, and
+ * the model name (falling back to the slug when the row carries none). The
+ * API-key env name derives from the engine id, and the base URL is the
+ * engine's OpenAI endpoint on its port.
  */
 export declare function buildModelEntry(plan: LaunchPlan, model: ModelRow): DshModelEntry;
 /**

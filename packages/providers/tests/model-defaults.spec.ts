@@ -6,9 +6,9 @@ import {
 } from '../src/model-defaults.ts'
 
 describe('DEFAULT_MODELS', () => {
-  it('carries the six default models, two per dense-Qwen engine', () => {
-    expect(DEFAULT_MODELS).toHaveLength(6)
-    expect(defaultModelsForEngine('ninfer')).toHaveLength(2)
+  it('carries the seven default models, three NInfer and two per other dense-Qwen engine', () => {
+    expect(DEFAULT_MODELS).toHaveLength(7)
+    expect(defaultModelsForEngine('ninfer')).toHaveLength(3)
     expect(defaultModelsForEngine('hyperqwen')).toHaveLength(2)
     expect(defaultModelsForEngine('llamacpp')).toHaveLength(2)
   })
@@ -21,6 +21,7 @@ describe('DEFAULT_MODELS', () => {
     const urls = DEFAULT_MODELS.map((entry) => entry.url)
     expect(urls).toEqual([
       'https://huggingface.co/neroued/Qwen3.8-27B-nvfp4-NInfer',
+      'https://huggingface.co/kaushikvira/Qwen3.8-27B-swift15-uncensored-ajgazin-nvfp4full-dflash2-NInfer-v3',
       'https://huggingface.co/neroued/Qwen3.6-35B-A3B-NInfer',
       'https://huggingface.co/born2bewild/Qwen3.8-27B-W4A16-AutoRound-fast',
       'https://huggingface.co/QuantTrio/Qwen3.6-35B-A3B-AWQ',
@@ -31,6 +32,7 @@ describe('DEFAULT_MODELS', () => {
 
   it('reuses the 27B registry key and adds a distinct 35B-A3B key per engine', () => {
     expect(defaultModelFor('ninfer', 'qwen3-27b')?.label).toBe('Ninfer Qwen3.8-27B')
+    expect(defaultModelFor('ninfer', 'qwen3-27b-swift15')?.label).toBe('Ninfer Qwen3.8-27B (Swift 1.5)')
     expect(defaultModelFor('ninfer', 'qwen36-35b')?.label).toBe('Ninfer Qwen3.6-35B')
     expect(defaultModelFor('llamacpp', 'qwen36-35b')?.label).toBe('llama.cpp Qwen3.6-35B')
   })

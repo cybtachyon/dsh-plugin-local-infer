@@ -29,31 +29,33 @@ describe('computeProviderStatuses', () => {
     { id: 'c', engine: 'hyperqwen', model: 'qwen3-27b' },
   ]
 
-  it('reads every provider as unsure when no engine is running', () => {
+  it('reads every provider as stopped when no engine is running', () => {
+    // A process probe that saw no engine means a saved config whose engine is
+    // down is stopped (red), not an unattributable yellow.
     const statuses = computeProviderStatuses({ providers, running: [], gpuBusy: false })
-    expect(statuses).toEqual({ a: 'unsure', b: 'unsure', c: 'unsure' })
+    expect(statuses).toEqual({ a: 'stopped', b: 'stopped', c: 'stopped' })
   })
 
-  it('reads every provider as unsure when the card is busy', () => {
-    // A busy card cannot be attributed to a single model, so even a
-    // confirmed engine-plus-model reads as unsure.
+  it('reads a running engine as running and a busy card as unsure for the rest', () => {
+    // A running engine using its VRAM reads as running (green), not the
+    // unattributable yellow. A busy card (a foreign engine holding the VRAM)
+    // reads as unsure for a provider whose engine is not running.
     const running: RunningEngineRef[] = [
       { engineId: 'ninfer', port: 18020, modelId: 'qwen3-27b' },
     ]
     const statuses = computeProviderStatuses({ providers, running, gpuBusy: true })
-    expect(statuses).toEqual({ a: 'unsure', b: 'unsure', c: 'unsure' })
+    expect(statuses).toEqual({ a: 'running', b: 'unsure', c: 'unsure' })
   })
 
-  it('reads a confirmed engine-plus-model as running and the rest as stopped', () => {
+  it('reads a confirmed engine-plus-model as running and the rest as unsure or stopped', () => {
     const running: RunningEngineRef[] = [
       { engineId: 'ninfer', port: 18020, modelId: 'qwen3-27b' },
     ]
     const statuses = computeProviderStatuses({ providers, running, gpuBusy: false })
     // a matches the running engine and model: running. b is the same engine
-    // but a different model, and the detector tied the engine to qwen3-27b,
-    // so b reads as stopped (its model is not the one serving). c is a
-    // different engine entirely: stopped.
-    expect(statuses).toEqual({ a: 'running', b: 'stopped', c: 'stopped' })
+    // but a different model: unsure (the engine serves a different model).
+    // c is a different engine entirely, and the card is quiet: stopped.
+    expect(statuses).toEqual({ a: 'running', b: 'unsure', c: 'stopped' })
   })
 
   it('reads an engine the detector saw but could not tie to a model as unsure for its configs', () => {

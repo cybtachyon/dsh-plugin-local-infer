@@ -26,6 +26,13 @@ export const DEFAULT_MODELS = [
     },
     {
         engineId: 'ninfer',
+        modelId: 'qwen3-27b-swift15',
+        label: 'Ninfer Qwen3.8-27B (Swift 1.5)',
+        url: 'https://huggingface.co/kaushikvira/Qwen3.8-27B-swift15-uncensored-ajgazin-nvfp4full-dflash2-NInfer-v3',
+        file: 'qwen3_8_27b_swift15abl_nvfp4full-dflash2.ninfer',
+    },
+    {
+        engineId: 'ninfer',
         modelId: 'qwen36-35b',
         label: 'Ninfer Qwen3.6-35B',
         url: 'https://huggingface.co/neroued/Qwen3.6-35B-A3B-NInfer',

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  createNodeLifecycleHost,
   HyperQwenAdapter,
   LLAMACPP_DOCKER_IMAGE,
   NINFER_DOCKER_IMAGE,
@@ -10,6 +11,7 @@ import {
   LlamaCppAdapter,
   envFromSpecs,
   flagsFromSpecs,
+  nodeLifecycleHost,
   pollHealth,
 } from '../src/adapters.ts'
 import { NINFER_PARAMETERS } from '../src/ninfer.ts'
@@ -158,6 +160,10 @@ describe('NInferAdapter.deploy', () => {
       engineFork: 'https://github.com/iamwavecut/ninfer-all',
     })
     expect(result.ok).toBe(true)
+    // The git step syncs an existing checkout (fetch + hard reset to the fork's
+    // master) and falls back to a fresh clone, mirroring the qwen-ninfer script.
+    expect(state.run[0]).toContain('[ -d /src/ninfer/.git ]')
+    expect(state.run[0]).toContain('git -C /src/ninfer fetch https://github.com/iamwavecut/ninfer-all')
     expect(state.run[0]).toContain('git clone https://github.com/iamwavecut/ninfer-all /src/ninfer')
     expect(state.run[1]).toContain('cmake -S /src/ninfer -B /src/ninfer/build')
     expect(state.run[2]).toContain('hf download')
@@ -183,6 +189,96 @@ describe('NInferAdapter.deploy', () => {
     // Only the model download runs; no clone or build without an engine dir.
     expect(state.run).toHaveLength(1)
     expect(state.run[0]).toContain('hf download')
+  })
+
+  it('rewrites an HF chat-template reference to the local file the engine reads', async () => {
+    const { host, state } = stubHost()
+    const adapter = new NInferAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      argv: [
+        'ninfer-serve',
+        '/models/x.ninfer',
+        '--chat-template',
+        'froggeric/Qwen-Fixed-Chat-Templates',
+      ],
+      env: {},
+      modelId: 'qwen3-27b',
+      modelDirectory: '/models',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    const result = await adapter.deploy(plan)
+    expect(result.ok).toBe(true)
+    // The deploy step probes for the local template (the default stub reads it
+    // as present, so the download is skipped) and rewrites the flag to the
+    // local path the engine reads.
+    expect(state.run).toContain('[ -f /models/chat_template.jinja ]')
+    expect(state.spawn[0]?.argv).toContain('/models/chat_template.jinja')
+    expect(state.spawn[0]?.argv).not.toContain('froggeric/Qwen-Fixed-Chat-Templates')
+  })
+
+  it('downloads an absent HF chat template into the model directory before the spawn', async () => {
+    // A host whose probe reads the template as absent (the file is not on
+    // disk) and whose download succeeds, so the spawn carries the local path.
+    const runLog: string[] = []
+    const host: LifecycleHost = {
+      async run(command: string): Promise<CommandOutcome> {
+        runLog.push(command)
+        // The existence probe reads as absent (the file is not on disk), so
+        // the download runs; every other command (the download itself) is ok.
+        if (command.startsWith('[ -f')) return { ok: false }
+        return { ok: true }
+      },
+      spawn(): ProcessHandle {
+        return { pid: 1, kill: () => {} }
+      },
+      async fetch(): Promise<FetchResult> {
+        return { status: 200, ok: true }
+      },
+    }
+    const adapter = new NInferAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      argv: [
+        'ninfer-serve',
+        '/models/x.ninfer',
+        '--chat-template',
+        'froggeric/Qwen-Fixed-Chat-Templates',
+      ],
+      env: {},
+      modelDirectory: '/models',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    const result = await adapter.deploy(plan)
+    expect(result.ok).toBe(true)
+    expect(runLog).toContain('[ -f /models/chat_template.jinja ]')
+    expect(runLog).toContain(
+      'hf download froggeric/Qwen-Fixed-Chat-Templates chat_template.jinja --local-dir /models',
+    )
+  })
+
+  it('leaves a local chat-template path untouched', async () => {
+    const { host, state } = stubHost()
+    const adapter = new NInferAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      argv: ['ninfer-serve', '/models/x.ninfer', '--chat-template', '/tmp/qwen.jinja'],
+      env: {},
+      modelDirectory: '/models',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    const result = await adapter.deploy(plan)
+    expect(result.ok).toBe(true)
+    // An absolute path is already local, so no probe or download runs and the
+    // flag keeps its value.
+    expect(state.run).not.toContain('[ -f /tmp/qwen.jinja ]')
+    expect(state.spawn[0]?.argv).toContain('/tmp/qwen.jinja')
   })
 
   it('pulls the image and spawns the container for a docker plan', async () => {
@@ -315,6 +411,12 @@ describe('adapter modelRef (the registrar model seam)', () => {
     expect(adapter.modelRef({ model: 'qwen3-35b' })).toEqual({
       id: 'Qwen3.8-35B-A3B',
       name: 'Qwen3.8-35B-A3B',
+    })
+    // The Swift 1.5 ablated 27B the local launcher bootstraps serves under the
+    // same Qwen3.8-27B alias the engine advertises.
+    expect(adapter.modelRef({ model: 'qwen3-27b-swift15' })).toEqual({
+      id: 'Qwen3.8-27B',
+      name: 'Qwen3.8-27B',
     })
     // An unknown model id falls back to the 27B artifact, the renderLaunch
     // rule, so a bare config always resolves a model.
@@ -515,6 +617,10 @@ describe('LlamaCppAdapter', () => {
       engineFork: 'https://github.com/ggml-org/llama.cpp',
     })
     expect(result.ok).toBe(true)
+    // The git step syncs an existing checkout and falls back to a fresh clone,
+    // mirroring the qwen-ninfer script's fetch + hard reset.
+    expect(state.run[0]).toContain('[ -d /src/llama.cpp/.git ]')
+    expect(state.run[0]).toContain('git -C /src/llama.cpp fetch https://github.com/ggml-org/llama.cpp')
     expect(state.run[0]).toContain('git clone https://github.com/ggml-org/llama.cpp /src/llama.cpp')
     expect(state.run[1]).toContain('cmake -S /src/llama.cpp -B /src/llama.cpp/build')
     expect(state.run[2]).toContain('hf download')
@@ -620,7 +726,7 @@ describe('LlamaCppAdapter', () => {
       engineFork: 'https://github.com/ggml-org/llama.cpp',
     })
     expect(cloneResult.ok).toBe(false)
-    expect(cloneResult.detail).toContain('git clone failed')
+    expect(cloneResult.detail).toContain('git sync failed')
     // Without a fork the clone is skipped, so a failed run reads as a build failure.
     state.run = []
     const buildResult = await adapter.deploy(clonePlan, {
@@ -782,6 +888,41 @@ describe('nodeLifecycleHost (the live host the service wires in)', () => {
     // Port 1 on loopback has nothing listening, so the fetch throws and the
     // host reports status 0, the same signal pollHealth treats as not-ready.
     const result = await nodeLifecycleHost.fetch('http://127.0.0.1:1/health')
+    expect(result.status).toBe(0)
+    expect(result.ok).toBe(false)
+  })
+})
+
+describe('createNodeLifecycleHost (the debug-mode command logger)', () => {
+  it('logs every run and spawn command through the debug logger', async () => {
+    const seen: string[] = []
+    const host = createNodeLifecycleHost((message) => {
+      seen.push(message)
+    })
+    expect(host.debug).toBeTypeOf('function')
+    await host.run('echo probe')
+    host.spawn(['node', '-e', 'setTimeout(() => {}, 10)'], {}, '/tmp')
+    host.spawn(['ninfer-serve', 'model.ninfer'], {})
+    expect(seen).toEqual([
+      'run: echo probe',
+      'spawn: node -e setTimeout(() => {}, 10) (cwd: /tmp)',
+      'spawn: ninfer-serve model.ninfer',
+    ])
+  })
+
+  it('exposes no debug field and logs nothing when no logger is wired', () => {
+    // The default live host carries no debug logger, so a normal run is quiet.
+    expect(nodeLifecycleHost.debug).toBeUndefined()
+    expect(createNodeLifecycleHost().debug).toBeUndefined()
+  })
+
+  it('keeps the fetch and spawn behavior of the live host', async () => {
+    const host = createNodeLifecycleHost()
+    const handle = host.spawn(['node', '-e', 'setTimeout(() => {}, 10)'], {})
+    expect(handle.pid).toBeGreaterThan(0)
+    handle.kill()
+    // Port 1 on loopback has nothing listening, so the fetch reads as status 0.
+    const result = await host.fetch('http://127.0.0.1:1/health')
     expect(result.status).toBe(0)
     expect(result.ok).toBe(false)
   })

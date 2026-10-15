@@ -66,6 +66,7 @@ export type {
 } from './status.ts'
 export {
   DEFAULT_LOG_PATH_TEMPLATE,
+  LOG_FILE_NAME_TEMPLATE,
   LOG_TEMPLATE_ENGINE,
   LOG_TEMPLATE_HOME,
   LOG_TEMPLATE_MODEL,
@@ -85,6 +86,15 @@ export type {
   LifecycleHost,
   ProcessHandle,
 } from './adapter.ts'
+export {
+  NOOP_DEBUG_LOGGER,
+  createCommandDebugLogger,
+  isHarnessLogDebug,
+} from './debug.ts'
+export type {
+  CreateCommandDebugLoggerArgs,
+  DebugLogger,
+} from './debug.ts'
 export { constraintId, evaluateGuidelines, modelGuidelines } from './guideline.ts'
 export type { Guideline, GuidelineLevel, GuidelineResult } from './guideline.ts'
 export {
@@ -110,6 +120,7 @@ export {
   buildModelEntry,
   LLM_PI_AI_NAMESPACE,
   modelRowsFrom,
+  modelSlug,
   providerIdFor,
   providerRegistrationOps,
   providerRemovalOps,
