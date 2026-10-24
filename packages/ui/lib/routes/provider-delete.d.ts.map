@@ -1,0 +1,1 @@
+{"version":3,"file":"provider-delete.d.ts","sourceRoot":"","sources":["../../src/routes/provider-delete.ts"],"names":[],"mappings":"AAAA;;;;;;GAMG;AAEH,OAAO,KAAK,EAAE,iBAAiB,EAAE,MAAM,gCAAgC,CAAA;AACvE,OAAO,KAAK,EAAE,eAAe,EAAE,MAAM,aAAa,CAAA;AAYlD;;;GAGG;AACH,wBAAgB,mBAAmB,CAAC,UAAU,EAAE,iBAAiB,GAAG,eAAe,CAqClF"}

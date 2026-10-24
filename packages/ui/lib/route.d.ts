@@ -12,6 +12,14 @@
  * ~/.dsh/local-infer/config.json, shared with the CLI, so the browser never
  * sees a secret it did not store. The routes are held by an effect, so they
  * go when the plugin does.
+ *
+ * This module holds the shared machinery every route builds on: the stored-
+ * config read/write and its parsers, the summary, deps, install, download,
+ * get, launch, stop, register, and unregister operations, the platform-
+ * config registry sync, and the small HTTP helpers (sendJson, requireMethod,
+ * readJsonBody). Each route definition lives in its own file under
+ * ./routes/, one file per path, and registerLocalInferRoute wires them onto
+ * the web server.
  * @module dsh-plugin-local-infer/ui/route
  */
 import type { Context } from '@deepseek-ai/cordis';
@@ -23,16 +31,23 @@ import type { FormModel } from './form.ts';
 import type { MeterModel } from './meter.ts';
 import type { WarningsModel } from './warnings.ts';
 /**
+ * LocalInferRoute is one webServer route definition the register step holds
+ * by an effect: the stable name, the exact-match path, and the handler the
+ * web server invokes per request. The route files under ./routes/ each build
+ * one of these.
+ */
+export interface LocalInferRoute {
+    name: string;
+    kind: 'exact';
+    path: string;
+    handler: (req: IncomingLike, res: OutgoingLike) => void | Promise<void>;
+}
+/**
  * The webServer service is dsh-specific and absent from the cordis Context
  * type, so the route narrows the scoped context to the two members it needs.
  */
 export interface WebServerService {
-    register(route: {
-        name: string;
-        kind: 'exact';
-        path: string;
-        handler: (req: IncomingLike, res: OutgoingLike) => void | Promise<void>;
-    }): () => void;
+    register(route: LocalInferRoute): () => void;
 }
 interface IncomingLike extends AsyncIterable<Buffer> {
     method: string;
@@ -217,6 +232,19 @@ export declare function readConfig(): StoredConfig;
  */
 export declare function writeConfig(engine: string, config: Config, allowRunDeps: boolean, platform?: Record<string, StoredPlatformConfig>, showHelp?: boolean, providers?: StoredProviderConfig[], logPath?: string, lastLogs?: string): void;
 /**
+ * parsePlatformConfigs reads the stored platform map, keeping only entries
+ * whose fields are strings. A non-object map or a non-object entry reads as
+ * absent, so the deploy step never sees a platform config it cannot price.
+ */
+export declare function parsePlatformConfigs(raw: unknown): Record<string, StoredPlatformConfig>;
+/**
+ * parseStoredPlatformConfig reads one engine's platform config (the launch
+ * request's `platform` key), keeping only string fields. A non-object or an
+ * object with no string fields reads as absent, so the launch keeps the stored
+ * entry the save route synced.
+ */
+export declare function parseStoredPlatformConfig(raw: unknown): StoredPlatformConfig | undefined;
+/**
  * relinkStoredProviders prices every stored provider launch record against the
  * live process table through the service's re-link rule and returns the
  * provider list the card should read: an adopted engine is re-marked plugin-
@@ -251,6 +279,32 @@ export declare class RouteError extends Error {
     constructor(status: number, message: string);
 }
 /**
+ * sendJson writes a JSON answer: the status and content-type head, then the
+ * stringified body. Every route answers through this one helper, so a status
+ * the card reads never drifts from the content type.
+ */
+export declare function sendJson(res: OutgoingLike, status: number, body: unknown): void;
+/**
+ * requireMethod reports true when the request method is the route's. A
+ * different method gets a 405 answer and a false return, so the handler
+ * returns before touching the body.
+ */
+export declare function requireMethod(req: IncomingLike, res: OutgoingLike, method: string): boolean;
+/**
+ * readJsonBody collects a bounded JSON request body: chunks up to the cap,
+ * then parses. A body past the cap destroys the request and throws a 413
+ * RouteError carrying the route's own message, so the answer names the route
+ * that rejected the body.
+ */
+export declare function readJsonBody(req: IncomingLike, tooLargeMessage: string): Promise<Record<string, unknown>>;
+/**
+ * syncPlatformConfigs re-syncs the service registry with the stored platform
+ * map: it registers (or re-registers) every engine that carries a config, and
+ * unregisters every engine that no longer does, so a launch always reads the
+ * platform config the user last saved.
+ */
+export declare function syncPlatformConfigs(localInfer: LocalInferService, stored: StoredConfig): void;
+/**
  * DepsRequest is the query the card sends for the deps panel: the engine and
  * the config the build mode reads from. Absent values fall back to the stored
  * config, the same rule the summary route applies.
@@ -259,6 +313,13 @@ export interface DepsRequest {
     engine?: string;
     config?: Config;
 }
+/**
+ * depsRequestFromUrl parses the engine and config query params the GET routes
+ * (summary, deps) read. An absent engine falls back to the stored engine, and
+ * a config that cannot be parsed falls back to the stored config, the same
+ * rule the POST routes apply to a broken body key.
+ */
+export declare function depsRequestFromUrl(url: URL): DepsRequest;
 /**
  * resolveBuildMode picks the deploy mode the dep plan prices: the config's
  * buildMode when the selected engine supports it, else the engine's default
@@ -347,6 +408,21 @@ export interface LaunchRequest {
     autoRebuild?: boolean;
 }
 /**
+ * launchRequestFromBody parses the launch and stop POST body: the engine,
+ * config, and platform override the plan renders from, falling back to the
+ * stored config per key. The stop route ignores the platform key.
+ * `providerId` names the saved provider entry the launch record (or its
+ * stop's clear) targets, and `autoRebuild` carries the card's Auto Rebuild
+ * checkbox.
+ */
+export declare function launchRequestFromBody(body: {
+    engine?: unknown;
+    config?: unknown;
+    platform?: unknown;
+    providerId?: unknown;
+    autoRebuild?: unknown;
+}): LaunchRequest;
+/**
  * launchEngine renders the plan the registered adapter produces for the config
  * and the detected hardware, then runs the service's launch entry point
  * (deploy, then the health poll). The detail the launch returns names the
@@ -415,6 +491,14 @@ export declare function getEngine(localInfer: LocalInferService, request: GetReq
     detail?: string;
 }>;
 /**
+ * persistGetLogs appends one Get run's streamed output to the stored last-
+ * run logs (the card's Logs section shows it after a reload) and writes no
+ * log file: the launch step owns the per-run files. The tail rule matches
+ * the launch logs' cap, so a long build cannot grow the config without
+ * bound.
+ */
+export declare function persistGetLogs(output: string): void;
+/**
  * RegisterRequest is the query the card sends for the register and
  * unregister routes: the engine and the config the plan renders from, and
  * agentDefault, which points the agent default model at the registered
@@ -426,6 +510,16 @@ export interface RegisterRequest {
     config?: Config;
     agentDefault?: boolean;
 }
+/**
+ * registerRequestFromBody parses the register and unregister POST body: the
+ * engine and config the plan renders from, plus agentDefault for the register
+ * route, falling back to the stored config per key.
+ */
+export declare function registerRequestFromBody(body: {
+    engine?: unknown;
+    config?: unknown;
+    agentDefault?: unknown;
+}): RegisterRequest;
 /**
  * resolveContextWindow picks the context window the registrar publishes: the
  * config's maxContext when it names one, else the native ceiling of the
@@ -461,14 +555,15 @@ export declare function unregisterFor(localInfer: LocalInferService, request?: R
     removed: boolean;
 }>;
 /**
- * registerLocalInferRoute registers the summary, save, deps, install, get,
- * launch, stop, register, and unregister routes on the web server and holds
- * them by an effect, so a bundle switch off removes them before the next
- * switch on re-registers. The scoped context carries the webServer; the
- * localInfer service is passed in because the scope only injects what it
- * names. The optional getHost is the lifecycle host the Get route's git and
- * build steps run through; it defaults to the node host, and a test injects
- * a stub so the route never clones a real repo in CI.
+ * registerLocalInferRoute registers the summary, save, provider-delete, deps,
+ * install, download, chat-template, get, launch, stop, register, and
+ * unregister routes on the web server and holds them by an effect, so a
+ * bundle switch off removes them before the next switch on re-registers. The
+ * scoped context carries the webServer; the localInfer service is passed in
+ * because the scope only injects what it names. The optional getHost is the
+ * lifecycle host the Get route's git and build steps run through; it
+ * defaults to the node host, and a test injects a stub so the route never
+ * clones a real repo in CI.
  */
 export declare function registerLocalInferRoute(scope: Context & {
     webServer: WebServerService;

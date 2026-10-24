@@ -12,6 +12,14 @@
  * ~/.dsh/local-infer/config.json, shared with the CLI, so the browser never
  * sees a secret it did not store. The routes are held by an effect, so they
  * go when the plugin does.
+ *
+ * This module holds the shared machinery every route builds on: the stored-
+ * config read/write and its parsers, the summary, deps, install, download,
+ * get, launch, stop, register, and unregister operations, the platform-
+ * config registry sync, and the small HTTP helpers (sendJson, requireMethod,
+ * readJsonBody). Each route definition lives in its own file under
+ * ./routes/, one file per path, and registerLocalInferRoute wires them onto
+ * the web server.
  * @module dsh-plugin-local-infer/ui/route
  */
 
@@ -80,18 +88,38 @@ import { renderMeter } from './meter.ts'
 import type { MeterModel } from './meter.ts'
 import { renderWarnings } from './warnings.ts'
 import type { WarningsModel } from './warnings.ts'
+import { chatTemplateRoute } from './routes/chat-template.ts'
+import { depsRoute } from './routes/deps.ts'
+import { downloadRoute } from './routes/download.ts'
+import { getRoute } from './routes/get.ts'
+import { installRoute } from './routes/install.ts'
+import { launchRoute } from './routes/launch.ts'
+import { providerDeleteRoute } from './routes/provider-delete.ts'
+import { registerRoute } from './routes/register.ts'
+import { saveRoute } from './routes/save.ts'
+import { stopRoute } from './routes/stop.ts'
+import { summaryRoute } from './routes/summary.ts'
+import { unregisterRoute } from './routes/unregister.ts'
+
+/**
+ * LocalInferRoute is one webServer route definition the register step holds
+ * by an effect: the stable name, the exact-match path, and the handler the
+ * web server invokes per request. The route files under ./routes/ each build
+ * one of these.
+ */
+export interface LocalInferRoute {
+  name: string
+  kind: 'exact'
+  path: string
+  handler: (req: IncomingLike, res: OutgoingLike) => void | Promise<void>
+}
 
 /**
  * The webServer service is dsh-specific and absent from the cordis Context
  * type, so the route narrows the scoped context to the two members it needs.
  */
 export interface WebServerService {
-  register(route: {
-    name: string
-    kind: 'exact'
-    path: string
-    handler: (req: IncomingLike, res: OutgoingLike) => void | Promise<void>
-  }): () => void
+  register(route: LocalInferRoute): () => void
 }
 
 interface IncomingLike extends AsyncIterable<Buffer> {
@@ -500,15 +528,6 @@ function parseLaunchRecord(raw: unknown): ProviderLaunchRecord | undefined {
 }
 
 /**
- * newProviderId mints the stable id a new provider entry carries: a
- * timestamp base plus a random tail, so two Saves in the same tick never
- * collide. The card edits and deletes against this id.
- */
-function newProviderId(): string {
-  return `provider-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-}
-
-/**
  * writeConfig persists the engine, config, trust gate, per-engine platform
  * configs, and the help toggle, creating the directory tree on first write.
  */
@@ -548,7 +567,7 @@ export function writeConfig(
  * whose fields are strings. A non-object map or a non-object entry reads as
  * absent, so the deploy step never sees a platform config it cannot price.
  */
-function parsePlatformConfigs(raw: unknown): Record<string, StoredPlatformConfig> {
+export function parsePlatformConfigs(raw: unknown): Record<string, StoredPlatformConfig> {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
     return {}
   }
@@ -589,7 +608,7 @@ function parsePlatformConfigs(raw: unknown): Record<string, StoredPlatformConfig
  * object with no string fields reads as absent, so the launch keeps the stored
  * entry the save route synced.
  */
-function parseStoredPlatformConfig(raw: unknown): StoredPlatformConfig | undefined {
+export function parseStoredPlatformConfig(raw: unknown): StoredPlatformConfig | undefined {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
     return undefined
   }
@@ -896,6 +915,56 @@ export class RouteError extends Error {
 }
 
 /**
+ * The request body size cap the POST routes enforce: a config payload is a
+ * few kilobytes at most, so a body past 64 KiB is a client bug, not a config.
+ */
+const MAX_BODY_BYTES = 64 * 1024
+
+/**
+ * sendJson writes a JSON answer: the status and content-type head, then the
+ * stringified body. Every route answers through this one helper, so a status
+ * the card reads never drifts from the content type.
+ */
+export function sendJson(res: OutgoingLike, status: number, body: unknown): void {
+  res.writeHead(status, { 'content-type': 'application/json' })
+  res.end(JSON.stringify(body))
+}
+
+/**
+ * requireMethod reports true when the request method is the route's. A
+ * different method gets a 405 answer and a false return, so the handler
+ * returns before touching the body.
+ */
+export function requireMethod(req: IncomingLike, res: OutgoingLike, method: string): boolean {
+  if (req.method === method) return true
+  res.writeHead(405).end()
+  return false
+}
+
+/**
+ * readJsonBody collects a bounded JSON request body: chunks up to the cap,
+ * then parses. A body past the cap destroys the request and throws a 413
+ * RouteError carrying the route's own message, so the answer names the route
+ * that rejected the body.
+ */
+export async function readJsonBody(
+  req: IncomingLike,
+  tooLargeMessage: string,
+): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = []
+  let total = 0
+  for await (const chunk of req) {
+    total += chunk.length
+    if (total > MAX_BODY_BYTES) {
+      req.destroy()
+      throw new RouteError(413, tooLargeMessage)
+    }
+    chunks.push(chunk)
+  }
+  return JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>
+}
+
+/**
  * The route's view of which engine platform configs are registered with the
  * service, keyed by engine id. The service registry is the single source the
  * launch step reads, so the route keeps it in sync with the stored config:
@@ -939,7 +1008,7 @@ function setPlatformConfig(
  * unregisters every engine that no longer does, so a launch always reads the
  * platform config the user last saved.
  */
-function syncPlatformConfigs(
+export function syncPlatformConfigs(
   localInfer: LocalInferService,
   stored: StoredConfig,
 ): void {
@@ -962,6 +1031,29 @@ function syncPlatformConfigs(
 export interface DepsRequest {
   engine?: string
   config?: Config
+}
+
+/**
+ * depsRequestFromUrl parses the engine and config query params the GET routes
+ * (summary, deps) read. An absent engine falls back to the stored engine, and
+ * a config that cannot be parsed falls back to the stored config, the same
+ * rule the POST routes apply to a broken body key.
+ */
+export function depsRequestFromUrl(url: URL): DepsRequest {
+  const request: DepsRequest = {}
+  const engineParam = url.searchParams.get('engine')
+  if (engineParam !== null) {
+    request.engine = engineParam
+  }
+  const configParam = url.searchParams.get('config')
+  if (configParam !== null) {
+    try {
+      request.config = JSON.parse(configParam) as Config
+    } catch {
+      // A config that cannot parse reads as absent, so the stored config wins.
+    }
+  }
+  return request
 }
 
 /**
@@ -1169,6 +1261,41 @@ export interface LaunchRequest {
   platform?: StoredPlatformConfig
   providerId?: string
   autoRebuild?: boolean
+}
+
+/**
+ * launchRequestFromBody parses the launch and stop POST body: the engine,
+ * config, and platform override the plan renders from, falling back to the
+ * stored config per key. The stop route ignores the platform key.
+ * `providerId` names the saved provider entry the launch record (or its
+ * stop's clear) targets, and `autoRebuild` carries the card's Auto Rebuild
+ * checkbox.
+ */
+export function launchRequestFromBody(body: {
+  engine?: unknown
+  config?: unknown
+  platform?: unknown
+  providerId?: unknown
+  autoRebuild?: unknown
+}): LaunchRequest {
+  const request: LaunchRequest = {}
+  if (typeof body.engine === 'string') {
+    request.engine = body.engine
+  }
+  if (body.config && typeof body.config === 'object') {
+    request.config = body.config as Config
+  }
+  const platform = parseStoredPlatformConfig(body.platform)
+  if (platform !== undefined) {
+    request.platform = platform
+  }
+  if (typeof body.providerId === 'string' && body.providerId.trim() !== '') {
+    request.providerId = body.providerId
+  }
+  if (typeof body.autoRebuild === 'boolean') {
+    request.autoRebuild = body.autoRebuild
+  }
+  return request
 }
 
 /**
@@ -1686,7 +1813,7 @@ export async function getEngine(
  * the launch logs' cap, so a long build cannot grow the config without
  * bound.
  */
-function persistGetLogs(output: string): void {
+export function persistGetLogs(output: string): void {
   if (output === '') return
   const stored = readConfig()
   const joined = `${stored.lastLogs}${stored.lastLogs === '' ? '' : '\n'}${output}`
@@ -1713,6 +1840,29 @@ export interface RegisterRequest {
   engine?: string
   config?: Config
   agentDefault?: boolean
+}
+
+/**
+ * registerRequestFromBody parses the register and unregister POST body: the
+ * engine and config the plan renders from, plus agentDefault for the register
+ * route, falling back to the stored config per key.
+ */
+export function registerRequestFromBody(body: {
+  engine?: unknown
+  config?: unknown
+  agentDefault?: unknown
+}): RegisterRequest {
+  const request: RegisterRequest = {}
+  if (typeof body.engine === 'string') {
+    request.engine = body.engine
+  }
+  if (body.config && typeof body.config === 'object') {
+    request.config = body.config as Config
+  }
+  if (typeof body.agentDefault === 'boolean') {
+    request.agentDefault = body.agentDefault
+  }
+  return request
 }
 
 /**
@@ -1831,734 +1981,35 @@ export async function unregisterFor(
 }
 
 /**
- * registerLocalInferRoute registers the summary, save, deps, install, get,
- * launch, stop, register, and unregister routes on the web server and holds
- * them by an effect, so a bundle switch off removes them before the next
- * switch on re-registers. The scoped context carries the webServer; the
- * localInfer service is passed in because the scope only injects what it
- * names. The optional getHost is the lifecycle host the Get route's git and
- * build steps run through; it defaults to the node host, and a test injects
- * a stub so the route never clones a real repo in CI.
+ * registerLocalInferRoute registers the summary, save, provider-delete, deps,
+ * install, download, chat-template, get, launch, stop, register, and
+ * unregister routes on the web server and holds them by an effect, so a
+ * bundle switch off removes them before the next switch on re-registers. The
+ * scoped context carries the webServer; the localInfer service is passed in
+ * because the scope only injects what it names. The optional getHost is the
+ * lifecycle host the Get route's git and build steps run through; it
+ * defaults to the node host, and a test injects a stub so the route never
+ * clones a real repo in CI.
  */
 export function registerLocalInferRoute(
   scope: Context & { webServer: WebServerService },
   localInfer: LocalInferService,
   getHost?: LifecycleHost,
 ): void {
-  const summary = async (url: URL): Promise<LocalInferSummary> => {
-    const engineParam = url.searchParams.get('engine')
-    const configParam = url.searchParams.get('config')
-    let config: Config | undefined
-    if (configParam !== null) {
-      try {
-        config = JSON.parse(configParam) as Config
-      } catch {
-        config = undefined
-      }
-    }
-    // exactOptionalPropertyTypes: build the request object with only the keys
-    // that are present, so an absent value never writes `undefined`.
-    const request: { engine?: string; config?: Config } = {}
-    if (engineParam !== null) {
-      request.engine = engineParam
-    }
-    if (config !== undefined) {
-      request.config = config
-    }
-    return buildSummary(localInfer, request)
-  }
-
-  const route = {
-    name: 'local-infer-config',
-    kind: 'exact' as const,
-    path: '/local-infer/summary',
-    handler: async (req: IncomingLike, res: OutgoingLike) => {
-      const send = (status: number, body: unknown) => {
-        res.writeHead(status, { 'content-type': 'application/json' })
-        res.end(JSON.stringify(body))
-      }
-      if (req.method === 'GET') {
-        try {
-          send(200, await summary(new URL(req.url, 'http://localhost')))
-        } catch (error) {
-          send(500, { error: String((error as Error)?.message ?? error) })
-        }
-        return
-      }
-      res.writeHead(405).end()
-    },
-  }
-
-  const save = {
-    name: 'local-infer-save',
-    kind: 'exact' as const,
-    path: '/local-infer/save',
-    handler: async (req: IncomingLike, res: OutgoingLike) => {
-      const send = (status: number, body: unknown) => {
-        res.writeHead(status, { 'content-type': 'application/json' })
-        res.end(JSON.stringify(body))
-      }
-      if (req.method !== 'POST') {
-        res.writeHead(405).end()
-        return
-      }
-      try {
-        const chunks: Buffer[] = []
-        let total = 0
-        for await (const chunk of req) {
-          total += chunk.length
-          if (total > 64 * 1024) {
-            send(413, { error: 'config payload too large' })
-            req.destroy()
-            return
-          }
-          chunks.push(chunk)
-        }
-        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
-          engine?: unknown
-          config?: unknown
-          allowRunDeps?: unknown
-          platform?: unknown
-          showHelp?: unknown
-          // The provider id to update. Absent means a new provider entry,
-          // which the route mints an id for and prepends to the list.
-          id?: unknown
-          // The log-file location template the card's log-location field edits.
-          // Absent keeps the stored template (or the plugin default).
-          logPath?: unknown
-          // A settings-only save persists the global fields (the help toggle,
-          // the trust gate) without upserting a provider entry, so the card's
-          // setting toggles never mint a duplicate entry at the top of the list.
-          settingsOnly?: unknown
-        }
-        const engine = typeof body.engine === 'string' ? body.engine : 'ninfer'
-        const config = body.config && typeof body.config === 'object' ? (body.config as Config) : {}
-        const allowRunDeps = typeof body.allowRunDeps === 'boolean' ? body.allowRunDeps : false
-        const platform = parsePlatformConfigs(body.platform)
-        // A body that predates the key keeps the descriptions visible.
-        const showHelp = typeof body.showHelp === 'boolean' ? body.showHelp : true
-        const providerId = typeof body.id === 'string' && body.id.trim() !== '' ? body.id : undefined
-        // A body that omits the log location (or sends a blank one) keeps the
-        // stored template, so an unsaved edit never wipes a custom path.
-        const logPath =
-          typeof body.logPath === 'string' && body.logPath !== ''
-            ? body.logPath
-            : readConfig().logPath
-        // Save upserts a provider entry: an id updates the stored entry in
-        // place, an absent id mints a new id and prepends the entry, so a Save
-        // always adds (or refreshes) a card entry at the top of the list. The
-        // provider's platform config is the per-engine entry the deploy step
-        // reads, so a provider never carries a field it cannot price. A save
-        // that updates an entry in place carries the entry's launch record
-        // over, so editing a running provider's config never drops the record
-        // the restart re-link prices. A settings-only save skips the upsert:
-        // it persists the global fields the toggle edits and keeps the stored
-        // list intact, so the help and allow-run toggles never mint a
-        // duplicate entry.
-        const stored = readConfig()
-        let providers: StoredProviderConfig[]
-        if (body.settingsOnly === true) {
-          providers = stored.providers
-        } else {
-          const provider: StoredProviderConfig = {
-            id: providerId ?? newProviderId(),
-            engine,
-            config,
-            platform: platform[engine] ?? {},
-          }
-          if (providerId !== undefined) {
-            const existing = stored.providers.find((entry) => entry.id === providerId)
-            if (existing?.launch !== undefined) {
-              provider.launch = existing.launch
-            }
-          }
-          providers =
-            providerId !== undefined
-              ? stored.providers.map((entry) => (entry.id === providerId ? provider : entry))
-              : [provider, ...stored.providers]
-        }
-        writeConfig(engine, config, allowRunDeps, platform, showHelp, providers, logPath)
-        // Re-sync the service registry with the saved platform map, so the next
-        // launch reads the platform config the user just saved.
-        syncPlatformConfigs(localInfer, {
-          engine,
-          config,
-          allowRunDeps,
-          platform,
-          showHelp,
-          providers,
-          logPath,
-          lastLogs: stored.lastLogs,
-        })
-        // A Save on an already-registered model re-runs the registration, so
-        // the DSH model row's input types (the vision flag) stay in step with
-        // the config the user just saved. Best-effort: a profile without the
-        // settings seam, or an engine no adapter serves, leaves the save intact.
-        try {
-          await syncRegisteredModel(localInfer, engine, config)
-        } catch {
-          // A sync that cannot run is a no-op for the save.
-        }
-        send(200, await buildSummary(localInfer, { engine, config }))
-      } catch (error) {
-        send(400, { error: String((error as Error)?.message ?? error) })
-      }
-    },
-  }
-
-  const deleteProvider = {
-    name: 'local-infer-provider-delete',
-    kind: 'exact' as const,
-    path: '/local-infer/provider-delete',
-    handler: async (req: IncomingLike, res: OutgoingLike) => {
-      const send = (status: number, body: unknown) => {
-        res.writeHead(status, { 'content-type': 'application/json' })
-        res.end(JSON.stringify(body))
-      }
-      if (req.method !== 'POST') {
-        res.writeHead(405).end()
-        return
-      }
-      try {
-        const chunks: Buffer[] = []
-        let total = 0
-        for await (const chunk of req) {
-          total += chunk.length
-          if (total > 64 * 1024) {
-            send(413, { error: 'payload too large' })
-            req.destroy()
-            return
-          }
-          chunks.push(chunk)
-        }
-        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { id?: unknown }
-        const id = typeof body.id === 'string' ? body.id : undefined
-        if (id === undefined) {
-          send(400, { error: 'the provider id is required' })
-          return
-        }
-        // Delete removes the stored provider entry by id, keeping the rest of
-        // the list and the active config intact, then re-syncs the registry so
-        // a launch never reads a platform config the user just removed.
-        const stored = readConfig()
-        const providers = stored.providers.filter((entry) => entry.id !== id)
-        writeConfig(
-          stored.engine,
-          stored.config,
-          stored.allowRunDeps,
-          stored.platform,
-          stored.showHelp,
-          providers,
-          stored.logPath,
-          stored.lastLogs,
-        )
-        syncPlatformConfigs(localInfer, stored)
-        send(200, await buildSummary(localInfer))
-      } catch (error) {
-        send(400, { error: String((error as Error)?.message ?? error) })
-      }
-    },
-  }
-
-  const deps = {
-    name: 'local-infer-deps',
-    kind: 'exact' as const,
-    path: '/local-infer/deps',
-    handler: async (req: IncomingLike, res: OutgoingLike) => {
-      const send = (status: number, body: unknown) => {
-        res.writeHead(status, { 'content-type': 'application/json' })
-        res.end(JSON.stringify(body))
-      }
-      if (req.method !== 'GET') {
-        res.writeHead(405).end()
-        return
-      }
-      const url = new URL(req.url, 'http://localhost')
-      const engineParam = url.searchParams.get('engine')
-      const configParam = url.searchParams.get('config')
-      let config: Config | undefined
-      if (configParam !== null) {
-        try {
-          config = JSON.parse(configParam) as Config
-        } catch {
-          config = undefined
-        }
-      }
-      // exactOptionalPropertyTypes: build the request object with only the
-      // keys that are present, so an absent value never writes `undefined`.
-      const request: DepsRequest = {}
-      if (engineParam !== null) {
-        request.engine = engineParam
-      }
-      if (config !== undefined) {
-        request.config = config
-      }
-      try {
-        send(200, await buildDeps(localInfer, request))
-      } catch (error) {
-        send(500, { error: String((error as Error)?.message ?? error) })
-      }
-    },
-  }
-
-  const install = {
-    name: 'local-infer-install',
-    kind: 'exact' as const,
-    path: '/local-infer/install',
-    handler: async (req: IncomingLike, res: OutgoingLike) => {
-      const send = (status: number, body: unknown) => {
-        res.writeHead(status, { 'content-type': 'application/json' })
-        res.end(JSON.stringify(body))
-      }
-      if (req.method !== 'POST') {
-        res.writeHead(405).end()
-        return
-      }
-      try {
-        const chunks: Buffer[] = []
-        let total = 0
-        for await (const chunk of req) {
-          total += chunk.length
-          if (total > 64 * 1024) {
-            send(413, { error: 'install payload too large' })
-            req.destroy()
-            return
-          }
-          chunks.push(chunk)
-        }
-        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
-          engine?: unknown
-          config?: unknown
-        }
-        const request: DepsRequest = {}
-        if (typeof body.engine === 'string') {
-          request.engine = body.engine
-        }
-        if (body.config && typeof body.config === 'object') {
-          request.config = body.config as Config
-        }
-        send(200, await runInstallFor(localInfer, request))
-      } catch (error) {
-        if (error instanceof RouteError) {
-          send(error.status, { error: error.message })
-          return
-        }
-        send(500, { error: String((error as Error)?.message ?? error) })
-      }
-    },
-  }
-
-  const download = {
-    name: 'local-infer-download',
-    kind: 'exact' as const,
-    path: '/local-infer/download',
-    handler: async (req: IncomingLike, res: OutgoingLike) => {
-      const send = (status: number, body: unknown) => {
-        res.writeHead(status, { 'content-type': 'application/json' })
-        res.end(JSON.stringify(body))
-      }
-      if (req.method !== 'POST') {
-        res.writeHead(405).end()
-        return
-      }
-      try {
-        const chunks: Buffer[] = []
-        let total = 0
-        for await (const chunk of req) {
-          total += chunk.length
-          if (total > 64 * 1024) {
-            send(413, { error: 'download payload too large' })
-            req.destroy()
-            return
-          }
-          chunks.push(chunk)
-        }
-        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
-          engine?: unknown
-          model?: unknown
-          directory?: unknown
-        }
-        const request: DownloadRequest = {}
-        if (typeof body.engine === 'string') {
-          request.engine = body.engine
-        }
-        if (typeof body.model === 'string') {
-          request.model = body.model
-        }
-        if (typeof body.directory === 'string') {
-          request.directory = body.directory
-        }
-        send(200, await downloadFor(localInfer, request))
-      } catch (error) {
-        if (error instanceof RouteError) {
-          send(error.status, { error: error.message })
-          return
-        }
-        send(500, { error: String((error as Error)?.message ?? error) })
-      }
-    },
-  }
-
-  // The chat-template download route: the card's auto-download (and the
-  // System-dependencies fallback) pulls a selected template into the model
-  // directory through this route, so a picked preset works out of the box.
-  const chatTemplate = {
-    name: 'local-infer-chat-template',
-    kind: 'exact' as const,
-    path: '/local-infer/chat-template',
-    handler: async (req: IncomingLike, res: OutgoingLike) => {
-      const send = (status: number, body: unknown) => {
-        res.writeHead(status, { 'content-type': 'application/json' })
-        res.end(JSON.stringify(body))
-      }
-      if (req.method !== 'POST') {
-        res.writeHead(405).end()
-        return
-      }
-      try {
-        const chunks: Buffer[] = []
-        let total = 0
-        for await (const chunk of req) {
-          total += chunk.length
-          if (total > 64 * 1024) {
-            send(413, { error: 'chat template payload too large' })
-            req.destroy()
-            return
-          }
-          chunks.push(chunk)
-        }
-        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
-          engine?: unknown
-          template?: unknown
-          directory?: unknown
-        }
-        const request: ChatTemplateDownloadRequest = {}
-        if (typeof body.engine === 'string') {
-          request.engine = body.engine
-        }
-        if (typeof body.template === 'string') {
-          request.template = body.template
-        }
-        if (typeof body.directory === 'string') {
-          request.directory = body.directory
-        }
-        send(200, await chatTemplateDownloadFor(localInfer, request))
-      } catch (error) {
-        if (error instanceof RouteError) {
-          send(error.status, { error: error.message })
-          return
-        }
-        send(500, { error: String((error as Error)?.message ?? error) })
-      }
-    },
-  }
-
-  // The Get route: a POST whose answer streams as plain text, so the card
-  // appends the git sync, the dependency run, and the build output to its
-  // Logs section as it lands. The full run persists as the last-run logs.
-  const get = {
-    name: 'local-infer-get',
-    kind: 'exact' as const,
-    path: '/local-infer/get',
-    handler: async (req: IncomingLike, res: OutgoingLike) => {
-      const send = (status: number, body: unknown) => {
-        res.writeHead(status, { 'content-type': 'application/json' })
-        res.end(JSON.stringify(body))
-      }
-      if (req.method !== 'POST') {
-        res.writeHead(405).end()
-        return
-      }
-      try {
-        const chunks: Buffer[] = []
-        let total = 0
-        for await (const chunk of req) {
-          total += chunk.length
-          if (total > 64 * 1024) {
-            send(413, { error: 'get payload too large' })
-            req.destroy()
-            return
-          }
-          chunks.push(chunk)
-        }
-        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
-          engine?: unknown
-          config?: unknown
-          platform?: unknown
-        }
-        const request: GetRequest = {}
-        if (typeof body.engine === 'string') {
-          request.engine = body.engine
-        }
-        if (body.config && typeof body.config === 'object') {
-          request.config = body.config as Config
-        }
-        const platform = parseStoredPlatformConfig(body.platform)
-        if (platform !== undefined) {
-          request.platform = platform
-        }
-        res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
-        let collected = ''
-        const log = (text: string): void => {
-          collected += text
-          if (typeof res.write === 'function') {
-            res.write(text)
-          }
-        }
-        try {
-          await getEngine(localInfer, request, log, getHost)
-        } catch (error) {
-          log(`!! get failed: ${String((error as Error)?.message ?? error)}\n`)
-        }
-        persistGetLogs(collected)
-        res.end()
-      } catch (error) {
-        send(400, { error: String((error as Error)?.message ?? error) })
-      }
-    },
-  }
-
-  // The launch and stop routes share a POST body parser: the engine, config,
-  // and platform override the plan renders from, falling back to the stored
-  // config per key. The stop route ignores the platform key. `providerId`
-  // names the saved provider entry the launch record (or its stop's clear)
-  // targets.
-  const launchRequestFromBody = (body: {
-    engine?: unknown
-    config?: unknown
-    platform?: unknown
-    providerId?: unknown
-    autoRebuild?: unknown
-  }): LaunchRequest => {
-    const request: LaunchRequest = {}
-    if (typeof body.engine === 'string') {
-      request.engine = body.engine
-    }
-    if (body.config && typeof body.config === 'object') {
-      request.config = body.config as Config
-    }
-    const platform = parseStoredPlatformConfig(body.platform)
-    if (platform !== undefined) {
-      request.platform = platform
-    }
-    if (typeof body.providerId === 'string' && body.providerId.trim() !== '') {
-      request.providerId = body.providerId
-    }
-    if (typeof body.autoRebuild === 'boolean') {
-      request.autoRebuild = body.autoRebuild
-    }
-    return request
-  }
-
-  const launch = {
-    name: 'local-infer-launch',
-    kind: 'exact' as const,
-    path: '/local-infer/launch',
-    handler: async (req: IncomingLike, res: OutgoingLike) => {
-      const send = (status: number, body: unknown) => {
-        res.writeHead(status, { 'content-type': 'application/json' })
-        res.end(JSON.stringify(body))
-      }
-      if (req.method !== 'POST') {
-        res.writeHead(405).end()
-        return
-      }
-      try {
-        const chunks: Buffer[] = []
-        let total = 0
-        for await (const chunk of req) {
-          total += chunk.length
-          if (total > 64 * 1024) {
-            send(413, { error: 'launch payload too large' })
-            req.destroy()
-            return
-          }
-          chunks.push(chunk)
-        }
-        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
-          engine?: unknown
-          config?: unknown
-        }
-        // The launch streams its progress as NDJSON: a step event as each phase
-        // (prereqs, download, build, launch) begins, then a final result event.
-        // The card's Launch control reads the step that is running and times
-        // out only the launch (health-poll) step; the rebuild steps run as long
-        // as they need to.
-        res.writeHead(200, { 'content-type': 'application/x-ndjson; charset=utf-8' })
-        const writeLine = (line: unknown): void => {
-          if (typeof res.write === 'function') {
-            res.write(JSON.stringify(line) + '\n')
-          }
-        }
-        const onProgress = (step: LaunchStep): void => {
-          writeLine({ step })
-        }
-        try {
-          const result = await launchEngine(localInfer, launchRequestFromBody(body), onProgress)
-          writeLine({ result })
-        } catch (error) {
-          // A launch that breaks before a plan renders (an unknown engine, a
-          // hardware probe failure) still settles the card's control to the red
-          // Logs state through a result event, not a bare 500.
-          const detail =
-            error instanceof RouteError
-              ? error.message
-              : String((error as Error)?.message ?? error)
-          writeLine({ result: { healthy: false, detail } })
-        }
-        res.end()
-      } catch (error) {
-        if (error instanceof RouteError) {
-          send(error.status, { error: error.message })
-          return
-        }
-        send(500, { error: String((error as Error)?.message ?? error) })
-      }
-    },
-  }
-
-  const stop = {
-    name: 'local-infer-stop',
-    kind: 'exact' as const,
-    path: '/local-infer/stop',
-    handler: async (req: IncomingLike, res: OutgoingLike) => {
-      const send = (status: number, body: unknown) => {
-        res.writeHead(status, { 'content-type': 'application/json' })
-        res.end(JSON.stringify(body))
-      }
-      if (req.method !== 'POST') {
-        res.writeHead(405).end()
-        return
-      }
-      try {
-        const chunks: Buffer[] = []
-        let total = 0
-        for await (const chunk of req) {
-          total += chunk.length
-          if (total > 64 * 1024) {
-            send(413, { error: 'stop payload too large' })
-            req.destroy()
-            return
-          }
-          chunks.push(chunk)
-        }
-        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
-          engine?: unknown
-          config?: unknown
-        }
-        await stopEngine(localInfer, launchRequestFromBody(body))
-        send(200, { stopped: true })
-      } catch (error) {
-        if (error instanceof RouteError) {
-          send(error.status, { error: error.message })
-          return
-        }
-        send(500, { error: String((error as Error)?.message ?? error) })
-      }
-    },
-  }
-
-  // The register and unregister routes share a body parser: the engine and
-  // config the plan renders from, plus agentDefault for the register route,
-  // falling back to the stored config per key.
-  const registerRequestFromBody = (body: {
-    engine?: unknown
-    config?: unknown
-    agentDefault?: unknown
-  }): RegisterRequest => {
-    const request: RegisterRequest = {}
-    if (typeof body.engine === 'string') {
-      request.engine = body.engine
-    }
-    if (body.config && typeof body.config === 'object') {
-      request.config = body.config as Config
-    }
-    if (typeof body.agentDefault === 'boolean') {
-      request.agentDefault = body.agentDefault
-    }
-    return request
-  }
-
-  const register = {
-    name: 'local-infer-register',
-    kind: 'exact' as const,
-    path: '/local-infer/register',
-    handler: async (req: IncomingLike, res: OutgoingLike) => {
-      const send = (status: number, body: unknown) => {
-        res.writeHead(status, { 'content-type': 'application/json' })
-        res.end(JSON.stringify(body))
-      }
-      if (req.method !== 'POST') {
-        res.writeHead(405).end()
-        return
-      }
-      try {
-        const chunks: Buffer[] = []
-        let total = 0
-        for await (const chunk of req) {
-          total += chunk.length
-          if (total > 64 * 1024) {
-            send(413, { error: 'register payload too large' })
-            req.destroy()
-            return
-          }
-          chunks.push(chunk)
-        }
-        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
-          engine?: unknown
-          config?: unknown
-          agentDefault?: unknown
-        }
-        send(200, await registerFor(localInfer, registerRequestFromBody(body)))
-      } catch (error) {
-        if (error instanceof RouteError) {
-          send(error.status, { error: error.message })
-          return
-        }
-        send(500, { error: String((error as Error)?.message ?? error) })
-      }
-    },
-  }
-
-  const unregister = {
-    name: 'local-infer-unregister',
-    kind: 'exact' as const,
-    path: '/local-infer/unregister',
-    handler: async (req: IncomingLike, res: OutgoingLike) => {
-      const send = (status: number, body: unknown) => {
-        res.writeHead(status, { 'content-type': 'application/json' })
-        res.end(JSON.stringify(body))
-      }
-      if (req.method !== 'POST') {
-        res.writeHead(405).end()
-        return
-      }
-      try {
-        const chunks: Buffer[] = []
-        let total = 0
-        for await (const chunk of req) {
-          total += chunk.length
-          if (total > 64 * 1024) {
-            send(413, { error: 'unregister payload too large' })
-            req.destroy()
-            return
-          }
-          chunks.push(chunk)
-        }
-        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
-          engine?: unknown
-          config?: unknown
-        }
-        send(200, await unregisterFor(localInfer, registerRequestFromBody(body)))
-      } catch (error) {
-        if (error instanceof RouteError) {
-          send(error.status, { error: error.message })
-          return
-        }
-        send(500, { error: String((error as Error)?.message ?? error) })
-      }
-    },
-  }
+  const routes: LocalInferRoute[] = [
+    summaryRoute(localInfer),
+    saveRoute(localInfer),
+    providerDeleteRoute(localInfer),
+    depsRoute(localInfer),
+    installRoute(localInfer),
+    downloadRoute(localInfer),
+    chatTemplateRoute(localInfer),
+    getRoute(localInfer, getHost),
+    launchRoute(localInfer),
+    stopRoute(localInfer),
+    registerRoute(localInfer),
+    unregisterRoute(localInfer),
+  ]
 
   scope.effect(
     () => {
@@ -2576,32 +2027,12 @@ export function registerLocalInferRoute(
       // open the summary route, so a DSH that restarts re-attaches its engines
       // and a pkill after the restart still settles the stored state.
       void relinkStoredProviders(localInfer, readConfig()).catch(() => undefined)
-      const disposeSummary = scope.webServer.register(route)
-      const disposeSave = scope.webServer.register(save)
-      const disposeDeleteProvider = scope.webServer.register(deleteProvider)
-      const disposeDeps = scope.webServer.register(deps)
-      const disposeInstall = scope.webServer.register(install)
-      const disposeDownload = scope.webServer.register(download)
-      const disposeChatTemplate = scope.webServer.register(chatTemplate)
-      const disposeGet = scope.webServer.register(get)
-      const disposeLaunch = scope.webServer.register(launch)
-      const disposeStop = scope.webServer.register(stop)
-      const disposeRegister = scope.webServer.register(register)
-      const disposeUnregister = scope.webServer.register(unregister)
+      const disposers = routes.map((route) => scope.webServer.register(route))
       return () => {
         localInfer.setEngineDeathObserver(undefined)
-        disposeSummary()
-        disposeSave()
-        disposeDeleteProvider()
-        disposeDeps()
-        disposeInstall()
-        disposeDownload()
-        disposeChatTemplate()
-        disposeGet()
-        disposeLaunch()
-        disposeStop()
-        disposeRegister()
-        disposeUnregister()
+        for (const dispose of disposers) {
+          dispose()
+        }
       }
     },
     'local-infer: settings routes',

@@ -1,0 +1,1 @@
+{"version":3,"file":"chat-template.d.ts","sourceRoot":"","sources":["../../src/routes/chat-template.ts"],"names":[],"mappings":"AAAA;;;;;GAKG;AAEH,OAAO,KAAK,EAAE,iBAAiB,EAAE,MAAM,gCAAgC,CAAA;AACvE,OAAO,KAAK,EAA+B,eAAe,EAAE,MAAM,aAAa,CAAA;AAS/E;;;GAGG;AACH,wBAAgB,iBAAiB,CAAC,UAAU,EAAE,iBAAiB,GAAG,eAAe,CA+BhF"}
