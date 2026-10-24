@@ -1,0 +1,55 @@
+name: Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g. 0.1.3)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 12.11.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'pnpm'
+          package-manager-cache: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Bump versions
+        run: npx tsx scripts/release/bump-versions.ts "${{ inputs.version }}"
+
+      - name: Commit, tag, and push
+        run: npx tsx scripts/release/git-release.ts "${{ inputs.version }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # No NPM_TOKEN secret: the npm CLI detects the GitHub OIDC environment
+      # (id-token: write + registry-url above) and authenticates via the
+      # trusted publisher configured for this package on npmjs.com.
+      - name: Publish to npm
+        run: npm publish --provenance
