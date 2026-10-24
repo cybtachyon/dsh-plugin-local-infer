@@ -4,31 +4,23 @@
  * resolved, so the removal targets the exact entry the registration wrote.
  * @module dsh-plugin-local-infer/ui/routes/unregister
  */
-import { readJsonBody, registerRequestFromBody, requireMethod, RouteError, sendJson, unregisterFor, } from "../route.js";
+import { unregisterFor } from "../ops/model.js";
+import { defineRoute } from "../route.js";
+import { registerRequestFromBody } from "../request.js";
 /**
  * unregisterRoute builds the POST /local-infer/unregister route definition
  * the register step holds by an effect.
  */
 export function unregisterRoute(localInfer) {
-    return {
+    return defineRoute({
         name: 'local-infer-unregister',
-        kind: 'exact',
         path: '/local-infer/unregister',
-        handler: async (req, res) => {
-            if (!requireMethod(req, res, 'POST'))
-                return;
-            try {
-                const body = await readJsonBody(req, 'unregister payload too large');
-                sendJson(res, 200, await unregisterFor(localInfer, registerRequestFromBody(body)));
-            }
-            catch (error) {
-                if (error instanceof RouteError) {
-                    sendJson(res, error.status, { error: error.message });
-                    return;
-                }
-                sendJson(res, 500, { error: String(error?.message ?? error) });
-            }
+        method: 'POST',
+        failStatus: 500,
+        tooLargeMessage: 'unregister payload too large',
+        run: async ({ body }, res) => {
+            res.json(200, await unregisterFor(localInfer, registerRequestFromBody(body)));
         },
-    };
+    });
 }
 //# sourceMappingURL=unregister.js.map

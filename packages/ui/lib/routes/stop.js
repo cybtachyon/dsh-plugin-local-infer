@@ -6,32 +6,24 @@
  * the user just stopped.
  * @module dsh-plugin-local-infer/ui/routes/stop
  */
-import { launchRequestFromBody, readJsonBody, requireMethod, RouteError, sendJson, stopEngine, } from "../route.js";
+import { stopEngine } from "../ops/engine.js";
+import { defineRoute } from "../route.js";
+import { launchRequestFromBody } from "../request.js";
 /**
  * stopRoute builds the POST /local-infer/stop route definition the register
  * step holds by an effect.
  */
 export function stopRoute(localInfer) {
-    return {
+    return defineRoute({
         name: 'local-infer-stop',
-        kind: 'exact',
         path: '/local-infer/stop',
-        handler: async (req, res) => {
-            if (!requireMethod(req, res, 'POST'))
-                return;
-            try {
-                const body = await readJsonBody(req, 'stop payload too large');
-                await stopEngine(localInfer, launchRequestFromBody(body));
-                sendJson(res, 200, { stopped: true });
-            }
-            catch (error) {
-                if (error instanceof RouteError) {
-                    sendJson(res, error.status, { error: error.message });
-                    return;
-                }
-                sendJson(res, 500, { error: String(error?.message ?? error) });
-            }
+        method: 'POST',
+        failStatus: 500,
+        tooLargeMessage: 'stop payload too large',
+        run: async ({ body }, res) => {
+            await stopEngine(localInfer, launchRequestFromBody(body));
+            res.json(200, { stopped: true });
         },
-    };
+    });
 }
 //# sourceMappingURL=stop.js.map

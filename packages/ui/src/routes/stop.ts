@@ -8,38 +8,25 @@
  */
 
 import type { LocalInferService } from 'dsh-plugin-local-infer/service'
+import { stopEngine } from '../ops/engine.ts'
+import { defineRoute } from '../route.ts'
 import type { LocalInferRoute } from '../route.ts'
-import {
-  launchRequestFromBody,
-  readJsonBody,
-  requireMethod,
-  RouteError,
-  sendJson,
-  stopEngine,
-} from '../route.ts'
+import { launchRequestFromBody } from '../request.ts'
 
 /**
  * stopRoute builds the POST /local-infer/stop route definition the register
  * step holds by an effect.
  */
 export function stopRoute(localInfer: LocalInferService): LocalInferRoute {
-  return {
+  return defineRoute({
     name: 'local-infer-stop',
-    kind: 'exact',
     path: '/local-infer/stop',
-    handler: async (req, res) => {
-      if (!requireMethod(req, res, 'POST')) return
-      try {
-        const body = await readJsonBody(req, 'stop payload too large')
-        await stopEngine(localInfer, launchRequestFromBody(body))
-        sendJson(res, 200, { stopped: true })
-      } catch (error) {
-        if (error instanceof RouteError) {
-          sendJson(res, error.status, { error: error.message })
-          return
-        }
-        sendJson(res, 500, { error: String((error as Error)?.message ?? error) })
-      }
+    method: 'POST',
+    failStatus: 500,
+    tooLargeMessage: 'stop payload too large',
+    run: async ({ body }, res) => {
+      await stopEngine(localInfer, launchRequestFromBody(body))
+      res.json(200, { stopped: true })
     },
-  }
+  })
 }

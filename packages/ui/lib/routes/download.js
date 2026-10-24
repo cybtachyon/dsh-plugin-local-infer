@@ -6,43 +6,34 @@
  * directory in that order.
  * @module dsh-plugin-local-infer/ui/routes/download
  */
-import { downloadFor, readJsonBody, requireMethod, RouteError, sendJson } from "../route.js";
+import { defineRoute } from "../route.js";
+import { downloadFor } from "../ops/hf.js";
 /**
  * downloadRoute builds the POST /local-infer/download route definition the
  * register step holds by an effect.
  */
 export function downloadRoute(localInfer) {
-    return {
+    return defineRoute({
         name: 'local-infer-download',
-        kind: 'exact',
         path: '/local-infer/download',
-        handler: async (req, res) => {
-            if (!requireMethod(req, res, 'POST'))
-                return;
-            try {
-                const body = await readJsonBody(req, 'download payload too large');
-                // exactOptionalPropertyTypes: build the request object with only the
-                // keys that are present, so an absent value never writes `undefined`.
-                const request = {};
-                if (typeof body.engine === 'string') {
-                    request.engine = body.engine;
-                }
-                if (typeof body.model === 'string') {
-                    request.model = body.model;
-                }
-                if (typeof body.directory === 'string') {
-                    request.directory = body.directory;
-                }
-                sendJson(res, 200, await downloadFor(localInfer, request));
+        method: 'POST',
+        failStatus: 500,
+        tooLargeMessage: 'download payload too large',
+        run: async ({ body }, res) => {
+            // exactOptionalPropertyTypes: build the request object with only the
+            // keys that are present, so an absent value never writes `undefined`.
+            const request = {};
+            if (typeof body.engine === 'string') {
+                request.engine = body.engine;
             }
-            catch (error) {
-                if (error instanceof RouteError) {
-                    sendJson(res, error.status, { error: error.message });
-                    return;
-                }
-                sendJson(res, 500, { error: String(error?.message ?? error) });
+            if (typeof body.model === 'string') {
+                request.model = body.model;
             }
+            if (typeof body.directory === 'string') {
+                request.directory = body.directory;
+            }
+            res.json(200, await downloadFor(localInfer, request));
         },
-    };
+    });
 }
 //# sourceMappingURL=download.js.map

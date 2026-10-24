@@ -5,31 +5,22 @@
  * card renders.
  * @module dsh-plugin-local-infer/ui/routes/summary
  */
-import { buildSummary, depsRequestFromUrl, requireMethod, RouteError, sendJson, } from "../route.js";
+import { defineRoute } from "../route.js";
+import { depsRequestFromUrl } from "../request.js";
+import { buildSummary } from "../viewmodels/summary.js";
 /**
  * summaryRoute builds the GET /local-infer/summary route definition the
  * register step holds by an effect.
  */
 export function summaryRoute(localInfer) {
-    return {
+    return defineRoute({
         name: 'local-infer-config',
-        kind: 'exact',
         path: '/local-infer/summary',
-        handler: async (req, res) => {
-            if (!requireMethod(req, res, 'GET'))
-                return;
-            try {
-                const url = new URL(req.url, 'http://localhost');
-                sendJson(res, 200, await buildSummary(localInfer, depsRequestFromUrl(url)));
-            }
-            catch (error) {
-                if (error instanceof RouteError) {
-                    sendJson(res, error.status, { error: error.message });
-                    return;
-                }
-                sendJson(res, 500, { error: String(error?.message ?? error) });
-            }
+        method: 'GET',
+        failStatus: 500,
+        run: async ({ url }, res) => {
+            res.json(200, await buildSummary(localInfer, depsRequestFromUrl(url)));
         },
-    };
+    });
 }
 //# sourceMappingURL=summary.js.map

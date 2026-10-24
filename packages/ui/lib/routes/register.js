@@ -6,31 +6,23 @@
  * registrar wrote, so the card names the model it published.
  * @module dsh-plugin-local-infer/ui/routes/register
  */
-import { readJsonBody, registerFor, registerRequestFromBody, requireMethod, RouteError, sendJson, } from "../route.js";
+import { registerFor } from "../ops/model.js";
+import { defineRoute } from "../route.js";
+import { registerRequestFromBody } from "../request.js";
 /**
  * registerRoute builds the POST /local-infer/register route definition the
  * register step holds by an effect.
  */
 export function registerRoute(localInfer) {
-    return {
+    return defineRoute({
         name: 'local-infer-register',
-        kind: 'exact',
         path: '/local-infer/register',
-        handler: async (req, res) => {
-            if (!requireMethod(req, res, 'POST'))
-                return;
-            try {
-                const body = await readJsonBody(req, 'register payload too large');
-                sendJson(res, 200, await registerFor(localInfer, registerRequestFromBody(body)));
-            }
-            catch (error) {
-                if (error instanceof RouteError) {
-                    sendJson(res, error.status, { error: error.message });
-                    return;
-                }
-                sendJson(res, 500, { error: String(error?.message ?? error) });
-            }
+        method: 'POST',
+        failStatus: 500,
+        tooLargeMessage: 'register payload too large',
+        run: async ({ body }, res) => {
+            res.json(200, await registerFor(localInfer, registerRequestFromBody(body)));
         },
-    };
+    });
 }
 //# sourceMappingURL=register.js.map

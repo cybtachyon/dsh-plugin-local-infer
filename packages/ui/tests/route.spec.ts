@@ -35,27 +35,16 @@ import type {
   RegisterModelOptions,
 } from 'dsh-plugin-local-infer/service'
 import { apply as applyProviders } from 'dsh-plugin-local-infer/providers'
-import {
-  buildDeps,
-  buildSummary,
-  downloadFor,
-  getEngine,
-  handleEngineDeath,
-  launchEngine,
-  localInferConfigPath,
-  readConfig,
-  registerFor,
-  registerLocalInferRoute,
-  resolveBuildMode,
-  resolveContextWindow,
-  RouteError,
-  runInstallFor,
-  stopEngine,
-  unregisterFor,
-  writeConfig,
-} from '../src/route.ts'
+import { localInferConfigPath, readConfig, writeConfig } from '../src/config.ts'
+import { getEngine, handleEngineDeath, launchEngine, stopEngine } from '../src/ops/engine.ts'
+import { downloadFor } from '../src/ops/hf.ts'
+import { registerFor, resolveContextWindow, unregisterFor } from '../src/ops/model.ts'
+import { registerLocalInferRoute, RouteError } from '../src/route.ts'
+import { buildDeps, resolveBuildMode } from '../src/viewmodels/deps.ts'
+import { runInstallFor } from '../src/viewmodels/depsHelpers.ts'
+import { buildSummary } from '../src/viewmodels/summary.ts'
 import type { EngineInfo } from 'dsh-plugin-local-infer/providers'
-import type { StoredProviderConfig } from '../src/route.ts'
+import type { StoredProviderConfig } from '../src/config.ts'
 
 const HW: HardwareProfile = {
   os: 'linux',

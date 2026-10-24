@@ -8,42 +8,36 @@
  */
 
 import type { LocalInferService } from 'dsh-plugin-local-infer/service'
-import type { DownloadRequest, LocalInferRoute } from '../route.ts'
-import { downloadFor, readJsonBody, requireMethod, RouteError, sendJson } from '../route.ts'
+import { defineRoute } from '../route.ts'
+import type { LocalInferRoute } from '../route.ts'
+import type { DownloadRequest } from '../request.ts'
+import { downloadFor } from '../ops/hf.ts'
 
 /**
  * downloadRoute builds the POST /local-infer/download route definition the
  * register step holds by an effect.
  */
 export function downloadRoute(localInfer: LocalInferService): LocalInferRoute {
-  return {
+  return defineRoute({
     name: 'local-infer-download',
-    kind: 'exact',
     path: '/local-infer/download',
-    handler: async (req, res) => {
-      if (!requireMethod(req, res, 'POST')) return
-      try {
-        const body = await readJsonBody(req, 'download payload too large')
-        // exactOptionalPropertyTypes: build the request object with only the
-        // keys that are present, so an absent value never writes `undefined`.
-        const request: DownloadRequest = {}
-        if (typeof body.engine === 'string') {
-          request.engine = body.engine
-        }
-        if (typeof body.model === 'string') {
-          request.model = body.model
-        }
-        if (typeof body.directory === 'string') {
-          request.directory = body.directory
-        }
-        sendJson(res, 200, await downloadFor(localInfer, request))
-      } catch (error) {
-        if (error instanceof RouteError) {
-          sendJson(res, error.status, { error: error.message })
-          return
-        }
-        sendJson(res, 500, { error: String((error as Error)?.message ?? error) })
+    method: 'POST',
+    failStatus: 500,
+    tooLargeMessage: 'download payload too large',
+    run: async ({ body }, res) => {
+      // exactOptionalPropertyTypes: build the request object with only the
+      // keys that are present, so an absent value never writes `undefined`.
+      const request: DownloadRequest = {}
+      if (typeof body.engine === 'string') {
+        request.engine = body.engine
       }
+      if (typeof body.model === 'string') {
+        request.model = body.model
+      }
+      if (typeof body.directory === 'string') {
+        request.directory = body.directory
+      }
+      res.json(200, await downloadFor(localInfer, request))
     },
-  }
+  })
 }

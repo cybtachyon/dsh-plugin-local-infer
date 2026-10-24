@@ -6,48 +6,36 @@
  */
 
 import type { LocalInferService } from 'dsh-plugin-local-infer/service'
-import type { ChatTemplateDownloadRequest, LocalInferRoute } from '../route.ts'
-import {
-  chatTemplateDownloadFor,
-  readJsonBody,
-  requireMethod,
-  RouteError,
-  sendJson,
-} from '../route.ts'
+import { defineRoute } from '../route.ts'
+import type { LocalInferRoute } from '../route.ts'
+import type { ChatTemplateDownloadRequest } from '../request.ts'
+import { chatTemplateDownloadFor } from '../ops/hf.ts'
 
 /**
  * chatTemplateRoute builds the POST /local-infer/chat-template route
  * definition the register step holds by an effect.
  */
 export function chatTemplateRoute(localInfer: LocalInferService): LocalInferRoute {
-  return {
+  return defineRoute({
     name: 'local-infer-chat-template',
-    kind: 'exact',
     path: '/local-infer/chat-template',
-    handler: async (req, res) => {
-      if (!requireMethod(req, res, 'POST')) return
-      try {
-        const body = await readJsonBody(req, 'chat template payload too large')
-        // exactOptionalPropertyTypes: build the request object with only the
-        // keys that are present, so an absent value never writes `undefined`.
-        const request: ChatTemplateDownloadRequest = {}
-        if (typeof body.engine === 'string') {
-          request.engine = body.engine
-        }
-        if (typeof body.template === 'string') {
-          request.template = body.template
-        }
-        if (typeof body.directory === 'string') {
-          request.directory = body.directory
-        }
-        sendJson(res, 200, await chatTemplateDownloadFor(localInfer, request))
-      } catch (error) {
-        if (error instanceof RouteError) {
-          sendJson(res, error.status, { error: error.message })
-          return
-        }
-        sendJson(res, 500, { error: String((error as Error)?.message ?? error) })
+    method: 'POST',
+    failStatus: 500,
+    tooLargeMessage: 'chat template payload too large',
+    run: async ({ body }, res) => {
+      // exactOptionalPropertyTypes: build the request object with only the
+      // keys that are present, so an absent value never writes `undefined`.
+      const request: ChatTemplateDownloadRequest = {}
+      if (typeof body.engine === 'string') {
+        request.engine = body.engine
       }
+      if (typeof body.template === 'string') {
+        request.template = body.template
+      }
+      if (typeof body.directory === 'string') {
+        request.directory = body.directory
+      }
+      res.json(200, await chatTemplateDownloadFor(localInfer, request))
     },
-  }
+  })
 }

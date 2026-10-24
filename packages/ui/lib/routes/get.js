@@ -5,7 +5,10 @@
  * last-run logs.
  * @module dsh-plugin-local-infer/ui/routes/get
  */
-import { getEngine, parseStoredPlatformConfig, persistGetLogs, readJsonBody, requireMethod, RouteError, sendJson, } from "../route.js";
+import { parseStoredPlatformConfig } from "../config.js";
+import { getEngine } from "../ops/engine.js";
+import { persistGetLogs } from "../ops/logs.js";
+import { defineRoute } from "../route.js";
 /**
  * getRoute builds the POST /local-infer/get route definition the register
  * step holds by an effect. The optional getHost is the lifecycle host the
@@ -13,51 +16,39 @@ import { getEngine, parseStoredPlatformConfig, persistGetLogs, readJsonBody, req
  * injects a stub so the route never clones a real repo in CI.
  */
 export function getRoute(localInfer, getHost) {
-    return {
+    return defineRoute({
         name: 'local-infer-get',
-        kind: 'exact',
         path: '/local-infer/get',
-        handler: async (req, res) => {
-            if (!requireMethod(req, res, 'POST'))
-                return;
+        method: 'POST',
+        failStatus: 400,
+        tooLargeMessage: 'get payload too large',
+        run: async ({ body }, res) => {
+            const request = {};
+            if (typeof body.engine === 'string') {
+                request.engine = body.engine;
+            }
+            if (body.config && typeof body.config === 'object') {
+                request.config = body.config;
+            }
+            const platform = parseStoredPlatformConfig(body.platform);
+            if (platform !== undefined) {
+                request.platform = platform;
+            }
+            res.textStream();
+            let collected = '';
+            const log = (text) => {
+                collected += text;
+                res.write(text);
+            };
             try {
-                const body = await readJsonBody(req, 'get payload too large');
-                const request = {};
-                if (typeof body.engine === 'string') {
-                    request.engine = body.engine;
-                }
-                if (body.config && typeof body.config === 'object') {
-                    request.config = body.config;
-                }
-                const platform = parseStoredPlatformConfig(body.platform);
-                if (platform !== undefined) {
-                    request.platform = platform;
-                }
-                res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
-                let collected = '';
-                const log = (text) => {
-                    collected += text;
-                    if (typeof res.write === 'function') {
-                        res.write(text);
-                    }
-                };
-                try {
-                    await getEngine(localInfer, request, log, getHost);
-                }
-                catch (error) {
-                    log(`!! get failed: ${String(error?.message ?? error)}\n`);
-                }
-                persistGetLogs(collected);
-                res.end();
+                await getEngine(localInfer, request, log, getHost);
             }
             catch (error) {
-                if (error instanceof RouteError) {
-                    sendJson(res, error.status, { error: error.message });
-                    return;
-                }
-                sendJson(res, 400, { error: String(error?.message ?? error) });
+                log(`!! get failed: ${String(error?.message ?? error)}\n`);
             }
+            persistGetLogs(collected);
+            res.end();
         },
-    };
+    });
 }
 //# sourceMappingURL=get.js.map

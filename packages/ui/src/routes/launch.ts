@@ -10,60 +10,56 @@
  */
 
 import type { LaunchStep } from 'dsh-plugin-local-infer/core'
-import type { LocalInferService } from 'dsh-plugin-local-infer/service'
+import type { LaunchResult, LocalInferService } from 'dsh-plugin-local-infer/service'
+import { launchEngine } from '../ops/engine.ts'
+import { defineRoute, RouteError } from '../route.ts'
 import type { LocalInferRoute } from '../route.ts'
-import {
-  launchEngine,
-  launchRequestFromBody,
-  readJsonBody,
-  requireMethod,
-  RouteError,
-  sendJson,
-} from '../route.ts'
+import { launchRequestFromBody } from '../request.ts'
+
+/**
+ * LaunchStreamEvent is one NDJSON line the launch route streams: a step
+ * event as a phase begins, or the final result event. The object literal
+ * union keeps the card's reader honest: a line is either a step or a result,
+ * and a result is either the full launch result or the broken-launch
+ * fallback that names the failure.
+ */
+type LaunchStreamEvent =
+  | { step: LaunchStep }
+  | { result: LaunchResult | { healthy: false; detail: string } }
 
 /**
  * launchRoute builds the POST /local-infer/launch route definition the
  * register step holds by an effect.
  */
 export function launchRoute(localInfer: LocalInferService): LocalInferRoute {
-  return {
+  return defineRoute({
     name: 'local-infer-launch',
-    kind: 'exact',
     path: '/local-infer/launch',
-    handler: async (req, res) => {
-      if (!requireMethod(req, res, 'POST')) return
-      try {
-        const body = await readJsonBody(req, 'launch payload too large')
-        res.writeHead(200, { 'content-type': 'application/x-ndjson; charset=utf-8' })
-        const writeLine = (line: unknown): void => {
-          if (typeof res.write === 'function') {
-            res.write(JSON.stringify(line) + '\n')
-          }
-        }
-        const onProgress = (step: LaunchStep): void => {
-          writeLine({ step })
-        }
-        try {
-          const result = await launchEngine(localInfer, launchRequestFromBody(body), onProgress)
-          writeLine({ result })
-        } catch (error) {
-          // A launch that breaks before a plan renders (an unknown engine, a
-          // hardware probe failure) still settles the card's control to the red
-          // Logs state through a result event, not a bare 500.
-          const detail =
-            error instanceof RouteError
-              ? error.message
-              : String((error as Error)?.message ?? error)
-          writeLine({ result: { healthy: false, detail } })
-        }
-        res.end()
-      } catch (error) {
-        if (error instanceof RouteError) {
-          sendJson(res, error.status, { error: error.message })
-          return
-        }
-        sendJson(res, 500, { error: String((error as Error)?.message ?? error) })
+    method: 'POST',
+    failStatus: 500,
+    tooLargeMessage: 'launch payload too large',
+    run: async ({ body }, res) => {
+      res.ndjsonStream()
+      const writeLine = (line: LaunchStreamEvent): void => {
+        res.write(JSON.stringify(line) + '\n')
       }
+      const onProgress = (step: LaunchStep): void => {
+        writeLine({ step })
+      }
+      try {
+        const result = await launchEngine(localInfer, launchRequestFromBody(body), onProgress)
+        writeLine({ result })
+      } catch (error) {
+        // A launch that breaks before a plan renders (an unknown engine, a
+        // hardware probe failure) still settles the card's control to the red
+        // Logs state through a result event, not a bare 500.
+        const detail =
+          error instanceof RouteError
+            ? error.message
+            : String((error as Error)?.message ?? error)
+        writeLine({ result: { healthy: false, detail } })
+      }
+      res.end()
     },
-  }
+  })
 }

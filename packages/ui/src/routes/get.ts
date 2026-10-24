@@ -8,16 +8,12 @@
 
 import type { Config, LifecycleHost } from 'dsh-plugin-local-infer/core'
 import type { LocalInferService } from 'dsh-plugin-local-infer/service'
-import type { GetRequest, LocalInferRoute } from '../route.ts'
-import {
-  getEngine,
-  parseStoredPlatformConfig,
-  persistGetLogs,
-  readJsonBody,
-  requireMethod,
-  RouteError,
-  sendJson,
-} from '../route.ts'
+import { parseStoredPlatformConfig } from '../config.ts'
+import { getEngine } from '../ops/engine.ts'
+import { persistGetLogs } from '../ops/logs.ts'
+import { defineRoute } from '../route.ts'
+import type { LocalInferRoute } from '../route.ts'
+import type { GetRequest } from '../request.ts'
 
 /**
  * getRoute builds the POST /local-infer/get route definition the register
@@ -29,47 +25,37 @@ export function getRoute(
   localInfer: LocalInferService,
   getHost?: LifecycleHost,
 ): LocalInferRoute {
-  return {
+  return defineRoute({
     name: 'local-infer-get',
-    kind: 'exact',
     path: '/local-infer/get',
-    handler: async (req, res) => {
-      if (!requireMethod(req, res, 'POST')) return
-      try {
-        const body = await readJsonBody(req, 'get payload too large')
-        const request: GetRequest = {}
-        if (typeof body.engine === 'string') {
-          request.engine = body.engine
-        }
-        if (body.config && typeof body.config === 'object') {
-          request.config = body.config as Config
-        }
-        const platform = parseStoredPlatformConfig(body.platform)
-        if (platform !== undefined) {
-          request.platform = platform
-        }
-        res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
-        let collected = ''
-        const log = (text: string): void => {
-          collected += text
-          if (typeof res.write === 'function') {
-            res.write(text)
-          }
-        }
-        try {
-          await getEngine(localInfer, request, log, getHost)
-        } catch (error) {
-          log(`!! get failed: ${String((error as Error)?.message ?? error)}\n`)
-        }
-        persistGetLogs(collected)
-        res.end()
-      } catch (error) {
-        if (error instanceof RouteError) {
-          sendJson(res, error.status, { error: error.message })
-          return
-        }
-        sendJson(res, 400, { error: String((error as Error)?.message ?? error) })
+    method: 'POST',
+    failStatus: 400,
+    tooLargeMessage: 'get payload too large',
+    run: async ({ body }, res) => {
+      const request: GetRequest = {}
+      if (typeof body.engine === 'string') {
+        request.engine = body.engine
       }
+      if (body.config && typeof body.config === 'object') {
+        request.config = body.config as Config
+      }
+      const platform = parseStoredPlatformConfig(body.platform)
+      if (platform !== undefined) {
+        request.platform = platform
+      }
+      res.textStream()
+      let collected = ''
+      const log = (text: string): void => {
+        collected += text
+        res.write(text)
+      }
+      try {
+        await getEngine(localInfer, request, log, getHost)
+      } catch (error) {
+        log(`!! get failed: ${String((error as Error)?.message ?? error)}\n`)
+      }
+      persistGetLogs(collected)
+      res.end()
     },
-  }
+  })
 }

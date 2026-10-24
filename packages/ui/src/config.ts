@@ -1,0 +1,323 @@
+/**
+ * The stored-config persistence the routes and ops share. The values live in
+ * ~/.dsh/local-infer/config.json, shared with the CLI, so the browser never
+ * sees a secret it did not store. Every read sanitizes the file field by
+ * field, so a by-hand edit never poisons the deploy step or the re-link rule.
+ * @module dsh-plugin-local-infer/ui/config
+ */
+
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { dirname, join } from 'node:path'
+import type { Config, ProviderLaunchRecord } from 'dsh-plugin-local-infer/core'
+import { DEFAULT_LOG_PATH_TEMPLATE } from 'dsh-plugin-local-infer/core'
+
+/**
+ * The config file the route owns. It sits under the dsh home so a web user and
+ * a CLI user share one file, the way modsearch shares ~/.modsearch.
+ */
+export function localInferConfigPath(): string {
+  return join(homedir(), '.dsh', 'local-infer', 'config.json')
+}
+
+/**
+ * StoredPlatformConfig is the per-engine platform config the deploy step
+ * consumes (§3.10): where the engine platform lives locally and the git repo
+ * that overrides the engine's default upstream. The map is keyed by engine id,
+ * so the stored entry carries no id of its own; the route adds it when it
+ * builds the EnginePlatformConfig the service registry stores.
+ */
+export interface StoredPlatformConfig {
+  engineDirectory?: string
+  engineFork?: string
+  buildCommands?: string
+  dockerTag?: string
+}
+
+/**
+ * StoredProviderConfig is one saved provider model+engine config the card
+ * lists: a stable id the card edits and deletes against, the engine and the
+ * full parameter config it serves, the per-engine platform config the deploy
+ * step consumes, and the launch record the launch step persists when it
+ * starts the entry's engine (the engine pid, start time, launch arguments,
+ * and the DSH process pid that launched it). The record is what a DSH
+ * restart re-links a surviving engine to its config; a stop clears it.
+ */
+export interface StoredProviderConfig {
+  id: string
+  engine: string
+  config: Config
+  platform: StoredPlatformConfig
+  launch?: ProviderLaunchRecord
+}
+
+export interface StoredConfig {
+  engine: string
+  config: Config
+  // The Play/Run trust gate (the plan's allowRunDeps): one-click install runs
+  // package-manager commands, often as root, so it stays off until the user
+  // says the add-on may.
+  allowRunDeps: boolean
+  // The per-engine platform configs (§3.10): the Engine Directory and Engine
+  // Fork the user adds for a specific engine, keyed by engine id.
+  platform: Record<string, StoredPlatformConfig>
+  // The card's help toggle: show the per-field descriptions. The default is
+  // on, so a file that predates the key reads as descriptions visible.
+  showHelp: boolean
+  // The saved provider configs the card lists, newest first. A file that
+  // predates the key carries an empty list, so a first Save adds the first
+  // provider entry rather than overwriting a missing one.
+  providers: StoredProviderConfig[]
+  // The log-file location template the card's log-location field edits. The
+  // launch step resolves its placeholders (engine, model slug, timestamp) and
+  // writes the engine's output there. The default is the plugin's log dir.
+  logPath: string
+  // The last run's captured log output, kept so the card's Logs section shows
+  // the previous run after a reload. A launch overwrites it with the new run.
+  lastLogs: string
+}
+
+/**
+ * readConfig reads the stored engine, config, trust gate, and per-engine
+ * platform configs. A missing or broken file reads as the scaffold default
+ * (NInfer, empty config, gate off, no platform configs) so the card always has
+ * a form to draw. A platform entry that is not an object (or whose fields are
+ * not strings) is dropped, so a by-hand edit never poisons the deploy step.
+ */
+export function readConfig(): StoredConfig {
+  const path = localInferConfigPath()
+  if (!existsSync(path)) {
+    return {
+      engine: 'ninfer',
+      config: {},
+      allowRunDeps: false,
+      platform: {},
+      showHelp: true,
+      providers: [],
+      logPath: DEFAULT_LOG_PATH_TEMPLATE,
+      lastLogs: '',
+    }
+  }
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as {
+      engine?: unknown
+      config?: unknown
+      allowRunDeps?: unknown
+      platform?: unknown
+      showHelp?: unknown
+      providers?: unknown
+      logPath?: unknown
+      lastLogs?: unknown
+    }
+    return {
+      engine: typeof parsed.engine === 'string' ? parsed.engine : 'ninfer',
+      config: parsed.config && typeof parsed.config === 'object' ? (parsed.config as Config) : {},
+      allowRunDeps: typeof parsed.allowRunDeps === 'boolean' ? parsed.allowRunDeps : false,
+      platform: parsePlatformConfigs(parsed.platform),
+      // A file that predates the key (or carries a non-boolean) reads as
+      // descriptions visible, the default the card draws on first open.
+      showHelp: typeof parsed.showHelp === 'boolean' ? parsed.showHelp : true,
+      providers: parseProviders(parsed.providers),
+      // A file that predates the key reads as the plugin's default log dir,
+      // and the last-run logs start empty until a launch fills them.
+      logPath: typeof parsed.logPath === 'string' && parsed.logPath !== ''
+        ? parsed.logPath
+        : DEFAULT_LOG_PATH_TEMPLATE,
+      lastLogs: typeof parsed.lastLogs === 'string' ? parsed.lastLogs : '',
+    }
+  } catch {
+    return {
+      engine: 'ninfer',
+      config: {},
+      allowRunDeps: false,
+      platform: {},
+      showHelp: true,
+      providers: [],
+      logPath: DEFAULT_LOG_PATH_TEMPLATE,
+      lastLogs: '',
+    }
+  }
+}
+
+/**
+ * parseProviders reads the stored provider list, keeping only entries with a
+ * non-blank string id. A non-object entry or an entry with no id is dropped,
+ * so a by-hand edit never poisons the card's provider list. The per-engine
+ * platform config is read through the same string-field rule the platform map
+ * uses, so a provider never carries a platform field it cannot price.
+ */
+function parseProviders(raw: unknown): StoredProviderConfig[] {
+  if (raw === null || typeof raw !== 'object' || !Array.isArray(raw)) {
+    return []
+  }
+  const providers: StoredProviderConfig[] = []
+  for (const entry of raw as unknown[]) {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) continue
+    const fields = entry as Record<string, unknown>
+    if (typeof fields.id !== 'string' || fields.id.trim() === '') continue
+    const engine = typeof fields.engine === 'string' ? fields.engine : 'ninfer'
+    const config = fields.config && typeof fields.config === 'object' ? (fields.config as Config) : {}
+    const platform = parseStoredPlatformConfig(fields.platform) ?? {}
+    const provider: StoredProviderConfig = { id: fields.id, engine, config, platform }
+    const launch = parseLaunchRecord(fields.launch)
+    if (launch !== undefined) {
+      provider.launch = launch
+    }
+    providers.push(provider)
+  }
+  return providers
+}
+
+/**
+ * parseLaunchRecord reads one stored launch record, keeping only the fields
+ * the re-link rule prices (the engine pid, the start time, the argv, the
+ * parent and previous pids, and the engine/model/port the detector ties the
+ * engine to). A record that is not an object, or that names no integer pid
+ * or engine id, is dropped, so a by-hand edit never poisons the re-link.
+ */
+function parseLaunchRecord(raw: unknown): ProviderLaunchRecord | undefined {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    return undefined
+  }
+  const fields = raw as Record<string, unknown>
+  if (typeof fields.pid !== 'number' || !Number.isInteger(fields.pid)) {
+    return undefined
+  }
+  if (typeof fields.startedAt !== 'string' || fields.startedAt === '') {
+    return undefined
+  }
+  if (typeof fields.engineId !== 'string' || fields.engineId.trim() === '') {
+    return undefined
+  }
+  const record: ProviderLaunchRecord = {
+    pid: fields.pid,
+    startedAt: fields.startedAt,
+    argv: Array.isArray(fields.argv)
+      ? fields.argv.filter((part): part is string => typeof part === 'string')
+      : [],
+    previousPids: Array.isArray(fields.previousPids)
+      ? fields.previousPids.filter((part): part is number => typeof part === 'number')
+      : [],
+    engineId: fields.engineId,
+  }
+  if (typeof fields.parentPid === 'number') {
+    record.parentPid = fields.parentPid
+  }
+  if (typeof fields.modelId === 'string' && fields.modelId !== '') {
+    record.modelId = fields.modelId
+  }
+  if (typeof fields.port === 'number') {
+    record.port = fields.port
+  }
+  return record
+}
+
+/**
+ * writeConfig persists the engine, config, trust gate, per-engine platform
+ * configs, and the help toggle, creating the directory tree on first write.
+ */
+export function writeConfig(
+  engine: string,
+  config: Config,
+  allowRunDeps: boolean,
+  platform?: Record<string, StoredPlatformConfig>,
+  showHelp?: boolean,
+  providers?: StoredProviderConfig[],
+  logPath?: string,
+  lastLogs?: string,
+): void {
+  const path = localInferConfigPath()
+  mkdirSync(dirname(path), { recursive: true })
+  writeFileSync(
+    path,
+    JSON.stringify(
+      {
+        engine,
+        config,
+        allowRunDeps,
+        platform: platform ?? {},
+        showHelp: showHelp ?? true,
+        providers: providers ?? [],
+        logPath: logPath ?? DEFAULT_LOG_PATH_TEMPLATE,
+        lastLogs: lastLogs ?? '',
+      },
+      null,
+      2,
+    ),
+  )
+}
+
+/**
+ * parsePlatformConfigs reads the stored platform map, keeping only entries
+ * whose fields are strings. A non-object map or a non-object entry reads as
+ * absent, so the deploy step never sees a platform config it cannot price.
+ */
+export function parsePlatformConfigs(raw: unknown): Record<string, StoredPlatformConfig> {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    return {}
+  }
+  const platform: Record<string, StoredPlatformConfig> = {}
+  for (const [engineId, entry] of Object.entries(raw as Record<string, unknown>)) {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+      continue
+    }
+    const stored: StoredPlatformConfig = {}
+    const fields = entry as Record<string, unknown>
+    if (typeof fields.engineDirectory === 'string') {
+      stored.engineDirectory = fields.engineDirectory
+    }
+    if (typeof fields.engineFork === 'string') {
+      stored.engineFork = fields.engineFork
+    }
+    if (typeof fields.buildCommands === 'string') {
+      stored.buildCommands = fields.buildCommands
+    }
+    if (typeof fields.dockerTag === 'string') {
+      stored.dockerTag = fields.dockerTag
+    }
+    if (
+      stored.engineDirectory !== undefined ||
+      stored.engineFork !== undefined ||
+      stored.buildCommands !== undefined ||
+      stored.dockerTag !== undefined
+    ) {
+      platform[engineId] = stored
+    }
+  }
+  return platform
+}
+
+/**
+ * parseStoredPlatformConfig reads one engine's platform config (the launch
+ * request's `platform` key), keeping only string fields. A non-object or an
+ * object with no string fields reads as absent, so the launch keeps the stored
+ * entry the save route synced.
+ */
+export function parseStoredPlatformConfig(raw: unknown): StoredPlatformConfig | undefined {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    return undefined
+  }
+  const fields = raw as Record<string, unknown>
+  const stored: StoredPlatformConfig = {}
+  if (typeof fields.engineDirectory === 'string') {
+    stored.engineDirectory = fields.engineDirectory
+  }
+  if (typeof fields.engineFork === 'string') {
+    stored.engineFork = fields.engineFork
+  }
+  if (typeof fields.buildCommands === 'string') {
+    stored.buildCommands = fields.buildCommands
+  }
+  if (typeof fields.dockerTag === 'string') {
+    stored.dockerTag = fields.dockerTag
+  }
+  if (
+    stored.engineDirectory === undefined &&
+    stored.engineFork === undefined &&
+    stored.buildCommands === undefined &&
+    stored.dockerTag === undefined
+  ) {
+    return undefined
+  }
+  return stored
+}

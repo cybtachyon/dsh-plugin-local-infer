@@ -8,37 +8,24 @@
  */
 
 import type { LocalInferService } from 'dsh-plugin-local-infer/service'
+import { registerFor } from '../ops/model.ts'
+import { defineRoute } from '../route.ts'
 import type { LocalInferRoute } from '../route.ts'
-import {
-  readJsonBody,
-  registerFor,
-  registerRequestFromBody,
-  requireMethod,
-  RouteError,
-  sendJson,
-} from '../route.ts'
+import { registerRequestFromBody } from '../request.ts'
 
 /**
  * registerRoute builds the POST /local-infer/register route definition the
  * register step holds by an effect.
  */
 export function registerRoute(localInfer: LocalInferService): LocalInferRoute {
-  return {
+  return defineRoute({
     name: 'local-infer-register',
-    kind: 'exact',
     path: '/local-infer/register',
-    handler: async (req, res) => {
-      if (!requireMethod(req, res, 'POST')) return
-      try {
-        const body = await readJsonBody(req, 'register payload too large')
-        sendJson(res, 200, await registerFor(localInfer, registerRequestFromBody(body)))
-      } catch (error) {
-        if (error instanceof RouteError) {
-          sendJson(res, error.status, { error: error.message })
-          return
-        }
-        sendJson(res, 500, { error: String((error as Error)?.message ?? error) })
-      }
+    method: 'POST',
+    failStatus: 500,
+    tooLargeMessage: 'register payload too large',
+    run: async ({ body }, res) => {
+      res.json(200, await registerFor(localInfer, registerRequestFromBody(body)))
     },
-  }
+  })
 }

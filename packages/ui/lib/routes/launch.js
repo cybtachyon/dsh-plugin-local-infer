@@ -8,53 +8,43 @@
  * long as they need to.
  * @module dsh-plugin-local-infer/ui/routes/launch
  */
-import { launchEngine, launchRequestFromBody, readJsonBody, requireMethod, RouteError, sendJson, } from "../route.js";
+import { launchEngine } from "../ops/engine.js";
+import { defineRoute, RouteError } from "../route.js";
+import { launchRequestFromBody } from "../request.js";
 /**
  * launchRoute builds the POST /local-infer/launch route definition the
  * register step holds by an effect.
  */
 export function launchRoute(localInfer) {
-    return {
+    return defineRoute({
         name: 'local-infer-launch',
-        kind: 'exact',
         path: '/local-infer/launch',
-        handler: async (req, res) => {
-            if (!requireMethod(req, res, 'POST'))
-                return;
+        method: 'POST',
+        failStatus: 500,
+        tooLargeMessage: 'launch payload too large',
+        run: async ({ body }, res) => {
+            res.ndjsonStream();
+            const writeLine = (line) => {
+                res.write(JSON.stringify(line) + '\n');
+            };
+            const onProgress = (step) => {
+                writeLine({ step });
+            };
             try {
-                const body = await readJsonBody(req, 'launch payload too large');
-                res.writeHead(200, { 'content-type': 'application/x-ndjson; charset=utf-8' });
-                const writeLine = (line) => {
-                    if (typeof res.write === 'function') {
-                        res.write(JSON.stringify(line) + '\n');
-                    }
-                };
-                const onProgress = (step) => {
-                    writeLine({ step });
-                };
-                try {
-                    const result = await launchEngine(localInfer, launchRequestFromBody(body), onProgress);
-                    writeLine({ result });
-                }
-                catch (error) {
-                    // A launch that breaks before a plan renders (an unknown engine, a
-                    // hardware probe failure) still settles the card's control to the red
-                    // Logs state through a result event, not a bare 500.
-                    const detail = error instanceof RouteError
-                        ? error.message
-                        : String(error?.message ?? error);
-                    writeLine({ result: { healthy: false, detail } });
-                }
-                res.end();
+                const result = await launchEngine(localInfer, launchRequestFromBody(body), onProgress);
+                writeLine({ result });
             }
             catch (error) {
-                if (error instanceof RouteError) {
-                    sendJson(res, error.status, { error: error.message });
-                    return;
-                }
-                sendJson(res, 500, { error: String(error?.message ?? error) });
+                // A launch that breaks before a plan renders (an unknown engine, a
+                // hardware probe failure) still settles the card's control to the red
+                // Logs state through a result event, not a bare 500.
+                const detail = error instanceof RouteError
+                    ? error.message
+                    : String(error?.message ?? error);
+                writeLine({ result: { healthy: false, detail } });
             }
+            res.end();
         },
-    };
+    });
 }
 //# sourceMappingURL=launch.js.map

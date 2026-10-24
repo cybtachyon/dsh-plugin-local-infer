@@ -9,39 +9,33 @@
 
 import type { Config } from 'dsh-plugin-local-infer/core'
 import type { LocalInferService } from 'dsh-plugin-local-infer/service'
-import type { DepsRequest, LocalInferRoute } from '../route.ts'
-import { readJsonBody, requireMethod, RouteError, runInstallFor, sendJson } from '../route.ts'
+import { defineRoute } from '../route.ts'
+import type { LocalInferRoute } from '../route.ts'
+import type { DepsRequest } from '../request.ts'
+import { runInstallFor } from '../viewmodels/depsHelpers.ts'
 
 /**
  * installRoute builds the POST /local-infer/install route definition the
  * register step holds by an effect.
  */
 export function installRoute(localInfer: LocalInferService): LocalInferRoute {
-  return {
+  return defineRoute({
     name: 'local-infer-install',
-    kind: 'exact',
     path: '/local-infer/install',
-    handler: async (req, res) => {
-      if (!requireMethod(req, res, 'POST')) return
-      try {
-        const body = await readJsonBody(req, 'install payload too large')
-        // exactOptionalPropertyTypes: build the request object with only the
-        // keys that are present, so an absent value never writes `undefined`.
-        const request: DepsRequest = {}
-        if (typeof body.engine === 'string') {
-          request.engine = body.engine
-        }
-        if (body.config && typeof body.config === 'object') {
-          request.config = body.config as Config
-        }
-        sendJson(res, 200, await runInstallFor(localInfer, request))
-      } catch (error) {
-        if (error instanceof RouteError) {
-          sendJson(res, error.status, { error: error.message })
-          return
-        }
-        sendJson(res, 500, { error: String((error as Error)?.message ?? error) })
+    method: 'POST',
+    failStatus: 500,
+    tooLargeMessage: 'install payload too large',
+    run: async ({ body }, res) => {
+      // exactOptionalPropertyTypes: build the request object with only the
+      // keys that are present, so an absent value never writes `undefined`.
+      const request: DepsRequest = {}
+      if (typeof body.engine === 'string') {
+        request.engine = body.engine
       }
+      if (body.config && typeof body.config === 'object') {
+        request.config = body.config as Config
+      }
+      res.json(200, await runInstallFor(localInfer, request))
     },
-  }
+  })
 }

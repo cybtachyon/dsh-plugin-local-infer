@@ -7,36 +7,23 @@
  */
 
 import type { LocalInferService } from 'dsh-plugin-local-infer/service'
+import { defineRoute } from '../route.ts'
 import type { LocalInferRoute } from '../route.ts'
-import {
-  buildSummary,
-  depsRequestFromUrl,
-  requireMethod,
-  RouteError,
-  sendJson,
-} from '../route.ts'
+import { depsRequestFromUrl } from '../request.ts'
+import { buildSummary } from '../viewmodels/summary.ts'
 
 /**
  * summaryRoute builds the GET /local-infer/summary route definition the
  * register step holds by an effect.
  */
 export function summaryRoute(localInfer: LocalInferService): LocalInferRoute {
-  return {
+  return defineRoute({
     name: 'local-infer-config',
-    kind: 'exact',
     path: '/local-infer/summary',
-    handler: async (req, res) => {
-      if (!requireMethod(req, res, 'GET')) return
-      try {
-        const url = new URL(req.url, 'http://localhost')
-        sendJson(res, 200, await buildSummary(localInfer, depsRequestFromUrl(url)))
-      } catch (error) {
-        if (error instanceof RouteError) {
-          sendJson(res, error.status, { error: error.message })
-          return
-        }
-        sendJson(res, 500, { error: String((error as Error)?.message ?? error) })
-      }
+    method: 'GET',
+    failStatus: 500,
+    run: async ({ url }, res) => {
+      res.json(200, await buildSummary(localInfer, depsRequestFromUrl(url)))
     },
-  }
+  })
 }
