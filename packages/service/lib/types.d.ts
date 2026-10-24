@@ -89,13 +89,17 @@ export interface LaunchResult {
  * the phase that is actually running. `allowRunDeps` is the Play/Run trust gate
  * (the card's "Allow one-click install (sudo)" checkbox) the deploy step reads
  * to decide whether a rebuild's missing-binary symlink into /usr/local/bin runs
- * (on) or is written to the card's Logs section (off).
+ * (on) or is written to the card's Logs section (off). `autoRebuild` is the
+ * card's "Auto Rebuild" checkbox: when false, the deploy step skips the git
+ * sync (fetch, rebase, rebuild) and launches the checkout as-is. Absent reads
+ * as true (the rebuild runs).
  */
 export interface LaunchOptions {
     pollMs?: number;
     maxAttempts?: number;
     onProgress?: LaunchProgress;
     allowRunDeps?: boolean;
+    autoRebuild?: boolean;
 }
 /**
  * RegisterModelOptions tunes the model registration: agentDefault points the

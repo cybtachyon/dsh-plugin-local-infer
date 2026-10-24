@@ -260,8 +260,13 @@ describe('dsh/client.js browser carrier', () => {
     expect(source).toContain('entryLaunchState')
     // The main Launch hands the Logs section the finished run: its handler
     // re-reads the summary, so the stored launch command line and the
-    // engine's output replace the previous run in the text area.
-    expect(source).toContain('[draft, launching, editingProviderId, t, fetchSummary]')
+    // engine's output replace the previous run in the text area. The Auto
+    // Rebuild checkbox (checked by default) rides the launch body: unchecked,
+    // the route skips the git sync (fetch, rebase, rebuild) and launches the
+    // checkout as-is.
+    expect(source).toContain('[draft, launching, editingProviderId, autoRebuild, t, fetchSummary]')
+    expect(source).toContain('autoRebuildState')
+    expect(source).toContain('autoRebuild: autoRebuild')
   })
 
   it('pins the per-entry launch state machine and its phase labels', () => {

@@ -348,6 +348,41 @@ describe('NInferAdapter.deploy', () => {
     expect(result.logs).toContain('has local changes')
   })
 
+  it('skips the git sync entirely when autoRebuild is off', async () => {
+    const { host, state } = stubHost()
+    // The checkout is behind (the rev-list count reads as 3), but the Auto
+    // Rebuild checkbox is off, so the git sync (fetch, rebase, rebuild) is
+    // skipped and the checkout launches as-is.
+    state.runOutput['rev-list'] = '3'
+    const adapter = new NInferAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      argv: ['ninfer-serve', '/models/x.ninfer'],
+      env: {},
+      modelId: 'qwen3-27b',
+      modelDirectory: '/models',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    const result = await adapter.deploy(
+      plan,
+      { engineId: 'ninfer', engineDirectory: '/src/ninfer', engineFork: 'https://github.com/iamwavecut/ninfer-all' },
+      undefined,
+      { autoRebuild: false },
+    )
+    expect(result.ok).toBe(true)
+    // No git sync commands ran: no checkout probe, no fetch, no rebase, no
+    // clean, and no build.
+    expect(state.run.some((c) => c.includes('[ -d /src/ninfer/.git ]'))).toBe(false)
+    expect(state.run.some((c) => c.includes('git -C /src/ninfer'))).toBe(false)
+    expect(state.run.some((c) => c.includes('cmake -S /src/ninfer'))).toBe(false)
+    // The model download still runs, and the engine spawns from the checkout.
+    expect(state.run.some((c) => c.includes('hf download'))).toBe(true)
+    expect(state.spawn).toHaveLength(1)
+    expect(state.spawn[0]?.cwd).toBe('/src/ninfer')
+  })
+
   it('links a rebuilt binary into /usr/local/bin when the trust gate is on', async () => {
     const { host, runLog } = symlinkHost()
     const plan: LaunchPlan = {
@@ -1189,6 +1224,35 @@ describe('LlamaCppAdapter', () => {
     expect(state.run.length).toBeGreaterThan(0)
   })
 
+  it('skips the git sync entirely when autoRebuild is off', async () => {
+    const { host, state } = stubHost()
+    // The checkout is behind (the rev-list count reads as 3), but the Auto
+    // Rebuild checkbox is off, so the git sync (fetch, rebase, rebuild) is
+    // skipped and the checkout launches as-is.
+    state.runOutput['rev-list'] = '3'
+    const adapter = new LlamaCppAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'llamacpp', kind: 'process', argv: ['llama-server', 'x.gguf'], env: {},
+      modelId: 'qwen3-27b', port: 8080, healthUrl: 'http://127.0.0.1:8080/health',
+    }
+    const result = await adapter.deploy(
+      plan,
+      { engineId: 'llamacpp', engineDirectory: '/src/llama.cpp' },
+      undefined,
+      { autoRebuild: false },
+    )
+    expect(result.ok).toBe(true)
+    // No git sync commands ran: no checkout probe, no fetch, no rebase, no
+    // clean, and no build.
+    expect(state.run.some((c) => c.includes('[ -d /src/llama.cpp/.git ]'))).toBe(false)
+    expect(state.run.some((c) => c.includes('git -C /src/llama.cpp'))).toBe(false)
+    expect(state.run.some((c) => c.includes('cmake -S /src/llama.cpp'))).toBe(false)
+    // The model download still runs, and the engine spawns from the checkout.
+    expect(state.run.some((c) => c.includes('hf download'))).toBe(true)
+    expect(state.spawn).toHaveLength(1)
+    expect(state.spawn[0]?.cwd).toBe('/src/llama.cpp')
+  })
+
   it('reports a failed docker pull as not-ok and treats a compose plan as a no-op', async () => {
     const { host, state } = stubHost()
     state.runOk = false
@@ -1755,6 +1819,39 @@ describe('InfernixAdapter', () => {
     expect(state.run).toContain('git -C /engines/infernix fetch dsh-fork || true')
     expect(state.run.some((c) => c.includes('git -C /engines/infernix rebase dsh-fork/main'))).toBe(true)
     expect(state.run).toContain('cd /engines/infernix && cmake --preset release && cmake --build build -j')
+  })
+
+  it('skips the git sync entirely when autoRebuild is off', async () => {
+    const { host, state } = stubHost()
+    // The checkout is behind the fork's main (the rev-list count reads as 3),
+    // but the Auto Rebuild checkbox is off, so the git sync (fetch, rebase,
+    // rebuild) is skipped and the checkout launches as-is.
+    state.runOutput['rev-list'] = '3'
+    const adapter = new InfernixAdapter(host)
+    const plan = adapter.renderLaunch(
+      { model: 'qwen3-27b', port: 8080, modelDirectory: '/models' },
+      HW,
+    )
+    const result = await adapter.deploy(
+      plan,
+      {
+        engineId: 'infernix',
+        engineDirectory: '/engines/infernix',
+        engineFork: 'https://github.com/wallawalla47/infernix',
+      },
+      undefined,
+      { autoRebuild: false },
+    )
+    expect(result.ok).toBe(true)
+    // No git sync commands ran: no checkout probe, no fetch, no rebase, no
+    // clean, and no build.
+    expect(state.run.some((c) => c.includes('[ -d /engines/infernix/.git ]'))).toBe(false)
+    expect(state.run.some((c) => c.includes('git -C /engines/infernix'))).toBe(false)
+    expect(state.run.some((c) => c.includes('cmake --preset release'))).toBe(false)
+    // The model download still runs, and the engine spawns from the checkout.
+    expect(state.run.some((c) => c.includes('hf download'))).toBe(true)
+    expect(state.spawn).toHaveLength(1)
+    expect(state.spawn[0]?.cwd).toBe('/engines/infernix')
   })
 
   it('skips the clone and build when no platform config is stored', async () => {

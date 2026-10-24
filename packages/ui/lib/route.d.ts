@@ -334,14 +334,17 @@ export declare function chatTemplateDownloadFor(localInfer: LocalInferService, r
  * unsaved Engine Directory / Engine Fork edits for the engine, so a launch uses
  * them without a prior save. `providerId` names the saved provider entry the
  * launch drives, so the route persists the launch record (or clears it on a
- * stop) on that entry. Absent values fall back to the stored config, the
- * same rule the summary route applies.
+ * stop) on that entry. `autoRebuild` is the card's "Auto Rebuild" checkbox:
+ * when false, the deploy step skips the git sync (fetch, rebase, rebuild) and
+ * launches the checkout as-is. Absent values fall back to the stored config,
+ * the same rule the summary route applies.
  */
 export interface LaunchRequest {
     engine?: string;
     config?: Config;
     platform?: StoredPlatformConfig;
     providerId?: string;
+    autoRebuild?: boolean;
 }
 /**
  * launchEngine renders the plan the registered adapter produces for the config

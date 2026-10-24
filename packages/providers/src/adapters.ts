@@ -544,7 +544,9 @@ export class NInferAdapter extends EngineAdapter {
     if (plan.kind === 'process') {
       const engineDir = platform?.engineDirectory
       let buildLogs = ''
-      if (engineDir !== undefined) {
+      // Auto Rebuild off (the card's checkbox): the git sync (fetch, rebase,
+      // rebuild) is skipped and the checkout launches as-is.
+      if (engineDir !== undefined && options?.autoRebuild !== false) {
         // The git sync is the checkout download: the card's button reads
         // "Downloading..." for it, not "Building...".
         onProgress?.('download')
@@ -938,7 +940,9 @@ export class LlamaCppAdapter extends EngineAdapter {
     if (plan.kind === 'process') {
       const engineDir = platform?.engineDirectory
       let buildLogs = ''
-      if (engineDir !== undefined) {
+      // Auto Rebuild off (the card's checkbox): the git sync (fetch, rebase,
+      // rebuild) is skipped and the checkout launches as-is.
+      if (engineDir !== undefined && options?.autoRebuild !== false) {
         // The git sync is the checkout download: the card's button reads
         // "Downloading..." for it, not "Building...".
         onProgress?.('download')
@@ -1242,7 +1246,9 @@ export class InfernixAdapter extends EngineAdapter {
     }
     const engineDir = platform?.engineDirectory
     let buildLogs = ''
-    if (engineDir !== undefined) {
+    // Auto Rebuild off (the card's checkbox): the git sync (fetch, rebase,
+    // rebuild) is skipped and the checkout launches as-is.
+    if (engineDir !== undefined && options?.autoRebuild !== false) {
       // The git sync is the checkout download: the card's button reads
       // "Downloading..." for it, not "Building...".
       onProgress?.('download')

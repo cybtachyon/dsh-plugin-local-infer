@@ -96,6 +96,7 @@ window.__ModuleLoader__.load({
         unregistered: 'removed',
         unregisterFailed: 'remove failed',
         launch: 'Launch',
+        autoRebuild: 'Auto Rebuild',
         launching: 'Launching...',
         launchFailed: 'launch failed',
         runningOn: 'running on port',
@@ -235,6 +236,7 @@ window.__ModuleLoader__.load({
         unregistered: '已移除',
         unregisterFailed: '移除失败',
         launch: '启动',
+        autoRebuild: '自动重建',
         launching: '启动中…',
         launchFailed: '启动失败',
         runningOn: '运行于端口',
@@ -1874,6 +1876,11 @@ window.__ModuleLoader__.load({
         // healthy launch sets it, a stop clears it.
         var draftRunningState = react.useState(false);
         var lifecycleNoteState = react.useState('');
+        // The Auto Rebuild checkbox next to the form's Launch button. Checked
+        // by default: a launch runs the git sync (fetch, rebase, rebuild)
+        // before spawning the engine. Unchecked, the launch skips the sync and
+        // starts the checkout as-is.
+        var autoRebuildState = react.useState(true);
         // The model download state. The Download button runs the hf CLI
         // download through the /local-infer/download route, and the note
         // reports the answer the route returned.
@@ -1941,6 +1948,7 @@ window.__ModuleLoader__.load({
         var getLogs = getLogsState[0];
         var draftRunning = draftRunningState[0];
         var lifecycleNote = lifecycleNoteState[0];
+        var autoRebuild = autoRebuildState[0];
         var downloading = downloadingState[0];
         var downloadNote = downloadNoteState[0];
         var templateDownloading = templateDownloadingState[0];
@@ -2851,6 +2859,10 @@ window.__ModuleLoader__.load({
             engine: draft.engine,
             config: draft.config,
             platform: platform,
+            // The Auto Rebuild checkbox: false skips the git sync (fetch,
+            // rebase, rebuild) and launches the checkout as-is. The stop
+            // route ignores the key.
+            autoRebuild: autoRebuild,
           };
           // The provider entry the draft edits: the route persists the launch
           // record (and the stop's clear) on that entry, so a restart re-links
@@ -2943,7 +2955,7 @@ window.__ModuleLoader__.load({
               // the Get apply when their run ends.
               fetchSummary(draft.engine, draft.config);
             });
-        }, [draft, launching, editingProviderId, t, fetchSummary]);
+        }, [draft, launching, editingProviderId, autoRebuild, t, fetchSummary]);
 
         var onStop = react.useCallback(() => {
           if (draft === null || stopping) {
@@ -3863,7 +3875,10 @@ window.__ModuleLoader__.load({
           // flight. Launch stays disabled while the deps panel reports a
           // missing host dependency or a Get run is in flight, and re-enables
           // when the build finishes, errors, or falls silent for GET_IDLE_MS.
-          // The note reports the answer the route returned.
+          // The Auto Rebuild checkbox sits after the control: checked, a
+          // launch runs the git sync (fetch, rebase, rebuild) first;
+          // unchecked, the launch starts the checkout as-is. The note reports
+          // the answer the route returned.
           react.createElement(
             'div',
             { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 } },
@@ -3903,6 +3918,14 @@ window.__ModuleLoader__.load({
                       },
                       t.launch,
                     ),
+            // The Auto Rebuild checkbox: checked, a launch runs the git sync
+            // (fetch, rebase, rebuild) before the spawn; unchecked, the
+            // launch starts the checkout as-is.
+            renderCheckbox(react, primitives, {
+              checked: autoRebuild,
+              onChange: (next) => autoRebuildState[1](next),
+              label: t.autoRebuild,
+            }),
           ),
           lifecycleNote
             ? react.createElement('div', { style: { fontSize: 12 } }, lifecycleNote)

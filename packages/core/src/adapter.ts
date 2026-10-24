@@ -164,10 +164,14 @@ export interface HealthResult {
  * (the card's "Allow one-click install (sudo)" checkbox). A local deploy that
  * rebuilds the engine and leaves its binary out of the path links it into
  * /usr/local/bin; the gate decides whether that sudo link runs (on) or is
- * written to the card's Logs section for the user to run (off).
+ * written to the card's Logs section for the user to run (off). `autoRebuild`
+ * is the card's "Auto Rebuild" checkbox: when false, the git sync (fetch,
+ * rebase, and the conditional rebuild) is skipped and the checkout launches
+ * as-is. Absent reads as true (the rebuild runs).
  */
 export interface DeployOptions {
   allowRunDeps?: boolean
+  autoRebuild?: boolean
 }
 
 /**

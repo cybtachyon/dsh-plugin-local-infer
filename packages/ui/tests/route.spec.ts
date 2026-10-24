@@ -533,6 +533,27 @@ describe('launch and stop route helpers', () => {
     expect(steps).toEqual(['download', 'build'])
   })
 
+  it('threads the auto-rebuild flag to the service launch', async () => {
+    // The checkbox off: the route passes the flag into the service launch
+    // options, which the service threads to the deploy step, which skips the
+    // git sync (fetch, rebase, rebuild).
+    let seenOptions: { autoRebuild?: boolean } | undefined
+    const service = stubService([], {
+      launchResult: { plan: { engineId: 'ninfer', kind: 'process', port: 18020, healthUrl: 'http://127.0.0.1:18020/health' }, healthy: true },
+    })
+    service.launch = async (plan: LaunchPlan, options?: { autoRebuild?: boolean }): Promise<LaunchResult> => {
+      seenOptions = options
+      return { plan, healthy: true }
+    }
+    await launchEngine(service, { engine: 'ninfer', config: { port: 18020 }, autoRebuild: false })
+    expect(seenOptions?.autoRebuild).toBe(false)
+    // The flag absent: the route omits the key, so the deploy step runs the
+    // rebuild.
+    seenOptions = undefined
+    await launchEngine(service, { engine: 'ninfer', config: { port: 18020 } })
+    expect(seenOptions?.autoRebuild).toBeUndefined()
+  })
+
   it('persists the launch logs as the last run and writes the log file', async () => {
     const service = stubService([], {
       launchResult: {
@@ -1274,6 +1295,33 @@ describe('route handlers over a fake web server', () => {
       'result',
     ])
     expect(events[events.length - 1].result.healthy).toBe(true)
+  })
+
+  it('reads the auto-rebuild flag from the launch body and threads it to the service', async () => {
+    let seenAutoRebuild: boolean | undefined
+    const service = stubService([], {
+      launchResult: { plan: { engineId: 'ninfer', kind: 'process', port: 18020, healthUrl: 'http://127.0.0.1:18020/health' }, healthy: true },
+    })
+    service.launch = async (plan: LaunchPlan, options?: { autoRebuild?: boolean }): Promise<LaunchResult> => {
+      seenAutoRebuild = options?.autoRebuild
+      return { plan, healthy: true }
+    }
+    const routes = registeredRoutes(service)
+    const launchRoute = routes.find((route) => route.path === '/local-infer/launch')
+    // The checkbox off in the card body: the flag lands on the service launch.
+    await launchRoute?.handler(
+      fakeReq('POST', '/local-infer/launch', JSON.stringify({ engine: 'ninfer', autoRebuild: false })),
+      fakeRes(),
+    )
+    expect(seenAutoRebuild).toBe(false)
+    // A body without the key (a non-boolean value reads as absent, too): the
+    // deploy step runs the rebuild.
+    seenAutoRebuild = undefined
+    await launchRoute?.handler(
+      fakeReq('POST', '/local-infer/launch', JSON.stringify({ engine: 'ninfer', autoRebuild: 'no' })),
+      fakeRes(),
+    )
+    expect(seenAutoRebuild).toBeUndefined()
   })
 })
 

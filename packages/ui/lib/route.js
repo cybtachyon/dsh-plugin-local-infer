@@ -820,12 +820,14 @@ export async function launchEngine(localInfer, request, onProgress) {
             return result;
         }
     }
-    // The trust gate rides into the deploy step, which reads it to decide
-    // whether a rebuild's missing-binary symlink into /usr/local/bin runs (on)
-    // or is written to the card's Logs section for the user to run (off).
+    // The trust gate and the auto-rebuild flag ride into the deploy step, which
+    // reads them to decide whether a rebuild's missing-binary symlink into
+    // /usr/local/bin runs (on) or is written to the card's Logs section (off),
+    // and whether the git sync (fetch, rebase, rebuild) runs at all.
     const result = await localInfer.launch(plan, {
         ...(onProgress !== undefined ? { onProgress } : {}),
         allowRunDeps: stored.allowRunDeps,
+        ...(request.autoRebuild !== undefined ? { autoRebuild: request.autoRebuild } : {}),
     });
     // Order the run logs: the build output (the rebuild decision, the build
     // command, and its output) leads, the launch command follows it (after a
@@ -1639,6 +1641,9 @@ export function registerLocalInferRoute(scope, localInfer, getHost) {
         }
         if (typeof body.providerId === 'string' && body.providerId.trim() !== '') {
             request.providerId = body.providerId;
+        }
+        if (typeof body.autoRebuild === 'boolean') {
+            request.autoRebuild = body.autoRebuild;
         }
         return request;
     };

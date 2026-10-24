@@ -459,11 +459,19 @@ export class LocalInfer extends Service {
         // The deploy step reports its download and build sub-steps through the
         // progress sink, so the card's button reads the phase that is running.
         const onProgress = options?.onProgress;
-        // The trust gate rides into the deploy step, which reads it to decide
-        // whether a rebuild's missing-binary symlink runs (on) or is written to the
-        // card's Logs section (off). exactOptionalPropertyTypes: only pass the
-        // option object when the gate is present.
-        const deployOptions = options?.allowRunDeps !== undefined ? { allowRunDeps: options.allowRunDeps } : undefined;
+        // The trust gate and the auto-rebuild flag ride into the deploy step,
+        // which reads them to decide whether a rebuild's missing-binary symlink
+        // runs (gate on) or is written to the card's Logs section (off), and
+        // whether the git sync (fetch, rebase, rebuild) runs at all.
+        // exactOptionalPropertyTypes: only pass the option object when a key is
+        // present.
+        const hasDeployOptions = options?.allowRunDeps !== undefined || options?.autoRebuild !== undefined;
+        const deployOptions = hasDeployOptions
+            ? {
+                ...(options?.allowRunDeps !== undefined ? { allowRunDeps: options.allowRunDeps } : {}),
+                ...(options?.autoRebuild !== undefined ? { autoRebuild: options.autoRebuild } : {}),
+            }
+            : undefined;
         const deployResult = await adapter.deploy(plan, platform, onProgress, deployOptions);
         if (!deployResult.ok) {
             // exactOptionalPropertyTypes: only write the detail key when it is present.

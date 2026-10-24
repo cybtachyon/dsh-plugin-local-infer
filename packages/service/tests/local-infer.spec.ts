@@ -7,6 +7,7 @@ import { EngineAdapter, estimateVram } from 'dsh-plugin-local-infer/core'
 import type {
   Config,
   DefaultModel,
+  DeployOptions,
   DeployResult,
   EngineDepPlan,
   EngineLaunchSignature,
@@ -554,6 +555,35 @@ describe('ctx.localInfer launch and stop (Phase 5)', () => {
       engineDirectory: '/home/derek/src/ninfer',
       engineFork: 'https://github.com/iamwavecut/ninfer-all',
     })
+  })
+
+  it('passes the auto-rebuild flag to the adapter deploy step', async () => {
+    const ctx = await seam()
+    let seenOptions: DeployOptions | undefined
+    class AutoRebuildAdapter extends StubAdapter {
+      async deploy(
+        _p: LaunchPlan,
+        _platform?: EnginePlatformConfig,
+        _onProgress?: (step: 'prereqs' | 'download' | 'build' | 'launch') => void,
+        options?: DeployOptions,
+      ): Promise<DeployResult> {
+        seenOptions = options
+        return { ok: true }
+      }
+      async healthCheck(_p: LaunchPlan): Promise<HealthResult> {
+        return { healthy: true }
+      }
+    }
+    ctx.localInfer.registerEngine(new AutoRebuildAdapter('ninfer'))
+    // The checkbox off: the flag rides into the deploy step, which skips the
+    // git sync (fetch, rebase, rebuild).
+    await ctx.localInfer.launch(plan('ninfer'), { autoRebuild: false })
+    expect(seenOptions).toEqual({ autoRebuild: false })
+    // The flag absent: the deploy step gets no options object, so the rebuild
+    // runs.
+    seenOptions = undefined
+    await ctx.localInfer.launch(plan('ninfer'))
+    expect(seenOptions).toBeUndefined()
   })
 
   it('stops through the registered adapter', async () => {
