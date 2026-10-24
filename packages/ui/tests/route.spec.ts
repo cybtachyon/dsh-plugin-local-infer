@@ -2415,6 +2415,57 @@ describe('get route (git sync, deps, build)', () => {
     expect(readConfig().lastLogs).toContain('get complete')
   })
 
+  it('downloads the DFlash2 drafter and the n-gram volume for an Infernix Get', async () => {
+    writeConfig('infernix', {}, true)
+    const { host } = stubGetHost({ exists: false })
+    let logged = ''
+    const result = await getEngine(
+      stubService([]),
+      {
+        engine: 'infernix',
+        config: {
+          spec: 'dflash2',
+          model: 'qwen38-flash-next',
+          draftModelPreset: 'Qwen3.8-Flash-Next-DFlash2-Infernix.infernix',
+          modelDirectory: MODEL_DIR,
+        },
+      },
+      (chunk) => {
+        logged += chunk
+      },
+      host,
+    )
+    expect(result.ok).toBe(true)
+    // The selected DFlash2 drafter downloads into the model directory, the
+    // layout the --draft-model path expects.
+    expect(logged).toContain(
+      `$ hf download Wallawalla47/Qwen3.8-Flash-Next-DFlash2-Infernix Qwen3.8-Flash-Next-DFlash2-Infernix.infernix --local-dir ${MODEL_DIR}/Qwen3.8-Flash-Next-DFlash2-Infernix.infernix`,
+    )
+    // The Flash-Next model's PLE n-gram volume downloads into the model
+    // directory, so the --ngram-volume flag reads a file the same Get left.
+    expect(logged).toContain(
+      `$ hf download Wallawalla47/Qwen3.8-Flash-Next-NVIDIA-NVFP4-Dense8-Infernix Qwen3.8-Flash-Next-NVIDIA-NVFP4-Infernix.ngram --local-dir ${MODEL_DIR}`,
+    )
+    expect(logged).toContain('get complete')
+  })
+
+  it('pulls no model artifacts for a non-Infernix Get', async () => {
+    writeConfig('ninfer', {}, true)
+    const { host } = stubGetHost({ exists: false })
+    let logged = ''
+    const result = await getEngine(
+      stubService([]),
+      { engine: 'ninfer', config: { modelDirectory: MODEL_DIR } },
+      (chunk) => {
+        logged += chunk
+      },
+      host,
+    )
+    expect(result.ok).toBe(true)
+    expect(logged).not.toContain('hf download')
+    expect(logged).toContain('get complete')
+  })
+
   it('answers 400 for a broken body and streams nothing', async () => {
     const route = getRouteWith(stubGetHost({ exists: false }).host)
     const res = fakeStreamRes()

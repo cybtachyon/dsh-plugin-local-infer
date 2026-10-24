@@ -1,17 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DFLASH2_CUSTOM_VALUE,
   DFLASH2_GATE_MESSAGE,
+  INFERNIX_DFLASH2_MODELS,
   INFERNIX_KV_DTYPE_OPTIONS,
   INFERNIX_MODEL_ARTIFACTS,
   INFERNIX_NGRAM_RESIDENCY_OPTIONS,
+  INFERNIX_NGRAM_VOLUMES,
   INFERNIX_PARAMETERS,
   INFERNIX_REASONING_LOOP_OPTIONS,
   INFERNIX_SPEC_OPTIONS,
   SPEC_GATE_MESSAGE,
+  dflash2PresetOptions,
   infernixArtifactFor,
+  infernixDraftModelPath,
+  infernixGetDownloads,
   infernixModelKey,
 } from '../src/infernix.ts'
-import { NINFER_PARAMETERS } from '../src/ninfer.ts'
+import { LM_HEAD_DRAFT_GATE_MESSAGE, NINFER_PARAMETERS } from '../src/ninfer.ts'
 import type { ParameterSpec } from 'dsh-plugin-local-infer/core'
 
 // The same opener test the local-infer/behavior-first-description eslint rule
@@ -19,7 +25,7 @@ import type { ParameterSpec } from 'dsh-plugin-local-infer/core'
 const IS_STYLE = /^\s*(is|it is|this is|are|was|were)\s/i
 
 describe('Infernix parameter surface', () => {
-  it('carries the 36-spec surface with unique keys', () => {
+  it('carries the 37-spec surface with unique keys', () => {
     const keys = INFERNIX_PARAMETERS.map((spec) => spec.key)
     expect(new Set(keys).size).toBe(keys.length)
     expect(keys).toEqual([
@@ -39,6 +45,7 @@ describe('Infernix parameter surface', () => {
       'spec',
       'draftTokens',
       'lmHeadDraft',
+      'draftModelPreset',
       'draftModel',
       'ngramDraftTokens',
       'ngramMinMatch',
@@ -69,6 +76,14 @@ describe('Infernix parameter surface', () => {
     }
   })
 
+  it('seeds the engine memory and prefill defaults the form shows', () => {
+    const defaultFor = (key: string) =>
+      INFERNIX_PARAMETERS.find((spec) => spec.key === key)?.defaultValue
+    expect(defaultFor('hostContextMib')).toBe(16384)
+    expect(defaultFor('ramHeadroomMib')).toBe(8192)
+    expect(defaultFor('prefillChunk')).toBe(2048)
+  })
+
   it('maps each form kind to the control the plan assigns', () => {
     const kindFor = (key: string) =>
       INFERNIX_PARAMETERS.find((spec) => spec.key === key)?.form.kind
@@ -85,6 +100,7 @@ describe('Infernix parameter surface', () => {
     expect(kindFor('reproducible')).toBe('boolean')
     expect(kindFor('lossless')).toBe('boolean')
     expect(kindFor('lmHeadDraft')).toBe('boolean')
+    expect(kindFor('draftModelPreset')).toBe('enum')
     expect(kindFor('draftModel')).toBe('path')
     expect(kindFor('ngramVolume')).toBe('path')
     expect(kindFor('expertState')).toBe('path')
@@ -114,10 +130,15 @@ describe('Infernix parameter surface', () => {
       '/models/Qwen3.8-Flash-Next-NVIDIA-NVFP4-Infernix.ngram',
     ])
     expect(argvFor('ngramVolume', '')).toEqual([])
-    expect(argvFor('draftModel', '/models/Qwen3.8-Flash-Next-DFlash2-Infernix.infernix')).toEqual([
-      '--draft-model',
-      '/models/Qwen3.8-Flash-Next-DFlash2-Infernix.infernix',
-    ])
+    // draftModel and draftModelPreset spell no flag of their own: the adapter
+    // resolves the effective --draft-model path and spells it, so the surface
+    // carries no toArgv for either.
+    expect(
+      INFERNIX_PARAMETERS.find((spec) => spec.key === 'draftModel')?.toArgv,
+    ).toBeUndefined()
+    expect(
+      INFERNIX_PARAMETERS.find((spec) => spec.key === 'draftModelPreset')?.toArgv,
+    ).toBeUndefined()
     expect(argvFor('ngramResidency', 'auto')).toEqual([])
     expect(argvFor('ngramResidency', 'ram')).toEqual(['--ngram-residency', 'ram'])
     expect(argvFor('ngramDraftTokens', 0)).toEqual([])
@@ -178,16 +199,81 @@ describe('Infernix parameter surface', () => {
   })
 
   it('keeps the speculation fields gated on a selected spec', () => {
-    const gated = INFERNIX_PARAMETERS.filter(
-      (spec) => spec.key === 'draftTokens' || spec.key === 'lmHeadDraft',
+    const draftTokens = INFERNIX_PARAMETERS.find((spec) => spec.key === 'draftTokens')!
+    expect(draftTokens.requires!({ spec: 'none' })).toBe(SPEC_GATE_MESSAGE)
+    expect(SPEC_GATE_MESSAGE).toBe('Pick a speculation backend first (mtp, dflash, or dflash2)')
+    expect(draftTokens.requires!({ spec: 'mtp' })).toBeNull()
+    expect(draftTokens.requires!({ spec: 'dflash2' })).toBeNull()
+    // The LM-head drafter is an MTP-backend feature, so it unlocks only while
+    // MTP is selected, not while any backend is selected.
+    const lmHeadDraft = INFERNIX_PARAMETERS.find((spec) => spec.key === 'lmHeadDraft')!
+    expect(lmHeadDraft.requires!({ spec: 'none' })).toBe(LM_HEAD_DRAFT_GATE_MESSAGE)
+    expect(lmHeadDraft.requires!({ spec: 'dflash' })).toBe(LM_HEAD_DRAFT_GATE_MESSAGE)
+    expect(lmHeadDraft.requires!({ spec: 'dflash2' })).toBe(LM_HEAD_DRAFT_GATE_MESSAGE)
+    expect(lmHeadDraft.requires!({ spec: 'mtp' })).toBeNull()
+  })
+
+  it('offers the DFlash2 model dropdown with the Custom entry last', () => {
+    const options = dflash2PresetOptions()
+    // One entry per common drafter, then the Custom entry that falls through
+    // to the Draft model path field.
+    expect(options.slice(0, INFERNIX_DFLASH2_MODELS.length).map((option) => option.value)).toEqual(
+      INFERNIX_DFLASH2_MODELS.map((model) => model.file),
     )
-    expect(gated).toHaveLength(2)
-    for (const spec of gated) {
-      expect(spec.requires!({ spec: 'none' })).toBe(SPEC_GATE_MESSAGE)
-      expect(SPEC_GATE_MESSAGE).toBe('Pick a speculation backend first (mtp, dflash, or dflash2)')
-      expect(spec.requires!({ spec: 'mtp' })).toBeNull()
-      expect(spec.requires!({ spec: 'dflash2' })).toBeNull()
-    }
+    expect(options[options.length - 1]!.value).toBe(DFLASH2_CUSTOM_VALUE)
+    // The dropdown value is the drafter file, so a selection resolves back to
+    // the model data, and the spec default is the first common drafter.
+    const spec = INFERNIX_PARAMETERS.find((candidate) => candidate.key === 'draftModelPreset')!
+    expect(spec.defaultValue).toBe(INFERNIX_DFLASH2_MODELS[0]!.file)
+    expect(spec.requires!({ spec: 'dflash2' })).toBeNull()
+    expect(spec.requires!({ spec: 'mtp' })).toBe(DFLASH2_GATE_MESSAGE)
+  })
+
+  it('resolves the effective --draft-model path from the preset or the Custom field', () => {
+    const presetFile = INFERNIX_DFLASH2_MODELS[0]!.file
+    // A selected preset resolves to the model directory plus the drafter file,
+    // the layout the hf CLI download leaves.
+    expect(
+      infernixDraftModelPath({
+        spec: 'dflash2',
+        draftModelPreset: presetFile,
+        modelDirectory: '/models',
+      }),
+    ).toBe(`/models/${presetFile}/${presetFile}`)
+    // The Custom selection (or no preset) falls through to the Draft model
+    // path field.
+    expect(
+      infernixDraftModelPath({
+        spec: 'dflash2',
+        draftModelPreset: DFLASH2_CUSTOM_VALUE,
+        draftModel: '/models/custom.infernix',
+      }),
+    ).toBe('/models/custom.infernix')
+    // No preset and no custom path resolves to null, the misconfiguration the
+    // dflash2 guideline names.
+    expect(infernixDraftModelPath({ spec: 'dflash2' })).toBeNull()
+  })
+
+  it('renders the Get download commands for the drafter and the n-gram volume', () => {
+    const presetFile = INFERNIX_DFLASH2_MODELS[0]!.file
+    // A Flash-Next config with a selected drafter pulls both the drafter (into
+    // the model directory) and the FP8 n-gram volume (into the model directory).
+    const commands = infernixGetDownloads(
+      { spec: 'dflash2', model: 'qwen38-flash-next', draftModelPreset: presetFile },
+      '/models',
+    )
+    expect(commands).toEqual([
+      `hf download Wallawalla47/Qwen3.8-Flash-Next-DFlash2-Infernix ${presetFile} --local-dir /models/${presetFile}`,
+      `hf download ${INFERNIX_NGRAM_VOLUMES['qwen38-flash-next']!.repo} ${INFERNIX_NGRAM_VOLUMES['qwen38-flash-next']!.file} --local-dir /models`,
+    ])
+    // A Custom drafter pulls no preset, so only the n-gram volume downloads.
+    const custom = infernixGetDownloads(
+      { spec: 'dflash2', model: 'qwen38-flash-next', draftModelPreset: DFLASH2_CUSTOM_VALUE },
+      '/models',
+    )
+    expect(custom).toHaveLength(1)
+    // A model key with no n-gram volume (the 27B) and no preset pulls nothing.
+    expect(infernixGetDownloads({ model: 'qwen3-27b' }, '/models')).toEqual([])
   })
 
   it('gates the DFlash2 drafter on the dflash2 backend only', () => {
@@ -274,7 +360,7 @@ describe('Infernix parameter surface', () => {
     // selected and the other engines never spell them.
     const infernixKeys = new Set(INFERNIX_PARAMETERS.map((spec) => spec.key))
     const ninferKeys = new Set(NINFER_PARAMETERS.map((spec) => spec.key))
-    const infernixOnly = ['ngramVolume', 'draftModel', 'ngramResidency', 'ngramDraftTokens', 'ngramMinMatch', 'expertRamMib', 'expertPinMib', 'expertState', 'prefixCacheFile', 'ramHeadroomMib', 'vramHeadroomMib', 'noCudaGraph', 'reproducible', 'lossless', 'ropeYarnFactor', 'tolerantToolCalls', 'reasoningLoop', 'maxPendingRequests', 'hostContextMib']
+    const infernixOnly = ['ngramVolume', 'draftModel', 'draftModelPreset', 'ngramResidency', 'ngramDraftTokens', 'ngramMinMatch', 'expertRamMib', 'expertPinMib', 'expertState', 'prefixCacheFile', 'ramHeadroomMib', 'vramHeadroomMib', 'noCudaGraph', 'reproducible', 'lossless', 'ropeYarnFactor', 'tolerantToolCalls', 'reasoningLoop', 'maxPendingRequests', 'hostContextMib']
     for (const key of infernixOnly) {
       expect(infernixKeys.has(key), `${key} on the Infernix surface`).toBe(true)
       expect(ninferKeys.has(key), `${key} off the NInfer surface`).toBe(false)

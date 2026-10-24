@@ -1729,6 +1729,55 @@ describe('InfernixAdapter', () => {
     expect(plan.argv?.[1]).toBe(INFERNIX_MODEL_ARTIFACTS['qwen3-27b']!.file)
   })
 
+  it('spells --draft-model from the selected DFlash2 preset when dflash2 is on', () => {
+    const { host } = stubHost()
+    const adapter = new InfernixAdapter(host)
+    const presetFile = 'Qwen3.8-Flash-Next-DFlash2-Infernix.infernix'
+    const plan = adapter.renderLaunch(
+      {
+        model: 'qwen38-flash-next',
+        spec: 'dflash2',
+        draftModelPreset: presetFile,
+        modelDirectory: '/models',
+        port: 8080,
+      },
+      HW,
+    )
+    const argv = plan.argv ?? []
+    expect(argv).toContain('--draft-model')
+    // The preset resolves to the model directory plus the drafter file, the
+    // layout the hf CLI download leaves.
+    expect(argv).toContain(`/models/${presetFile}/${presetFile}`)
+  })
+
+  it('spells --draft-model from the Custom path field when dflash2 is on', () => {
+    const { host } = stubHost()
+    const adapter = new InfernixAdapter(host)
+    const plan = adapter.renderLaunch(
+      {
+        model: 'qwen38-flash-next',
+        spec: 'dflash2',
+        draftModelPreset: 'custom',
+        draftModel: '/models/custom-drafter.infernix',
+        port: 8080,
+      },
+      HW,
+    )
+    const argv = plan.argv ?? []
+    expect(argv).toContain('--draft-model')
+    expect(argv).toContain('/models/custom-drafter.infernix')
+  })
+
+  it('spells no --draft-model when the dflash2 backend is not selected', () => {
+    const { host } = stubHost()
+    const adapter = new InfernixAdapter(host)
+    const plan = adapter.renderLaunch(
+      { model: 'qwen3-27b', spec: 'mtp', port: 8080 },
+      HW,
+    )
+    expect(plan.argv ?? []).not.toContain('--draft-model')
+  })
+
   it('launches a directory-scanned .infernix file as-is', () => {
     const { host } = stubHost()
     const adapter = new InfernixAdapter(host)

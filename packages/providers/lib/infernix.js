@@ -16,7 +16,8 @@
  * them. Adding a flag here is a data edit, never a core rewire.
  * @module dsh-plugin-local-infer/providers/infernix
  */
-import { CHAT_TEMPLATE_OPTIONS } from "./ninfer.js";
+import { join } from 'node:path';
+import { CHAT_TEMPLATE_OPTIONS, LM_HEAD_DRAFT_GATE_MESSAGE } from "./ninfer.js";
 /**
  * The KV cache quantization formats Infernix serves, in the order the form
  * dropdown lists them. The set differs from NInfer's: the 2-bit and 4-bit-
@@ -121,6 +122,103 @@ export const INFERNIX_MODEL_ARTIFACTS = {
     },
 };
 /**
+ * The common DFlash2 drafters the Infernix DFlash2 model dropdown offers, in
+ * dropdown order. The Flash-Next DFlash2 is Inco AI's drafter (the 776 MB
+ * `.infernix` artifact) that the Infernix README recommends beside any
+ * Flash-Next conversion. The list is the single source the dropdown, the
+ * `--draft-model` path resolver, and the Get download step read.
+ */
+export const INFERNIX_DFLASH2_MODELS = [
+    {
+        file: 'Qwen3.8-Flash-Next-DFlash2-Infernix.infernix',
+        repo: 'Wallawalla47/Qwen3.8-Flash-Next-DFlash2-Infernix',
+        label: 'Qwen3.8-Flash-Next DFlash2',
+    },
+];
+/**
+ * The dropdown value the DFlash2 model field's Custom entry carries. A
+ * selection of this value (or no selection) makes the effective `--draft-model`
+ * path fall through to the Draft model path field, so a drafter no list entry
+ * names still loads.
+ */
+export const DFLASH2_CUSTOM_VALUE = 'custom';
+/**
+ * dflash2PresetOptions renders the DFlash2 model dropdown options: one entry
+ * per common drafter (the label, the repo as the note) plus the Custom entry
+ * last. The option value is the drafter's artifact file, so the selection
+ * resolves back to the model data by file name.
+ */
+export function dflash2PresetOptions() {
+    return [
+        ...INFERNIX_DFLASH2_MODELS.map((model) => ({
+            value: model.file,
+            label: model.label,
+            note: model.repo,
+        })),
+        {
+            value: DFLASH2_CUSTOM_VALUE,
+            label: 'Custom',
+            note: 'use the Draft model path field',
+        },
+    ];
+}
+/**
+ * The PLE n-gram volumes, keyed by the config model key. The Flash-Next entry
+ * is the FP8 volume (the recommended one), which ships beside the Dense8 model
+ * shards in the same repo, so a Get of the Flash-Next model pulls the table
+ * into the model directory.
+ */
+export const INFERNIX_NGRAM_VOLUMES = {
+    'qwen38-flash-next': {
+        file: 'Qwen3.8-Flash-Next-NVIDIA-NVFP4-Infernix.ngram',
+        repo: 'Wallawalla47/Qwen3.8-Flash-Next-NVIDIA-NVFP4-Dense8-Infernix',
+    },
+};
+/**
+ * infernixDraftModelPath resolves the effective `--draft-model` path a config
+ * carries: the selected DFlash2 preset's artifact (the model directory plus the
+ * drafter file, the layout the hf CLI download leaves) when a preset is
+ * selected, else the Custom Draft model path field. Returns null when neither
+ * names a path, which is the misconfiguration the dflash2 guideline names.
+ */
+export function infernixDraftModelPath(config) {
+    const preset = typeof config.draftModelPreset === 'string' ? config.draftModelPreset : '';
+    if (preset !== '' && preset !== DFLASH2_CUSTOM_VALUE) {
+        const model = INFERNIX_DFLASH2_MODELS.find((entry) => entry.file === preset);
+        const modelDir = typeof config.modelDirectory === 'string' && config.modelDirectory !== ''
+            ? config.modelDirectory
+            : '';
+        if (model !== undefined && modelDir !== '') {
+            return join(modelDir, model.file, model.file);
+        }
+    }
+    const custom = typeof config.draftModel === 'string' ? config.draftModel : '';
+    return custom !== '' ? custom : null;
+}
+/**
+ * infernixGetDownloads renders the hf CLI download commands a Get run pulls
+ * for a config: the selected DFlash2 drafter (into the model directory, the
+ * layout the `--draft-model` path expects) when a preset is selected, and the
+ * model key's PLE n-gram volume (into the model directory) when the key names
+ * one. The commands are the single source the Get route streams, so a Get
+ * leaves the model directory ready to launch.
+ */
+export function infernixGetDownloads(config, modelDir) {
+    const commands = [];
+    const preset = typeof config.draftModelPreset === 'string' ? config.draftModelPreset : '';
+    if (preset !== '' && preset !== DFLASH2_CUSTOM_VALUE) {
+        const model = INFERNIX_DFLASH2_MODELS.find((entry) => entry.file === preset);
+        if (model !== undefined) {
+            commands.push(`hf download ${model.repo} ${model.file} --local-dir ${join(modelDir, model.file)}`);
+        }
+    }
+    const volume = INFERNIX_NGRAM_VOLUMES[infernixModelKey(config)];
+    if (volume !== undefined) {
+        commands.push(`hf download ${volume.repo} ${volume.file} --local-dir ${modelDir}`);
+    }
+    return commands;
+}
+/**
  * The Infernix `ParameterSpec` surface, in form order. The `group` field is
  * the form section; specs without a group render under `General`. The
  * Infernix-only fields (ngramVolume, draftModel, the n-gram proposal set,
@@ -206,9 +304,9 @@ export const INFERNIX_PARAMETERS = [
             sliderMax: (hw) => Math.max(0, Math.floor((hw.hostRamGiB ?? 0) * 0.5 * 1024)),
         },
         group: 'Memory',
-        // 8192 MiB is the engine default the form seeds; a value of 0 keeps the
+        // 16384 MiB is the engine default the form seeds; a value of 0 keeps the
         // cache on the device only, which the engine still accepts.
-        defaultValue: 8192,
+        defaultValue: 16384,
         toArgv: (value) => ['--host-context-mib', String(value)],
     },
     {
@@ -224,7 +322,7 @@ export const INFERNIX_PARAMETERS = [
         label: 'RAM headroom MiB',
         description: 'Host RAM the pinned weights and caches leave free for the rest of the machine. The startup refuses a pin that would take it.',
         form: { kind: 'number', min: 0, step: 256, unit: 'MiB' },
-        defaultValue: 2048,
+        defaultValue: 8192,
         group: 'Memory',
         toArgv: (value) => ['--ram-headroom-mib', String(value)],
     },
@@ -306,23 +404,48 @@ export const INFERNIX_PARAMETERS = [
     {
         key: 'lmHeadDraft',
         label: 'LM-head draft',
-        description: 'Drafts from the small proposal head instead of the full output head, cutting the per-draft projection cost.',
+        description: 'Drafts from the small proposal head instead of the full output head, cutting the per-draft projection cost. An MTP-backend feature, so the field unlocks only while MTP is selected.',
         form: { kind: 'boolean' },
         defaultValue: false,
         group: 'Speculation',
-        requires: (config) => config.spec && config.spec !== 'none' ? null : SPEC_GATE_MESSAGE,
+        requires: (config) => config.spec === 'mtp' ? null : LM_HEAD_DRAFT_GATE_MESSAGE,
         toArgv: (value) => (value === true ? ['--lm-head-draft'] : []),
     },
     {
-        key: 'draftModel',
-        label: 'Draft model',
-        description: 'The DFlash2 drafter companion artifact for Qwen3.8-Flash-Next. Downloads separately from the model, and the engine loads it beside the main artifact.',
-        form: { kind: 'path' },
+        key: 'draftModelPreset',
+        label: 'DFlash2 model',
+        description: 'The DFlash2 drafter to download into the model directory. Pick a common model, or Custom to use the Draft model path. A Get run pulls the selected drafter through the hf CLI.',
+        form: { kind: 'enum', options: [...dflash2PresetOptions()] },
+        // The first common drafter is the selection a fresh config carries, so a
+        // switch to dflash2 always has a drafter path to load.
+        defaultValue: INFERNIX_DFLASH2_MODELS[0]?.file,
         group: 'Speculation',
         // The drafter only loads with the dflash2 backend, so the field stays
         // greyed out until the user picks it.
         requires: (config) => config.spec === 'dflash2' ? null : DFLASH2_GATE_MESSAGE,
-        toArgv: (value) => (value ? ['--draft-model', String(value)] : []),
+        // No toArgv: the adapter resolves the effective --draft-model path from
+        // this selection (or the Custom Draft model field) and spells the flag.
+    },
+    {
+        key: 'draftModel',
+        label: 'Draft model',
+        description: 'The DFlash2 drafter companion artifact for Qwen3.8-Flash-Next. Downloads separately from the model, and the engine loads it beside the main artifact. Used while the DFlash2 model dropdown is Custom.',
+        form: { kind: 'path' },
+        group: 'Speculation',
+        // The drafter only loads with the dflash2 backend, and the Custom path
+        // field is only live while the DFlash2 model dropdown is Custom (or
+        // cleared), so a selected preset never leaves a stale custom path behind.
+        requires: (config) => {
+            if (config.spec !== 'dflash2')
+                return DFLASH2_GATE_MESSAGE;
+            const preset = typeof config.draftModelPreset === 'string' ? config.draftModelPreset : '';
+            if (preset !== '' && preset !== DFLASH2_CUSTOM_VALUE) {
+                return 'A DFlash2 model is selected; switch to Custom to use a custom Draft model path';
+            }
+            return null;
+        },
+        // No toArgv: the adapter resolves the effective --draft-model path and
+        // spells the flag, so the preset and the custom path share one source.
     },
     {
         key: 'ngramDraftTokens',
@@ -375,7 +498,7 @@ export const INFERNIX_PARAMETERS = [
     {
         key: 'prefillChunk',
         label: 'Prefill chunk',
-        description: 'The prompt-chunk size for prefill, in multiples of 128. The engine rounds it to whole attention waves; leave unset for the automatic size.',
+        description: 'The prompt-chunk size for prefill, in multiples of 128. The engine rounds it to whole attention waves. The form seeds 2048; a lower value trades prefill speed for smaller per-chunk memory.',
         form: {
             kind: 'number',
             min: 128,
@@ -386,6 +509,8 @@ export const INFERNIX_PARAMETERS = [
             // number entry stays uncapped, so a typed value is never hard-limited.
             sliderMax: (_hw, config) => (typeof config.maxContext === 'number' ? config.maxContext : 0),
         },
+        // 2048 tokens is the engine default the form seeds.
+        defaultValue: 2048,
         group: 'Engine',
         toArgv: (value) => ['--prefill-chunk', String(value)],
     },

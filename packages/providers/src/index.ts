@@ -100,18 +100,28 @@ export {
 } from './llamacpp.ts'
 export type { LlamaCppModelArtifact } from './llamacpp.ts'
 export {
+  DFLASH2_CUSTOM_VALUE,
   DFLASH2_GATE_MESSAGE,
+  INFERNIX_DFLASH2_MODELS,
   INFERNIX_KV_DTYPE_OPTIONS,
   INFERNIX_MODEL_ARTIFACTS,
   INFERNIX_NGRAM_RESIDENCY_OPTIONS,
+  INFERNIX_NGRAM_VOLUMES,
   INFERNIX_PARAMETERS,
   INFERNIX_REASONING_LOOP_OPTIONS,
   INFERNIX_SPEC_OPTIONS,
   SPEC_GATE_MESSAGE as INFERNIX_SPEC_GATE_MESSAGE,
+  dflash2PresetOptions,
   infernixArtifactFor,
+  infernixDraftModelPath,
+  infernixGetDownloads,
   infernixModelKey,
 } from './infernix.ts'
-export type { InfernixModelArtifact } from './infernix.ts'
+export type {
+  InfernixDFlash2Model,
+  InfernixModelArtifact,
+  InfernixNgramVolume,
+} from './infernix.ts'
 export { STRATA_PARAMETERS } from './strata.ts'
 
 /**

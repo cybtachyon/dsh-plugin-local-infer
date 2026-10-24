@@ -19,16 +19,18 @@ function rule(id: string): Guideline {
 }
 
 describe('built-in guideline data', () => {
-  it('carries the three built-in rules with unique ids and sane levels', () => {
+  it('carries the four built-in rules with unique ids and sane levels', () => {
     expect(BUILTIN_GUIDELINES.map((guideline) => guideline.id)).toEqual([
       'docker-not-installed',
       'host-tiers-exceed-host-ram',
       'wsl2-dflash2-needs-pin-memory',
+      'infernix-dflash2-needs-draft-model',
     ])
-    expect(new Set(BUILTIN_GUIDELINES.map((guideline) => guideline.id)).size).toBe(3)
+    expect(new Set(BUILTIN_GUIDELINES.map((guideline) => guideline.id)).size).toBe(4)
     expect(rule('docker-not-installed').level).toBe('error')
     expect(rule('host-tiers-exceed-host-ram').level).toBe('warn')
     expect(rule('wsl2-dflash2-needs-pin-memory').level).toBe('error')
+    expect(rule('infernix-dflash2-needs-draft-model').level).toBe('error')
   })
 
   it('fires docker-not-installed on a docker build mode or the docker-only engine', () => {
@@ -77,6 +79,40 @@ describe('built-in guideline data', () => {
     expect(rule('wsl2-dflash2-needs-pin-memory').when({ spec: 'dflash2' }, baseHw)).toBe(false)
     expect(rule('wsl2-dflash2-needs-pin-memory').when({ spec: 'mtp' }, wsl2)).toBe(false)
   })
+
+  it('fires infernix-dflash2-needs-draft-model only on an Infernix dflash2 with no drafter path', () => {
+    const rule = BUILTIN_GUIDELINES.find((candidate) => candidate.id === 'infernix-dflash2-needs-draft-model')!
+    // An Infernix config (it carries the draftModelPreset key) that selects
+    // dflash2 but names no drafter path fires the rule.
+    expect(
+      rule.when({ spec: 'dflash2', draftModelPreset: 'custom' }, baseHw),
+    ).toBe(true)
+    // A selected preset resolves a drafter path, so the rule stays silent.
+    expect(
+      rule.when(
+        {
+          spec: 'dflash2',
+          draftModelPreset: 'Qwen3.8-Flash-Next-DFlash2-Infernix.infernix',
+          modelDirectory: '/models',
+        },
+        baseHw,
+      ),
+    ).toBe(false)
+    // A Custom drafter path resolves a drafter path, so the rule stays silent.
+    expect(
+      rule.when(
+        { spec: 'dflash2', draftModelPreset: 'custom', draftModel: '/models/custom.infernix' },
+        baseHw,
+      ),
+    ).toBe(false)
+    // A NInfer dflash2 (no draftModelPreset key) never fires the rule, because
+    // it rides the model's own companion weights.
+    expect(rule.when({ spec: 'dflash2' }, baseHw)).toBe(false)
+    // A non-dflash2 backend never fires the rule.
+    expect(
+      rule.when({ spec: 'mtp', draftModelPreset: 'custom' }, baseHw),
+    ).toBe(false)
+  })
 })
 
 describe('built-in guideline registration', () => {
@@ -89,6 +125,7 @@ describe('built-in guideline registration', () => {
       'docker-not-installed',
       'host-tiers-exceed-host-ram',
       'wsl2-dflash2-needs-pin-memory',
+      'infernix-dflash2-needs-draft-model',
     ])
   })
 })

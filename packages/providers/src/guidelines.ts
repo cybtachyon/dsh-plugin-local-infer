@@ -13,6 +13,7 @@
  */
 
 import type { Guideline } from 'dsh-plugin-local-infer/core'
+import { infernixDraftModelPath } from './infernix.ts'
 
 /**
  * One pinned Host StateImage, in bytes. The NInfer measured figure for the
@@ -63,5 +64,22 @@ export const BUILTIN_GUIDELINES: readonly Guideline[] = [
       'dflash2 aborts at boot on WSL2 without pinned memory. Enable the WSL2 pin memory flag (VLLM_WSL2_ENABLE_PIN_MEMORY=1).',
     anchors: ['pinMemory'],
     when: (config, hw) => hw.wsl2 && config.spec === 'dflash2' && config.pinMemory !== true,
+  },
+  {
+    // The Infernix dflash2 backend always loads a drafter through
+    // --draft-model, so a config that selects dflash2 but names no drafter
+    // path (no preset, no Custom path) cannot boot. The rule is Infernix-
+    // specific: only Infernix configs carry the draftModelPreset key, so a
+    // NInfer dflash2 (which rides the model's own companion weights) never
+    // fires it.
+    id: 'infernix-dflash2-needs-draft-model',
+    level: 'error',
+    message:
+      'dflash2 needs a draft model. Select a DFlash2 model, or switch to Custom and set the Draft model path.',
+    anchors: ['draftModelPreset', 'draftModel'],
+    when: (config) =>
+      config.spec === 'dflash2' &&
+      'draftModelPreset' in config &&
+      infernixDraftModelPath(config) === null,
   },
 ]

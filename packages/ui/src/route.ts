@@ -67,6 +67,7 @@ import {
   defaultModelsForEngine,
   ENGINES,
   enginePlatformDefaults,
+  infernixGetDownloads,
   nodeLifecycleHost,
   syncEngineRepo,
 } from '../../providers/lib/index.js'
@@ -1566,6 +1567,19 @@ function resolveEngineDirectory(
 }
 
 /**
+ * resolveModelDirectory picks the model directory a Get run downloads into:
+ * the config's modelDirectory override when it names a path, else the
+ * plugin's default model directory. The same rule the summary and deps routes
+ * apply, so a Get and the card's Model Directory field agree on the target.
+ */
+function resolveModelDirectory(localInfer: LocalInferService, config: Config): string {
+  const rawModelDir = config.modelDirectory
+  return typeof rawModelDir === 'string' && rawModelDir.trim() !== ''
+    ? rawModelDir
+    : localInfer.defaultModelDirectory()
+}
+
+/**
  * getEngine is the Get step: it syncs the engine checkout (clone the git
  * repo, or the fork when the platform entry provides one; fetch and rebase
  * a clean checkout; abort with a Logs alert when the checkout has local
@@ -1641,6 +1655,25 @@ export async function getEngine(
       log(`!! ${build.detail}\n`)
     }
     return { ok: false, ...(build.detail !== undefined ? { detail: build.detail } : {}) }
+  }
+  // The model artifacts a Get leaves ready to launch: the Infernix DFlash2
+  // drafter (when a preset is selected) and the PLE n-gram volume (when the
+  // model key names one), pulled through the hf CLI into the model directory.
+  // A download failure aborts the Get, so a launch never reads a missing
+  // drafter or table.
+  if (engineId === 'infernix') {
+    const modelDir = resolveModelDirectory(localInfer, config)
+    for (const command of infernixGetDownloads(config, modelDir)) {
+      log(`$ ${command}\n`)
+      const outcome =
+        host.runStream !== undefined
+          ? await host.runStream(command, (chunk) => log(chunk))
+          : await host.run(command)
+      if (!outcome.ok) {
+        log(`!! ${command} failed: ${outcome.detail ?? 'unknown'}\n`)
+        return { ok: false, detail: 'a model artifact download failed' }
+      }
+    }
   }
   log('get complete\n')
   return { ok: true }

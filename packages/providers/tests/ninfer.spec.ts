@@ -3,6 +3,7 @@ import {
   CHAT_TEMPLATE_OPTIONS,
   DEVICE_PROFILE_OPTIONS,
   KV_DTYPE_OPTIONS,
+  LM_HEAD_DRAFT_GATE_MESSAGE,
   NINFER_PARAMETERS,
   SPEC_GATE_MESSAGE,
   SPEC_OPTIONS,
@@ -112,16 +113,20 @@ describe('NInfer parameter surface', () => {
   })
 
   it('keeps the speculation fields gated on a selected spec', () => {
-    const gated = NINFER_PARAMETERS.filter((spec) => spec.key === 'draftTokens' || spec.key === 'lmHeadDraft')
-    expect(gated).toHaveLength(2)
-    for (const spec of gated) {
-      // The gate message names the fix, not just the constraint, so the
-      // disabled field tells the user the next click.
-      expect(spec.requires!({ spec: 'none' })).toBe(SPEC_GATE_MESSAGE)
-      expect(SPEC_GATE_MESSAGE).toBe('Pick a speculation backend first (mtp, dflash, or dflash2)')
-      expect(spec.requires!({ spec: 'mtp' })).toBeNull()
-      expect(spec.requires!({ spec: 'dflash2' })).toBeNull()
-    }
+    const draftTokens = NINFER_PARAMETERS.find((spec) => spec.key === 'draftTokens')!
+    // The gate message names the fix, not just the constraint, so the
+    // disabled field tells the user the next click.
+    expect(draftTokens.requires!({ spec: 'none' })).toBe(SPEC_GATE_MESSAGE)
+    expect(SPEC_GATE_MESSAGE).toBe('Pick a speculation backend first (mtp, dflash, or dflash2)')
+    expect(draftTokens.requires!({ spec: 'mtp' })).toBeNull()
+    expect(draftTokens.requires!({ spec: 'dflash2' })).toBeNull()
+    // The LM-head drafter is an MTP-backend feature, so it unlocks only while
+    // MTP is selected, not while any backend is selected.
+    const lmHeadDraft = NINFER_PARAMETERS.find((spec) => spec.key === 'lmHeadDraft')!
+    expect(lmHeadDraft.requires!({ spec: 'none' })).toBe(LM_HEAD_DRAFT_GATE_MESSAGE)
+    expect(lmHeadDraft.requires!({ spec: 'dflash' })).toBe(LM_HEAD_DRAFT_GATE_MESSAGE)
+    expect(lmHeadDraft.requires!({ spec: 'dflash2' })).toBe(LM_HEAD_DRAFT_GATE_MESSAGE)
+    expect(lmHeadDraft.requires!({ spec: 'mtp' })).toBeNull()
   })
 
   it('ships the popular chat template as combo data with its source tag', () => {

@@ -43,6 +43,7 @@ describe('local-infer-providers scaffold', () => {
       'docker-not-installed',
       'host-tiers-exceed-host-ram',
       'wsl2-dflash2-needs-pin-memory',
+      'infernix-dflash2-needs-draft-model',
     ])
     expect(ctx.localInfer.registeredVramModels().map((model) => model.id)).toEqual([
       'qwen3-27b',

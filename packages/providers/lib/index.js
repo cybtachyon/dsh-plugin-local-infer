@@ -35,7 +35,7 @@ export { BUILTIN_PRESETS, PRESET_SOURCES, extractJsonBlock } from "./presets.js"
 export { DEFAULT_MODELS, defaultModelFor, defaultModelsForEngine } from "./model-defaults.js";
 export { HyperQwenAdapter, LLAMACPP_DOCKER_IMAGE, NINFER_DOCKER_IMAGE, NINFER_MODEL_ARTIFACTS, NInferAdapter, STRATA_DOCKER_IMAGE, StrataAdapter, LlamaCppAdapter, customArgEnv, customArgFlags, envFromSpecs, flagsFromSpecs, nodeLifecycleHost, pollHealth, } from "./adapters.js";
 export { KV_CACHE_TYPE_OPTIONS, LLAMACPP_MODEL_ARTIFACTS, LLAMACPP_PARAMETERS, llamaCppModelKey, } from "./llamacpp.js";
-export { DFLASH2_GATE_MESSAGE, INFERNIX_KV_DTYPE_OPTIONS, INFERNIX_MODEL_ARTIFACTS, INFERNIX_NGRAM_RESIDENCY_OPTIONS, INFERNIX_PARAMETERS, INFERNIX_REASONING_LOOP_OPTIONS, INFERNIX_SPEC_OPTIONS, SPEC_GATE_MESSAGE as INFERNIX_SPEC_GATE_MESSAGE, infernixArtifactFor, infernixModelKey, } from "./infernix.js";
+export { DFLASH2_CUSTOM_VALUE, DFLASH2_GATE_MESSAGE, INFERNIX_DFLASH2_MODELS, INFERNIX_KV_DTYPE_OPTIONS, INFERNIX_MODEL_ARTIFACTS, INFERNIX_NGRAM_RESIDENCY_OPTIONS, INFERNIX_NGRAM_VOLUMES, INFERNIX_PARAMETERS, INFERNIX_REASONING_LOOP_OPTIONS, INFERNIX_SPEC_OPTIONS, SPEC_GATE_MESSAGE as INFERNIX_SPEC_GATE_MESSAGE, dflash2PresetOptions, infernixArtifactFor, infernixDraftModelPath, infernixGetDownloads, infernixModelKey, } from "./infernix.js";
 export { STRATA_PARAMETERS } from "./strata.js";
 /**
  * Mount the providers. The NInfer measured VramModels register here so the

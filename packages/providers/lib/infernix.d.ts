@@ -76,6 +76,76 @@ export interface InfernixModelArtifact {
  */
 export declare const INFERNIX_MODEL_ARTIFACTS: Record<string, InfernixModelArtifact>;
 /**
+ * InfernixDFlash2Model is one common DFlash2 drafter the form's DFlash2 model
+ * dropdown offers: the `.infernix` artifact file the hf CLI pulls, the Hugging
+ * Face repo it lives in, and the label the dropdown shows. The DFlash2 drafter
+ * is a companion model that runs beside a Flash-Next conversion, so it
+ * downloads separately from the main model and loads through `--draft-model`.
+ * The data is the surface; adding a drafter is a data edit here, never an
+ * adapter rewire.
+ */
+export interface InfernixDFlash2Model {
+    file: string;
+    repo: string;
+    label: string;
+}
+/**
+ * The common DFlash2 drafters the Infernix DFlash2 model dropdown offers, in
+ * dropdown order. The Flash-Next DFlash2 is Inco AI's drafter (the 776 MB
+ * `.infernix` artifact) that the Infernix README recommends beside any
+ * Flash-Next conversion. The list is the single source the dropdown, the
+ * `--draft-model` path resolver, and the Get download step read.
+ */
+export declare const INFERNIX_DFLASH2_MODELS: readonly InfernixDFlash2Model[];
+/**
+ * The dropdown value the DFlash2 model field's Custom entry carries. A
+ * selection of this value (or no selection) makes the effective `--draft-model`
+ * path fall through to the Draft model path field, so a drafter no list entry
+ * names still loads.
+ */
+export declare const DFLASH2_CUSTOM_VALUE = "custom";
+/**
+ * dflash2PresetOptions renders the DFlash2 model dropdown options: one entry
+ * per common drafter (the label, the repo as the note) plus the Custom entry
+ * last. The option value is the drafter's artifact file, so the selection
+ * resolves back to the model data by file name.
+ */
+export declare function dflash2PresetOptions(): readonly EnumOption[];
+/**
+ * InfernixNgramVolume is the PLE n-gram table a model key reads: the `.ngram`
+ * file and the Hugging Face repo the Get step pulls it from. The volume is kept
+ * apart from the model shards and read from an NVMe drive, so the
+ * `--ngram-volume` flag points at a file the same download leaves on disk.
+ */
+export interface InfernixNgramVolume {
+    file: string;
+    repo: string;
+}
+/**
+ * The PLE n-gram volumes, keyed by the config model key. The Flash-Next entry
+ * is the FP8 volume (the recommended one), which ships beside the Dense8 model
+ * shards in the same repo, so a Get of the Flash-Next model pulls the table
+ * into the model directory.
+ */
+export declare const INFERNIX_NGRAM_VOLUMES: Record<string, InfernixNgramVolume>;
+/**
+ * infernixDraftModelPath resolves the effective `--draft-model` path a config
+ * carries: the selected DFlash2 preset's artifact (the model directory plus the
+ * drafter file, the layout the hf CLI download leaves) when a preset is
+ * selected, else the Custom Draft model path field. Returns null when neither
+ * names a path, which is the misconfiguration the dflash2 guideline names.
+ */
+export declare function infernixDraftModelPath(config: Config): string | null;
+/**
+ * infernixGetDownloads renders the hf CLI download commands a Get run pulls
+ * for a config: the selected DFlash2 drafter (into the model directory, the
+ * layout the `--draft-model` path expects) when a preset is selected, and the
+ * model key's PLE n-gram volume (into the model directory) when the key names
+ * one. The commands are the single source the Get route streams, so a Get
+ * leaves the model directory ready to launch.
+ */
+export declare function infernixGetDownloads(config: Config, modelDir: string): string[];
+/**
  * The Infernix `ParameterSpec` surface, in form order. The `group` field is
  * the form section; specs without a group render under `General`. The
  * Infernix-only fields (ngramVolume, draftModel, the n-gram proposal set,

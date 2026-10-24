@@ -37,6 +37,7 @@ describe('local-infer bundle', () => {
       'docker-not-installed',
       'host-tiers-exceed-host-ram',
       'wsl2-dflash2-needs-pin-memory',
+      'infernix-dflash2-needs-draft-model',
     ])
   })
 })

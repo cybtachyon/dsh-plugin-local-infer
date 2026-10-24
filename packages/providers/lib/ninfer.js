@@ -67,6 +67,13 @@ export const CHAT_TEMPLATE_OPTIONS = [
  */
 export const SPEC_GATE_MESSAGE = 'Pick a speculation backend first (mtp, dflash, or dflash2)';
 /**
+ * The gate message the form shows while the LM-head draft field is greyed out.
+ * The LM-head drafter is an MTP-backend feature, so the field unlocks only
+ * while the MTP speculation backend is selected, for every provider that
+ * spells the flag.
+ */
+export const LM_HEAD_DRAFT_GATE_MESSAGE = 'LM-head draft is only available with the MTP speculation backend';
+/**
  * The NInfer `ParameterSpec` surface, in form order. The `group` field is the
  * form section; specs without a group render under `General`. `requires`
  * names the cross-parameter dependency in the message the form shows while
@@ -209,11 +216,11 @@ export const NINFER_PARAMETERS = [
     {
         key: 'lmHeadDraft',
         label: 'LM-head draft',
-        description: 'Drafts from the small proposal head instead of the full output head, cutting the per-draft projection cost.',
+        description: 'Drafts from the small proposal head instead of the full output head, cutting the per-draft projection cost. An MTP-backend feature, so the field unlocks only while MTP is selected.',
         form: { kind: 'boolean' },
         defaultValue: false,
         group: 'Speculation',
-        requires: (config) => config.spec && config.spec !== 'none' ? null : SPEC_GATE_MESSAGE,
+        requires: (config) => config.spec === 'mtp' ? null : LM_HEAD_DRAFT_GATE_MESSAGE,
         toArgv: (value) => (value === true ? ['--lm-head-draft'] : []),
     },
     {

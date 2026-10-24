@@ -14,7 +14,7 @@ import { syncAndRebuildEngine } from "./acquire.js";
 import { NINFER_PARAMETERS } from "./ninfer.js";
 import { HYPERQWEN_PARAMETERS } from "./hyperqwen.js";
 import { LLAMACPP_MODEL_ARTIFACTS, LLAMACPP_PARAMETERS, llamaCppModelKey, } from "./llamacpp.js";
-import { INFERNIX_MODEL_ARTIFACTS, INFERNIX_PARAMETERS, infernixArtifactFor, infernixModelKey, } from "./infernix.js";
+import { INFERNIX_MODEL_ARTIFACTS, INFERNIX_PARAMETERS, infernixArtifactFor, infernixDraftModelPath, infernixModelKey, } from "./infernix.js";
 export { INFERNIX_MODEL_ARTIFACTS } from "./infernix.js";
 import { STRATA_PARAMETERS } from "./strata.js";
 /**
@@ -1063,6 +1063,17 @@ export class InfernixAdapter extends EngineAdapter {
         // release zip ships the server and its DLLs.
         const binary = process.platform === 'win32' ? 'infernix-serve.exe' : 'infernix-serve';
         const flags = flagsFromSpecs(INFERNIX_PARAMETERS, config);
+        // The dflash2 backend always loads a drafter through --draft-model, so the
+        // flag is spelled here from the resolved path (the selected DFlash2 preset,
+        // or the Custom Draft model field) rather than by a spec toArgv. A config
+        // that names no drafter path is the misconfiguration the dflash2
+        // guideline names, so the flag is spelled only when a path resolves.
+        if (config.spec === 'dflash2') {
+            const draftPath = infernixDraftModelPath(config);
+            if (draftPath !== null) {
+                flags.push('--draft-model', draftPath);
+            }
+        }
         const customArgs = customArgFlags(config);
         return {
             engineId: this.id,

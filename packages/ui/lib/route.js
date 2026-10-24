@@ -21,7 +21,7 @@ import { dirname, join } from 'node:path';
 // only resolves when the package sits inside a node_modules tree, so a
 // local-path or pnpm-linked install of this repo would fail the import.
 import { CHAT_TEMPLATE_FILE, buildModelEntry, checkDeps, DEFAULT_LOG_PATH_TEMPLATE, formatLaunchCommand, hfChatTemplateCommand, hfDownloadCommand, launchRecordFromPlan, modelArtifactPath, modelEntriesForEngine, providerIdFor, renderInstallString, resolveLogPath, } from '../../core/lib/index.js';
-import { CHAT_TEMPLATE_OPTIONS, buildEngineRepo, defaultModelFor, defaultModelsForEngine, ENGINES, enginePlatformDefaults, nodeLifecycleHost, syncEngineRepo, } from '../../providers/lib/index.js';
+import { CHAT_TEMPLATE_OPTIONS, buildEngineRepo, defaultModelFor, defaultModelsForEngine, ENGINES, enginePlatformDefaults, infernixGetDownloads, nodeLifecycleHost, syncEngineRepo, } from '../../providers/lib/index.js';
 import { renderDeps } from "./deps.js";
 import { renderForm } from "./form.js";
 import { renderMeter } from "./meter.js";
@@ -1005,6 +1005,18 @@ function resolveEngineDirectory(localInfer, config, engineId, platform) {
     return join(modelDir, engineId);
 }
 /**
+ * resolveModelDirectory picks the model directory a Get run downloads into:
+ * the config's modelDirectory override when it names a path, else the
+ * plugin's default model directory. The same rule the summary and deps routes
+ * apply, so a Get and the card's Model Directory field agree on the target.
+ */
+function resolveModelDirectory(localInfer, config) {
+    const rawModelDir = config.modelDirectory;
+    return typeof rawModelDir === 'string' && rawModelDir.trim() !== ''
+        ? rawModelDir
+        : localInfer.defaultModelDirectory();
+}
+/**
  * getEngine is the Get step: it syncs the engine checkout (clone the git
  * repo, or the fork when the platform entry provides one; fetch and rebase
  * a clean checkout; abort with a Logs alert when the checkout has local
@@ -1071,6 +1083,24 @@ export async function getEngine(localInfer, request, log, host = nodeLifecycleHo
             log(`!! ${build.detail}\n`);
         }
         return { ok: false, ...(build.detail !== undefined ? { detail: build.detail } : {}) };
+    }
+    // The model artifacts a Get leaves ready to launch: the Infernix DFlash2
+    // drafter (when a preset is selected) and the PLE n-gram volume (when the
+    // model key names one), pulled through the hf CLI into the model directory.
+    // A download failure aborts the Get, so a launch never reads a missing
+    // drafter or table.
+    if (engineId === 'infernix') {
+        const modelDir = resolveModelDirectory(localInfer, config);
+        for (const command of infernixGetDownloads(config, modelDir)) {
+            log(`$ ${command}\n`);
+            const outcome = host.runStream !== undefined
+                ? await host.runStream(command, (chunk) => log(chunk))
+                : await host.run(command);
+            if (!outcome.ok) {
+                log(`!! ${command} failed: ${outcome.detail ?? 'unknown'}\n`);
+                return { ok: false, detail: 'a model artifact download failed' };
+            }
+        }
     }
     log('get complete\n');
     return { ok: true };

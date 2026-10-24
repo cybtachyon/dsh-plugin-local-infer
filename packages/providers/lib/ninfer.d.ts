@@ -40,6 +40,13 @@ export declare const CHAT_TEMPLATE_OPTIONS: readonly ComboOption[];
  */
 export declare const SPEC_GATE_MESSAGE = "Pick a speculation backend first (mtp, dflash, or dflash2)";
 /**
+ * The gate message the form shows while the LM-head draft field is greyed out.
+ * The LM-head drafter is an MTP-backend feature, so the field unlocks only
+ * while the MTP speculation backend is selected, for every provider that
+ * spells the flag.
+ */
+export declare const LM_HEAD_DRAFT_GATE_MESSAGE = "LM-head draft is only available with the MTP speculation backend";
+/**
  * The NInfer `ParameterSpec` surface, in form order. The `group` field is the
  * form section; specs without a group render under `General`. `requires`
  * names the cross-parameter dependency in the message the form shows while
