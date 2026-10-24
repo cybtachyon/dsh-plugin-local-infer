@@ -7,7 +7,7 @@
  * here.
  * @module dsh-plugin-local-infer/ui/deps
  */
-import type { DepCheck, DepStatus } from 'dsh-plugin-local-infer/core';
+import type { BuildMode, DepCheck, DepStatus } from 'dsh-plugin-local-infer/core';
 /**
  * DepItemModel is one row of the panel's dep list: the dep id, the purpose
  * the user reads, the current status, and whether installing it needs sudo.
@@ -40,7 +40,7 @@ export interface ChatTemplateDepModel {
  */
 export interface DepsModel {
     engineId: string;
-    buildMode: 'docker' | 'local';
+    buildMode: BuildMode;
     packageManager: string | null;
     deps: DepItemModel[];
     allSatisfied: boolean;
@@ -56,7 +56,7 @@ export interface DepsModel {
  */
 export declare function renderDeps(input: {
     engineId: string;
-    buildMode: 'docker' | 'local';
+    buildMode: BuildMode;
     packageManager: string | null;
     checks: DepCheck[];
     installString: string;

@@ -88,6 +88,7 @@ export {
 } from './logs.ts'
 export { EngineAdapter } from './adapter.ts'
 export type {
+  BuildMode,
   DeployOptions,
   DeployResult,
   EnginePlatformConfig,

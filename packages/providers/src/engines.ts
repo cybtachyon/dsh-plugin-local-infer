@@ -18,16 +18,16 @@ import { STRATA_PARAMETERS } from './strata.ts'
 export interface EngineInfo {
   id: string
   label: string
-  supports: { docker: boolean; local: boolean }
+  supports: { docker: boolean; local: boolean; binary?: boolean }
   parameters: readonly ParameterSpec[]
 }
 
 /**
  * The engines the Web card offers, in the order the card lists them. NInfer,
- * Hyper-Qwen, Infernix, and llama.cpp carry parameter surfaces (llama.cpp's
- * is the specified set the plan names, verified when the binary lands);
- * Strata is the placeholder engine, its surface empty until the engine's
- * flag set lands.
+ * Hyper-Qwen, Infernix, llama.cpp, and Strata all carry parameter surfaces
+ * (llama.cpp's is the specified set the plan names, verified when the binary
+ * lands); Strata's surface is the `strata launch` flags and it supports all
+ * three build modes (docker, source build, and the binary install).
  */
 export const ENGINES: readonly EngineInfo[] = [
   {
@@ -57,7 +57,7 @@ export const ENGINES: readonly EngineInfo[] = [
   {
     id: 'strata',
     label: 'Strata',
-    supports: { docker: true, local: false },
+    supports: { docker: true, local: true, binary: true },
     parameters: STRATA_PARAMETERS,
   },
 ]

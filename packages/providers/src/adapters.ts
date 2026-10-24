@@ -47,7 +47,7 @@ import {
   infernixModelKey,
 } from './infernix.ts'
 export { INFERNIX_MODEL_ARTIFACTS } from './infernix.ts'
-import { STRATA_PARAMETERS } from './strata.ts'
+import { STRATA_PARAMETERS, strataModelKey } from './strata.ts'
 
 /**
  * NInferModelArtifact is the per-model deploy data: the `.ninfer` artifact
@@ -1039,22 +1039,37 @@ export class LlamaCppAdapter extends EngineAdapter {
 }
 
 /**
- * The Strata docker image the adapter pulls and runs. Strata is the
- * placeholder engine: the image and the parameter data land when the engine
- * is available, and the adapter renders a bare docker plan until then.
+ * The Strata docker image the adapter pulls and runs. The image is the
+ * upstream GitHub Container Registry artifact for the newest release's CUDA 13
+ * flavor (NVIDIA RTX 20/30/40/50 series, driver 580 or newer); the README pins
+ * a version tag when updates should only land on purpose.
  */
-export const STRATA_DOCKER_IMAGE = 'ghcr.io/strata/strata'
+export const STRATA_DOCKER_IMAGE = 'ghcr.io/niko1221/strata:latest-cuda13'
 
 /**
- * StrataAdapter is the placeholder docker-only engine. `renderLaunch` renders
- * a `docker run` of the Strata image (no spec surface yet, so no flags);
- * `deploy` pulls the image and starts the container; `healthCheck` polls the
- * health URL; `stop` stops the named container. The parameter surface and the
- * per-model data land with the engine, as data edits, never an adapter rewire.
+ * The one-line install the Strata binary build mode runs: it downloads the
+ * `strata` Terminal from the latest release, checks its SHA-256, unpacks it into
+ * the user's home folder, and puts `strata` on the PATH. Sourced from
+ * docs/AI_SETUP.md step 2 (Linux and Mac; Windows uses the PowerShell twin).
+ */
+export const STRATA_BINARY_INSTALL =
+  'curl -fsSL https://github.com/Niko1221/Strata/releases/latest/download/install.sh -o install.sh && sh install.sh'
+
+/**
+ * StrataAdapter is the Strata engine, three build modes. `renderLaunch` renders
+ * a `docker run` of the ghcr image (docker mode), a `strata launch` process
+ * (binary mode), or a `setup.sh` run with the model (local mode); `deploy` pulls
+ * the image, installs the Terminal, or git-syncs the checkout and resolves
+ * `setup.sh` to an absolute path in it before spawning (spawn resolves a bare
+ * name against PATH, not the cwd); `healthCheck` polls the health URL; `stop`
+ * stops the named container, runs `strata launch --stop`, or signals the
+ * tracked process. The model the engine serves is the config model (or the
+ * engine's own pick when none is named), and the engine downloads it itself, so
+ * the deploy step runs no model download of its own.
  */
 export class StrataAdapter extends EngineAdapter {
   readonly id = 'strata'
-  readonly supports = { docker: true, local: false }
+  readonly supports = { docker: true, local: true, binary: true }
   private readonly host: LifecycleHost
   private readonly children = new Map<string, ProcessHandle>()
 
@@ -1067,41 +1082,129 @@ export class StrataAdapter extends EngineAdapter {
     return STRATA_PARAMETERS
   }
 
-  override modelRef(_config: Config): { id: string; name: string } {
-    // Strata serves the model under the name the container passes, and the
-    // plugin tracks no per-model data for Strata yet, so the engine id is the
-    // stable entry the registrar publishes until that data lands.
-    return { id: 'strata', name: 'Strata' }
+  override modelRef(config: Config): { id: string; name: string } {
+    // Strata serves the model under the name the config names (or the engine
+    // default when none), so the registrar publishes that name and a chat turn
+    // routes to it.
+    const model = strataModelKey(config)
+    return model !== '' ? { id: model, name: model } : { id: 'strata', name: 'Strata' }
   }
 
   override launchSignature(config: Config = {}): EngineLaunchSignature {
-    // Strata is docker-only, so the signature is the image name the docker
-    // run carries plus the port the plan binds.
-    return { binary: STRATA_DOCKER_IMAGE, port: this.port(config) }
+    // The docker plan's host process is docker run of the ghcr image, so the
+    // image name is the command-line marker; the binary and source-build plans
+    // run the strata command, so the binary name is the marker.
+    const port = this.port(config)
+    if (this.buildMode(config) === 'docker') {
+      return { binary: STRATA_DOCKER_IMAGE, port }
+    }
+    return { binary: 'strata', port }
   }
 
   renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan {
     const port = this.port(config)
-    const containerName = `strata-${port}`
+    const model = strataModelKey(config)
+    const modelId = model !== '' ? model : undefined
     const customArgs = customArgFlags(config)
+    const mode = this.buildMode(config)
+    if (mode === 'docker') {
+      // The container env is the spec surface's toEnv spellings (FAMILY,
+      // CONTEXT, VISION, ...) plus the card's Custom Arguments, plus the model
+      // the container serves. The model download happens inside the container
+      // on first start into the strata-data volume, so no host download.
+      const env = { ...envFromSpecs(STRATA_PARAMETERS, config), ...customArgEnv(config) }
+      if (model !== '') {
+        env.MODEL = model
+      }
+      const envFlags = Object.entries(env).flatMap(([key, value]) => ['-e', `${key}=${value}`])
+      const containerName = `strata-${port}`
+      return {
+        engineId: this.id,
+        kind: 'docker',
+        argv: [
+          'docker',
+          'run',
+          '-d',
+          '--name',
+          containerName,
+          '--gpus',
+          'all',
+          '-p',
+          `127.0.0.1:${port}:8080`,
+          '--ulimit',
+          'memlock=-1:-1',
+          '--shm-size',
+          '2g',
+          '--stop-timeout',
+          '120',
+          '-v',
+          'strata-data:/data',
+          ...envFlags,
+          STRATA_DOCKER_IMAGE,
+          ...customArgs,
+        ],
+        env: {},
+        containerName,
+        ...(modelId !== undefined ? { modelId } : {}),
+        port,
+        healthUrl: `http://127.0.0.1:${port}/health`,
+      }
+    }
+    if (mode === 'binary') {
+      // The strata Terminal the install script places on the PATH: a
+      // non-interactive launch that downloads what it needs and serves.
+      const flags = flagsFromSpecs(STRATA_PARAMETERS, config)
+      return {
+        engineId: this.id,
+        kind: 'process',
+        argv: [
+          'strata',
+          'launch',
+          ...(model !== '' ? ['--model', model] : []),
+          '--yes',
+          '--no-tui',
+          '--port',
+          String(port),
+          ...flags,
+          ...customArgs,
+        ],
+        env: {},
+        ...(modelId !== undefined ? { modelId } : {}),
+        port,
+        healthUrl: `http://127.0.0.1:${port}/health`,
+      }
+    }
+    // The source build: run setup.sh with the model. It reuses the engine the
+    // Get step built (the acquisition build step), downloads the named model,
+    // and starts the engine. Running setup.sh (rather than a pre-written
+    // run-<model>.sh start script) is model-aware and self-contained, so the
+    // launch does not depend on the build step having written a script for this
+    // exact model. The deploy step resolves setup.sh to an absolute path in the
+    // checkout before spawning.
+    const family = typeof config.family === 'string' && config.family !== '' ? config.family : 'qwen'
+    const vision = typeof config.vision === 'string' && config.vision !== '' ? config.vision : 'on'
+    const context =
+      typeof config.context === 'string' && config.context !== '' ? config.context : undefined
+    // setup.sh's --vision takes yes|no|gpu|cpu; the surface's on|off maps onto
+    // it (gpu and cpu pass through).
+    const visionFlag = vision === 'on' ? 'yes' : vision === 'off' ? 'no' : vision
     return {
       engineId: this.id,
-      kind: 'docker',
+      kind: 'process',
       argv: [
-        'docker',
-        'run',
-        '--rm',
-        '--gpus',
-        'all',
-        '--name',
-        containerName,
-        '-p',
-        `127.0.0.1:${port}:8080`,
-        STRATA_DOCKER_IMAGE,
+        'setup.sh',
+        '--yes',
+        ...(model !== '' ? ['--model', model] : []),
+        ...(family !== 'qwen' ? ['--family', family] : []),
+        '--vision',
+        visionFlag,
+        ...(context !== undefined ? ['--context', context] : []),
+        '--port',
+        String(port),
         ...customArgs,
       ],
       env: {},
-      containerName,
+      ...(modelId !== undefined ? { modelId } : {}),
       port,
       healthUrl: `http://127.0.0.1:${port}/health`,
     }
@@ -1109,20 +1212,84 @@ export class StrataAdapter extends EngineAdapter {
 
   async deploy(
     plan: LaunchPlan,
-    _platform?: EnginePlatformConfig,
+    platform?: EnginePlatformConfig,
     onProgress?: LaunchProgress,
-    _options?: DeployOptions,
+    options?: DeployOptions,
   ): Promise<DeployResult> {
-    // The image pull is the docker build step: the card's button reads
-    // "Building..." for it.
-    onProgress?.('build')
-    const pull = await this.host.run(`docker pull ${STRATA_DOCKER_IMAGE}`)
-    if (!pull.ok) {
-      return { ok: false, detail: `docker pull failed: ${pull.detail ?? 'unknown'}` }
+    if (plan.kind === 'docker') {
+      // The image pull is the docker build step: the card's button reads
+      // "Building..." for it.
+      onProgress?.('build')
+      const pull = await this.host.run(`docker pull ${STRATA_DOCKER_IMAGE}`)
+      if (!pull.ok) {
+        return { ok: false, detail: `docker pull failed: ${pull.detail ?? 'unknown'}` }
+      }
+      const handle = this.host.spawn(plan.argv ?? [], plan.env ?? {})
+      trackChild(this.children, this.planKey(plan), handle)
+      return { ok: true, handle }
     }
-    const handle = this.host.spawn(plan.argv ?? [], plan.env ?? {})
-    trackChild(this.children, this.planKey(plan), handle)
-    return { ok: true, handle }
+    if (plan.kind === 'process') {
+      const engineDir = platform?.engineDirectory
+      // The binary plan runs the strata command (on the PATH after the install
+      // script), so its build step is the one-line install. The source-build
+      // plan runs setup.sh in the checkout, so its build step is the git sync
+      // plus the engine's own setup.sh (the acquisition build steps), and the
+      // launch resolves setup.sh to an absolute path in that checkout.
+      const isBinary = plan.argv?.[0] === 'strata'
+      let buildLogs = ''
+      if (isBinary) {
+        // The install script downloads the Terminal: the card's button reads
+        // "Downloading..." for it.
+        onProgress?.('download')
+        const install = await this.host.run(STRATA_BINARY_INSTALL)
+        if (!install.ok) {
+          return { ok: false, detail: `strata install failed: ${install.detail ?? 'unknown'}` }
+        }
+      } else {
+        // The source build needs the checkout directory to resolve setup.sh;
+        // without it the launch cannot find the engine.
+        if (engineDir === undefined) {
+          return {
+            ok: false,
+            detail: 'the source build needs an engine directory (the Get step checkout) to run setup.sh',
+          }
+        }
+        if (options?.autoRebuild !== false) {
+          onProgress?.('download')
+          const sync = await syncAndRebuildEngine(
+            this.host,
+            {
+              engineId: this.id,
+              directory: engineDir,
+              ...(platform?.engineFork !== undefined ? { fork: platform.engineFork } : {}),
+              ...(options?.allowRunDeps !== undefined ? { allowRunDeps: options.allowRunDeps } : {}),
+            },
+            () => {},
+          )
+          buildLogs = sync.logs
+          if (!sync.ok) {
+            return { ok: false, detail: sync.detail ?? 'unknown', logs: buildLogs }
+          }
+          if (sync.rebuilt) {
+            onProgress?.('build')
+          }
+        }
+      }
+      const withLogs = (result: DeployResult): DeployResult =>
+        buildLogs !== '' ? { ...result, logs: buildLogs } : result
+      // The source-build plan names setup.sh relative to the checkout; resolve
+      // it to an absolute path so spawn finds it (spawn resolves a bare name
+      // against PATH, not the cwd). The binary plan's strata is on the PATH, so
+      // it spawns as-is.
+      const argv = plan.argv ?? []
+      const spawnArgv =
+        !isBinary && engineDir !== undefined ? [join(engineDir, argv[0] ?? 'setup.sh'), ...argv.slice(1)] : argv
+      const handle = this.host.spawn(spawnArgv, plan.env ?? {}, engineDir)
+      trackChild(this.children, this.planKey(plan), handle)
+      return withLogs({ ok: true, handle })
+    }
+    // A compose plan is a no-op for Strata.
+    return { ok: true }
   }
 
   async healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult> {
@@ -1130,14 +1297,29 @@ export class StrataAdapter extends EngineAdapter {
   }
 
   async stop(plan: LaunchPlan): Promise<void> {
-    if (plan.containerName !== undefined) {
+    if (plan.kind === 'docker' && plan.containerName !== undefined) {
       await this.host.run(`docker stop ${plan.containerName}`)
+    }
+    // The binary plan stops through the strata command; the source-build plan
+    // has no strata command, so it stops by signalling the tracked process.
+    if (plan.kind === 'process' && plan.argv?.[0] === 'strata') {
+      await this.host.run('strata launch --stop')
     }
     const handle = this.children.get(this.planKey(plan))
     if (handle !== undefined) {
       handle.kill()
       this.children.delete(this.planKey(plan))
     }
+  }
+
+  private buildMode(config: Config): 'docker' | 'local' | 'binary' {
+    const mode = config.buildMode
+    if (mode === 'docker' || mode === 'local' || mode === 'binary') {
+      return mode
+    }
+    // The binary install is the README's one-line path (the one docs/AI_SETUP.md
+    // walks an agent through), so a bare config renders the binary plan.
+    return 'binary'
   }
 
   private port(config: Config): number {

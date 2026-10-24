@@ -57,7 +57,7 @@ export interface LocalInferSummary {
   engines: {
     id: string
     label: string
-    supports: { docker: boolean; local: boolean }
+    supports: { docker: boolean; local: boolean; binary?: boolean }
     // The per-engine platform defaults the card's Engine platform section
     // seeds: the local build command placeholder (the local build mode) and
     // the docker image tag placeholder (the docker build mode). Absent when

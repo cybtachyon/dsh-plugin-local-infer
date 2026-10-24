@@ -1,4 +1,4 @@
-import type { EngineAdapter } from './adapter.ts';
+import type { BuildMode, EngineAdapter } from './adapter.ts';
 import type { HardwareProfile } from './hardware.ts';
 /**
  * DepStatus is the lifecycle state of one host dependency: satisfied, missing,
@@ -60,6 +60,7 @@ export interface SystemDep {
 export interface EngineDepPlan {
     docker: readonly SystemDep[];
     local: readonly SystemDep[];
+    binary?: readonly SystemDep[];
 }
 /**
  * DepCheck is the per-dep answer from checkDeps: the dep and its current
@@ -103,7 +104,7 @@ export interface InstallResult {
  * service implements this interface over the pure functions below.
  */
 export interface SystemDepProvisioner {
-    planDeps(engine: EngineAdapter, buildMode: 'docker' | 'local', hw: HardwareProfile): readonly SystemDep[];
+    planDeps(engine: EngineAdapter, buildMode: BuildMode, hw: HardwareProfile): readonly SystemDep[];
     checkDeps(deps: readonly SystemDep[], hw: HardwareProfile): Promise<DepCheck[]>;
     renderInstallString(deps: readonly SystemDep[], hw: HardwareProfile): string;
     runInstall(deps: readonly SystemDep[], hw: HardwareProfile, runCommand: CommandRunner): Promise<InstallResult>;
@@ -122,7 +123,7 @@ export declare function detectPackageManager(probes: PackageManagerProbes): Pack
  * declares none (the Phase 5 adapters will) plans an empty list, and the
  * service falls back to the provider-registered plan for the engine id.
  */
-export declare function planDeps(engine: EngineAdapter, buildMode: 'docker' | 'local', hw: HardwareProfile): readonly SystemDep[];
+export declare function planDeps(engine: EngineAdapter, buildMode: BuildMode, hw: HardwareProfile): readonly SystemDep[];
 /**
  * checkDeps probes every dep and reports its status. A dep without a detect
  * probe reads as missing, not satisfied: an unknown state degrades to the

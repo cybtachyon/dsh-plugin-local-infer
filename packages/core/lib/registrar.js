@@ -27,9 +27,9 @@ export function modelSlug(modelId) {
 }
 /**
  * providerIdFor derives the provider id the registrar writes for an engine
- * and model: the engine id, the build mode (local or docker), and the model
- * slug, so a profile can carry the same engine in both build modes and
- * several models per engine without a collision.
+ * and model: the engine id, the build mode (local, docker, or binary), and the
+ * model slug, so a profile can carry the same engine in several build modes
+ * and several models per engine without a collision.
  */
 export function providerIdFor(engineId, modelId, buildMode) {
     return `${engineId}-${buildMode}-${modelSlug(modelId)}`;

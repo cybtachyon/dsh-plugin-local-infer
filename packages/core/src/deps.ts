@@ -1,4 +1,4 @@
-import type { EngineAdapter } from './adapter.ts'
+import type { BuildMode, EngineAdapter } from './adapter.ts'
 import type { HardwareProfile } from './hardware.ts'
 
 /**
@@ -66,6 +66,9 @@ export interface SystemDep {
 export interface EngineDepPlan {
   docker: readonly SystemDep[]
   local: readonly SystemDep[]
+  // The prebuilt-binary install list (the Strata Terminal). Absent for engines
+  // that ship no binary install path.
+  binary?: readonly SystemDep[]
 }
 
 /**
@@ -110,7 +113,7 @@ export interface InstallResult {
  * service implements this interface over the pure functions below.
  */
 export interface SystemDepProvisioner {
-  planDeps(engine: EngineAdapter, buildMode: 'docker' | 'local', hw: HardwareProfile): readonly SystemDep[]
+  planDeps(engine: EngineAdapter, buildMode: BuildMode, hw: HardwareProfile): readonly SystemDep[]
   checkDeps(deps: readonly SystemDep[], hw: HardwareProfile): Promise<DepCheck[]>
   renderInstallString(deps: readonly SystemDep[], hw: HardwareProfile): string
   runInstall(deps: readonly SystemDep[], hw: HardwareProfile, runCommand: CommandRunner): Promise<InstallResult>
@@ -143,7 +146,7 @@ export function detectPackageManager(probes: PackageManagerProbes): PackageManag
  */
 export function planDeps(
   engine: EngineAdapter,
-  buildMode: 'docker' | 'local',
+  buildMode: BuildMode,
   hw: HardwareProfile,
 ): readonly SystemDep[] {
   return engine.systemDeps?.(buildMode, hw) ?? []

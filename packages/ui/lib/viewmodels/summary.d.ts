@@ -29,6 +29,7 @@ export interface LocalInferSummary {
         supports: {
             docker: boolean;
             local: boolean;
+            binary?: boolean;
         };
         defaultBuildCommand?: string;
         defaultDockerTag?: string;

@@ -18,7 +18,7 @@
  * @module dsh-plugin-local-infer/service
  */
 import { Context, Service } from '@deepseek-ai/cordis';
-import type { Config, DefaultModel, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, GpuUsageProbe, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, ProviderLaunchRecord, ProviderRef, ProviderStatus, ReLinkOutcome, RegisterResult, ReserveResolution, ResolvedDefaults, SystemDep, VramModel } from 'dsh-plugin-local-infer/core';
+import type { BuildMode, Config, DefaultModel, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, GpuUsageProbe, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, ProviderLaunchRecord, ProviderRef, ProviderStatus, ReLinkOutcome, RegisterResult, ReserveResolution, ResolvedDefaults, SystemDep, VramModel } from 'dsh-plugin-local-infer/core';
 import type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EngineDeathEvent, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, ProviderStatusOptions, RegisterModelOptions } from './types.ts';
 export type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EngineDeathEvent, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, ProviderStatusOptions, RegisterModelOptions, SettingsDescribeResult, SettingsForms, SettingsNamespaceDescriptor, } from './types.ts';
 declare module '@deepseek-ai/cordis' {
@@ -168,19 +168,19 @@ export declare class LocalInfer extends Service implements LocalInferService {
      * registered plan for the engine id is the fallback, and an engine with
      * neither plans an empty list (nothing to install, the gate passes).
      */
-    deps(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<readonly SystemDep[]>;
+    deps(engineId: string, buildMode: BuildMode, hw: HardwareProfile): Promise<readonly SystemDep[]>;
     /**
      * installString renders the copy/paste block for the resolved dep plan,
      * keyed to the detected package manager, with the by-hand note for a dep
      * the manager has no commands for.
      */
-    installString(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<string>;
+    installString(engineId: string, buildMode: BuildMode, hw: HardwareProfile): Promise<string>;
     /**
      * runInstall is the Play/Run path: it runs the resolved dep plan's commands
      * through the shell runner and re-probes each dep. The runner captures the
      * per-command exit, so a failure names the command that broke.
      */
-    runInstall(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<InstallResult>;
+    runInstall(engineId: string, buildMode: BuildMode, hw: HardwareProfile): Promise<InstallResult>;
     /**
      * launch is the lifecycle entry point: it resolves the adapter that rendered
      * the plan (by the plan's engineId), runs the adapter's deploy step (build

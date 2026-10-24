@@ -1,4 +1,4 @@
-import type { CommandOutcome, Config, DefaultModel, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, GpuUsageProbe, HardwareProfile, InstallResult, LaunchPlan, LaunchProgress, ModelRow, Preset, PresetSource, ProcessLine, ProviderLaunchRecord, ProviderRef, ProviderStatus, ReLinkOutcome, RegisterResult, ReserveResolution, ReserveSource, ResolvedDefaults, SettingsOp, SystemDep, VramBreakdown, VramModel, VramVerdict } from 'dsh-plugin-local-infer/core';
+import type { BuildMode, CommandOutcome, Config, DefaultModel, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, GpuUsageProbe, HardwareProfile, InstallResult, LaunchPlan, LaunchProgress, ModelRow, Preset, PresetSource, ProcessLine, ProviderLaunchRecord, ProviderRef, ProviderStatus, ReLinkOutcome, RegisterResult, ReserveResolution, ReserveSource, ResolvedDefaults, SettingsOp, SystemDep, VramBreakdown, VramModel, VramVerdict } from 'dsh-plugin-local-infer/core';
 /**
  * EstimateResult is the answer to an estimate call: the full VRAM breakdown,
  * the one-word verdict the meter renders, the source the numbers came from,
@@ -239,9 +239,9 @@ export interface LocalInferService {
         gpuUsage?: GpuUsageProbe | null;
     }): Promise<string[]>;
     guidelines(config: Config, hw: HardwareProfile, engineId?: string): Promise<GuidelineResult[]>;
-    deps(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<readonly SystemDep[]>;
-    installString(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<string>;
-    runInstall(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<InstallResult>;
+    deps(engineId: string, buildMode: BuildMode, hw: HardwareProfile): Promise<readonly SystemDep[]>;
+    installString(engineId: string, buildMode: BuildMode, hw: HardwareProfile): Promise<string>;
+    runInstall(engineId: string, buildMode: BuildMode, hw: HardwareProfile): Promise<InstallResult>;
     launch(plan: LaunchPlan, options?: LaunchOptions): Promise<LaunchResult>;
     stop(plan: LaunchPlan): Promise<void>;
     reLinkProviders(entries: readonly {

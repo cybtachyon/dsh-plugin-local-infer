@@ -22,9 +22,17 @@ import { isHfRepoReference } from "./summaryHelpers.js";
  * warning never disagree about the mode.
  */
 export function resolveBuildMode(engine, config) {
-    const defaultMode = engine.supports.local ? 'local' : 'docker';
+    // The default is the engine's easiest non-docker mode: the binary install
+    // when the engine ships one (the Strata one-line path), else the source
+    // build, else docker.
+    const defaultMode = engine.supports.binary === true
+        ? 'binary'
+        : engine.supports.local
+            ? 'local'
+            : 'docker';
     const requested = typeof config.buildMode === 'string' ? config.buildMode : undefined;
-    if ((requested === 'docker' || requested === 'local') && engine.supports[requested]) {
+    if ((requested === 'docker' || requested === 'local' || requested === 'binary') &&
+        engine.supports[requested]) {
         return requested;
     }
     return defaultMode;

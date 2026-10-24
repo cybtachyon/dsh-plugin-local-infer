@@ -15,6 +15,7 @@ import { engineBuildSteps } from "./acquire.js";
 const NINFER_BUILD_COMMAND = engineBuildSteps('ninfer')[0];
 const LLAMACPP_BUILD_COMMAND = engineBuildSteps('llamacpp')[0];
 const INFERNIX_BUILD_COMMAND = engineBuildSteps('infernix')[0];
+const STRATA_BUILD_COMMAND = engineBuildSteps('strata')[0];
 /**
  * The per-engine platform defaults, keyed by engine id. The build command is
  * the engine's first acquisition build step; the docker tag is the upstream
@@ -45,6 +46,9 @@ export const ENGINE_PLATFORM_DEFAULTS = {
             : {}),
     },
     strata: {
+        ...(STRATA_BUILD_COMMAND !== undefined
+            ? { defaultBuildCommand: STRATA_BUILD_COMMAND }
+            : {}),
         defaultDockerTag: STRATA_DOCKER_IMAGE,
     },
 };

@@ -6,16 +6,20 @@ import {
 } from '../src/model-defaults.ts'
 
 describe('DEFAULT_MODELS', () => {
-  it('carries the ten default models, three NInfer, two per other dense-Qwen engine, and three Infernix', () => {
-    expect(DEFAULT_MODELS).toHaveLength(10)
+  it('carries the twelve default models: three NInfer, two per other dense-Qwen engine, three Infernix, two Strata', () => {
+    expect(DEFAULT_MODELS).toHaveLength(12)
     expect(defaultModelsForEngine('ninfer')).toHaveLength(3)
     expect(defaultModelsForEngine('hyperqwen')).toHaveLength(2)
     expect(defaultModelsForEngine('llamacpp')).toHaveLength(2)
     expect(defaultModelsForEngine('infernix')).toHaveLength(3)
+    expect(defaultModelsForEngine('strata')).toHaveLength(2)
   })
 
-  it('carries no Strata entry: the engine does not focus on the dense Qwen models', () => {
-    expect(defaultModelsForEngine('strata')).toEqual([])
+  it('carries the two Strata models the README links: Gyro and DeepSeek V4.1-Flash', () => {
+    const strata = defaultModelsForEngine('strata')
+    expect(strata.map((entry) => entry.modelId)).toEqual(['gyro-s', 'ist-das-2.00bpw'])
+    // The engine downloads the model itself, so the entries name the repo only.
+    expect(strata.every((entry) => entry.file === undefined)).toBe(true)
   })
 
   it('names the exact default repos the plugin ships', () => {
@@ -31,6 +35,8 @@ describe('DEFAULT_MODELS', () => {
       'https://huggingface.co/Wallawalla47/Qwen3.8-27B-NVIDIA-NVFP4-NInferV3',
       'https://huggingface.co/Wallawalla47/Qwen3.8-Flash-Next-NVIDIA-NVFP4-Dense8-Infernix',
       'https://huggingface.co/neroued/Qwen3.6-35B-A3B-NInfer',
+      'https://huggingface.co/agentionai/Qwen3.8-Flash-Next-Gyro-GGUF',
+      'https://huggingface.co/ISTA-DASLab/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF',
     ])
   })
 

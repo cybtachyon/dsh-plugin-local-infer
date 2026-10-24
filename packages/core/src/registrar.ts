@@ -1,4 +1,4 @@
-import type { LaunchPlan } from './adapter.ts'
+import type { BuildMode, LaunchPlan } from './adapter.ts'
 
 /**
  * DshModelEntry is the shape of the model row the registrar writes into the
@@ -107,14 +107,14 @@ export function modelSlug(modelId: string): string {
 
 /**
  * providerIdFor derives the provider id the registrar writes for an engine
- * and model: the engine id, the build mode (local or docker), and the model
- * slug, so a profile can carry the same engine in both build modes and
- * several models per engine without a collision.
+ * and model: the engine id, the build mode (local, docker, or binary), and the
+ * model slug, so a profile can carry the same engine in several build modes
+ * and several models per engine without a collision.
  */
 export function providerIdFor(
   engineId: string,
   modelId: string,
-  buildMode: 'local' | 'docker',
+  buildMode: BuildMode,
 ): string {
   return `${engineId}-${buildMode}-${modelSlug(modelId)}`
 }

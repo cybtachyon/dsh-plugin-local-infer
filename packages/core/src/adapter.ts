@@ -7,6 +7,14 @@ import type { SystemDep } from './deps.ts'
 import type { EngineLaunchSignature } from './reserve.ts'
 
 /**
+ * BuildMode is the deploy mode an engine renders a plan for: a docker
+ * container, a local source build, or a prebuilt binary install (the Strata
+ * Terminal the install script places on the path). The adapter reads it from
+ * the config `buildMode` field and renders the matching plan.
+ */
+export type BuildMode = 'docker' | 'local' | 'binary'
+
+/**
  * LaunchPlan is the engine-neutral result of rendering a config: how to start
  * the engine (a local process, a docker container, or a compose file), the
  * port it serves on, and the URL to poll for health. The `engineId` stamps the
@@ -204,7 +212,7 @@ export interface DeployResult {
  */
 export abstract class EngineAdapter {
   abstract readonly id: string
-  abstract readonly supports: { docker: boolean; local: boolean }
+  abstract readonly supports: { docker: boolean; local: boolean; binary?: boolean }
   abstract parameters(): readonly ParameterSpec[]
   abstract renderLaunch(config: Config, hw: HardwareProfile): LaunchPlan
   abstract healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>
@@ -222,7 +230,7 @@ export abstract class EngineAdapter {
    * registered adapter first and falls back to the provider-registered plan
    * for the engine id when the adapter declares none.
    */
-  systemDeps?(buildMode: 'docker' | 'local', hw: HardwareProfile): readonly SystemDep[]
+  systemDeps?(buildMode: BuildMode, hw: HardwareProfile): readonly SystemDep[]
 
   /**
    * Optional: the model the engine serves under a config: the id the engine

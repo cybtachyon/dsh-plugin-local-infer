@@ -196,37 +196,52 @@ export declare class LlamaCppAdapter extends EngineAdapter {
     private downloadModel;
 }
 /**
- * The Strata docker image the adapter pulls and runs. Strata is the
- * placeholder engine: the image and the parameter data land when the engine
- * is available, and the adapter renders a bare docker plan until then.
+ * The Strata docker image the adapter pulls and runs. The image is the
+ * upstream GitHub Container Registry artifact for the newest release's CUDA 13
+ * flavor (NVIDIA RTX 20/30/40/50 series, driver 580 or newer); the README pins
+ * a version tag when updates should only land on purpose.
  */
-export declare const STRATA_DOCKER_IMAGE = "ghcr.io/strata/strata";
+export declare const STRATA_DOCKER_IMAGE = "ghcr.io/niko1221/strata:latest-cuda13";
 /**
- * StrataAdapter is the placeholder docker-only engine. `renderLaunch` renders
- * a `docker run` of the Strata image (no spec surface yet, so no flags);
- * `deploy` pulls the image and starts the container; `healthCheck` polls the
- * health URL; `stop` stops the named container. The parameter surface and the
- * per-model data land with the engine, as data edits, never an adapter rewire.
+ * The one-line install the Strata binary build mode runs: it downloads the
+ * `strata` Terminal from the latest release, checks its SHA-256, unpacks it into
+ * the user's home folder, and puts `strata` on the PATH. Sourced from
+ * docs/AI_SETUP.md step 2 (Linux and Mac; Windows uses the PowerShell twin).
+ */
+export declare const STRATA_BINARY_INSTALL = "curl -fsSL https://github.com/Niko1221/Strata/releases/latest/download/install.sh -o install.sh && sh install.sh";
+/**
+ * StrataAdapter is the Strata engine, three build modes. `renderLaunch` renders
+ * a `docker run` of the ghcr image (docker mode), a `strata launch` process
+ * (binary mode), or a `setup.sh` run with the model (local mode); `deploy` pulls
+ * the image, installs the Terminal, or git-syncs the checkout and resolves
+ * `setup.sh` to an absolute path in it before spawning (spawn resolves a bare
+ * name against PATH, not the cwd); `healthCheck` polls the health URL; `stop`
+ * stops the named container, runs `strata launch --stop`, or signals the
+ * tracked process. The model the engine serves is the config model (or the
+ * engine's own pick when none is named), and the engine downloads it itself, so
+ * the deploy step runs no model download of its own.
  */
 export declare class StrataAdapter extends EngineAdapter {
     readonly id = "strata";
     readonly supports: {
         docker: boolean;
         local: boolean;
+        binary: boolean;
     };
     private readonly host;
     private readonly children;
     constructor(host?: LifecycleHost);
     parameters(): readonly ParameterSpec[];
-    modelRef(_config: Config): {
+    modelRef(config: Config): {
         id: string;
         name: string;
     };
     launchSignature(config?: Config): EngineLaunchSignature;
     renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan;
-    deploy(plan: LaunchPlan, _platform?: EnginePlatformConfig, onProgress?: LaunchProgress, _options?: DeployOptions): Promise<DeployResult>;
+    deploy(plan: LaunchPlan, platform?: EnginePlatformConfig, onProgress?: LaunchProgress, options?: DeployOptions): Promise<DeployResult>;
     healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;
     stop(plan: LaunchPlan): Promise<void>;
+    private buildMode;
     private port;
     private planKey;
 }

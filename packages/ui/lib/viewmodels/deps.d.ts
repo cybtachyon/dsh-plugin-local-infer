@@ -8,6 +8,7 @@
  * @module dsh-plugin-local-infer/ui/viewmodels/deps
  */
 import type { Config } from 'dsh-plugin-local-infer/core';
+import type { BuildMode } from '../../../core/lib/index.js';
 import type { LocalInferService } from 'dsh-plugin-local-infer/service';
 import type { EngineInfo } from '../../../providers/lib/index.js';
 import type { DepsModel } from '../deps.ts';
@@ -19,7 +20,7 @@ import type { DepsRequest } from '../request.ts';
  * docker-not-installed guideline reads this same value, so the panel and the
  * warning never disagree about the mode.
  */
-export declare function resolveBuildMode(engine: EngineInfo, config: Config): 'docker' | 'local';
+export declare function resolveBuildMode(engine: EngineInfo, config: Config): BuildMode;
 /**
  * buildDeps assembles the deps panel read model for one engine and config:
  * the detected hardware (with its package manager), the dep plan the service

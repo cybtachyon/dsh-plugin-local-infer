@@ -112,7 +112,11 @@ export async function launchEngine(localInfer, request, onProgress) {
     // already satisfied and the phase is skipped.
     if (stored.allowRunDeps === true) {
         onProgress?.('prereqs');
-        const buildMode = plan.kind === 'docker' ? 'docker' : 'local';
+        // Price the dep plan for the build mode the config names (docker, local,
+        // or the Strata binary install), not just the plan kind, so a binary
+        // launch installs its own (thinner) dep list.
+        const engine = ENGINES.find((entry) => entry.id === engineId) ?? ENGINES[0];
+        const buildMode = resolveBuildMode(engine, config);
         const install = await localInfer.runInstall(engineId, buildMode, hardware);
         if (!install.ok) {
             const result = {

@@ -4,8 +4,9 @@
  * Hyper-Qwen W4A16 27B and AWQ 35B-A3B artifacts, the llama.cpp GGUF 27B and
  * 35B-A3B artifacts, and the Infernix 27B NVIDIA NVFP4 and the Qwen3.8-
  * Flash-Next Dense8 conversion (whose whole-repo download carries the FP8
- * n-gram volume the `--ngram-volume` flag reads). Strata does not focus on
- * the dense Qwen models, so it carries no entry.
+ * n-gram volume the `--ngram-volume` flag reads). Strata carries the two
+ * models the README's Models section links (Gyro and DeepSeek V4.1-Flash),
+ * each named by the model the engine accepts and the repo it downloads.
  *
  * The list is the single source the card's Model dropdown, the model
  * presence check, and the hf CLI download route read. Adding a model is a
@@ -91,12 +92,29 @@ export const DEFAULT_MODELS: readonly DefaultModel[] = [
     url: 'https://huggingface.co/neroued/Qwen3.6-35B-A3B-NInfer',
     file: 'qwen3_6_35b_a3b.ninfer',
   },
+  // The two models the Strata README's Models section links: Gyro (the
+  // smallest way to run Qwen3.8-Flash-Next) and DeepSeek V4.1-Flash (the
+  // bigger model that runs on one 12 GB card). No single file: the engine
+  // downloads the model itself (into the container volume or its data dir),
+  // so the entry names the repo only.
+  {
+    engineId: 'strata',
+    modelId: 'gyro-s',
+    label: 'Strata Gyro-S (Qwen3.8-Flash-Next)',
+    url: 'https://huggingface.co/agentionai/Qwen3.8-Flash-Next-Gyro-GGUF',
+  },
+  {
+    engineId: 'strata',
+    modelId: 'ist-das-2.00bpw',
+    label: 'Strata DeepSeek V4.1-Flash (2.00 bpw)',
+    url: 'https://huggingface.co/ISTA-DASLab/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF',
+  },
 ]
 
 /**
  * defaultModelsForEngine reads the default list for one engine id, in list
- * order. An engine with no entry (Strata) reads as an empty list, which the
- * card renders as no Model row.
+ * order. An engine with no entry reads as an empty list, which the card
+ * renders as no Model row.
  */
 export function defaultModelsForEngine(engineId: string): readonly DefaultModel[] {
   return DEFAULT_MODELS.filter((entry) => entry.engineId === engineId)

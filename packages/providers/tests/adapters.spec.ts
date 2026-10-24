@@ -1291,7 +1291,7 @@ describe('StrataAdapter', () => {
   it('renders a docker plan with the Strata image and a named container', () => {
     const { host } = stubHost()
     const adapter = new StrataAdapter(host)
-    const plan = adapter.renderLaunch({ port: 8090 }, HW)
+    const plan = adapter.renderLaunch({ port: 8090, buildMode: 'docker' }, HW)
     expect(plan.kind).toBe('docker')
     expect(plan.engineId).toBe('strata')
     expect(plan.containerName).toBe('strata-8090')
@@ -1300,23 +1300,92 @@ describe('StrataAdapter', () => {
     const argv = plan.argv ?? []
     expect(argv[0]).toBe('docker')
     expect(argv).toContain(STRATA_DOCKER_IMAGE)
+    // The docker plan carries the model-download volume and the GPU ulimit.
+    expect(argv).toContain('strata-data:/data')
+    expect(argv).toContain('memlock=-1:-1')
   })
 
-  it('renders an empty spec surface, so the plan carries no flags', () => {
+  it('renders the binary plan (the default mode) as a strata launch process', () => {
     const { host } = stubHost()
     const adapter = new StrataAdapter(host)
-    expect(adapter.parameters()).toEqual([])
-    // The bare plan: the image and the port map, nothing from a spec surface.
-    // docker run --rm --gpus all --name <c> -p <map> <image> = 10 elements.
-    const plan = adapter.renderLaunch({}, HW)
-    expect(plan.argv).toHaveLength(10)
+    // A bare config renders the binary plan: the strata Terminal the install
+    // script places on the PATH.
+    const plan = adapter.renderLaunch({ port: 8090 }, HW)
+    expect(plan.kind).toBe('process')
+    const argv = plan.argv ?? []
+    expect(argv[0]).toBe('strata')
+    expect(argv[1]).toBe('launch')
+    expect(argv).toContain('--no-tui')
+    expect(plan.port).toBe(8090)
+  })
+
+  it('spells the spec surface flags onto the binary plan argv', () => {
+    const { host } = stubHost()
+    const adapter = new StrataAdapter(host)
+    const plan = adapter.renderLaunch(
+      { port: 8090, buildMode: 'binary', model: 'iq3_s', vision: 'gpu', parallel: 4 },
+      HW,
+    )
+    const argv = plan.argv ?? []
+    expect(argv).toContain('--model')
+    expect(argv).toContain('iq3_s')
+    expect(argv).toContain('--vision')
+    expect(argv).toContain('gpu')
+    expect(argv).toContain('--parallel')
+    expect(argv).toContain('4')
+  })
+
+  it('renders the source-build plan as setup.sh with the model', () => {
+    const { host } = stubHost()
+    const adapter = new StrataAdapter(host)
+    const plan = adapter.renderLaunch(
+      { port: 8090, buildMode: 'local', model: 'iq3_s', family: 'coder' },
+      HW,
+    )
+    expect(plan.kind).toBe('process')
+    // setup.sh is model-aware and self-contained: it reuses the built engine,
+    // downloads the named model, and starts it. The family and model are
+    // spelled as flags, and vision maps on to yes.
+    const argv = plan.argv ?? []
+    expect(argv[0]).toBe('setup.sh')
+    expect(argv).toContain('--model')
+    expect(argv).toContain('iq3_s')
+    expect(argv).toContain('--family')
+    expect(argv).toContain('coder')
+    expect(argv).toContain('--vision')
+    expect(argv).toContain('yes')
+  })
+
+  it('resolves the source-build setup.sh to an absolute path in the checkout', async () => {
+    const { host, state } = stubHost()
+    const adapter = new StrataAdapter(host)
+    const plan = adapter.renderLaunch({ port: 8090, buildMode: 'local', model: 'iq3_s' }, HW)
+    const result = await adapter.deploy(plan, {
+      engineId: 'strata',
+      engineDirectory: '/src/strata',
+    })
+    expect(result.ok).toBe(true)
+    // spawn resolves a bare name against PATH, so the launch names the script
+    // by its absolute path in the checkout, with the checkout as the cwd.
+    expect(state.spawn).toHaveLength(1)
+    expect(state.spawn[0]?.argv[0]).toBe('/src/strata/setup.sh')
+    expect(state.spawn[0]?.cwd).toBe('/src/strata')
+  })
+
+  it('fails the source-build launch when no engine directory is configured', async () => {
+    const { host } = stubHost()
+    const adapter = new StrataAdapter(host)
+    const plan = adapter.renderLaunch({ port: 8090, buildMode: 'local', model: 'iq3_s' }, HW)
+    const result = await adapter.deploy(plan)
+    expect(result.ok).toBe(false)
+    expect(result.detail).toContain('engine directory')
   })
 
   it('appends the card custom args to the docker argv after the image', () => {
     const { host } = stubHost()
     const adapter = new StrataAdapter(host)
     const plan = adapter.renderLaunch(
-      { port: 8090, customArgs: [{ key: '--device', value: 'cuda:1' }] },
+      { port: 8090, buildMode: 'docker', customArgs: [{ key: '--device', value: 'cuda:1' }] },
       HW,
     )
     const argv = plan.argv ?? []
@@ -1583,9 +1652,17 @@ describe('adapter launchSignature (the Phase 10 process-match data)', () => {
     })
   })
 
-  it('Strata: the signature is the Strata image marker and the port', () => {
+  it('Strata: the signature is the strata marker for the process modes, the image for docker', () => {
     const adapter = new StrataAdapter()
-    expect(adapter.launchSignature({ port: 8082 })).toEqual({
+    // The binary and source-build plans run the strata command, so the binary
+    // name is the marker; the docker plan's host process is docker run of the
+    // ghcr image, so the image name is the marker.
+    expect(adapter.launchSignature({ port: 8082 })).toEqual({ binary: 'strata', port: 8082 })
+    expect(adapter.launchSignature({ buildMode: 'local', port: 8082 })).toEqual({
+      binary: 'strata',
+      port: 8082,
+    })
+    expect(adapter.launchSignature({ buildMode: 'docker', port: 8082 })).toEqual({
       binary: STRATA_DOCKER_IMAGE,
       port: 8082,
     })

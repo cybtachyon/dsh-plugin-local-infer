@@ -1,4 +1,4 @@
-import type { LaunchPlan } from './adapter.ts';
+import type { BuildMode, LaunchPlan } from './adapter.ts';
 /**
  * DshModelEntry is the shape of the model row the registrar writes into the
  * dsh-llm-pi-ai provider: the provider id, the model id and display name, the
@@ -83,11 +83,11 @@ export interface DshModelRegistrar {
 export declare function modelSlug(modelId: string): string;
 /**
  * providerIdFor derives the provider id the registrar writes for an engine
- * and model: the engine id, the build mode (local or docker), and the model
- * slug, so a profile can carry the same engine in both build modes and
- * several models per engine without a collision.
+ * and model: the engine id, the build mode (local, docker, or binary), and the
+ * model slug, so a profile can carry the same engine in several build modes
+ * and several models per engine without a collision.
  */
-export declare function providerIdFor(engineId: string, modelId: string, buildMode: 'local' | 'docker'): string;
+export declare function providerIdFor(engineId: string, modelId: string, buildMode: BuildMode): string;
 /**
  * apiKeyEnvFor derives the env-var name a local provider reads its optional
  * API key from: the engine id, uppercased and non-alphanumerics mapped to

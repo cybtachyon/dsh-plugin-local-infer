@@ -4,8 +4,9 @@
  * Hyper-Qwen W4A16 27B and AWQ 35B-A3B artifacts, the llama.cpp GGUF 27B and
  * 35B-A3B artifacts, and the Infernix 27B NVIDIA NVFP4 and the Qwen3.8-
  * Flash-Next Dense8 conversion (whose whole-repo download carries the FP8
- * n-gram volume the `--ngram-volume` flag reads). Strata does not focus on
- * the dense Qwen models, so it carries no entry.
+ * n-gram volume the `--ngram-volume` flag reads). Strata carries the two
+ * models the README's Models section links (Gyro and DeepSeek V4.1-Flash),
+ * each named by the model the engine accepts and the repo it downloads.
  *
  * The list is the single source the card's Model dropdown, the model
  * presence check, and the hf CLI download route read. Adding a model is a
@@ -22,8 +23,8 @@ import type { DefaultModel } from 'dsh-plugin-local-infer/core';
 export declare const DEFAULT_MODELS: readonly DefaultModel[];
 /**
  * defaultModelsForEngine reads the default list for one engine id, in list
- * order. An engine with no entry (Strata) reads as an empty list, which the
- * card renders as no Model row.
+ * order. An engine with no entry reads as an empty list, which the card
+ * renders as no Model row.
  */
 export declare function defaultModelsForEngine(engineId: string): readonly DefaultModel[];
 /**

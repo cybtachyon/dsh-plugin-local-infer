@@ -17,6 +17,7 @@ import {
   hfChatTemplateCommand,
   renderInstallString,
 } from '../../../core/lib/index.js'
+import type { BuildMode } from '../../../core/lib/index.js'
 import type { LocalInferService } from 'dsh-plugin-local-infer/service'
 import { ENGINES } from '../../../providers/lib/index.js'
 import type { EngineInfo } from '../../../providers/lib/index.js'
@@ -33,10 +34,20 @@ import { isHfRepoReference } from './summaryHelpers.ts'
  * docker-not-installed guideline reads this same value, so the panel and the
  * warning never disagree about the mode.
  */
-export function resolveBuildMode(engine: EngineInfo, config: Config): 'docker' | 'local' {
-  const defaultMode: 'docker' | 'local' = engine.supports.local ? 'local' : 'docker'
+export function resolveBuildMode(engine: EngineInfo, config: Config): BuildMode {
+  // The default is the engine's easiest non-docker mode: the binary install
+  // when the engine ships one (the Strata one-line path), else the source
+  // build, else docker.
+  const defaultMode: BuildMode = engine.supports.binary === true
+    ? 'binary'
+    : engine.supports.local
+      ? 'local'
+      : 'docker'
   const requested = typeof config.buildMode === 'string' ? config.buildMode : undefined
-  if ((requested === 'docker' || requested === 'local') && engine.supports[requested]) {
+  if (
+    (requested === 'docker' || requested === 'local' || requested === 'binary') &&
+    engine.supports[requested]
+  ) {
     return requested
   }
   return defaultMode

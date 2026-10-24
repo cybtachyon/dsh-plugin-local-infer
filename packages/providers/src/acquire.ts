@@ -35,8 +35,8 @@ export const FORK_REMOTE = 'dsh-fork'
  * through cmake (Infernix through its own preset); llama.cpp builds through
  * the same cmake shape as NInfer; Hyper-Qwen is the compose-driven vLLM
  * engine, so it carries no local build steps (the compose up pulls the
- * image); Strata is the placeholder engine, and its repo and pull step land
- * with the engine, the same way its docker image constant did.
+ * image); Strata builds through its own setup.sh (the README's
+ * Build-from-source route), which the source-build mode runs in the checkout.
  */
 export const ENGINE_SOURCES: Record<string, EngineSource> = {
   ninfer: {
@@ -64,9 +64,13 @@ export const ENGINE_SOURCES: Record<string, EngineSource> = {
     buildSteps: ['cd {dir} && cmake --preset release && cmake --build build -j'],
   },
   strata: {
-    repo: 'https://github.com/strata/strata',
+    // The README's Build-from-source route: git clone the repo, then run the
+    // engine's own setup.sh. `--yes` takes the recommended answer to every
+    // question (no prompts) and `--no-start` builds and installs the engine
+    // without starting the server, which the adapter's launch step then does.
+    repo: 'https://github.com/Niko1221/Strata',
     branch: 'main',
-    buildSteps: ['docker pull ghcr.io/strata/strata'],
+    buildSteps: ['cd {dir} && ./setup.sh --yes --no-start'],
   },
 }
 

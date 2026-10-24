@@ -140,6 +140,18 @@ export const SYSTEM_DEPS = {
       },
     },
   },
+  git: {
+    id: 'git',
+    purpose: 'clones the engine source',
+    requiresSudo: true,
+    detect: probe('git', ['--version']),
+    install: {
+      apt: { commands: ['sudo apt install git'] },
+      dnf: { commands: ['sudo dnf install git'] },
+      pacman: { commands: ['sudo pacman -S --noconfirm git'] },
+      brew: { commands: ['brew install git'] },
+    },
+  },
   docker: {
     id: 'docker',
     purpose: 'runs the engine in a container',
@@ -196,8 +208,10 @@ export const SYSTEM_DEPS = {
  * docker lists are the container runtime plus the GPU toolkit plus the hf
  * CLI. Infernix builds through the engine's own cmake preset, so its local
  * list is the same toolchain as NInfer's, and its docker list stays empty
- * because the engine ships no container image. llama.cpp and Strata carry
- * the specified-not-verified lists until their adapters land in Phase 5.
+ * because the engine ships no container image. llama.cpp carries a thin
+ * cmake-plus-hf list. Strata carries one list per build mode: the source
+ * build needs git and curl, the binary install needs curl, and the docker
+ * mode needs the container runtime plus the GPU toolkit.
  */
 export const ENGINE_DEP_PLANS: Record<string, EngineDepPlan> = {
   ninfer: {
@@ -233,7 +247,12 @@ export const ENGINE_DEP_PLANS: Record<string, EngineDepPlan> = {
     docker: [],
   },
   strata: {
-    local: [],
-    docker: [SYSTEM_DEPS.docker, SYSTEM_DEPS.hfCli],
+    // The source build git-clones the repo and runs setup.sh, which downloads
+    // what it needs; the binary install is the one-line curl script; the docker
+    // mode needs the container runtime plus the GPU toolkit (the model downloads
+    // inside the container, so no hf CLI).
+    local: [SYSTEM_DEPS.git, SYSTEM_DEPS.curl],
+    docker: [SYSTEM_DEPS.docker, SYSTEM_DEPS.nvidiaContainerToolkit],
+    binary: [SYSTEM_DEPS.curl],
   },
 }

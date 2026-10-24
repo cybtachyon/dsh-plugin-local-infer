@@ -384,10 +384,18 @@ describe('resolveBuildMode', () => {
     supports: { docker: true, local: false },
     parameters: [],
   }
+  const strata: EngineInfo = {
+    id: 'strata',
+    label: 'Strata',
+    supports: { docker: true, local: true, binary: true },
+    parameters: [],
+  }
 
   it('honors a supported buildMode from the config', () => {
     expect(resolveBuildMode(ninfer, { buildMode: 'docker' })).toBe('docker')
     expect(resolveBuildMode(ninfer, { buildMode: 'local' })).toBe('local')
+    expect(resolveBuildMode(strata, { buildMode: 'binary' })).toBe('binary')
+    expect(resolveBuildMode(strata, { buildMode: 'docker' })).toBe('docker')
   })
 
   it('falls back to the engine default when the config names none or an unsupported mode', () => {
@@ -396,6 +404,9 @@ describe('resolveBuildMode', () => {
     // A docker-only engine defaults to docker and rejects a local request.
     expect(resolveBuildMode(hyperqwen, {})).toBe('docker')
     expect(resolveBuildMode(hyperqwen, { buildMode: 'local' })).toBe('docker')
+    // The binary-install engine defaults to the one-line binary path.
+    expect(resolveBuildMode(strata, {})).toBe('binary')
+    expect(resolveBuildMode(strata, { buildMode: 'weird' })).toBe('binary')
   })
 })
 
@@ -1624,11 +1635,11 @@ describe('model defaults, status, and download read model', () => {
         url: 'https://huggingface.co/neroued/Qwen3.6-35B-A3B-NInfer',
       },
     ])
-    // An engine with no defaults (Strata) carries an empty list and a null
-    // status, so the card renders no Model row for it.
+    // Strata carries the two models the README links, so the summary seeds
+    // them and the status resolves the first default (Gyro).
     const strata = await buildSummary(stubService([]), { engine: 'strata', config: {} })
-    expect(strata.modelDefaults).toEqual([])
-    expect(strata.modelStatus).toBeNull()
+    expect(strata.modelDefaults.map((entry) => entry.id)).toEqual(['gyro-s', 'ist-das-2.00bpw'])
+    expect(strata.modelStatus?.modelId).toBe('gyro-s')
   })
 
   it('applies the default directory to the config when the user named none', async () => {

@@ -1,4 +1,5 @@
 import type {
+  BuildMode,
   CommandOutcome,
   Config,
   DefaultModel,
@@ -296,9 +297,9 @@ export interface LocalInferService {
     options?: { processes?: ProcessLine[]; gpuUsage?: GpuUsageProbe | null },
   ): Promise<string[]>
   guidelines(config: Config, hw: HardwareProfile, engineId?: string): Promise<GuidelineResult[]>
-  deps(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<readonly SystemDep[]>
-  installString(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<string>
-  runInstall(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<InstallResult>
+  deps(engineId: string, buildMode: BuildMode, hw: HardwareProfile): Promise<readonly SystemDep[]>
+  installString(engineId: string, buildMode: BuildMode, hw: HardwareProfile): Promise<string>
+  runInstall(engineId: string, buildMode: BuildMode, hw: HardwareProfile): Promise<InstallResult>
   launch(plan: LaunchPlan, options?: LaunchOptions): Promise<LaunchResult>
   stop(plan: LaunchPlan): Promise<void>
   reLinkProviders(

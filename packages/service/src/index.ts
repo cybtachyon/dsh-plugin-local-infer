@@ -58,6 +58,7 @@ import {
   runInstall,
 } from '../../core/lib/index.js'
 import type {
+  BuildMode,
   CommandOutcome,
   Config,
   DefaultModel,
@@ -576,7 +577,7 @@ export class LocalInfer extends Service implements LocalInferService {
    * registered plan for the engine id is the fallback, and an engine with
    * neither plans an empty list (nothing to install, the gate passes).
    */
-  async deps(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<readonly SystemDep[]> {
+  async deps(engineId: string, buildMode: BuildMode, hw: HardwareProfile): Promise<readonly SystemDep[]> {
     const adapter = this.engineRegistry.get(engineId)
     if (adapter !== undefined && typeof adapter.systemDeps === 'function') {
       return adapter.systemDeps(buildMode, hw)
@@ -589,7 +590,7 @@ export class LocalInfer extends Service implements LocalInferService {
    * keyed to the detected package manager, with the by-hand note for a dep
    * the manager has no commands for.
    */
-  async installString(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<string> {
+  async installString(engineId: string, buildMode: BuildMode, hw: HardwareProfile): Promise<string> {
     const deps = await this.deps(engineId, buildMode, hw)
     return renderInstallString(deps, hw)
   }
@@ -599,7 +600,7 @@ export class LocalInfer extends Service implements LocalInferService {
    * through the shell runner and re-probes each dep. The runner captures the
    * per-command exit, so a failure names the command that broke.
    */
-  async runInstall(engineId: string, buildMode: 'docker' | 'local', hw: HardwareProfile): Promise<InstallResult> {
+  async runInstall(engineId: string, buildMode: BuildMode, hw: HardwareProfile): Promise<InstallResult> {
     const deps = await this.deps(engineId, buildMode, hw)
     return runInstall(deps, hw, shellRunCommand)
   }

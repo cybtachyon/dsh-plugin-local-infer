@@ -111,7 +111,15 @@ describe('engine dep plans', () => {
 
   it('leaves the specified-not-verified engines their thin lists', () => {
     expect(ENGINE_DEP_PLANS.llamacpp.local.map((dep) => dep.id)).toEqual(['cmake', 'hf-cli'])
-    expect(ENGINE_DEP_PLANS.strata.local).toEqual([])
+    // Strata carries one list per build mode: the source build needs git and
+    // curl, the binary install needs curl, and the docker mode needs the
+    // container runtime plus the GPU toolkit.
+    expect(ENGINE_DEP_PLANS.strata.local.map((dep) => dep.id)).toEqual(['git', 'curl'])
+    expect(ENGINE_DEP_PLANS.strata.binary?.map((dep) => dep.id)).toEqual(['curl'])
+    expect(ENGINE_DEP_PLANS.strata.docker.map((dep) => dep.id)).toEqual([
+      'docker',
+      'nvidia-container-toolkit',
+    ])
   })
 
   it('renders the NInfer local apt block over the qwen-ninfer package set', () => {

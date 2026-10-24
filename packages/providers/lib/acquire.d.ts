@@ -31,8 +31,8 @@ export declare const FORK_REMOTE = "dsh-fork";
  * through cmake (Infernix through its own preset); llama.cpp builds through
  * the same cmake shape as NInfer; Hyper-Qwen is the compose-driven vLLM
  * engine, so it carries no local build steps (the compose up pulls the
- * image); Strata is the placeholder engine, and its repo and pull step land
- * with the engine, the same way its docker image constant did.
+ * image); Strata builds through its own setup.sh (the README's
+ * Build-from-source route), which the source-build mode runs in the checkout.
  */
 export declare const ENGINE_SOURCES: Record<string, EngineSource>;
 /**
