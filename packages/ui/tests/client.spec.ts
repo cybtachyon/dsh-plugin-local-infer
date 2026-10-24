@@ -62,6 +62,7 @@ const primitivesStub = {
   Checkbox: () => null,
   StateDot: () => null,
   IconChevronDownOutlineRegular: () => null,
+  IconRefreshOutlineRegular: () => null,
 }
 
 function loadPlugin(options?: { primitives?: unknown; required?: string[] }): {
@@ -209,6 +210,27 @@ describe('dsh/client.js browser carrier', () => {
     expect(source).toContain('onToggleHelp')
     expect(source).toContain('renderHelpRow')
     expect(source).toContain('HELP_BUTTON_STYLE')
+  })
+
+  it('pins the settings-only save the setting toggles send', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // The help and allow-run toggles persist the global fields through the
+    // save route with settingsOnly set, so the route keeps the provider list
+    // intact and a toggle never mints a duplicate entry. The main Save omits
+    // the flag and keeps the upsert contract.
+    expect(source).toContain('settingsOnly')
+    expect(source).toContain('onAllowRun')
+  })
+
+  it('pins the refresh button contract the card re-fetches through', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // The circular refresh button sits next to the "?" help button in the
+    // card header. It re-fetches the summary and deps from the host, so the
+    // card re-prices after the harness pauses and re-activates the plugin's
+    // routes. The glyph is the primitives seed's refresh icon; a host
+    // without the seed keeps the native arrow character.
+    expect(source).toContain('IconRefreshOutlineRegular')
+    expect(source).toContain('t.refresh')
   })
 
   it('pins the provider list contract the card renders', () => {
@@ -408,5 +430,36 @@ describe('dsh/client.js browser carrier', () => {
     expect(source).toContain("'dockerTag'")
     expect(source).toContain('engineEntry.defaultBuildCommand')
     expect(source).toContain('engineEntry.defaultDockerTag')
+  })
+
+  it('pins the debounced re-price the field edits schedule', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // A field edit updates the draft config and schedules a debounced re-price
+    // of the VRAM Est. meter and the deps panel. The draft update is pure; the
+    // re-price runs only after typing pauses (the 300ms timeout), so a fast
+    // keystroke stream is one round trip, not one per letter. The timeout is
+    // reset on every field change, and the fetch reads the latest committed
+    // draft from a ref, not a stale closure.
+    expect(source).toContain('scheduleReprice')
+    expect(source).toContain('draftRef')
+    expect(source).toContain('timerRef')
+    // The field edit and the engine switch both schedule the debounced
+    // re-price, and the draft update stays pure (no timer side effect inside
+    // the state updater).
+    expect(source).toContain('scheduleReprice()')
+  })
+
+  it('pins the draft-bound field value the free-text inputs read', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // The form field value binds to the local draft, not the server render
+    // model, so a typed keystroke shows in the input immediately. The server
+    // model (field.value) resolves the spec default and only surfaces after
+    // the debounced re-price settles. A key the user has not edited is absent
+    // from the draft, so it falls back to the model. This is what keeps the
+    // free-text fields (the API key, the chat template, the path pickers)
+    // from lagging a keystroke behind the server round trip.
+    expect(source).toContain('effectiveField')
+    expect(source).toContain('draft.config[field.key]')
+    expect(source).toContain('Object.assign({}, field, { value: draftValue })')
   })
 })

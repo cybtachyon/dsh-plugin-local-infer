@@ -120,6 +120,7 @@ window.__ModuleLoader__.load({
         downloaded: 'download complete',
         downloadFailed: 'download failed',
         helpToggle: 'Show or hide field help',
+        refresh: 'Re-fetch the card data from the host',
         engineHelp:
           'Inference engines have different strengths and weaknesses for specific models and hardware.',
         modelHelp:
@@ -260,6 +261,7 @@ window.__ModuleLoader__.load({
         downloaded: '下载完成',
         downloadFailed: '下载失败',
         helpToggle: '显示或隐藏字段帮助',
+        refresh: '从主机重新加载卡片数据',
         engineHelp: '推理引擎针对特定模型和硬件各有优劣。',
         modelHelp: '引擎服务的模型。可选项包括引擎默认模型和模型目录中已有的模型文件。',
         buildHelp:
@@ -555,10 +557,10 @@ window.__ModuleLoader__.load({
       gap: 4,
       justifyContent: 'flex-end',
     };
-    // The circular "?" button in the card header. It toggles the per-field
-    // descriptions; the preference persists through the save route, so it
-    // survives a reload. The active state reads as the accent fill; the
-    // inactive state as the muted outline.
+    // The circular header buttons: the "?" help toggle and the refresh
+    // action. The active state reads as the accent fill; the inactive state
+    // as the muted outline. The help preference persists through the save
+    // route, so it survives a reload.
     var HELP_BUTTON_STYLE = (active) => ({
       width: 20,
       height: 20,
@@ -1969,6 +1971,14 @@ window.__ModuleLoader__.load({
             ? 'new'
             : providerFormMode;
         var timerRef = react.useRef(null);
+        // The latest committed draft, mirrored into a ref so the debounced
+        // re-price reads the value the user last typed, not a stale closure.
+        // The effect runs after each render, so the ref settles before the
+        // 300ms timer fires.
+        var draftRef = react.useRef(null);
+        react.useEffect(() => {
+          draftRef.current = draft;
+        }, [draft]);
 
         var fetchSummary = react.useCallback(
           (engine, config) => {
@@ -2062,6 +2072,25 @@ window.__ModuleLoader__.load({
           [],
         );
 
+        // scheduleReprice resets the re-price timeout on every field change
+        // and fetches the summary (the VRAM Est. meter) and the deps panel
+        // only after typing pauses, so a fast keystroke stream is one round
+        // trip, not one per letter. The ref reads the latest committed draft,
+        // so the fetch prices the value the user last typed.
+        var scheduleReprice = react.useCallback(() => {
+          if (timerRef.current) {
+            clearTimeout(timerRef.current);
+          }
+          timerRef.current = setTimeout(() => {
+            var latest = draftRef.current;
+            if (latest === null || latest === undefined) {
+              return;
+            }
+            fetchSummary(latest.engine, latest.config);
+            fetchDeps(latest.engine, latest.config);
+          }, 300);
+        }, [fetchSummary, fetchDeps]);
+
         var load = react.useCallback(() => {
           fetchSummary(null, null);
           fetchDeps(null, null);
@@ -2073,9 +2102,11 @@ window.__ModuleLoader__.load({
           }
         }, [data, draft, load]);
 
-        // A field edit updates the draft config and re-prices the meter and
-        // form gating. Debounced so a slider drag is one round trip, not one
-        // per tick.
+        // A field edit updates the draft config and schedules a debounced
+        // re-price of the meter and form gating. The draft update is pure;
+        // the re-price (the VRAM Est. visualization) runs only after typing
+        // pauses, so a fast keystroke stream is one round trip, not one per
+        // letter.
         var onValue = react.useCallback(
           (key, value) => {
             noteState[1]('');
@@ -2085,22 +2116,15 @@ window.__ModuleLoader__.load({
             draftState[1]((current) => {
               var config = Object.assign({}, current.config);
               config[key] = value;
-              var next = {
+              return {
                 engine: current.engine,
                 config: config,
                 platform: current.platform || {},
               };
-              if (timerRef.current) {
-                clearTimeout(timerRef.current);
-              }
-              timerRef.current = setTimeout(() => {
-                fetchSummary(next.engine, next.config);
-                fetchDeps(next.engine, next.config);
-              }, 300);
-              return next;
             });
+            scheduleReprice();
           },
-          [fetchSummary, fetchDeps],
+          [scheduleReprice],
         );
 
         // The Model Directory field edit. A valid directory (non-blank, no
@@ -2258,7 +2282,9 @@ window.__ModuleLoader__.load({
         // The help toggle: flip the local state and persist the preference
         // through the save route, so it survives a reload. The save response
         // carries the fresh summary, so the data and the draft resync from
-        // the same round trip, the way the allow-run toggle does.
+        // the same round trip, the way the allow-run toggle does. The
+        // settings-only flag keeps the route from upserting a provider entry,
+        // so a toggle never mints a duplicate at the top of the list.
         var onToggleHelp = react.useCallback(
           (next) => {
             if (draft === null) {
@@ -2274,6 +2300,7 @@ window.__ModuleLoader__.load({
                 allowRunDeps: deps !== null && deps.runAllowed === true,
                 platform: draft.platform || {},
                 showHelp: next,
+                settingsOnly: true,
               }),
             })
               .then((response) =>
@@ -2382,18 +2409,11 @@ window.__ModuleLoader__.load({
             draftState[1]((_current) => {
               // The platform config is per-engine, so an engine switch keeps
               // the map and only resets the per-engine parameter config.
-              var next = { engine: engine, config: {}, platform: _current.platform || {} };
-              if (timerRef.current) {
-                clearTimeout(timerRef.current);
-              }
-              timerRef.current = setTimeout(() => {
-                fetchSummary(next.engine, next.config);
-                fetchDeps(next.engine, next.config);
-              }, 300);
-              return next;
+              return { engine: engine, config: {}, platform: _current.platform || {} };
             });
+            scheduleReprice();
           },
-          [fetchSummary, fetchDeps],
+          [scheduleReprice],
         );
 
         var save = react.useCallback(() => {
@@ -2609,6 +2629,9 @@ window.__ModuleLoader__.load({
           }
         }, [deps, t]);
 
+        // The allow-run toggle persists the trust gate through the save route.
+        // The settings-only flag keeps the route from upserting a provider
+        // entry, so a toggle never mints a duplicate at the top of the list.
         var onAllowRun = react.useCallback(
           (checked) => {
             if (draft === null) {
@@ -2623,6 +2646,7 @@ window.__ModuleLoader__.load({
                 allowRunDeps: checked,
                 platform: draft.platform || {},
                 showHelp: help,
+                settingsOnly: true,
               }),
             })
               .then((response) =>
@@ -3280,9 +3304,14 @@ window.__ModuleLoader__.load({
                   : null,
               )
             : null,
-          // The card header: the section title plus the circular "?" button
-          // that shows or hides the per-field descriptions. The preference
-          // persists through the save route, so it survives a reload.
+          // The card header: the section title plus the circular refresh and
+          // "?" buttons. The refresh button re-fetches the summary and deps
+          // from the host, so the card re-prices after the harness pauses
+          // the plugin's routes and re-activates them. The refresh glyph is
+          // the primitives seed's IconRefreshOutlineRegular; a host without
+          // the seed keeps the native arrow character. The "?" button shows
+          // or hides the per-field descriptions; the preference persists
+          // through the save route, so it survives a reload.
           react.createElement(
             'div',
             {
@@ -3295,16 +3324,39 @@ window.__ModuleLoader__.load({
             },
             react.createElement('div', { style: { fontWeight: 600, fontSize: 14 } }, t.section),
             react.createElement(
-              'button',
+              'div',
               {
-                type: 'button',
-                style: HELP_BUTTON_STYLE(help),
-                title: t.helpToggle,
-                'aria-label': t.helpToggle,
-                'aria-pressed': help,
-                onClick: () => onToggleHelp(!help),
+                style: {
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                },
               },
-              '?',
+              react.createElement(
+                'button',
+                {
+                  type: 'button',
+                  style: HELP_BUTTON_STYLE(false),
+                  title: t.refresh,
+                  'aria-label': t.refresh,
+                  onClick: () => load(),
+                },
+                primitives && typeof primitives.IconRefreshOutlineRegular === 'function'
+                  ? react.createElement(primitives.IconRefreshOutlineRegular, { size: 12 })
+                  : '↻',
+              ),
+              react.createElement(
+                'button',
+                {
+                  type: 'button',
+                  style: HELP_BUTTON_STYLE(help),
+                  title: t.helpToggle,
+                  'aria-label': t.helpToggle,
+                  'aria-pressed': help,
+                  onClick: () => onToggleHelp(!help),
+                },
+                '?',
+              ),
             ),
           ),
           // The provider list: the saved provider entries, each a collapsed
@@ -3737,17 +3789,28 @@ window.__ModuleLoader__.load({
                   'div',
                   { key: section.group },
                   react.createElement('div', { style: SECTION_STYLE }, section.group),
-                  section.fields.map((field) =>
-                    renderField(
+                  section.fields.map((field) => {
+                    // The field value binds to the local draft, not the server
+                    // render model, so a typed keystroke shows in the input
+                    // immediately. The server model (field.value) resolves the
+                    // spec default and only surfaces after the debounced
+                    // re-price settles. A key the user has not edited is
+                    // absent from the draft, so it falls back to the model.
+                    var draftValue = draft.config[field.key];
+                    var effectiveField =
+                      draftValue !== undefined
+                        ? Object.assign({}, field, { value: draftValue })
+                        : field;
+                    return renderField(
                       react,
-                      field,
+                      effectiveField,
                       onValue,
                       inlineWarnings[field.key],
                       primitives,
                       help,
                       t,
-                    ),
-                  ),
+                    );
+                  }),
                 ),
               )
             : react.createElement('div', { style: { fontSize: 12, opacity: 0.7 } }, t.noParameters),

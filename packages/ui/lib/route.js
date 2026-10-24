@@ -1285,23 +1285,33 @@ export function registerLocalInferRoute(scope, localInfer, getHost) {
                 // reads, so a provider never carries a field it cannot price. A save
                 // that updates an entry in place carries the entry's launch record
                 // over, so editing a running provider's config never drops the record
-                // the restart re-link prices.
+                // the restart re-link prices. A settings-only save skips the upsert:
+                // it persists the global fields the toggle edits and keeps the stored
+                // list intact, so the help and allow-run toggles never mint a
+                // duplicate entry.
                 const stored = readConfig();
-                const provider = {
-                    id: providerId ?? newProviderId(),
-                    engine,
-                    config,
-                    platform: platform[engine] ?? {},
-                };
-                if (providerId !== undefined) {
-                    const existing = stored.providers.find((entry) => entry.id === providerId);
-                    if (existing?.launch !== undefined) {
-                        provider.launch = existing.launch;
-                    }
+                let providers;
+                if (body.settingsOnly === true) {
+                    providers = stored.providers;
                 }
-                const providers = providerId !== undefined
-                    ? stored.providers.map((entry) => (entry.id === providerId ? provider : entry))
-                    : [provider, ...stored.providers];
+                else {
+                    const provider = {
+                        id: providerId ?? newProviderId(),
+                        engine,
+                        config,
+                        platform: platform[engine] ?? {},
+                    };
+                    if (providerId !== undefined) {
+                        const existing = stored.providers.find((entry) => entry.id === providerId);
+                        if (existing?.launch !== undefined) {
+                            provider.launch = existing.launch;
+                        }
+                    }
+                    providers =
+                        providerId !== undefined
+                            ? stored.providers.map((entry) => (entry.id === providerId ? provider : entry))
+                            : [provider, ...stored.providers];
+                }
                 writeConfig(engine, config, allowRunDeps, platform, showHelp, providers, logPath);
                 // Re-sync the service registry with the saved platform map, so the next
                 // launch reads the platform config the user just saved.

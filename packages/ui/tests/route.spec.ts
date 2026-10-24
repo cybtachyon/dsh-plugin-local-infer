@@ -1986,6 +1986,49 @@ describe('provider list round trip', () => {
     expect(stored.providers[0]?.id.trim()).not.toBe('')
   })
 
+  it('keeps the provider list intact on a settings-only save', async () => {
+    // The help and allow-run toggles persist the global fields through the
+    // save route with settingsOnly set. That must not mint a new entry, so a
+    // toggle never duplicates the list the way an id-less save used to.
+    rmSync(localInferConfigPath(), { force: true })
+    const service = stubService([])
+    const list = routes(service)
+    const save = find(list, '/local-infer/save')
+    writeConfig('ninfer', { model: 'qwen3-27b' }, false, {}, true, [
+      { id: 'p1', engine: 'ninfer', config: { model: 'qwen3-27b' }, platform: {} },
+    ])
+    const res = fakeRes()
+    await save.handler(
+      fakeReq(
+        'POST',
+        '/local-infer/save',
+        JSON.stringify({ engine: 'ninfer', config: {}, showHelp: false, settingsOnly: true }),
+      ),
+      res,
+    )
+    expect(res.status).toBe(200)
+    const stored = readConfig()
+    // The toggle persists, and the single stored entry survives untouched:
+    // no minted id, no prepended duplicate.
+    expect(stored.showHelp).toBe(false)
+    expect(stored.providers).toHaveLength(1)
+    expect(stored.providers[0]?.id).toBe('p1')
+    // A second settings-only save keeps the list at one entry, so repeated
+    // toggles do not accumulate duplicates.
+    const again = fakeRes()
+    await save.handler(
+      fakeReq(
+        'POST',
+        '/local-infer/save',
+        JSON.stringify({ engine: 'ninfer', config: {}, showHelp: true, settingsOnly: true }),
+      ),
+      again,
+    )
+    expect(again.status).toBe(200)
+    expect(readConfig().providers).toHaveLength(1)
+    expect(readConfig().providers[0]?.id).toBe('p1')
+  })
+
   it('updates a stored provider in place when a save carries its id', async () => {
     const service = stubService([])
     const list = routes(service)
