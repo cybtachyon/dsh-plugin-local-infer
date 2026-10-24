@@ -1,1 +1,1 @@
-{"version":3,"file":"launch-command.d.ts","sourceRoot":"","sources":["../src/launch-command.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,UAAU,EAAE,MAAM,cAAc,CAAA;AAE9C;;;;;;;;;GASG;AACH,wBAAgB,mBAAmB,CAAC,IAAI,EAAE,UAAU,GAAG,MAAM,GAAG,SAAS,CAsBxE"}
+{"version":3,"file":"launch-command.d.ts","sourceRoot":"","sources":["../src/launch-command.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,UAAU,EAAE,MAAM,cAAc,CAAA;AAE9C;;;;;;;;;GASG;AACH,wBAAgB,mBAAmB,CAAC,IAAI,EAAE,UAAU,GAAG,MAAM,GAAG,SAAS,CAwCxE"}

@@ -64,6 +64,8 @@ export {
 } from './acquire.ts'
 export type { AcquireLog, EngineSource, EngineStepResult } from './acquire.ts'
 export { ENGINE_DEP_PLANS, SYSTEM_DEPS } from './deps.ts'
+export { ENGINE_PLATFORM_DEFAULTS, enginePlatformDefaults } from './platform.ts'
+export type { EnginePlatformDefaults } from './platform.ts'
 export { BUILTIN_PRESETS, PRESET_SOURCES, extractJsonBlock } from './presets.ts'
 export { DEFAULT_MODELS, defaultModelFor, defaultModelsForEngine } from './model-defaults.ts'
 export {

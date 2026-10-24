@@ -22,6 +22,11 @@ export interface LaunchPlan {
   env?: Record<string, string>
   composeFile?: string
   profile?: string
+  // The user's compose arguments (the card's docker-tag field for a compose
+  // engine, e.g. `--profile single`): the flags the up step runs before the
+  // required `up -d`. Absent when the user leaves the field empty, so the
+  // up step falls back to the engine's default profile.
+  composeArgs?: string
   containerName?: string
   modelId?: string
   modelDirectory?: string
@@ -34,12 +39,18 @@ export interface LaunchPlan {
  * specific engine: where the engine platform lives locally (the checkout and
  * build location) and the git repo that overrides the engine's default
  * upstream for this config. The deploy step consumes both: it clones the fork
- * (or the default upstream) into the engine directory.
+ * (or the default upstream) into the engine directory. `buildCommands`
+ * overrides the engine's local build command (the local build mode) and
+ * `dockerTag` overrides the docker image tag the docker deploy pulls (the
+ * docker build mode); each rides the platform map, so an engine switch keeps
+ * them.
  */
 export interface EnginePlatformConfig {
   engineId: string
   engineDirectory?: string
   engineFork?: string
+  buildCommands?: string
+  dockerTag?: string
 }
 
 /**

@@ -151,7 +151,7 @@ export declare class HyperQwenAdapter extends EngineAdapter {
     };
     launchSignature(config?: Config): EngineLaunchSignature;
     renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan;
-    deploy(plan: LaunchPlan): Promise<DeployResult>;
+    deploy(plan: LaunchPlan, platform?: EnginePlatformConfig): Promise<DeployResult>;
     healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;
     stop(plan: LaunchPlan): Promise<void>;
     private port;

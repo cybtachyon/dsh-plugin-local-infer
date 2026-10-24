@@ -66,6 +66,8 @@ export interface LocalInferSummary {
             docker: boolean;
             local: boolean;
         };
+        defaultBuildCommand?: string;
+        defaultDockerTag?: string;
     }[];
     models: {
         id: string;
@@ -172,6 +174,8 @@ export declare function localInferConfigPath(): string;
 export interface StoredPlatformConfig {
     engineDirectory?: string;
     engineFork?: string;
+    buildCommands?: string;
+    dockerTag?: string;
 }
 /**
  * StoredProviderConfig is one saved provider model+engine config the card

@@ -655,7 +655,13 @@ export class HyperQwenAdapter extends EngineAdapter {
             healthUrl: `http://127.0.0.1:${port}/health`,
         };
     }
-    async deploy(plan) {
+    async deploy(plan, platform) {
+        // The card's docker-tag field carries the compose arguments (the profile
+        // the up step selects); the deploy step applies it to the plan so the up
+        // line and the card's Logs section agree.
+        if (platform?.dockerTag !== undefined) {
+            plan.composeArgs = platform.dockerTag;
+        }
         // The core formatter is the single source of the compose up line: the
         // card's Logs section prints the same string this run gets.
         const command = formatLaunchCommand(plan);
@@ -672,7 +678,14 @@ export class HyperQwenAdapter extends EngineAdapter {
         return pollHealth(this.host, plan, options);
     }
     async stop(plan) {
-        await this.host.run(`docker compose -f ${plan.composeFile} --profile ${plan.profile} down`);
+        // The down step brings down the containers the up step started, so it
+        // runs the same compose arguments (the profile the up selected); an
+        // absent composeArgs falls back to the engine's default profile.
+        const composeArgs = plan.composeArgs?.split(/\s+/).filter((token) => token !== '');
+        const args = composeArgs !== undefined && composeArgs.length > 0
+            ? composeArgs.join(' ')
+            : `--profile ${plan.profile ?? 'single'}`;
+        await this.host.run(`docker compose -f ${plan.composeFile ?? 'docker-compose.yml'} ${args} down`);
     }
     port(config) {
         return typeof config.port === 'number' ? config.port : 18020;

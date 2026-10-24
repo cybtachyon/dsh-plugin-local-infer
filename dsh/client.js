@@ -108,6 +108,8 @@ window.__ModuleLoader__.load({
         enginePlatform: 'Engine platform',
         engineDirectory: 'Engine Directory',
         engineFork: 'Engine Fork (Git Repo)',
+        buildCommands: 'Build commands',
+        dockerTag: 'Docker tag',
         dirPlaceholder: 'directory path',
         forkPlaceholder: 'git repo url',
         hfCliDetected: 'HF CLI detected:',
@@ -127,6 +129,10 @@ window.__ModuleLoader__.load({
         engineDirHelp:
           'Local directory of the engine source. Get clones or updates the git repo and builds the engine here; with no override it lands in the model directory under the engine name.',
         engineForkHelp: 'Git repo that overrides the engine default upstream for the clone step.',
+        buildCommandsHelp:
+          'Local build command that overrides the engine default for the checkout build. Shown only in local build mode.',
+        dockerTagHelp:
+          'Docker image tag the docker deploy pulls. Shown only in docker build mode.',
         providers: 'Providers',
         newProvider: 'New provider',
         edit: 'Edit',
@@ -237,6 +243,8 @@ window.__ModuleLoader__.load({
         enginePlatform: '引擎平台',
         engineDirectory: '引擎目录',
         engineFork: '引擎 Fork (Git 仓库)',
+        buildCommands: '构建命令',
+        dockerTag: 'Docker 标签',
         dirPlaceholder: '目录路径',
         forkPlaceholder: 'git 仓库地址',
         hfCliDetected: '检测到 HF CLI:',
@@ -253,6 +261,8 @@ window.__ModuleLoader__.load({
         modelDirHelp: '模型文件的下载和服务目录。',
         engineDirHelp: '引擎源码的本地目录。“获取”会在此克隆或更新 git 仓库并构建引擎；未覆盖时，仓库落在模型目录下以引擎命名的子目录中。',
         engineForkHelp: '用于克隆步骤、覆盖引擎默认上游的 git 仓库。',
+        buildCommandsHelp: '本地构建命令，覆盖引擎默认的检查构建。仅在本地构建模式下显示。',
+        dockerTagHelp: 'docker 部署拉取的镜像标签。仅在 docker 构建模式下显示。',
         providers: '提供方',
         newProvider: '新增提供方',
         edit: '编辑',
@@ -3410,6 +3420,94 @@ window.__ModuleLoader__.load({
                 ),
               ),
               help ? renderHelpRow(react, t.engineForkHelp) : null,
+              (() => {
+                // The build-method-dependent platform fields: local build mode
+                // shows the Build commands override, docker build mode shows the
+                // Docker tag override. Only one is visible at a time, keyed off
+                // the same buildMode the Build row prices. The placeholder seeds
+                // the engine's own default (the build step the deploy runs, or the
+                // image tag the docker deploy pulls), so an empty field reads as
+                // "use the default."
+                var engineEntry = (data.engines || []).find(
+                  (entry) => entry.id === draft.engine,
+                );
+                var buildModes = [];
+                if (engineEntry && engineEntry.supports.local) buildModes.push('local');
+                if (engineEntry && engineEntry.supports.docker) buildModes.push('docker');
+                var buildMode =
+                  typeof draft.config.buildMode === 'string'
+                    ? draft.config.buildMode
+                    : buildModes[0] || 'local';
+                if (buildMode === 'local') {
+                  return react.createElement(
+                    'div',
+                    null,
+                    react.createElement(
+                      'div',
+                      { style: ROW_STYLE },
+                      react.createElement('label', { style: LABEL_STYLE }, t.buildCommands),
+                      react.createElement(
+                        'input',
+                        Object.assign(
+                          { style: INPUT_STYLE },
+                          {
+                            type: 'text',
+                            value:
+                              typeof enginePlatform.buildCommands === 'string'
+                                ? enginePlatform.buildCommands
+                                : '',
+                            placeholder:
+                              engineEntry && engineEntry.defaultBuildCommand
+                                ? engineEntry.defaultBuildCommand
+                                : '',
+                            onChange: (event) =>
+                              onPlatform(
+                                'buildCommands',
+                                event.target.value === '' ? undefined : event.target.value,
+                              ),
+                          },
+                        ),
+                      ),
+                    ),
+                    help ? renderHelpRow(react, t.buildCommandsHelp) : null,
+                  );
+                }
+                if (buildMode === 'docker') {
+                  return react.createElement(
+                    'div',
+                    null,
+                    react.createElement(
+                      'div',
+                      { style: ROW_STYLE },
+                      react.createElement('label', { style: LABEL_STYLE }, t.dockerTag),
+                      react.createElement(
+                        'input',
+                        Object.assign(
+                          { style: INPUT_STYLE },
+                          {
+                            type: 'text',
+                            value:
+                              typeof enginePlatform.dockerTag === 'string'
+                                ? enginePlatform.dockerTag
+                                : '',
+                            placeholder:
+                              engineEntry && engineEntry.defaultDockerTag
+                                ? engineEntry.defaultDockerTag
+                                : '',
+                            onChange: (event) =>
+                              onPlatform(
+                                'dockerTag',
+                                event.target.value === '' ? undefined : event.target.value,
+                              ),
+                          },
+                        ),
+                      ),
+                    ),
+                    help ? renderHelpRow(react, t.dockerTagHelp) : null,
+                  );
+                }
+                return null;
+              })(),
             );
           })(),
           hasFields

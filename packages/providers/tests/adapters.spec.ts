@@ -555,6 +555,30 @@ describe('HyperQwenAdapter', () => {
     expect(state.run[1]).toBe('docker compose -f docker-compose.yml --profile single down')
   })
 
+  it('applies the platform docker-tag compose arguments to the up and down lines', async () => {
+    const { host, state } = stubHost()
+    const adapter = new HyperQwenAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'hyperqwen',
+      kind: 'compose',
+      env: {},
+      composeFile: 'docker-compose.yml',
+      profile: 'single',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    // The platform config's docker-tag field carries the compose arguments the
+    // up step selects; the deploy applies them and the stop reuses them.
+    const result = await adapter.deploy(plan, {
+      engineId: 'hyperqwen',
+      dockerTag: '--profile batch',
+    })
+    expect(result.ok).toBe(true)
+    expect(state.run[0]).toBe('docker compose -f docker-compose.yml --profile batch up -d')
+    await adapter.stop(plan)
+    expect(state.run[1]).toBe('docker compose -f docker-compose.yml --profile batch down')
+  })
+
   it('exposes the Hyper-Qwen spec surface and reports a failed compose up', async () => {
     const { host, state } = stubHost()
     const adapter = new HyperQwenAdapter(host)

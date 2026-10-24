@@ -729,7 +729,13 @@ export class HyperQwenAdapter extends EngineAdapter {
     }
   }
 
-  async deploy(plan: LaunchPlan): Promise<DeployResult> {
+  async deploy(plan: LaunchPlan, platform?: EnginePlatformConfig): Promise<DeployResult> {
+    // The card's docker-tag field carries the compose arguments (the profile
+    // the up step selects); the deploy step applies it to the plan so the up
+    // line and the card's Logs section agree.
+    if (platform?.dockerTag !== undefined) {
+      plan.composeArgs = platform.dockerTag
+    }
     // The core formatter is the single source of the compose up line: the
     // card's Logs section prints the same string this run gets.
     const command = formatLaunchCommand(plan)
@@ -748,7 +754,17 @@ export class HyperQwenAdapter extends EngineAdapter {
   }
 
   async stop(plan: LaunchPlan): Promise<void> {
-    await this.host.run(`docker compose -f ${plan.composeFile} --profile ${plan.profile} down`)
+    // The down step brings down the containers the up step started, so it
+    // runs the same compose arguments (the profile the up selected); an
+    // absent composeArgs falls back to the engine's default profile.
+    const composeArgs = plan.composeArgs?.split(/\s+/).filter((token) => token !== '')
+    const args =
+      composeArgs !== undefined && composeArgs.length > 0
+        ? composeArgs.join(' ')
+        : `--profile ${plan.profile ?? 'single'}`
+    await this.host.run(
+      `docker compose -f ${plan.composeFile ?? 'docker-compose.yml'} ${args} down`,
+    )
   }
 
   private port(config: Config): number {

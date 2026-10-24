@@ -30,6 +30,7 @@ export { BUILTIN_GUIDELINES, HOST_STATE_IMAGE_BYTES } from "./guidelines.js";
 export { ENGINES } from "./engines.js";
 export { ENGINE_SOURCES, FORK_REMOTE, buildEngineRepo, engineBuildSteps, engineSource, syncEngineRepo, } from "./acquire.js";
 export { ENGINE_DEP_PLANS, SYSTEM_DEPS } from "./deps.js";
+export { ENGINE_PLATFORM_DEFAULTS, enginePlatformDefaults } from "./platform.js";
 export { BUILTIN_PRESETS, PRESET_SOURCES, extractJsonBlock } from "./presets.js";
 export { DEFAULT_MODELS, defaultModelFor, defaultModelsForEngine } from "./model-defaults.js";
 export { HyperQwenAdapter, LLAMACPP_DOCKER_IMAGE, NINFER_DOCKER_IMAGE, NINFER_MODEL_ARTIFACTS, NInferAdapter, STRATA_DOCKER_IMAGE, StrataAdapter, LlamaCppAdapter, customArgEnv, customArgFlags, envFromSpecs, flagsFromSpecs, nodeLifecycleHost, pollHealth, } from "./adapters.js";

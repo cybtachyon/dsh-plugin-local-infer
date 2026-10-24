@@ -12,6 +12,24 @@ import type { LaunchPlan } from './adapter.ts'
  */
 export function formatLaunchCommand(plan: LaunchPlan): string | undefined {
   if (plan.kind === 'compose') {
+    // The user's compose arguments (the card's docker-tag field) override the
+    // default profile: the flags the up step runs before the required `up -d`.
+    // An empty field reads as "use the default profile", so the up step falls
+    // back to the engine's own default.
+    const composeArgs = plan.composeArgs?.split(/\s+/).filter((token) => token !== '')
+    if (composeArgs !== undefined && composeArgs.length > 0) {
+      return [
+        'docker',
+        'compose',
+        '-f',
+        plan.composeFile ?? 'docker-compose.yml',
+        ...composeArgs,
+        'up',
+        '-d',
+      ]
+        .map(quoteArg)
+        .join(' ')
+    }
     // The compose defaults match the adapter's renderLaunch fallbacks, so a
     // plan built from a bare config still spells a runnable command.
     return [

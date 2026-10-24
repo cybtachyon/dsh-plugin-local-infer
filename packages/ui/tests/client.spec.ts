@@ -363,4 +363,20 @@ describe('dsh/client.js browser carrier', () => {
     expect(source).toContain("'remove'")
     expect(source).toContain("'add'")
   })
+
+  it('pins the build-method-dependent platform fields in the Engine platform section', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // The Engine platform section shows the Build commands override in local
+    // build mode and the Docker tag override in docker build mode, one at a
+    // time, each seeded with the engine's own default as the placeholder. The
+    // values ride the platform map (onPlatform), not the config.
+    expect(source).toContain('t.buildCommands')
+    expect(source).toContain('t.dockerTag')
+    expect(source).toContain("buildMode === 'local'")
+    expect(source).toContain("buildMode === 'docker'")
+    expect(source).toContain("'buildCommands'")
+    expect(source).toContain("'dockerTag'")
+    expect(source).toContain('engineEntry.defaultBuildCommand')
+    expect(source).toContain('engineEntry.defaultDockerTag')
+  })
 })

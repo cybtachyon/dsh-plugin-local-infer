@@ -69,6 +69,31 @@ describe('formatLaunchCommand', () => {
     expect(command).toBe('docker compose -f docker-compose.yml --profile single up --pull always -d')
   })
 
+  it('appends the user compose arguments before the required up -d', () => {
+    const command = formatLaunchCommand(
+      plan({
+        engineId: 'hyperqwen',
+        kind: 'compose',
+        composeFile: 'compose.yml',
+        composeArgs: '--profile batch --some-flag',
+      }),
+    )
+    expect(command).toBe('docker compose -f compose.yml --profile batch --some-flag up -d')
+  })
+
+  it('keeps the default profile when the compose arguments are blank', () => {
+    const command = formatLaunchCommand(
+      plan({
+        engineId: 'hyperqwen',
+        kind: 'compose',
+        composeFile: 'compose.yml',
+        profile: 'two',
+        composeArgs: '   ',
+      }),
+    )
+    expect(command).toBe('docker compose -f compose.yml --profile two up --pull always -d')
+  })
+
   it('reads a plan with no argv as no command', () => {
     expect(formatLaunchCommand(plan({}))).toBeUndefined()
     expect(formatLaunchCommand(plan({ argv: [] }))).toBeUndefined()

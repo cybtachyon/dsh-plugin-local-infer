@@ -65,6 +65,7 @@ import {
   defaultModelFor,
   defaultModelsForEngine,
   ENGINES,
+  enginePlatformDefaults,
   nodeLifecycleHost,
   syncEngineRepo,
 } from '../../providers/lib/index.js'
@@ -118,7 +119,17 @@ interface OutgoingLike {
  * the socket without a function left behind.
  */
 export interface LocalInferSummary {
-  engines: { id: string; label: string; supports: { docker: boolean; local: boolean } }[]
+  engines: {
+    id: string
+    label: string
+    supports: { docker: boolean; local: boolean }
+    // The per-engine platform defaults the card's Engine platform section
+    // seeds: the local build command placeholder (the local build mode) and
+    // the docker image tag placeholder (the docker build mode). Absent when
+    // the engine supports no such mode.
+    defaultBuildCommand?: string
+    defaultDockerTag?: string
+  }[]
   models: { id: string; source: string }[]
   hardware: HardwareProfile
   engineId: string
@@ -304,6 +315,8 @@ export function localInferConfigPath(): string {
 export interface StoredPlatformConfig {
   engineDirectory?: string
   engineFork?: string
+  buildCommands?: string
+  dockerTag?: string
 }
 
 /**
@@ -550,7 +563,18 @@ function parsePlatformConfigs(raw: unknown): Record<string, StoredPlatformConfig
     if (typeof fields.engineFork === 'string') {
       stored.engineFork = fields.engineFork
     }
-    if (stored.engineDirectory !== undefined || stored.engineFork !== undefined) {
+    if (typeof fields.buildCommands === 'string') {
+      stored.buildCommands = fields.buildCommands
+    }
+    if (typeof fields.dockerTag === 'string') {
+      stored.dockerTag = fields.dockerTag
+    }
+    if (
+      stored.engineDirectory !== undefined ||
+      stored.engineFork !== undefined ||
+      stored.buildCommands !== undefined ||
+      stored.dockerTag !== undefined
+    ) {
       platform[engineId] = stored
     }
   }
@@ -575,7 +599,18 @@ function parseStoredPlatformConfig(raw: unknown): StoredPlatformConfig | undefin
   if (typeof fields.engineFork === 'string') {
     stored.engineFork = fields.engineFork
   }
-  if (stored.engineDirectory === undefined && stored.engineFork === undefined) {
+  if (typeof fields.buildCommands === 'string') {
+    stored.buildCommands = fields.buildCommands
+  }
+  if (typeof fields.dockerTag === 'string') {
+    stored.dockerTag = fields.dockerTag
+  }
+  if (
+    stored.engineDirectory === undefined &&
+    stored.engineFork === undefined &&
+    stored.buildCommands === undefined &&
+    stored.dockerTag === undefined
+  ) {
     return undefined
   }
   return stored
@@ -783,7 +818,23 @@ export async function buildSummary(
     // read as unregistered, which hides the Remove button (a no-op removal).
   }
   return {
-    engines: ENGINES.map((entry) => ({ id: entry.id, label: entry.label, supports: entry.supports })),
+    engines: ENGINES.map((entry) => {
+      // The platform defaults ride the engine entry so the card's Engine
+      // platform section seeds the build-command and docker-tag placeholders
+      // from the same data the deploy step consumes.
+      const defaults = enginePlatformDefaults(entry.id)
+      return {
+        id: entry.id,
+        label: entry.label,
+        supports: entry.supports,
+        ...(defaults.defaultBuildCommand !== undefined
+          ? { defaultBuildCommand: defaults.defaultBuildCommand }
+          : {}),
+        ...(defaults.defaultDockerTag !== undefined
+          ? { defaultDockerTag: defaults.defaultDockerTag }
+          : {}),
+      }
+    }),
     models: localInfer.registeredVramModels().map((model) => ({ id: model.id, source: model.source })),
     hardware,
     engineId: engine.id,
@@ -868,7 +919,12 @@ function setPlatformConfig(
   if (config === undefined) {
     return
   }
-  if (config.engineDirectory === undefined && config.engineFork === undefined) {
+  if (
+    config.engineDirectory === undefined &&
+    config.engineFork === undefined &&
+    config.buildCommands === undefined &&
+    config.dockerTag === undefined
+  ) {
     return
   }
   const platform: EnginePlatformConfig = { engineId, ...config }
@@ -1135,6 +1191,26 @@ function launchCommandNote(plan: LaunchPlan): string | undefined {
 }
 
 /**
+ * applyComposeArgs seeds a compose plan's compose arguments from the stored
+ * platform config (the card's docker-tag field for a compose engine, e.g.
+ * `--profile single`), so the up line the deploy runs and the down line the
+ * stop runs both select the profile the user named. A compose plan with no
+ * stored docker-tag keeps the engine's default profile; a non-compose plan is
+ * untouched.
+ */
+function applyComposeArgs(
+  plan: LaunchPlan,
+  localInfer: LocalInferService,
+  engineId: string,
+): void {
+  if (plan.kind !== 'compose') return
+  const platform = localInfer.enginePlatformConfig(engineId)
+  if (platform?.dockerTag !== undefined) {
+    plan.composeArgs = platform.dockerTag
+  }
+}
+
+/**
  * persistStoredLogs overwrites the stored last-run logs (the card's Logs
  * section shows them after a reload) and leaves every other stored field as
  * the launch reads it.
@@ -1182,6 +1258,7 @@ export async function launchEngine(
     setPlatformConfig(localInfer, engineId, request.platform)
   }
   const plan = adapter.renderLaunch(config, hardware)
+  applyComposeArgs(plan, localInfer, engineId)
   const commandNote = launchCommandNote(plan)
   if (commandNote !== undefined) {
     // Persist before the deploy starts: a slow or hung launch keeps the
@@ -1402,7 +1479,9 @@ export async function stopEngine(
   const config = request.config ?? stored.config
   const adapter = resolveAdapter(localInfer, engineId)
   const hardware = await localInfer.detectHardware()
-  await localInfer.stop(adapter.renderLaunch(config, hardware))
+  const plan = adapter.renderLaunch(config, hardware)
+  applyComposeArgs(plan, localInfer, engineId)
+  await localInfer.stop(plan)
   clearLaunchRecord(engineId, config, request.providerId)
 }
 

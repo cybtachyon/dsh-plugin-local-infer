@@ -21,7 +21,7 @@ import { dirname, join } from 'node:path';
 // only resolves when the package sits inside a node_modules tree, so a
 // local-path or pnpm-linked install of this repo would fail the import.
 import { CHAT_TEMPLATE_FILE, buildModelEntry, checkDeps, DEFAULT_LOG_PATH_TEMPLATE, formatLaunchCommand, hfChatTemplateCommand, hfDownloadCommand, launchRecordFromPlan, modelArtifactPath, modelEntriesForEngine, providerIdFor, renderInstallString, resolveLogPath, } from '../../core/lib/index.js';
-import { CHAT_TEMPLATE_OPTIONS, buildEngineRepo, defaultModelFor, defaultModelsForEngine, ENGINES, nodeLifecycleHost, syncEngineRepo, } from '../../providers/lib/index.js';
+import { CHAT_TEMPLATE_OPTIONS, buildEngineRepo, defaultModelFor, defaultModelsForEngine, ENGINES, enginePlatformDefaults, nodeLifecycleHost, syncEngineRepo, } from '../../providers/lib/index.js';
 import { renderDeps } from "./deps.js";
 import { renderForm } from "./form.js";
 import { renderMeter } from "./meter.js";
@@ -241,7 +241,16 @@ function parsePlatformConfigs(raw) {
         if (typeof fields.engineFork === 'string') {
             stored.engineFork = fields.engineFork;
         }
-        if (stored.engineDirectory !== undefined || stored.engineFork !== undefined) {
+        if (typeof fields.buildCommands === 'string') {
+            stored.buildCommands = fields.buildCommands;
+        }
+        if (typeof fields.dockerTag === 'string') {
+            stored.dockerTag = fields.dockerTag;
+        }
+        if (stored.engineDirectory !== undefined ||
+            stored.engineFork !== undefined ||
+            stored.buildCommands !== undefined ||
+            stored.dockerTag !== undefined) {
             platform[engineId] = stored;
         }
     }
@@ -265,7 +274,16 @@ function parseStoredPlatformConfig(raw) {
     if (typeof fields.engineFork === 'string') {
         stored.engineFork = fields.engineFork;
     }
-    if (stored.engineDirectory === undefined && stored.engineFork === undefined) {
+    if (typeof fields.buildCommands === 'string') {
+        stored.buildCommands = fields.buildCommands;
+    }
+    if (typeof fields.dockerTag === 'string') {
+        stored.dockerTag = fields.dockerTag;
+    }
+    if (stored.engineDirectory === undefined &&
+        stored.engineFork === undefined &&
+        stored.buildCommands === undefined &&
+        stored.dockerTag === undefined) {
         return undefined;
     }
     return stored;
@@ -452,7 +470,23 @@ export async function buildSummary(localInfer, request) {
         // read as unregistered, which hides the Remove button (a no-op removal).
     }
     return {
-        engines: ENGINES.map((entry) => ({ id: entry.id, label: entry.label, supports: entry.supports })),
+        engines: ENGINES.map((entry) => {
+            // The platform defaults ride the engine entry so the card's Engine
+            // platform section seeds the build-command and docker-tag placeholders
+            // from the same data the deploy step consumes.
+            const defaults = enginePlatformDefaults(entry.id);
+            return {
+                id: entry.id,
+                label: entry.label,
+                supports: entry.supports,
+                ...(defaults.defaultBuildCommand !== undefined
+                    ? { defaultBuildCommand: defaults.defaultBuildCommand }
+                    : {}),
+                ...(defaults.defaultDockerTag !== undefined
+                    ? { defaultDockerTag: defaults.defaultDockerTag }
+                    : {}),
+            };
+        }),
         models: localInfer.registeredVramModels().map((model) => ({ id: model.id, source: model.source })),
         hardware,
         engineId: engine.id,
@@ -523,7 +557,10 @@ function setPlatformConfig(localInfer, engineId, config) {
     if (config === undefined) {
         return;
     }
-    if (config.engineDirectory === undefined && config.engineFork === undefined) {
+    if (config.engineDirectory === undefined &&
+        config.engineFork === undefined &&
+        config.buildCommands === undefined &&
+        config.dockerTag === undefined) {
         return;
     }
     const platform = { engineId, ...config };
@@ -704,6 +741,22 @@ function launchCommandNote(plan) {
     return `[local-infer] launch: ${command}\n`;
 }
 /**
+ * applyComposeArgs seeds a compose plan's compose arguments from the stored
+ * platform config (the card's docker-tag field for a compose engine, e.g.
+ * `--profile single`), so the up line the deploy runs and the down line the
+ * stop runs both select the profile the user named. A compose plan with no
+ * stored docker-tag keeps the engine's default profile; a non-compose plan is
+ * untouched.
+ */
+function applyComposeArgs(plan, localInfer, engineId) {
+    if (plan.kind !== 'compose')
+        return;
+    const platform = localInfer.enginePlatformConfig(engineId);
+    if (platform?.dockerTag !== undefined) {
+        plan.composeArgs = platform.dockerTag;
+    }
+}
+/**
  * persistStoredLogs overwrites the stored last-run logs (the card's Logs
  * section shows them after a reload) and leaves every other stored field as
  * the launch reads it.
@@ -738,6 +791,7 @@ export async function launchEngine(localInfer, request) {
         setPlatformConfig(localInfer, engineId, request.platform);
     }
     const plan = adapter.renderLaunch(config, hardware);
+    applyComposeArgs(plan, localInfer, engineId);
     const commandNote = launchCommandNote(plan);
     if (commandNote !== undefined) {
         // Persist before the deploy starts: a slow or hung launch keeps the
@@ -893,7 +947,9 @@ export async function stopEngine(localInfer, request) {
     const config = request.config ?? stored.config;
     const adapter = resolveAdapter(localInfer, engineId);
     const hardware = await localInfer.detectHardware();
-    await localInfer.stop(adapter.renderLaunch(config, hardware));
+    const plan = adapter.renderLaunch(config, hardware);
+    applyComposeArgs(plan, localInfer, engineId);
+    await localInfer.stop(plan);
     clearLaunchRecord(engineId, config, request.providerId);
 }
 /**

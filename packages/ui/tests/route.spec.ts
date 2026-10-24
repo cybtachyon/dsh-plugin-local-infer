@@ -750,6 +750,41 @@ describe('platform config (§3.10) round trip and launch pass-through', () => {
     })
   })
 
+  it('seeds the engine platform defaults in the summary engine list', async () => {
+    writeConfig('ninfer', {}, false, {})
+    const summary = await buildSummary(stubService([]), { engine: 'ninfer', config: {} })
+    const ninfer = summary.engines.find((entry) => entry.id === 'ninfer')
+    expect(ninfer?.defaultBuildCommand).toBe(
+      'cmake -S {dir} -B {dir}/build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build {dir}/build -j',
+    )
+    expect(ninfer?.defaultDockerTag).toBe('ghcr.io/iamwavecut/ninfer-all')
+    // A docker-only engine (compose vLLM) carries a docker tag and no local
+    // build command; a local-only engine (Infernix) is the reverse. The compose
+    // engine's tag field seeds the compose arguments (the profile the up runs).
+    const hyperqwen = summary.engines.find((entry) => entry.id === 'hyperqwen')
+    expect(hyperqwen?.defaultDockerTag).toBe('--profile single')
+    expect(hyperqwen?.defaultBuildCommand).toBeUndefined()
+    const infernix = summary.engines.find((entry) => entry.id === 'infernix')
+    expect(infernix?.defaultBuildCommand).toBe('cd {dir} && cmake --preset release && cmake --build build -j')
+    expect(infernix?.defaultDockerTag).toBeUndefined()
+  })
+
+  it('round-trips the build commands and docker tag platform overrides', async () => {
+    writeConfig('ninfer', {}, false, {
+      ninfer: {
+        buildCommands: 'cmake -S {dir} -B {dir}/build',
+        dockerTag: 'ghcr.io/iamwavecut/ninfer-all:dev',
+      },
+    })
+    const summary = await buildSummary(stubService([]), { engine: 'ninfer', config: {} })
+    expect(summary.platformConfigs).toEqual({
+      ninfer: {
+        buildCommands: 'cmake -S {dir} -B {dir}/build',
+        dockerTag: 'ghcr.io/iamwavecut/ninfer-all:dev',
+      },
+    })
+  })
+
   it('registers the request platform override with the service before launch', async () => {
     let seen: EnginePlatformConfig | undefined
     const service = stubService([], {
