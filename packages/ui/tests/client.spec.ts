@@ -258,6 +258,10 @@ describe('dsh/client.js browser carrier', () => {
     expect(source).toContain('onLaunchEntry')
     expect(source).toContain('onStopEntry')
     expect(source).toContain('entryLaunchState')
+    // The main Launch hands the Logs section the finished run: its handler
+    // re-reads the summary, so the stored launch command line and the
+    // engine's output replace the previous run in the text area.
+    expect(source).toContain('[draft, launching, editingProviderId, t, fetchSummary]')
   })
 
   it('pins the launch record contract the restart re-link prices', () => {

@@ -3,6 +3,22 @@
   <component name="JsonSchemaMappingsProjectConfiguration">
     <state>
       <map>
+        <entry key="JSONPatch">
+          <value>
+            <SchemaInfo>
+              <option name="name" value="JSONPatch" />
+              <option name="relativePathToSchema" value="https://www.schemastore.org/json-patch.json" />
+              <option name="applicationDefined" value="true" />
+              <option name="patterns">
+                <list>
+                  <Item>
+                    <option name="path" value="cordis.patch.yml" />
+                  </Item>
+                </list>
+              </option>
+            </SchemaInfo>
+          </value>
+        </entry>
         <entry key="mise">
           <value>
             <SchemaInfo>

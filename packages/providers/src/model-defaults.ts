@@ -1,9 +1,11 @@
 /**
  * The plugin's default model list. One entry per (engine, model) the card's
  * Model dropdown offers: the NInfer nvfp4 27B and 35B-A3B artifacts, the
- * Hyper-Qwen W4A16 27B and AWQ 35B-A3B artifacts, and the llama.cpp GGUF 27B
- * and 35B-A3B artifacts. Strata does not focus on the dense Qwen models, so it
- * carries no entry; the Qwen Flash Next defaults land with the engine.
+ * Hyper-Qwen W4A16 27B and AWQ 35B-A3B artifacts, the llama.cpp GGUF 27B and
+ * 35B-A3B artifacts, and the Infernix 27B NVIDIA NVFP4 and the Qwen3.8-
+ * Flash-Next Dense8 conversion (whose whole-repo download carries the FP8
+ * n-gram volume the `--ngram-volume` flag reads). Strata does not focus on
+ * the dense Qwen models, so it carries no entry.
  *
  * The list is the single source the card's Model dropdown, the model
  * presence check, and the hf CLI download route read. Adding a model is a
@@ -66,6 +68,28 @@ export const DEFAULT_MODELS: readonly DefaultModel[] = [
     label: 'llama.cpp Qwen3.6-35B',
     url: 'https://huggingface.co/bartowski/Qwen_Qwen3.6-35B-A3B-GGUF',
     file: 'Qwen3.6-35B-A3B-Q4_K_M.gguf',
+  },
+  {
+    engineId: 'infernix',
+    modelId: 'qwen3-27b',
+    label: 'Infernix Qwen3.8-27B',
+    url: 'https://huggingface.co/Wallawalla47/Qwen3.8-27B-NVIDIA-NVFP4-NInferV3',
+    file: 'qwen3_8_27b_nvfp4-nvidia.ninfer',
+  },
+  {
+    engineId: 'infernix',
+    modelId: 'qwen38-flash-next',
+    label: 'Infernix Qwen3.8-Flash-Next (Dense8)',
+    // No single file: the download pulls the whole repo, which carries the
+    // three model shards, the FP8 n-gram volume, and the conversion metadata.
+    url: 'https://huggingface.co/Wallawalla47/Qwen3.8-Flash-Next-NVIDIA-NVFP4-Dense8-Infernix',
+  },
+  {
+    engineId: 'infernix',
+    modelId: 'qwen36-35b',
+    label: 'Infernix Qwen3.6-35B',
+    url: 'https://huggingface.co/neroued/Qwen3.6-35B-A3B-NInfer',
+    file: 'qwen3_6_35b_a3b.ninfer',
   },
 ]
 

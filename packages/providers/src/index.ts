@@ -1,8 +1,8 @@
 /**
  * The concrete providers for the local-inference capability: the engine
- * adapters (ninfer, hyperqwen, llamacpp, strata), the NInfer VramModel, the
- * built-in presets, the built-in guidelines, and the per-OS SystemDep install
- * command data. Each registers itself with `ctx.localInfer`.
+ * adapters (ninfer, hyperqwen, llamacpp, infernix, strata), the NInfer
+ * VramModel, the built-in presets, the built-in guidelines, and the per-OS
+ * SystemDep install command data. Each registers itself with `ctx.localInfer`.
  *
  * Phase 3 registers the NInfer measured VramModels and the built-in hardware
  * guidelines. The engine adapters land in Phase 5. Phase 7 registers the
@@ -18,6 +18,7 @@ import type { LocalInferService } from 'dsh-plugin-local-infer/service'
 import {
   createNodeLifecycleHost,
   HyperQwenAdapter,
+  InfernixAdapter,
   LlamaCppAdapter,
   NInferAdapter,
   StrataAdapter,
@@ -53,6 +54,15 @@ export { NINFER_VRAM_MODELS, ninferVramModel } from './vram.ts'
 export { BUILTIN_GUIDELINES, HOST_STATE_IMAGE_BYTES } from './guidelines.ts'
 export { ENGINES } from './engines.ts'
 export type { EngineInfo } from './engines.ts'
+export {
+  ENGINE_SOURCES,
+  FORK_REMOTE,
+  buildEngineRepo,
+  engineBuildSteps,
+  engineSource,
+  syncEngineRepo,
+} from './acquire.ts'
+export type { AcquireLog, EngineSource, EngineStepResult } from './acquire.ts'
 export { ENGINE_DEP_PLANS, SYSTEM_DEPS } from './deps.ts'
 export { BUILTIN_PRESETS, PRESET_SOURCES, extractJsonBlock } from './presets.ts'
 export { DEFAULT_MODELS, defaultModelFor, defaultModelsForEngine } from './model-defaults.ts'
@@ -80,6 +90,19 @@ export {
   llamaCppModelKey,
 } from './llamacpp.ts'
 export type { LlamaCppModelArtifact } from './llamacpp.ts'
+export {
+  DFLASH2_GATE_MESSAGE,
+  INFERNIX_KV_DTYPE_OPTIONS,
+  INFERNIX_MODEL_ARTIFACTS,
+  INFERNIX_NGRAM_RESIDENCY_OPTIONS,
+  INFERNIX_PARAMETERS,
+  INFERNIX_REASONING_LOOP_OPTIONS,
+  INFERNIX_SPEC_OPTIONS,
+  SPEC_GATE_MESSAGE as INFERNIX_SPEC_GATE_MESSAGE,
+  infernixArtifactFor,
+  infernixModelKey,
+} from './infernix.ts'
+export type { InfernixModelArtifact } from './infernix.ts'
 export { STRATA_PARAMETERS } from './strata.ts'
 
 /**
@@ -116,6 +139,7 @@ export function apply(ctx: Context): void {
   localInfer.registerEngine(new NInferAdapter(host))
   localInfer.registerEngine(new HyperQwenAdapter(host))
   localInfer.registerEngine(new LlamaCppAdapter(host))
+  localInfer.registerEngine(new InfernixAdapter(host))
   localInfer.registerEngine(new StrataAdapter(host))
 }
 

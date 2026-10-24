@@ -78,6 +78,8 @@ import type {
   ParameterSpec,
   Preset,
   PresetSource,
+  ProcessExitInfo,
+  ProcessHandle,
   ProcessLine,
   ProviderLaunchRecord,
   ProviderRef,
@@ -95,6 +97,7 @@ import type {
   DetectOsReserveOptions,
   DownloadModelOptions,
   DownloadResult,
+  EngineDeathEvent,
   EstimateResult,
   FetchPresetOptions,
   FetchPresetResult,
@@ -102,6 +105,7 @@ import type {
   LaunchOptions,
   LaunchResult,
   LocalInferService,
+  ProviderStatusOptions,
   RegisterModelOptions,
   SettingsDescribeResult,
   SettingsForms,
@@ -113,6 +117,7 @@ export type {
   DetectOsReserveOptions,
   DownloadModelOptions,
   DownloadResult,
+  EngineDeathEvent,
   EstimateResult,
   FetchPresetOptions,
   FetchPresetResult,
@@ -157,6 +162,15 @@ export class LocalInferError extends Error {
 const PROBE_TIMEOUT_MS = 5000
 
 /**
+ * The adopted-process poll interval. A re-adopted engine (a surviving process
+ * with no ChildProcess after a DSH restart) is watched for death through a
+ * liveness probe on this cadence: fast enough that a pkill settles the
+ * provider's state within seconds, slow enough that a signal-0 send per
+ * watched engine is free.
+ */
+const PROCESS_WATCH_MS = 5000
+
+/**
  * `ctx.localInfer`. Holds the engine, preset, guideline, and VramModel
  * reservations; the registries are read per call so a provider that unloads
  * mid-session stops serving without leaving a stale route behind.
@@ -182,6 +196,25 @@ export class LocalInfer extends Service implements LocalInferService {
   // restart, so a fresh start tracks only the launches it made itself. See
   // PLAN.md for the PID-cache note: a full PID cache is a future refinement.
   private readonly launchedModels = new Map<number, { engineId: string; modelId: string }>()
+  // The live ports tracked per launched engine (launches and adopted re-links
+  // both register). The death handler clears the engine's plugin-launched flag
+  // only when its last live port dies, so one provider's engine stopping does
+  // not un-flag a second provider's still-running engine on another port.
+  private readonly launchedPorts = new Map<string, Set<number>>()
+  // The poll watchers for processes adopted from stored launch records: a
+  // re-adopted engine has no ChildProcess to listen on after a DSH restart, so
+  // a liveness poll stands in for the exit event. Keyed by port; the timers
+  // are unref'd so a watched engine never keeps the host or a test alive.
+  private readonly engineWatchers = new Map<number, { pid: number; timer: ReturnType<typeof setInterval> }>()
+  // The pids whose death this process already watches through a live child
+  // handle. A summary re-link that adopts this DSH's own launch record must
+  // not stack a poll watcher on top of the handle's close event.
+  private readonly handledPids = new Set<number>()
+  // The route-registered hook for engine process deaths (a crash, a pkill, or
+  // a poll-detected death of an adopted process). The observer persists the
+  // provider entry's cleared state; a headless profile registers none and the
+  // service still settles its own live state.
+  private deathObserver: ((event: EngineDeathEvent) => void) | undefined
 
   constructor(ctx: Context) {
     super(ctx, 'localInfer')
@@ -407,50 +440,66 @@ export class LocalInfer extends Service implements LocalInferService {
 
   /**
    * providerStatuses resolves the running-state the card paints each saved
-   * provider's status dot from. It collects every registered adapter's launch
-   * signature, probes the running process table against those markers, and
-   * ties a running engine's port to the model the plugin launched it with (the
-   * launched-models map), so a plugin-launched engine reads as that model and
-   * a foreign engine reads as "engine running, model unknown". The GPU-usage
-   * reading feeds the busy-card rule. The answer is the core resolver's: a
-   * busy card or no engine running reads as unsure for every provider, an
-   * engine the detector saw but could not tie to a model reads as unsure for
-   * its configs and stopped for the rest, and a confirmed engine-plus-model
-   * reads as running. The options inject the probe results, so a test prices a
-   * busy card or a foreign engine without a live nvidia-smi or ps.
+   * provider's status dot from. It prices each provider's own launch signature
+   * through the registered adapter (the build mode's binary, the port the
+   * provider's config binds, the env keys), so an engine the plugin launched
+   * on a non-default port matches its config instead of reading forever as a
+   * process no signature covers, and ties the matched port to the model the
+   * plugin launched it with (the launched-models map). The GPU-usage reading
+   * feeds the busy-card rule. The answer is the core resolver's: a busy card
+   * or no engine running reads as unsure for every provider, an engine the
+   * detector saw but could not tie to a model reads as unsure for its configs
+   * and stopped for the rest, and a confirmed engine-plus-model reads as
+   * running. The options inject the probe results, so a test prices a busy
+   * card or a foreign engine without a live nvidia-smi or ps.
    */
   async providerStatuses(
     providers: readonly ProviderRef[],
-    options?: { processes?: ProcessLine[]; gpuUsage?: GpuUsageProbe | null },
+    options?: ProviderStatusOptions,
   ): Promise<Record<string, ProviderStatus>> {
-    const refs: { engineId: string; signature: EngineLaunchSignature }[] = []
-    for (const adapter of this.engineRegistry.values()) {
-      const signature = adapter.launchSignature?.()
-      if (signature !== undefined) {
-        refs.push({ engineId: adapter.id, signature })
+    const signatures: (EngineLaunchSignature | undefined)[] = providers.map((provider) => {
+      const adapter = this.engineRegistry.get(provider.engine)
+      return adapter?.launchSignature?.(provider.config ?? {})
+    })
+    const markers: string[] = []
+    for (const signature of signatures) {
+      if (signature !== undefined && !markers.includes(signature.binary)) {
+        markers.push(signature.binary)
       }
     }
-    const markers = refs.map((ref) => ref.signature.binary)
     const processes =
       options?.processes !== undefined ? options.processes : await probeProcesses(markers)
     const running: RunningEngineRef[] = []
-    for (const ref of refs) {
-      const match = processes.find((line) => matchLaunchSignature(line, ref.signature))
+    const pricedSignatures = new Set<string>()
+    for (const [index, provider] of providers.entries()) {
+      const signature = signatures[index]
+      if (signature === undefined) continue
+      // Two providers sharing one (binary, port) signature price one probe:
+      // the first provider's running entry answers for both.
+      const signatureKey = `${signature.binary}|${signature.port ?? ''}`
+      if (pricedSignatures.has(signatureKey)) continue
+      pricedSignatures.add(signatureKey)
+      const match = processes.find((line) => matchLaunchSignature(line, signature))
       if (match === undefined) continue
-      const entry: RunningEngineRef = {
-        engineId: ref.engineId,
-        ...(ref.signature.port !== undefined ? { port: ref.signature.port } : {}),
-      }
-      if (ref.signature.port !== undefined) {
-        const launched = this.launchedModels.get(ref.signature.port)
-        if (launched !== undefined && launched.engineId === ref.engineId) {
+      const entry: RunningEngineRef = { engineId: provider.engine }
+      if (signature.port !== undefined) {
+        entry.port = signature.port
+        const launched = this.launchedModels.get(signature.port)
+        if (launched !== undefined && launched.engineId === provider.engine) {
           entry.modelId = launched.modelId
         }
       }
       running.push(entry)
     }
     const gpuUsage = options?.gpuUsage !== undefined ? options.gpuUsage : await probeGpuUsage()
-    return computeProviderStatuses({ providers, running, gpuBusy: isGpuBusy(gpuUsage) })
+    // The provider's resolved port rides into the resolver so two configs of
+    // one engine on different ports confirm only against the engine running
+    // on their own port.
+    const priced = providers.map((provider, index) => {
+      const port = signatures[index]?.port
+      return port !== undefined ? { ...provider, port } : provider
+    })
+    return computeProviderStatuses({ providers: priced, running, gpuBusy: isGpuBusy(gpuUsage) })
   }
 
   /**
@@ -586,11 +635,26 @@ export class LocalInfer extends Service implements LocalInferService {
     // already priced by the estimator, and pricing the GPU's used VRAM on
     // top would double-count.
     this.launchedEngines.add(plan.engineId)
+    if (plan.port !== undefined) {
+      // A fresh launch on a port replaces any adopted-process watcher left
+      // over from the engine this launch displaced on that port.
+      this.stopEngineWatcher(plan.port)
+      const ports = this.launchedPorts.get(plan.engineId) ?? new Set<number>()
+      ports.add(plan.port)
+      this.launchedPorts.set(plan.engineId, ports)
+    }
     // The provider-status detector ties a running engine's port to the model
     // the plugin launched it with, so a live engine the plugin started reads
     // as that model (green) rather than "engine running, model unknown".
     if (plan.modelId !== undefined && plan.port !== undefined) {
       this.launchedModels.set(plan.port, { engineId: plan.engineId, modelId: plan.modelId })
+    }
+    // The exit watch attaches before the health poll, so an engine that
+    // crashes mid-startup (or is pkill'd during the poll) settles the live
+    // state and reaches the death observer instead of leaving the port tied
+    // to a model that is no longer serving.
+    if (deployResult.handle !== undefined) {
+      this.watchLaunchedHandle(deployResult.handle, plan)
     }
     const health = await adapter.healthCheck(plan, options)
     const launchResult: LaunchResult = { plan, healthy: health.healthy }
@@ -657,15 +721,139 @@ export class LocalInfer extends Service implements LocalInferService {
         // resolver keeps its 3 GiB default and the provider-status detector
         // ties its port to the model the record names.
         this.launchedEngines.add(entry.record.engineId)
-        if (entry.record.port !== undefined && entry.record.modelId !== undefined) {
-          this.launchedModels.set(entry.record.port, {
-            engineId: entry.record.engineId,
-            modelId: entry.record.modelId,
-          })
+        if (entry.record.port !== undefined) {
+          const ports = this.launchedPorts.get(entry.record.engineId) ?? new Set<number>()
+          ports.add(entry.record.port)
+          this.launchedPorts.set(entry.record.engineId, ports)
+          if (entry.record.modelId !== undefined) {
+            this.launchedModels.set(entry.record.port, {
+              engineId: entry.record.engineId,
+              modelId: entry.record.modelId,
+            })
+          }
+          // Re-attach the exit watch the restart dropped: the adopted child
+          // has no ChildProcess to listen on, so the poll stands in and the
+          // death settles the state the same way a live child's close event
+          // does. A repeat summary call keeps the existing watcher.
+          this.watchAdoptedEngine(entry.record, processAlive)
         }
       }
     }
     return outcomes
+  }
+
+  /**
+   * setEngineDeathObserver registers the route's hook for engine process
+   * deaths: a crash or pkill seen through a launched handle's exit event, or a
+   * poll-detected death of a process adopted from a stored launch record. The
+   * observer persists the provider entry's cleared state so the card reads the
+   * provider stopped instead of carrying a stale record. Passing undefined
+   * clears it, which the route's effect does on dispose.
+   */
+  setEngineDeathObserver(observer: ((event: EngineDeathEvent) => void) | undefined): void {
+    this.deathObserver = observer
+  }
+
+  /**
+   * watchLaunchedHandle ties a launched child's one-shot exit to the live
+   * state: the host's close/error event (a crash, a pkill, or the stop kill)
+   * reports through observeEngineDeath. A handle whose host cannot watch (no
+   * onExit, a stub) is left to the re-link rule to price after a restart.
+   */
+  private watchLaunchedHandle(handle: ProcessHandle, plan: LaunchPlan): void {
+    if (typeof handle.onExit !== 'function') return
+    if (handle.pid > 0) {
+      this.handledPids.add(handle.pid)
+    }
+    handle.onExit((exit: ProcessExitInfo) => {
+      this.handledPids.delete(handle.pid)
+      this.observeEngineDeath({
+        engineId: plan.engineId,
+        ...(plan.port !== undefined ? { port: plan.port } : {}),
+        ...(plan.modelId !== undefined ? { modelId: plan.modelId } : {}),
+        ...(handle.pid > 0 ? { pid: handle.pid } : {}),
+        code: exit.code,
+        signal: exit.signal,
+        ...(exit.error !== undefined ? { detail: exit.error } : {}),
+      })
+    })
+  }
+
+  /**
+   * watchAdoptedEngine re-attaches the exit watch for a process this DSH did
+   * not spawn: a surviving engine adopted from a stored launch record has no
+   * ChildProcess to listen on after a restart, so an unref'd poll on the
+   * liveness probe stands in for the exit event. When the pid dies the watcher
+   * stops itself and reports through observeEngineDeath, so the provider's
+   * state settles without waiting for the next summary re-link to price the
+   * record dead.
+   */
+  private watchAdoptedEngine(
+    record: ProviderLaunchRecord,
+    processAlive: (pid: number) => boolean,
+  ): void {
+    if (record.port === undefined) return
+    if (this.engineWatchers.has(record.port)) return
+    // A launch this DSH made itself already has the child handle's close
+    // event; a poll watcher would only double-report the same death.
+    if (this.handledPids.has(record.pid)) return
+    const port = record.port
+    const timer = setInterval(() => {
+      if (processAlive(record.pid)) return
+      this.observeEngineDeath({
+        engineId: record.engineId,
+        port,
+        ...(record.modelId !== undefined ? { modelId: record.modelId } : {}),
+        pid: record.pid,
+        code: null,
+        signal: null,
+        detail: 'the adopted engine process exited outside this DSH session',
+      })
+    }, PROCESS_WATCH_MS)
+    timer.unref()
+    this.engineWatchers.set(port, { pid: record.pid, timer })
+  }
+
+  /**
+   * stopEngineWatcher cancels one port's adopted-process poll, if it has one.
+   */
+  private stopEngineWatcher(port: number): void {
+    const watcher = this.engineWatchers.get(port)
+    if (watcher === undefined) return
+    clearInterval(watcher.timer)
+    this.engineWatchers.delete(port)
+  }
+
+  /**
+   * observeEngineDeath settles one engine process's death against the live
+   * state: the port-to-model tie drops when the dead engine still owns the
+   * port, the port leaves the engine's live ledger, the plugin-launched flag
+   * clears with the engine's last live port, the adopted-process watcher for
+   * the port stops, and the registered death observer (the route's persistence
+   * hook) receives the event. The launch record itself is the route's: the
+   * observer clears the provider entry's record so the card reads the provider
+   * stopped, not stale.
+   */
+  private observeEngineDeath(event: EngineDeathEvent): void {
+    if (event.port !== undefined) {
+      const tracked = this.launchedModels.get(event.port)
+      if (tracked !== undefined && tracked.engineId === event.engineId) {
+        this.launchedModels.delete(event.port)
+      }
+      this.stopEngineWatcher(event.port)
+      const ports = this.launchedPorts.get(event.engineId)
+      if (ports !== undefined) {
+        ports.delete(event.port)
+        if (ports.size === 0) {
+          this.launchedPorts.delete(event.engineId)
+        }
+      }
+    }
+    const remaining = event.port !== undefined ? this.launchedPorts.get(event.engineId) : undefined
+    if (remaining === undefined || remaining.size === 0) {
+      this.launchedEngines.delete(event.engineId)
+    }
+    this.deathObserver?.(event)
   }
 
   /**
@@ -682,14 +870,30 @@ export class LocalInfer extends Service implements LocalInferService {
       )
     }
     await adapter.stop(plan)
-    // The stop step signalled the tracked process or container, so the
-    // engine is no longer plugin-launched and the OS-reserve resolver may
-    // price the card's live usage for it again.
-    this.launchedEngines.delete(plan.engineId)
     // Clear the port-to-model entry too, so the provider-status detector no
-    // longer ties this port to the model the plugin launched it with.
+    // longer ties this port to the model the plugin launched it with, and
+    // cancel any adopted-process watcher standing on the port.
     if (plan.port !== undefined) {
       this.launchedModels.delete(plan.port)
+      this.stopEngineWatcher(plan.port)
+      const ports = this.launchedPorts.get(plan.engineId)
+      if (ports !== undefined) {
+        ports.delete(plan.port)
+        if (ports.size === 0) {
+          this.launchedPorts.delete(plan.engineId)
+        }
+      }
+      // The engine is no longer plugin-launched only when it has no other
+      // live port: a second provider's engine on another port keeps the
+      // OS-reserve default.
+      const remaining = this.launchedPorts.get(plan.engineId)
+      if (remaining === undefined || remaining.size === 0) {
+        this.launchedEngines.delete(plan.engineId)
+      }
+    } else {
+      // A plan with no port (a compose profile the stop step signalled down)
+      // clears the flag outright.
+      this.launchedEngines.delete(plan.engineId)
     }
   }
 
@@ -1258,6 +1462,12 @@ const shellRunCommand = (command: string): Promise<CommandOutcome> =>
     }
     child.stdout.on('data', append)
     child.stderr.on('data', append)
+    // Without a listener, a child that fails to start (a missing shell) emits
+    // an unlistened 'error' and throws it as an uncaughtException through the
+    // host. Read it as a failed command instead.
+    child.on('error', (error) => {
+      resolve({ ok: false, detail: error.message })
+    })
     child.on('close', code => {
       if (code === 0) {
         resolve({ ok: true })

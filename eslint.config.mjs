@@ -95,6 +95,7 @@ export default defineConfig([
                 URLSearchParams: 'readonly',
                 setTimeout: 'readonly',
                 clearTimeout: 'readonly',
+                TextDecoder: 'readonly',
             },
         },
     },

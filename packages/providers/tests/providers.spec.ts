@@ -14,12 +14,14 @@ describe('local-infer-providers scaffold', () => {
     const ctx = new Context()
     await ctx.plugin(LocalInfer)
     await ctx.plugin(localInferProviders)
-    // The providers row registers all four engine adapters: the measured
-    // NInfer and Hyper-Qwen, the specified llama.cpp, and the placeholder Strata.
+    // The providers row registers all five engine adapters: the measured
+    // NInfer and Hyper-Qwen, the specified llama.cpp, the local-only
+    // Infernix, and the placeholder Strata.
     expect(ctx.localInfer.registeredEngines().map((engine) => engine.id)).toEqual([
       'ninfer',
       'hyperqwen',
       'llamacpp',
+      'infernix',
       'strata',
     ])
     // Phase 7 registers the built-in presets: the two NInfer measured presets

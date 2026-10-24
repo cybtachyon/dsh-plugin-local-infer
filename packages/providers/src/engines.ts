@@ -10,6 +10,7 @@
 
 import type { ParameterSpec } from 'dsh-plugin-local-infer/core'
 import { HYPERQWEN_PARAMETERS } from './hyperqwen.ts'
+import { INFERNIX_PARAMETERS } from './infernix.ts'
 import { LLAMACPP_PARAMETERS } from './llamacpp.ts'
 import { NINFER_PARAMETERS } from './ninfer.ts'
 import { STRATA_PARAMETERS } from './strata.ts'
@@ -23,9 +24,10 @@ export interface EngineInfo {
 
 /**
  * The engines the Web card offers, in the order the card lists them. NInfer,
- * Hyper-Qwen, and llama.cpp carry parameter surfaces (llama.cpp's is the
- * specified set the plan names, verified when the binary lands); Strata is the
- * placeholder engine, its surface empty until the engine's flag set lands.
+ * Hyper-Qwen, Infernix, and llama.cpp carry parameter surfaces (llama.cpp's
+ * is the specified set the plan names, verified when the binary lands);
+ * Strata is the placeholder engine, its surface empty until the engine's
+ * flag set lands.
  */
 export const ENGINES: readonly EngineInfo[] = [
   {
@@ -45,6 +47,12 @@ export const ENGINES: readonly EngineInfo[] = [
     label: 'llama.cpp',
     supports: { docker: true, local: true },
     parameters: LLAMACPP_PARAMETERS,
+  },
+  {
+    id: 'infernix',
+    label: 'Infernix',
+    supports: { docker: false, local: true },
+    parameters: INFERNIX_PARAMETERS,
   },
   {
     id: 'strata',

@@ -1,9 +1,11 @@
 /**
  * The plugin's default model list. One entry per (engine, model) the card's
  * Model dropdown offers: the NInfer nvfp4 27B and 35B-A3B artifacts, the
- * Hyper-Qwen W4A16 27B and AWQ 35B-A3B artifacts, and the llama.cpp GGUF 27B
- * and 35B-A3B artifacts. Strata does not focus on the dense Qwen models, so it
- * carries no entry; the Qwen Flash Next defaults land with the engine.
+ * Hyper-Qwen W4A16 27B and AWQ 35B-A3B artifacts, the llama.cpp GGUF 27B and
+ * 35B-A3B artifacts, and the Infernix 27B NVIDIA NVFP4 and the Qwen3.8-
+ * Flash-Next Dense8 conversion (whose whole-repo download carries the FP8
+ * n-gram volume the `--ngram-volume` flag reads). Strata does not focus on
+ * the dense Qwen models, so it carries no entry.
  *
  * The list is the single source the card's Model dropdown, the model
  * presence check, and the hf CLI download route read. Adding a model is a

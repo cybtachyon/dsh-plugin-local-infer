@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { EngineAdapter, estimateVram } from 'dsh-plugin-local-infer/core'
 import type {
@@ -18,6 +18,7 @@ import type {
   LaunchPlan,
   ParameterSpec,
   Preset,
+  ProcessExitInfo,
   ProcessLine,
   ProviderLaunchRecord,
   ProviderRef,
@@ -25,6 +26,7 @@ import type {
   VramModel,
 } from 'dsh-plugin-local-infer/core'
 import LocalInfer, { LocalInferError, runHardwareProbes } from '../src/index.ts'
+import type { EngineDeathEvent } from '../src/types.ts'
 
 const HW: HardwareProfile = { dockerAvailable: false, wsl2: false, os: 'linux', cpuThreads: 4 }
 
@@ -1290,6 +1292,237 @@ describe('ctx.localInfer launch records and restart re-link', () => {
     })
     expect(outcomes).toEqual({ dead: 'dead', recycled: 'foreign' })
     expect(ctx.localInfer.launchedEngineIds()).toEqual([])
+  })
+})
+
+describe('ctx.localInfer engine death watching', () => {
+  const GPU_IDLE: GpuUsageProbe = { usedMiB: 2048, totalMiB: 24576 }
+
+  /** An adapter whose deploy hands out a watchable handle the test can end. */
+  class WatchableAdapter extends StubAdapter {
+    readonly exits: ((exit: ProcessExitInfo) => void)[] = []
+    private pid = 4242
+
+    setPid(pid: number): void {
+      this.pid = pid
+    }
+
+    override launchSignature(config?: Config): EngineLaunchSignature {
+      // The engine reads its port from the config, the way the real adapters
+      // do, so a provider on a custom port prices its own signature.
+      const port = typeof config?.port === 'number' ? config.port : 18020
+      return { binary: 'ninfer-serve', port }
+    }
+
+    override async deploy(_plan: LaunchPlan): Promise<DeployResult> {
+      const pid = this.pid
+      return {
+        ok: true,
+        handle: {
+          pid,
+          kill: () => undefined,
+          onExit: (listener: (exit: ProcessExitInfo) => void): void => {
+            this.exits.push(listener)
+          },
+        },
+      }
+    }
+
+    override async healthCheck(_plan: LaunchPlan): Promise<HealthResult> {
+      return { healthy: true, status: 200 }
+    }
+  }
+
+  function plan(port: number): LaunchPlan {
+    return {
+      engineId: 'ninfer',
+      kind: 'process',
+      port,
+      modelId: 'qwen3-27b',
+      healthUrl: `http://127.0.0.1:${port}/health`,
+    }
+  }
+
+  function adoptedRecord(pid: number, port: number): ProviderLaunchRecord {
+    return {
+      pid,
+      startedAt: '2026-10-23T12:00:00.000Z',
+      argv: ['ninfer-serve', '--port', String(port)],
+      parentPid: process.pid,
+      previousPids: [process.pid],
+      engineId: 'ninfer',
+      modelId: 'qwen3-27b',
+      port,
+    }
+  }
+
+  it('settles the live state and notifies the observer when a launched engine is killed', async () => {
+    const ctx = await seam()
+    const adapter = new WatchableAdapter('ninfer')
+    ctx.localInfer.registerEngine(adapter)
+    const events: EngineDeathEvent[] = []
+    ctx.localInfer.setEngineDeathObserver((event) => {
+      events.push(event)
+    })
+    await ctx.localInfer.launch(plan(18020))
+    expect(ctx.localInfer.launchedEngineIds()).toEqual(['ninfer'])
+    // A pkill of the engine pid: the host close event reaches the service
+    // through the handle's onExit seam.
+    adapter.exits[0]?.({ code: null, signal: 'SIGKILL' })
+    expect(events).toHaveLength(1)
+    expect(events[0]).toEqual({
+      engineId: 'ninfer',
+      port: 18020,
+      modelId: 'qwen3-27b',
+      pid: 4242,
+      code: null,
+      signal: 'SIGKILL',
+    })
+    expect(ctx.localInfer.launchedEngineIds()).toEqual([])
+    // The detector no longer ties the dead port to a model: with the engine
+    // gone from the process table the config reads as stopped, not stale.
+    const statuses = await ctx.localInfer.providerStatuses(
+      [{ id: 'a', engine: 'ninfer', model: 'qwen3-27b', config: { port: 18020 } }],
+      { gpuUsage: GPU_IDLE, processes: [] },
+    )
+    expect(statuses).toEqual({ a: 'stopped' })
+  })
+
+  it('keeps the engine plugin-launched while another of its ports still lives', async () => {
+    const ctx = await seam()
+    const adapter = new WatchableAdapter('ninfer')
+    ctx.localInfer.registerEngine(adapter)
+    await ctx.localInfer.launch(plan(18020))
+    adapter.setPid(9999)
+    await ctx.localInfer.launch(plan(18021))
+    // The first engine (port 18020) dies; the second (18021) lives on, so the
+    // engine keeps its plugin-launched flag and only the dead port unties.
+    adapter.exits[0]?.({ code: 1, signal: null })
+    expect(ctx.localInfer.launchedEngineIds()).toEqual(['ninfer'])
+    const statuses = await ctx.localInfer.providerStatuses(
+      [
+        { id: 'a', engine: 'ninfer', model: 'qwen3-27b', config: { port: 18020 } },
+        { id: 'b', engine: 'ninfer', model: 'qwen3-27b', config: { port: 18021 } },
+      ],
+      {
+        gpuUsage: GPU_IDLE,
+        processes: [{ pid: 1, command: 'ninfer-serve /models/model.ninfer --port 18021' }],
+      },
+    )
+    expect(statuses).toEqual({ a: 'stopped', b: 'running' })
+  })
+
+  it('re-attaches a liveness watcher to an adopted engine and reports its death', async () => {
+    vi.useFakeTimers()
+    try {
+      const ctx = await seam()
+      ctx.localInfer.registerEngine(new WatchableAdapter('ninfer'))
+      const events: EngineDeathEvent[] = []
+      ctx.localInfer.setEngineDeathObserver((event) => {
+        events.push(event)
+      })
+      let alive = true
+      const probes = {
+        processAlive: () => alive,
+        commandLine: () => 'ninfer-serve /models/model.ninfer --port 18020',
+      }
+      const record = adoptedRecord(12345, 18020)
+      const outcomes = await ctx.localInfer.reLinkProviders([{ id: 'a', record }], probes)
+      expect(outcomes).toEqual({ a: 'adopted' })
+      // A repeat summary re-link must not stack a second watcher on the port.
+      await ctx.localInfer.reLinkProviders([{ id: 'a', record }], probes)
+      // The adopted engine is pkill'd: the poll sees the pid go and reports
+      // the death the same way a live child's close event would.
+      alive = false
+      await vi.advanceTimersByTimeAsync(6000)
+      expect(events).toHaveLength(1)
+      expect(events[0]?.pid).toBe(12345)
+      expect(events[0]?.detail).toContain('exited outside this DSH session')
+      expect(ctx.localInfer.launchedEngineIds()).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('cancels the adopted-process watcher when the port is stopped', async () => {
+    vi.useFakeTimers()
+    try {
+      const ctx = await seam()
+      ctx.localInfer.registerEngine(new WatchableAdapter('ninfer'))
+      const events: EngineDeathEvent[] = []
+      ctx.localInfer.setEngineDeathObserver((event) => {
+        events.push(event)
+      })
+      let alive = true
+      await ctx.localInfer.reLinkProviders(
+        [{ id: 'a', record: adoptedRecord(12345, 18020) }],
+        { processAlive: () => alive, commandLine: () => undefined },
+      )
+      await ctx.localInfer.stop(plan(18020))
+      // The stop cancelled the watcher, so the later death of the old pid
+      // reports nothing: the port belongs to the user's stop, not a crash.
+      alive = false
+      await vi.advanceTimersByTimeAsync(6000)
+      expect(events).toHaveLength(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('prices the provider config port so a custom-port engine confirms its model', async () => {
+    // The Infernix regression: an engine launched on a non-default port must
+    // match its own config's port, or the live engine reads forever as a
+    // process no signature covers and the card sits at unsure.
+    const ctx = await seam()
+    const adapter = new WatchableAdapter('ninfer')
+    ctx.localInfer.registerEngine(adapter)
+    await ctx.localInfer.launch(plan(18080))
+    const statuses = await ctx.localInfer.providerStatuses(
+      [
+        { id: 'own', engine: 'ninfer', model: 'qwen3-27b', config: { port: 18080 } },
+        { id: 'other', engine: 'ninfer', model: 'qwen3-27b', config: { port: 18081 } },
+      ],
+      {
+        gpuUsage: GPU_IDLE,
+        processes: [{ pid: 7, command: 'ninfer-serve /models/model.ninfer --port 18080' }],
+      },
+    )
+    expect(statuses).toEqual({ own: 'running', other: 'stopped' })
+  })
+
+  it('does not stack a poll watcher on this DSH own launched engine', async () => {
+    vi.useFakeTimers()
+    try {
+      const ctx = await seam()
+      const adapter = new WatchableAdapter('ninfer')
+      ctx.localInfer.registerEngine(adapter)
+      const events: EngineDeathEvent[] = []
+      ctx.localInfer.setEngineDeathObserver((event) => {
+        events.push(event)
+      })
+      await ctx.localInfer.launch(plan(18020))
+      // The summary re-link adopts this DSH's own launch record (the parent
+      // is the current pid). The handle's close event already covers the
+      // death, so no poll watcher stacks on top of it.
+      let alive = true
+      await ctx.localInfer.reLinkProviders(
+        [{ id: 'a', record: adoptedRecord(4242, 18020) }],
+        {
+          processAlive: () => alive,
+          commandLine: () => 'ninfer-serve /models/model.ninfer --port 18020',
+        },
+      )
+      // The engine dies: the handle's close event reports once. A stacked
+      // poll watcher would report the same pid a second time on its next
+      // tick, so the liveness probe flips to dead before advancing.
+      alive = false
+      adapter.exits[0]?.({ code: null, signal: 'SIGKILL' })
+      expect(events).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(10000)
+      expect(events).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

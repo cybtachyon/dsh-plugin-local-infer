@@ -25,6 +25,8 @@ import type {
   EnginePlatformConfig,
   HardwareProfile,
   InstallResult,
+  LaunchPlan,
+  LifecycleHost,
   ModelRow,
   ProviderLaunchRecord,
   ProviderStatus,
@@ -34,6 +36,7 @@ import type {
 } from 'dsh-plugin-local-infer/core'
 import type {
   DownloadResult,
+  EngineDeathEvent,
   LaunchResult,
   LocalInferService,
   RegisterModelOptions,
@@ -46,6 +49,7 @@ import {
   buildModelEntry,
   checkDeps,
   DEFAULT_LOG_PATH_TEMPLATE,
+  formatLaunchCommand,
   hfChatTemplateCommand,
   hfDownloadCommand,
   launchRecordFromPlan,
@@ -57,9 +61,12 @@ import {
 } from '../../core/lib/index.js'
 import {
   CHAT_TEMPLATE_OPTIONS,
+  buildEngineRepo,
   defaultModelFor,
   defaultModelsForEngine,
   ENGINES,
+  nodeLifecycleHost,
+  syncEngineRepo,
 } from '../../providers/lib/index.js'
 import type { EngineInfo } from '../../providers/lib/index.js'
 import { renderDeps } from './deps.ts'
@@ -92,6 +99,13 @@ interface IncomingLike extends AsyncIterable<Buffer> {
 
 interface OutgoingLike {
   writeHead(status: number, headers?: Record<string, string>): OutgoingLike
+  /**
+   * Optional: stream one chunk of the answer, used by the Get route to
+   * append build output to the card's Logs section while it runs. The web
+   * server hands the handler a node ServerResponse; the tests' fake may
+   * omit it, and the route degrades to collecting only.
+   */
+  write?(chunk: string): unknown
   end(body?: string): void
 }
 
@@ -568,6 +582,55 @@ function parseStoredPlatformConfig(raw: unknown): StoredPlatformConfig | undefin
 }
 
 /**
+ * relinkStoredProviders prices every stored provider launch record against the
+ * live process table through the service's re-link rule and returns the
+ * provider list the card should read: an adopted engine is re-marked plugin-
+ * launched and tied to its model by the service, and a liveness watcher starts
+ * on its port so a later pkill settles the stored state through the death
+ * observer without another summary read; a dead engine's record is cleared on
+ * disk here (the previous-pid list with it), so a recycled pid cannot re-link
+ * to a config whose engine is down. The route calls it on mount and the
+ * summary calls it per read, making re-attach independent of the card opening.
+ */
+export async function relinkStoredProviders(
+  localInfer: LocalInferService,
+  stored: StoredConfig,
+): Promise<StoredProviderConfig[]> {
+  const recorded = stored.providers.filter((provider) => provider.launch !== undefined)
+  if (recorded.length === 0) return stored.providers
+  const outcomes = await localInfer.reLinkProviders(
+    recorded.map((provider) => ({ id: provider.id, record: provider.launch! })),
+  )
+  if (!recorded.some((provider) => outcomes[provider.id] === 'dead')) {
+    return stored.providers
+  }
+  const providers = stored.providers.map((provider) => {
+    if (provider.launch === undefined || outcomes[provider.id] !== 'dead') {
+      return provider
+    }
+    // Rebuild the dead entry without the launch key, so the record (including
+    // the previous-pid list) is gone from the file, not just ignored.
+    return {
+      id: provider.id,
+      engine: provider.engine,
+      config: provider.config,
+      platform: provider.platform,
+    }
+  })
+  writeConfig(
+    stored.engine,
+    stored.config,
+    stored.allowRunDeps,
+    stored.platform,
+    stored.showHelp,
+    providers,
+    stored.logPath,
+    stored.lastLogs,
+  )
+  return providers
+}
+
+/**
  * buildSummary assembles the card's read model for one engine and config: the
  * static engine and model lists, the detected hardware, the form model the
  * selected engine's parameter surface renders to, the meter model the
@@ -660,52 +723,27 @@ export async function buildSummary(
   // to init) is re-adopted as plugin-launched, so its status dot reads as
   // running for its model and the OS-reserve resolver keeps the default. A
   // record whose engine is dead is cleared (the previous-pid list with it),
-  // so a recycled pid cannot re-link to a config whose engine is down.
-  const recorded = stored.providers.filter((provider) => provider.launch !== undefined)
-  if (recorded.length > 0) {
-    const outcomes = await localInfer.reLinkProviders(
-      recorded.map((provider) => ({ id: provider.id, record: provider.launch! })),
-    )
-    if (recorded.some((provider) => outcomes[provider.id] === 'dead')) {
-      const providers = stored.providers.map((provider) => {
-        if (provider.launch === undefined || outcomes[provider.id] !== 'dead') {
-          return provider
-        }
-        return {
-          id: provider.id,
-          engine: provider.engine,
-          config: provider.config,
-          platform: provider.platform,
-        }
-      })
-      writeConfig(
-        stored.engine,
-        stored.config,
-        stored.allowRunDeps,
-        stored.platform,
-        stored.showHelp,
-        providers,
-        stored.logPath,
-        stored.lastLogs,
-      )
-    }
-  }
+  // so a recycled pid cannot re-link to a config whose engine is down. The
+  // adopted engines also get a liveness watcher, so a later pkill settles the
+  // stored state without waiting for another summary read.
+  const linkedProviders = await relinkStoredProviders(localInfer, stored)
   // The provider list the card renders as collapsed entries: each saved
   // config's engine and model feed the detector, which resolves the running-
   // state its status dot paints. A provider the detector cannot tie to a
   // confirmed model reads as unsure, so the dot never overstates a live
-  // engine.
-  const providerRefs = stored.providers.map((provider) => {
+  // engine. The config rides into the detector so the signature prices the
+  // provider's own build mode and port, not the adapter's default-port guess.
+  const providerRefs = linkedProviders.map((provider) => {
     const model = typeof provider.config.model === 'string' ? provider.config.model : undefined
     // exactOptionalPropertyTypes: include the model key only when it is a
     // string, so a config that names no model never writes `undefined`.
     return model !== undefined
-      ? { id: provider.id, engine: provider.engine, model }
-      : { id: provider.id, engine: provider.engine }
+      ? { id: provider.id, engine: provider.engine, model, config: provider.config }
+      : { id: provider.id, engine: provider.engine, config: provider.config }
   })
   const providerStatuses =
     providerRefs.length > 0 ? await localInfer.providerStatuses(providerRefs) : {}
-  const providers: ProviderSummaryEntry[] = stored.providers.map((provider) => ({
+  const providers: ProviderSummaryEntry[] = linkedProviders.map((provider) => ({
     id: provider.id,
     engine: provider.engine,
     model: typeof provider.config.model === 'string' ? provider.config.model : '',
@@ -1085,10 +1123,44 @@ function resolveAdapter(localInfer: LocalInferService, engineId: string) {
 }
 
 /**
+ * launchCommandNote renders the plan's child-process launch line for the
+ * card's Logs section: the core formatter's command under a [local-infer]
+ * launch prefix, newline-terminated. A plan that names no command (a bare
+ * docker plan with no argv) has no note, and the run logs stay as they are.
+ */
+function launchCommandNote(plan: LaunchPlan): string | undefined {
+  const command = formatLaunchCommand(plan)
+  if (command === undefined) return undefined
+  return `[local-infer] launch: ${command}\n`
+}
+
+/**
+ * persistStoredLogs overwrites the stored last-run logs (the card's Logs
+ * section shows them after a reload) and leaves every other stored field as
+ * the launch reads it.
+ */
+function persistStoredLogs(logs: string): void {
+  const stored = readConfig()
+  writeConfig(
+    stored.engine,
+    stored.config,
+    stored.allowRunDeps,
+    stored.platform,
+    stored.showHelp,
+    stored.providers,
+    stored.logPath,
+    logs,
+  )
+}
+
+/**
  * launchEngine renders the plan the registered adapter produces for the config
  * and the detected hardware, then runs the service's launch entry point
  * (deploy, then the health poll). The detail the launch returns names the
- * broken step when the engine does not come up. The launch step persists the
+ * broken step when the engine does not come up. The launch line (the engine
+ * binary and its arguments) leads the run logs the card's Logs section and
+ * the log file carry, so a broken setup diagnoses against the exact child
+ * process the launch started. The launch step persists the
  * launch record (the engine pid, start time, launch arguments, and the DSH
  * process pid that launched it) on the request's provider entry, so a DSH
  * restart can re-link a surviving engine to its config.
@@ -1109,7 +1181,20 @@ export async function launchEngine(
   if (request.platform !== undefined) {
     setPlatformConfig(localInfer, engineId, request.platform)
   }
-  const result = await localInfer.launch(adapter.renderLaunch(config, hardware))
+  const plan = adapter.renderLaunch(config, hardware)
+  const commandNote = launchCommandNote(plan)
+  if (commandNote !== undefined) {
+    // Persist before the deploy starts: a slow or hung launch keeps the
+    // command readable in the Logs section across a card reload, where the
+    // engine output has not landed yet.
+    persistStoredLogs(commandNote)
+  }
+  const result = await localInfer.launch(plan)
+  if (commandNote !== undefined) {
+    // A deploy that failed before the engine printed anything still reports
+    // the command it tried to run.
+    result.logs = commandNote + (result.logs ?? '')
+  }
   persistLaunchLogs(result, engineId, config)
   persistLaunchRecord(result, engineId, config, request.providerId)
   return result
@@ -1214,6 +1299,56 @@ function clearLaunchRecord(
 }
 
 /**
+ * handleEngineDeath persists a provider entry's state when its engine process
+ * dies outside the plugin's stop path: a crash, a pkill of a plugin-launched
+ * child seen through the service's exit watch, or the poll-detected exit of a
+ * process adopted after a DSH restart. The entry whose launch record names the
+ * dead pid (or the dead engine-and-port, when the report carries no pid match)
+ * has its record cleared, so a restart never re-links a dead pid, and the exit
+ * line lands in the card's last-run logs beside the engine's own output. An
+ * event that matches no entry carrying a record (a stop the route already
+ * cleared, an engine the plugin never tracked) is a no-op, which keeps an
+ * expected stop quiet.
+ */
+export function handleEngineDeath(event: EngineDeathEvent): void {
+  const stored = readConfig()
+  let matched = false
+  const providers = stored.providers.map((entry) => {
+    const record = entry.launch
+    if (record === undefined) return entry
+    const byPid = event.pid !== undefined && record.pid === event.pid
+    const byEnginePort =
+      event.port !== undefined && record.engineId === entry.engine && record.port === event.port
+    if (!byPid && !byEnginePort) return entry
+    matched = true
+    // Rebuild the entry without the launch key, so the record (including the
+    // previous-pid list) is gone from the file, not just ignored.
+    return { id: entry.id, engine: entry.engine, config: entry.config, platform: entry.platform }
+  })
+  if (!matched) return
+  const signalNote =
+    event.signal !== null && event.signal !== undefined
+      ? ` on signal ${event.signal}`
+      : ` with exit code ${event.code}`
+  const note =
+    `[local-infer] engine ${event.engineId}` +
+    `${event.port !== undefined ? ` (port ${event.port})` : ''}` +
+    ` pid ${event.pid ?? 'unknown'} exited${signalNote}` +
+    `${event.detail !== undefined ? `: ${event.detail}` : ''}\n`
+  writeConfig(
+    stored.engine,
+    stored.config,
+    stored.allowRunDeps,
+    stored.platform,
+    stored.showHelp,
+    providers,
+    stored.logPath,
+    // Keep the last-run tail bounded, the same rule the launch logs cap uses.
+    (stored.lastLogs + note).slice(-65536),
+  )
+}
+
+/**
  * persistLaunchLogs stores a launch's captured output as the last run and
  * writes it to the configured log file. The log file is only written when the
  * run produced output and the log location is set; the last-run logs are always
@@ -1269,6 +1404,147 @@ export async function stopEngine(
   const hardware = await localInfer.detectHardware()
   await localInfer.stop(adapter.renderLaunch(config, hardware))
   clearLaunchRecord(engineId, config, request.providerId)
+}
+
+/**
+ * GetRequest is the query the card sends for the Get route: the engine and
+ * the config the dep plan and the build mode read from, and the platform
+ * override (the card's unsaved Engine Directory / Engine Fork edits), the
+ * same rule the launch request applies. Absent values fall back to the
+ * stored config.
+ */
+export interface GetRequest {
+  engine?: string
+  config?: Config
+  platform?: StoredPlatformConfig
+}
+
+/**
+ * resolveEngineDirectory picks the checkout the Get step syncs: the Engine
+ * Directory override when it names a path, else a per-engine folder inside
+ * the model directory (the default model directory, or the config's
+ * override), so a Get with no override still has a real place to live.
+ */
+function resolveEngineDirectory(
+  localInfer: LocalInferService,
+  config: Config,
+  engineId: string,
+  platform: StoredPlatformConfig | undefined,
+): string {
+  const override = platform?.engineDirectory
+  if (override !== undefined && override.trim() !== '') {
+    return override
+  }
+  const rawModelDir = config.modelDirectory
+  const modelDir =
+    typeof rawModelDir === 'string' && rawModelDir.trim() !== ''
+      ? rawModelDir
+      : localInfer.defaultModelDirectory()
+  return join(modelDir, engineId)
+}
+
+/**
+ * getEngine is the Get step: it syncs the engine checkout (clone the git
+ * repo, or the fork when the platform entry provides one; fetch and rebase
+ * a clean checkout; abort with a Logs alert when the checkout has local
+ * changes), runs the system dependency plan, and runs the engine's build
+ * steps. Every command and its output streams through log as it lands, so
+ * the card appends it to the Logs section live. The dependency install only
+ * runs while the Play/Run trust gate is on; with the gate off the deps are
+ * re-checked and a missing one aborts the step with the copy/paste note.
+ */
+export async function getEngine(
+  localInfer: LocalInferService,
+  request: GetRequest,
+  log: (chunk: string) => void,
+  host: LifecycleHost = nodeLifecycleHost,
+): Promise<{ ok: boolean; detail?: string }> {
+  const stored = readConfig()
+  const engineId = request.engine ?? stored.engine
+  const config = request.config ?? stored.config
+  // ENGINES is a known non-empty constant, so the fallback is always defined.
+  const engine = ENGINES.find((entry) => entry.id === engineId) ?? ENGINES[0]!
+  // Register the request's platform override the same way launchEngine does,
+  // so the next launch reads the Engine Directory / Engine Fork the Get used.
+  if (request.platform !== undefined) {
+    setPlatformConfig(localInfer, engineId, request.platform)
+  }
+  const platform = request.platform ?? stored.platform[engineId]
+  const directory = resolveEngineDirectory(localInfer, config, engineId, platform)
+  const fork = platform?.engineFork
+  log(`get ${engineId} in ${directory}\n`)
+  const sync = await syncEngineRepo(
+    host,
+    { engineId, directory, ...(fork !== undefined && fork.trim() !== '' ? { fork } : {}) },
+    log,
+  )
+  if (!sync.ok) {
+    // A dirty checkout already alerted in the sync step; any other failure
+    // names its step here.
+    if (sync.aborted !== true && sync.detail !== undefined) {
+      log(`!! ${sync.detail}\n`)
+    }
+    return { ok: false, ...(sync.detail !== undefined ? { detail: sync.detail } : {}) }
+  }
+  const hardware = await localInfer.detectHardware()
+  const buildMode = resolveBuildMode(engine, config)
+  log(`system dependencies (${buildMode})\n`)
+  if (stored.allowRunDeps === true) {
+    const result = await localInfer.runInstall(engineId, buildMode, hardware)
+    for (const entry of result.results) {
+      log(`  ${entry.id}: ${entry.status}${entry.detail !== undefined ? ` (${entry.detail})` : ''}\n`)
+    }
+    if (!result.ok) {
+      log('!! a system dependency install failed; copy the install string from the panel\n')
+      return { ok: false, detail: 'a system dependency install failed' }
+    }
+  } else {
+    const deps = await localInfer.deps(engineId, buildMode, hardware)
+    const checks = await checkDeps(deps, hardware)
+    let missing = false
+    for (const check of checks) {
+      log(`  ${check.dep.id}: ${check.status}\n`)
+      if (check.status !== 'satisfied') missing = true
+    }
+    if (missing) {
+      log(
+        '!! a system dependency is missing and one-click install is off; copy the install string from the panel\n',
+      )
+      return { ok: false, detail: 'a system dependency is missing' }
+    }
+  }
+  const build = await buildEngineRepo(host, engineId, directory, log)
+  if (!build.ok) {
+    if (build.detail !== undefined) {
+      log(`!! ${build.detail}\n`)
+    }
+    return { ok: false, ...(build.detail !== undefined ? { detail: build.detail } : {}) }
+  }
+  log('get complete\n')
+  return { ok: true }
+}
+
+/**
+ * persistGetLogs appends one Get run's streamed output to the stored last-
+ * run logs (the card's Logs section shows it after a reload) and writes no
+ * log file: the launch step owns the per-run files. The tail rule matches
+ * the launch logs' cap, so a long build cannot grow the config without
+ * bound.
+ */
+function persistGetLogs(output: string): void {
+  if (output === '') return
+  const stored = readConfig()
+  const joined = `${stored.lastLogs}${stored.lastLogs === '' ? '' : '\n'}${output}`
+  writeConfig(
+    stored.engine,
+    stored.config,
+    stored.allowRunDeps,
+    stored.platform,
+    stored.showHelp,
+    stored.providers,
+    stored.logPath,
+    joined.slice(-65536),
+  )
 }
 
 /**
@@ -1400,15 +1676,19 @@ export async function unregisterFor(
 }
 
 /**
- * registerLocalInferRoute registers the summary, save, deps, install, launch,
- * stop, register, and unregister routes on the web server and holds them by
- * an effect, so a bundle switch off removes them before the next switch on
- * re-registers. The scoped context carries the webServer; the localInfer
- * service is passed in because the scope only injects what it names.
+ * registerLocalInferRoute registers the summary, save, deps, install, get,
+ * launch, stop, register, and unregister routes on the web server and holds
+ * them by an effect, so a bundle switch off removes them before the next
+ * switch on re-registers. The scoped context carries the webServer; the
+ * localInfer service is passed in because the scope only injects what it
+ * names. The optional getHost is the lifecycle host the Get route's git and
+ * build steps run through; it defaults to the node host, and a test injects
+ * a stub so the route never clones a real repo in CI.
  */
 export function registerLocalInferRoute(
   scope: Context & { webServer: WebServerService },
   localInfer: LocalInferService,
+  getHost?: LifecycleHost,
 ): void {
   const summary = async (url: URL): Promise<LocalInferSummary> => {
     const engineParam = url.searchParams.get('engine')
@@ -1806,6 +2086,71 @@ export function registerLocalInferRoute(
     },
   }
 
+  // The Get route: a POST whose answer streams as plain text, so the card
+  // appends the git sync, the dependency run, and the build output to its
+  // Logs section as it lands. The full run persists as the last-run logs.
+  const get = {
+    name: 'local-infer-get',
+    kind: 'exact' as const,
+    path: '/local-infer/get',
+    handler: async (req: IncomingLike, res: OutgoingLike) => {
+      const send = (status: number, body: unknown) => {
+        res.writeHead(status, { 'content-type': 'application/json' })
+        res.end(JSON.stringify(body))
+      }
+      if (req.method !== 'POST') {
+        res.writeHead(405).end()
+        return
+      }
+      try {
+        const chunks: Buffer[] = []
+        let total = 0
+        for await (const chunk of req) {
+          total += chunk.length
+          if (total > 64 * 1024) {
+            send(413, { error: 'get payload too large' })
+            req.destroy()
+            return
+          }
+          chunks.push(chunk)
+        }
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as {
+          engine?: unknown
+          config?: unknown
+          platform?: unknown
+        }
+        const request: GetRequest = {}
+        if (typeof body.engine === 'string') {
+          request.engine = body.engine
+        }
+        if (body.config && typeof body.config === 'object') {
+          request.config = body.config as Config
+        }
+        const platform = parseStoredPlatformConfig(body.platform)
+        if (platform !== undefined) {
+          request.platform = platform
+        }
+        res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
+        let collected = ''
+        const log = (text: string): void => {
+          collected += text
+          if (typeof res.write === 'function') {
+            res.write(text)
+          }
+        }
+        try {
+          await getEngine(localInfer, request, log, getHost)
+        } catch (error) {
+          log(`!! get failed: ${String((error as Error)?.message ?? error)}\n`)
+        }
+        persistGetLogs(collected)
+        res.end()
+      } catch (error) {
+        send(400, { error: String((error as Error)?.message ?? error) })
+      }
+    },
+  }
+
   // The launch and stop routes share a POST body parser: the engine, config,
   // and platform override the plan renders from, falling back to the stored
   // config per key. The stop route ignores the platform key. `providerId`
@@ -2023,6 +2368,16 @@ export function registerLocalInferRoute(
       // route registration, so a launch before the first save reads the
       // platform config the user last saved.
       syncPlatformConfigs(localInfer, readConfig())
+      // The engine death observer: a crash, a pkill, or the poll-detected exit
+      // of an adopted process clears the provider entry's launch record and
+      // notes the exit in the last-run logs the moment it happens, so the card
+      // and a later restart read the provider stopped rather than stale.
+      localInfer.setEngineDeathObserver(handleEngineDeath)
+      // The mount re-link: re-adopt a surviving engine from a stored launch
+      // record and start its liveness watcher without waiting for the card to
+      // open the summary route, so a DSH that restarts re-attaches its engines
+      // and a pkill after the restart still settles the stored state.
+      void relinkStoredProviders(localInfer, readConfig()).catch(() => undefined)
       const disposeSummary = scope.webServer.register(route)
       const disposeSave = scope.webServer.register(save)
       const disposeDeleteProvider = scope.webServer.register(deleteProvider)
@@ -2030,11 +2385,13 @@ export function registerLocalInferRoute(
       const disposeInstall = scope.webServer.register(install)
       const disposeDownload = scope.webServer.register(download)
       const disposeChatTemplate = scope.webServer.register(chatTemplate)
+      const disposeGet = scope.webServer.register(get)
       const disposeLaunch = scope.webServer.register(launch)
       const disposeStop = scope.webServer.register(stop)
       const disposeRegister = scope.webServer.register(register)
       const disposeUnregister = scope.webServer.register(unregister)
       return () => {
+        localInfer.setEngineDeathObserver(undefined)
         disposeSummary()
         disposeSave()
         disposeDeleteProvider()
@@ -2042,6 +2399,7 @@ export function registerLocalInferRoute(
         disposeInstall()
         disposeDownload()
         disposeChatTemplate()
+        disposeGet()
         disposeLaunch()
         disposeStop()
         disposeRegister()

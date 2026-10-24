@@ -6,11 +6,12 @@ import {
 } from '../src/model-defaults.ts'
 
 describe('DEFAULT_MODELS', () => {
-  it('carries the seven default models, three NInfer and two per other dense-Qwen engine', () => {
-    expect(DEFAULT_MODELS).toHaveLength(7)
+  it('carries the ten default models, three NInfer, two per other dense-Qwen engine, and three Infernix', () => {
+    expect(DEFAULT_MODELS).toHaveLength(10)
     expect(defaultModelsForEngine('ninfer')).toHaveLength(3)
     expect(defaultModelsForEngine('hyperqwen')).toHaveLength(2)
     expect(defaultModelsForEngine('llamacpp')).toHaveLength(2)
+    expect(defaultModelsForEngine('infernix')).toHaveLength(3)
   })
 
   it('carries no Strata entry: the engine does not focus on the dense Qwen models', () => {
@@ -27,6 +28,9 @@ describe('DEFAULT_MODELS', () => {
       'https://huggingface.co/QuantTrio/Qwen3.6-35B-A3B-AWQ',
       'https://huggingface.co/ggml-org/Qwen3.8-27B-GGUF',
       'https://huggingface.co/bartowski/Qwen_Qwen3.6-35B-A3B-GGUF',
+      'https://huggingface.co/Wallawalla47/Qwen3.8-27B-NVIDIA-NVFP4-NInferV3',
+      'https://huggingface.co/Wallawalla47/Qwen3.8-Flash-Next-NVIDIA-NVFP4-Dense8-Infernix',
+      'https://huggingface.co/neroued/Qwen3.6-35B-A3B-NInfer',
     ])
   })
 
@@ -35,6 +39,13 @@ describe('DEFAULT_MODELS', () => {
     expect(defaultModelFor('ninfer', 'qwen3-27b-swift15')?.label).toBe('Ninfer Qwen3.8-27B (Swift 1.5)')
     expect(defaultModelFor('ninfer', 'qwen36-35b')?.label).toBe('Ninfer Qwen3.6-35B')
     expect(defaultModelFor('llamacpp', 'qwen36-35b')?.label).toBe('llama.cpp Qwen3.6-35B')
+    expect(defaultModelFor('infernix', 'qwen3-27b')?.label).toBe('Infernix Qwen3.8-27B')
+    expect(defaultModelFor('infernix', 'qwen38-flash-next')?.label).toBe(
+      'Infernix Qwen3.8-Flash-Next (Dense8)',
+    )
+    // The Flash-Next entry names no single file: the download pulls the whole
+    // repo, which carries the shards and the n-gram volume.
+    expect(defaultModelFor('infernix', 'qwen38-flash-next')?.file).toBeUndefined()
   })
 })
 

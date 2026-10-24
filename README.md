@@ -13,6 +13,7 @@ A DeepSeek Harness plugin that manages local inference engines:
 - llama.cpp
 - NInfer
 - Hyper-Qwen (vLLM)
+- Infernix
 - Strata
 - ...with more coming soon.
 
@@ -38,7 +39,8 @@ The **Engine settings** card mounts on the Plugins page (older hosts: the Settin
 - **Watch the VRAM Est. meter.** It prices weights, KV cache, overhead, and workspace against your card as you adjust values, and shows the verdict (`fits` / `tight` / `over`) and the largest context that fits.
 - **Read the warnings.** Red banners and inline field warnings fire when a parameter value, or the presence of a parameter, is unsafe for your detected hardware.
 - **Satisfy the system dependencies.** The panel lists each missing host dependency (docker, CUDA toolkit, ffmpeg, hf CLI, ...) with its purpose, a copy/paste install string for your OS, and an optional one-click **Run** (sudo). The **Get** button stays disabled until every dependency reports satisfied.
-- **Launch / Stop.** `Launch` clones or pulls the engine, downloads the model, starts it, and polls its health endpoint. `Stop` shuts it down.
+- **Get.** With the dependencies satisfied, `Get` syncs the engine's source: it clones the engine's git repo (or the **Engine Fork** you provided) into the **Engine Directory** override, defaulting to the model directory under the engine name. An existing checkout with local changes aborts with an alert in **Logs**; a clean one fetches the listed fork (added as its own remote) and rebases onto the upstream branch. It then runs the system dependencies and the engine's build steps. Every line streams into the **Logs** section as it lands. `Launch` stays disabled while a Get runs and re-enables when the build finishes, errors, or falls silent for 2 minutes.
+- **Launch / Stop.** `Launch` deploys the engine (builds the checkout, or pulls the image in docker mode), downloads the model, starts it, and polls its health endpoint. `Stop` shuts it down.
 - **Register / Remove.** `Register` publishes the confirmed-working engine to DSH as a model (optionally as the agent default model) through the settings service, so the change is revision-tracked and undoable. `Remove` pulls the entry back.
 
 All values persist to `~/.dsh/local-infer/config.json`; the browser never sees a value it did not store.
@@ -64,6 +66,7 @@ All values persist to `~/.dsh/local-infer/config.json`; the browser never sees a
 | Hyper-Qwen (vLLM) | Yes (compose) | No                 | `.env`-driven docker-compose profiles.                                       |
 | vLLM              | No            | No                 | Work-in-progress.                                                            |
 | llama.cpp         | Yes           | Yes                | Specified, not verified until the binary is available.                       |
+| Infernix          | No            | Yes (cmake + CUDA) | C++/CUDA fork of NInfer tuned for Qwen models on a single RTX 50-series GPU. Local build only. |
 | Strata            | Yes           | No                 | Placeholder engine; its parameter surface is empty until the flag set lands. |
 
 Runtime requirements: Node `^22.19.0 || >=24.0.0`, pnpm 12.11.2 (pinned by `mise.toml`), and the `@deepseek-ai/cordis >= 4.0.1` peer dependency.

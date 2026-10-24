@@ -217,8 +217,10 @@ export declare const SYSTEM_DEPS: {
  * The per-engine dep plans, keyed by engine id. The local NInfer list is the
  * qwen-ninfer header's toolchain plus the CUDA toolkit and the hf CLI; the
  * docker lists are the container runtime plus the GPU toolkit plus the hf
- * CLI. llama.cpp and Strata carry the specified-not-verified lists until
- * their adapters land in Phase 5.
+ * CLI. Infernix builds through the engine's own cmake preset, so its local
+ * list is the same toolchain as NInfer's, and its docker list stays empty
+ * because the engine ships no container image. llama.cpp and Strata carry
+ * the specified-not-verified lists until their adapters land in Phase 5.
  */
 export declare const ENGINE_DEP_PLANS: Record<string, EngineDepPlan>;
 //# sourceMappingURL=deps.d.ts.map

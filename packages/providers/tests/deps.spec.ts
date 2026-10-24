@@ -156,6 +156,7 @@ describe('dep plan registration', () => {
     apply(ctx)
     expect([...ctx.localInfer.registeredDepPlans().keys()].sort()).toEqual([
       'hyperqwen',
+      'infernix',
       'llamacpp',
       'ninfer',
       'strata',

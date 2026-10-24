@@ -1,4 +1,5 @@
 import type { GpuUsageProbe } from './reserve.ts';
+import type { Config } from './config.ts';
 /**
  * ProviderStatus is the running-state the plugin card paints each saved
  * provider's status dot: green while the engine is confirmed serving the
@@ -10,12 +11,19 @@ export type ProviderStatus = 'running' | 'stopped' | 'unsure';
  * ProviderRef is the identity side of one saved provider config: the stable
  * id the card renders and the engine and model it serves. The model is
  * optional because a config that names no model cannot be confirmed against
- * a running engine, and reads as unsure rather than a guess.
+ * a running engine, and reads as unsure rather than a guess. The config is
+ * optional and lets the detector price the provider's own launch signature
+ * (the engine binary the build mode runs, the port it binds) rather than the
+ * adapter's default-port signature; the port is the resolved bind port the
+ * detector read from that signature, and the resolver ties a running engine
+ * to the provider only when the ports agree.
  */
 export interface ProviderRef {
     id: string;
     engine: string;
     model?: string;
+    config?: Config;
+    port?: number;
 }
 /**
  * RunningEngineRef is one engine the detector confirmed live: the engine id,

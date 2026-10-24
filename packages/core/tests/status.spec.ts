@@ -81,4 +81,28 @@ describe('computeProviderStatuses', () => {
     const statuses = computeProviderStatuses({ providers, running, gpuBusy: false })
     expect(statuses).toEqual({ a: 'stopped', b: 'stopped', c: 'running' })
   })
+
+  it('confirms only the provider whose port the running engine carries', () => {
+    // Two configs of one engine on different ports are distinct engines: the
+    // engine running on 18080 confirms the provider bound to 18080 and leaves
+    // the provider bound to 18081 stopped, not unsure from a cross-port match.
+    const ported: ProviderRef[] = [
+      { id: 'a', engine: 'ninfer', model: 'm1', port: 18080 },
+      { id: 'b', engine: 'ninfer', model: 'm2', port: 18081 },
+    ]
+    const running: RunningEngineRef[] = [{ engineId: 'ninfer', port: 18080, modelId: 'm1' }]
+    const statuses = computeProviderStatuses({ providers: ported, running, gpuBusy: false })
+    expect(statuses).toEqual({ a: 'running', b: 'stopped' })
+  })
+
+  it('keeps the engine-wide match for a provider that names no port', () => {
+    // A config whose adapter declares no port (or a detector that could not
+    // resolve one) keeps the pre-port behavior: any running engine of its id
+    // matches.
+    const unported: ProviderRef[] = [{ id: 'a', engine: 'ninfer', model: 'm1' }]
+    const running: RunningEngineRef[] = [{ engineId: 'ninfer', port: 18080, modelId: 'm1' }]
+    expect(computeProviderStatuses({ providers: unported, running, gpuBusy: false })).toEqual({
+      a: 'running',
+    })
+  })
 })

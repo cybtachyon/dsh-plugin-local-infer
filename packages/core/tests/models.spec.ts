@@ -90,6 +90,7 @@ describe('hfChatTemplateCommand', () => {
 describe('modelEntriesForEngine', () => {
   const entries: ModelDirectoryEntry[] = [
     { name: 'qwen3_8_27b_swift15abl_nvfp4full-dflash2.ninfer', isDirectory: false },
+    { name: 'Qwen3.8-Flash-Next-DFlash2-Infernix.infernix', isDirectory: false },
     { name: 'Qwen3.8-27B-Q4_K_M.gguf', isDirectory: false },
     { name: 'Qwen3.8-27B-W4A16-AutoRound-fast', isDirectory: true, hasSafetensors: true },
     { name: 'froggeric_Qwen-Fixed-Chat-Templates', isDirectory: true, hasSafetensors: false },
@@ -98,6 +99,13 @@ describe('modelEntriesForEngine', () => {
 
   it('offers the .ninfer artifacts to NInfer', () => {
     expect(modelEntriesForEngine(entries, 'ninfer')).toEqual([
+      'qwen3_8_27b_swift15abl_nvfp4full-dflash2.ninfer',
+    ])
+  })
+
+  it('offers the .ninfer and .infernix artifacts to Infernix', () => {
+    expect(modelEntriesForEngine(entries, 'infernix')).toEqual([
+      'Qwen3.8-Flash-Next-DFlash2-Infernix.infernix',
       'qwen3_8_27b_swift15abl_nvfp4full-dflash2.ninfer',
     ])
   })

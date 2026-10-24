@@ -8,14 +8,16 @@
  * @module dsh-plugin-local-infer/providers/engines
  */
 import { HYPERQWEN_PARAMETERS } from "./hyperqwen.js";
+import { INFERNIX_PARAMETERS } from "./infernix.js";
 import { LLAMACPP_PARAMETERS } from "./llamacpp.js";
 import { NINFER_PARAMETERS } from "./ninfer.js";
 import { STRATA_PARAMETERS } from "./strata.js";
 /**
  * The engines the Web card offers, in the order the card lists them. NInfer,
- * Hyper-Qwen, and llama.cpp carry parameter surfaces (llama.cpp's is the
- * specified set the plan names, verified when the binary lands); Strata is the
- * placeholder engine, its surface empty until the engine's flag set lands.
+ * Hyper-Qwen, Infernix, and llama.cpp carry parameter surfaces (llama.cpp's
+ * is the specified set the plan names, verified when the binary lands);
+ * Strata is the placeholder engine, its surface empty until the engine's
+ * flag set lands.
  */
 export const ENGINES = [
     {
@@ -35,6 +37,12 @@ export const ENGINES = [
         label: 'llama.cpp',
         supports: { docker: true, local: true },
         parameters: LLAMACPP_PARAMETERS,
+    },
+    {
+        id: 'infernix',
+        label: 'Infernix',
+        supports: { docker: false, local: true },
+        parameters: INFERNIX_PARAMETERS,
     },
     {
         id: 'strata',

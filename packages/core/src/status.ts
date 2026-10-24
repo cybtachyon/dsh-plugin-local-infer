@@ -1,5 +1,6 @@
 import { GPU_USAGE_BUSY_THRESHOLD } from './reserve.ts'
 import type { GpuUsageProbe } from './reserve.ts'
+import type { Config } from './config.ts'
 
 /**
  * ProviderStatus is the running-state the plugin card paints each saved
@@ -13,12 +14,19 @@ export type ProviderStatus = 'running' | 'stopped' | 'unsure'
  * ProviderRef is the identity side of one saved provider config: the stable
  * id the card renders and the engine and model it serves. The model is
  * optional because a config that names no model cannot be confirmed against
- * a running engine, and reads as unsure rather than a guess.
+ * a running engine, and reads as unsure rather than a guess. The config is
+ * optional and lets the detector price the provider's own launch signature
+ * (the engine binary the build mode runs, the port it binds) rather than the
+ * adapter's default-port signature; the port is the resolved bind port the
+ * detector read from that signature, and the resolver ties a running engine
+ * to the provider only when the ports agree.
  */
 export interface ProviderRef {
   id: string
   engine: string
   model?: string
+  config?: Config
+  port?: number
 }
 
 /**
@@ -77,7 +85,15 @@ export function computeProviderStatuses(
 ): Record<string, ProviderStatus> {
   const statuses: Record<string, ProviderStatus> = {}
   for (const provider of input.providers) {
-    const matches = input.running.filter((ref) => ref.engineId === provider.engine)
+    // A provider that names a port only counts an engine running on that
+    // port: two configs of one engine on different ports are distinct
+    // engines, and a match on the other port must not confirm (or deny) this
+    // config's model. An unnamed port keeps the engine-wide match.
+    const matches = input.running.filter(
+      (ref) =>
+        ref.engineId === provider.engine &&
+        (provider.port === undefined || ref.port === undefined || ref.port === provider.port),
+    )
     if (matches.length > 0) {
       // The engine is running. The question is which model it serves: the
       // detector's identified model, if it tied one, else unknown.

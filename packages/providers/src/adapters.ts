@@ -10,7 +10,7 @@
 
 import { exec, spawn as nodeSpawn } from 'node:child_process'
 import { basename, dirname, join } from 'node:path'
-import { EngineAdapter } from '../../core/lib/index.js'
+import { EngineAdapter, formatLaunchCommand } from '../../core/lib/index.js'
 import type {
   CommandOutcome,
   Config,
@@ -25,8 +25,10 @@ import type {
   LaunchPlan,
   LifecycleHost,
   ParameterSpec,
+  ProcessExitInfo,
   ProcessHandle,
 } from '../../core/lib/index.js'
+import { engineBuildSteps } from './acquire.ts'
 import { NINFER_PARAMETERS } from './ninfer.ts'
 import { HYPERQWEN_PARAMETERS } from './hyperqwen.ts'
 import {
@@ -35,6 +37,13 @@ import {
   llamaCppModelKey,
 } from './llamacpp.ts'
 import type { LlamaCppModelArtifact } from './llamacpp.ts'
+import {
+  INFERNIX_MODEL_ARTIFACTS,
+  INFERNIX_PARAMETERS,
+  infernixArtifactFor,
+  infernixModelKey,
+} from './infernix.ts'
+export { INFERNIX_MODEL_ARTIFACTS } from './infernix.ts'
 import { STRATA_PARAMETERS } from './strata.ts'
 
 /**
@@ -205,6 +214,35 @@ export function createNodeLifecycleHost(debug?: DebugLogger): LifecycleHost {
         })
       })
     },
+    async runStream(command: string, onOutput: (chunk: string) => void): Promise<CommandOutcome> {
+      log?.(`run: ${command}`)
+      return new Promise(resolve => {
+        // No overall timeout: a full CUDA build legitimately runs long, and
+        // the card prices a stalled step with its own output-idle watchdog.
+        const child = nodeSpawn(command, { shell: true, stdio: ['ignore', 'pipe', 'pipe'] })
+        let output = ''
+        const append = (chunk: Buffer): void => {
+          const text = chunk.toString('utf8')
+          onOutput(text)
+          output += text
+          if (output.length > 2048) {
+            output = output.slice(-1024)
+          }
+        }
+        child.stdout.on('data', append)
+        child.stderr.on('data', append)
+        child.on('error', error => {
+          resolve({ ok: false, detail: error.message })
+        })
+        child.on('close', code => {
+          if (code === 0) {
+            resolve({ ok: true })
+            return
+          }
+          resolve({ ok: false, detail: `exit ${code}: ${output.trim().slice(-1024)}` })
+        })
+      })
+    },
     spawn(argv: readonly string[], env: Record<string, string>, cwd?: string): ProcessHandle {
       log?.(`spawn: ${argv.join(' ')}${cwd !== undefined ? ` (cwd: ${cwd})` : ''}`)
       const child = nodeSpawn(argv[0] ?? '', argv.slice(1), {
@@ -226,6 +264,49 @@ export function createNodeLifecycleHost(debug?: DebugLogger): LifecycleHost {
       }
       child.stdout?.on('data', append)
       child.stderr?.on('data', append)
+      // An EventEmitter with no 'error' listener turns the event into a thrown
+      // uncaughtException, which takes the DSH host down with it. A spawn that
+      // cannot start (a missing engine binary, an ENOENT) and a stream that
+      // breaks on a crashing child both emit 'error' here, so every path gets
+      // a listener and the failure lands in the logs instead of the crash.
+      child.stdout?.on('error', (error: Error) => {
+        logs = (logs + `stdout error: ${error.message}\n`).slice(-65536)
+      })
+      child.stderr?.on('error', (error: Error) => {
+        logs = (logs + `stderr error: ${error.message}\n`).slice(-65536)
+      })
+      // The one-shot exit contract: 'error' names a child that never ran,
+      // 'exit' carries the code or signal, and 'close' follows once the pipes
+      // drain. The first settled source wins, so the handle's onExit listener
+      // (crash, pkill, or clean stop) fires exactly once with the detail.
+      const listeners = new Set<(exit: ProcessExitInfo) => void>()
+      let exitInfo: ProcessExitInfo | null = null
+      const settle = (info: ProcessExitInfo): void => {
+        if (exitInfo !== null) return
+        exitInfo = info
+        for (const listener of listeners) {
+          try {
+            listener(info)
+          } catch {
+            // A listener that throws must not re-raise into the child's event
+            // pipeline and take the host down the way an unlistened 'error' did.
+          }
+        }
+        listeners.clear()
+      }
+      let exitSignal: string | null = null
+      child.on('error', (error: Error) => {
+        logs = (logs + `spawn error: ${error.message}\n`).slice(-65536)
+        // The error fires before the stdio drains; settle immediately so a
+        // launch of a missing binary reports rather than hangs the watcher.
+        settle({ code: null, signal: null, error: error.message })
+      })
+      child.on('exit', (_code, signal) => {
+        exitSignal = signal
+      })
+      child.on('close', (code, signal) => {
+        settle({ code, signal: signal ?? exitSignal })
+      })
       return {
         pid: child.pid ?? -1,
         kill: (): void => {
@@ -233,6 +314,16 @@ export function createNodeLifecycleHost(debug?: DebugLogger): LifecycleHost {
         },
         get logs(): string {
           return logs
+        },
+        onExit: (listener: (exit: ProcessExitInfo) => void): void => {
+          // A listener registered after the child already ended fires
+          // immediately, so a late attach (the service wiring after deploy)
+          // never misses the crash that landed in between.
+          if (exitInfo !== null) {
+            listener(exitInfo)
+            return
+          }
+          listeners.add(listener)
         },
       }
     },
@@ -255,6 +346,29 @@ export function createNodeLifecycleHost(debug?: DebugLogger): LifecycleHost {
  * in debug mode.
  */
 export const nodeLifecycleHost: LifecycleHost = createNodeLifecycleHost()
+
+/**
+ * trackChild stores a spawned handle in the adapter's children map and ties
+ * the entry's lifetime to the child's: when the child ends (a crash, a pkill,
+ * or the adapter's own stop kill) the entry is dropped, so a later stop never
+ * signals a pid a recycled process has taken over. A handle whose host cannot
+ * watch (onExit absent) stays tracked until stop removes it.
+ */
+function trackChild(
+  children: Map<string, ProcessHandle>,
+  key: string,
+  handle: ProcessHandle,
+): void {
+  children.set(key, handle)
+  handle.onExit?.(() => {
+    // Compare identity before deleting: a newer launch that already replaced
+    // this key's entry keeps its handle, and only the ended child's entry
+    // goes.
+    if (children.get(key) === handle) {
+      children.delete(key)
+    }
+  })
+}
 
 /**
  * pollHealth polls a plan's health URL until a 200 or the attempt cap, the
@@ -441,12 +555,13 @@ export class NInferAdapter extends EngineAdapter {
             return { ok: false, detail: `git sync failed: ${sync.detail ?? 'unknown'}` }
           }
         }
-        const build = await this.host.run(
-          `cmake -S ${engineDir} -B ${engineDir}/build -G Ninja -DCMAKE_BUILD_TYPE=Release && ` +
-            `cmake --build ${engineDir}/build -j`,
-        )
-        if (!build.ok) {
-          return { ok: false, detail: `build failed: ${build.detail ?? 'unknown'}` }
+        // The build steps come from the engine's acquisition data, the same
+        // list the Get route streams through its build step.
+        for (const step of engineBuildSteps(this.id)) {
+          const build = await this.host.run(step.replaceAll('{dir}', engineDir))
+          if (!build.ok) {
+            return { ok: false, detail: `build failed: ${build.detail ?? 'unknown'}` }
+          }
         }
       }
       const download = await this.downloadModel(plan)
@@ -458,7 +573,7 @@ export class NInferAdapter extends EngineAdapter {
       const templateResult = await this.resolveChatTemplate(plan)
       if (!templateResult.ok) return templateResult
       const handle = this.host.spawn(plan.argv ?? [], plan.env ?? {}, engineDir)
-      this.children.set(this.planKey(plan), handle)
+      trackChild(this.children, this.planKey(plan), handle)
       return { ok: true, handle }
     }
     if (plan.kind === 'docker') {
@@ -467,7 +582,7 @@ export class NInferAdapter extends EngineAdapter {
         return { ok: false, detail: `docker pull failed: ${pull.detail ?? 'unknown'}` }
       }
       const handle = this.host.spawn(plan.argv ?? [], plan.env ?? {})
-      this.children.set(this.planKey(plan), handle)
+      trackChild(this.children, this.planKey(plan), handle)
       return { ok: true, handle }
     }
     // NInfer renders process and docker plans; a compose plan is a no-op.
@@ -615,9 +730,13 @@ export class HyperQwenAdapter extends EngineAdapter {
   }
 
   async deploy(plan: LaunchPlan): Promise<DeployResult> {
-    const up = await this.host.run(
-      `docker compose -f ${plan.composeFile} --profile ${plan.profile} up --pull always -d`,
-    )
+    // The core formatter is the single source of the compose up line: the
+    // card's Logs section prints the same string this run gets.
+    const command = formatLaunchCommand(plan)
+    if (command === undefined) {
+      return { ok: false, detail: 'compose plan carries no command' }
+    }
+    const up = await this.host.run(command)
     if (!up.ok) {
       return { ok: false, detail: `compose up failed: ${up.detail ?? 'unknown'}` }
     }
@@ -790,19 +909,20 @@ export class LlamaCppAdapter extends EngineAdapter {
             return { ok: false, detail: `git sync failed: ${sync.detail ?? 'unknown'}` }
           }
         }
-        const build = await this.host.run(
-          `cmake -S ${engineDir} -B ${engineDir}/build -G Ninja -DCMAKE_BUILD_TYPE=Release && ` +
-            `cmake --build ${engineDir}/build -j`,
-        )
-        if (!build.ok) {
-          return { ok: false, detail: `build failed: ${build.detail ?? 'unknown'}` }
+        // The build steps come from the engine's acquisition data, the same
+        // list the Get route streams through its build step.
+        for (const step of engineBuildSteps(this.id)) {
+          const build = await this.host.run(step.replaceAll('{dir}', engineDir))
+          if (!build.ok) {
+            return { ok: false, detail: `build failed: ${build.detail ?? 'unknown'}` }
+          }
         }
       }
       const download = await this.downloadModel(plan)
       if (!download.ok) return download
       const handle = this.host.spawn(plan.argv ?? [], plan.env ?? {}, engineDir)
-      this.children.set(this.planKey(plan), handle)
-      return { ok: true }
+      trackChild(this.children, this.planKey(plan), handle)
+      return { ok: true, handle }
     }
     if (plan.kind === 'docker') {
       const pull = await this.host.run(`docker pull ${LLAMACPP_DOCKER_IMAGE}`)
@@ -810,8 +930,8 @@ export class LlamaCppAdapter extends EngineAdapter {
         return { ok: false, detail: `docker pull failed: ${pull.detail ?? 'unknown'}` }
       }
       const handle = this.host.spawn(plan.argv ?? [], plan.env ?? {})
-      this.children.set(this.planKey(plan), handle)
-      return { ok: true }
+      trackChild(this.children, this.planKey(plan), handle)
+      return { ok: true, handle }
     }
     // llama.cpp renders process and docker plans; a compose plan is a no-op.
     return { ok: true }
@@ -933,8 +1053,8 @@ export class StrataAdapter extends EngineAdapter {
       return { ok: false, detail: `docker pull failed: ${pull.detail ?? 'unknown'}` }
     }
     const handle = this.host.spawn(plan.argv ?? [], plan.env ?? {})
-    this.children.set(this.planKey(plan), handle)
-    return { ok: true }
+    trackChild(this.children, this.planKey(plan), handle)
+    return { ok: true, handle }
   }
 
   async healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult> {
@@ -958,5 +1078,179 @@ export class StrataAdapter extends EngineAdapter {
 
   private planKey(plan: LaunchPlan): string {
     return `${plan.engineId}:${plan.port}`
+  }
+}
+
+/**
+ * InfernixAdapter is the local-only engine for Infernix, the C++/CUDA fork
+ * of NInfer (https://github.com/wallawalla47/infernix) tuned for Qwen models
+ * on a single RTX 50-series GPU. `renderLaunch` renders a local
+ * `infernix-serve` process from the `INFERNIX_PARAMETERS` surface (the
+ * Infernix-only fields, from `--ngram-volume` to the quality routes, spell
+ * onto the argv only for this engine); `deploy` builds the engine in the
+ * engine directory (the engine's own cmake preset), downloads the model
+ * artifact (and the n-gram volume, for the multi-file Flash-Next repo) into
+ * the model directory, and starts the engine; `healthCheck` polls the health
+ * URL; `stop` signals the tracked process. The engine ships no docker image,
+ * so the adapter supports the local build mode only.
+ */
+export class InfernixAdapter extends EngineAdapter {
+  readonly id = 'infernix'
+  readonly supports = { docker: false, local: true }
+  private readonly host: LifecycleHost
+  private readonly children = new Map<string, ProcessHandle>()
+
+  constructor(host: LifecycleHost = nodeLifecycleHost) {
+    super()
+    this.host = host
+  }
+
+  parameters(): readonly ParameterSpec[] {
+    return INFERNIX_PARAMETERS
+  }
+
+  override modelRef(config: Config): { id: string; name: string } {
+    // The engine serves the model under the artifact's advertised id, so the
+    // registrar publishes that alias and a chat turn routes to it. A model
+    // key that names a local artifact file (a directory-scanned model)
+    // reuses the 27B alias, the same fallback the NInfer adapter applies.
+    const artifact = infernixArtifactFor(infernixModelKey(config))
+    return { id: artifact.modelId, name: artifact.modelId }
+  }
+
+  override launchSignature(config: Config = {}): EngineLaunchSignature {
+    // The local plan runs the infernix-serve binary (the .exe on Windows),
+    // so the binary name is the command-line marker the reserve probe
+    // matches on, and the port the plan binds rides along.
+    return { binary: 'infernix-serve', port: this.port(config) }
+  }
+
+  renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan {
+    const port = this.port(config)
+    const modelKey = infernixModelKey(config)
+    const artifact = infernixArtifactFor(modelKey)
+    // A model key that names a local artifact file (a directory-scanned
+    // model, a .ninfer or .infernix name) overrides the artifact map's file,
+    // so a file the user has on disk launches as-is.
+    const file =
+      modelKey.endsWith('.ninfer') || modelKey.endsWith('.infernix')
+        ? modelKey
+        : artifact.file
+    const modelDirectory = typeof config.modelDirectory === 'string' ? config.modelDirectory : ''
+    const modelPath = modelDirectory === '' ? file : join(modelDirectory, file)
+    // The engine binary is the .exe on a Windows host, where the published
+    // release zip ships the server and its DLLs.
+    const binary = process.platform === 'win32' ? 'infernix-serve.exe' : 'infernix-serve'
+    const flags = flagsFromSpecs(INFERNIX_PARAMETERS, config)
+    const customArgs = customArgFlags(config)
+    return {
+      engineId: this.id,
+      kind: 'process',
+      argv: [
+        binary,
+        modelPath,
+        '--host',
+        '127.0.0.1',
+        '--port',
+        String(port),
+        '--model-id',
+        artifact.modelId,
+        ...flags,
+        ...customArgs,
+      ],
+      env: {},
+      modelId: modelKey,
+      ...(modelDirectory === '' ? {} : { modelDirectory }),
+      port,
+      healthUrl: `http://127.0.0.1:${port}/health`,
+    }
+  }
+
+  async deploy(plan: LaunchPlan, platform?: EnginePlatformConfig): Promise<DeployResult> {
+    if (plan.kind !== 'process') {
+      // Infernix renders process plans only; a docker or compose plan is a
+      // no-op.
+      return { ok: true }
+    }
+    const engineDir = platform?.engineDirectory
+    if (engineDir !== undefined) {
+      const fork = platform?.engineFork
+      if (fork !== undefined) {
+        // Mirror the NInfer launcher: an existing checkout (a .git under the
+        // engine directory) is updated in place with a best-effort fetch and
+        // a hard reset to the fork's master, then built as-is; a missing
+        // checkout is a fresh clone. The fetch is best-effort (a `; true`
+        // pins the branch to success) so an offline host still builds the
+        // checkout it has; only a missing checkout that cannot be cloned
+        // fails the step.
+        const sync = await this.host.run(
+          `if [ -d ${engineDir}/.git ]; then ` +
+            `git -C ${engineDir} fetch ${fork} 2>/dev/null && git -C ${engineDir} reset --hard ${fork}/master 2>/dev/null; true; ` +
+            `else git clone ${fork} ${engineDir}; fi`,
+        )
+        if (!sync.ok) {
+          return { ok: false, detail: `git sync failed: ${sync.detail ?? 'unknown'}` }
+        }
+      }
+      // The engine's own quick start (the cmake preset, then the preset's
+      // build) rides the acquisition-data build steps, the same list the
+      // Get route streams through its build step.
+      for (const step of engineBuildSteps(this.id)) {
+        const build = await this.host.run(step.replaceAll('{dir}', engineDir))
+        if (!build.ok) {
+          return { ok: false, detail: `build failed: ${build.detail ?? 'unknown'}` }
+        }
+      }
+    }
+    const download = await this.downloadModel(plan)
+    if (!download.ok) return download
+    const handle = this.host.spawn(plan.argv ?? [], plan.env ?? {}, engineDir)
+    this.children.set(this.planKey(plan), handle)
+    return { ok: true, handle }
+  }
+
+  async healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult> {
+    return pollHealth(this.host, plan, options)
+  }
+
+  async stop(plan: LaunchPlan): Promise<void> {
+    const handle = this.children.get(this.planKey(plan))
+    if (handle !== undefined) {
+      handle.kill()
+      this.children.delete(this.planKey(plan))
+    }
+  }
+
+  private port(config: Config): number {
+    // 8080 is the infernix-serve CLI default, so the form seeds it and the
+    // adapter falls back to it when a config names no port.
+    return typeof config.port === 'number' ? config.port : 8080
+  }
+
+  private planKey(plan: LaunchPlan): string {
+    return `${plan.engineId}:${plan.port}`
+  }
+
+  private async downloadModel(plan: LaunchPlan): Promise<DeployResult> {
+    const artifact =
+      plan.modelId !== undefined ? INFERNIX_MODEL_ARTIFACTS[plan.modelId] : undefined
+    // A model key that names a local artifact file carries no artifact entry,
+    // so the file the user has on disk launches as-is without a download.
+    if (artifact === undefined) return { ok: true }
+    const target = plan.modelDirectory ?? '.'
+    // A multi-file artifact (the Flash-Next shards) downloads the whole repo,
+    // which carries the n-gram volume beside the shards, so the
+    // --ngram-volume flag points at a file the same download left on disk.
+    // A single-file artifact downloads the file alone.
+    const repo = artifact.repo
+    const files = artifact.files ?? []
+    const download =
+      files.length > 1
+        ? await this.host.run(`hf download ${repo} --local-dir ${target}`)
+        : await this.host.run(`hf download ${repo} ${artifact.file} --local-dir ${target}`)
+    if (!download.ok) {
+      return { ok: false, detail: `model download failed: ${download.detail ?? 'unknown'}` }
+    }
+    return { ok: true }
   }
 }

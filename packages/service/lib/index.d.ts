@@ -19,8 +19,8 @@
  */
 import { Context, Service } from '@deepseek-ai/cordis';
 import type { Config, DefaultModel, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, GpuUsageProbe, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, ProviderLaunchRecord, ProviderRef, ProviderStatus, ReLinkOutcome, RegisterResult, ReserveResolution, ResolvedDefaults, SystemDep, VramModel } from 'dsh-plugin-local-infer/core';
-import type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, RegisterModelOptions } from './types.ts';
-export type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, ProviderStatusOptions, RegisterModelOptions, SettingsDescribeResult, SettingsForms, SettingsNamespaceDescriptor, } from './types.ts';
+import type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EngineDeathEvent, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, ProviderStatusOptions, RegisterModelOptions } from './types.ts';
+export type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EngineDeathEvent, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, ProviderStatusOptions, RegisterModelOptions, SettingsDescribeResult, SettingsForms, SettingsNamespaceDescriptor, } from './types.ts';
 declare module '@deepseek-ai/cordis' {
     interface Context {
         localInfer: LocalInferService;
@@ -50,6 +50,10 @@ export declare class LocalInfer extends Service implements LocalInferService {
     private readonly platformConfigRegistry;
     private readonly launchedEngines;
     private readonly launchedModels;
+    private readonly launchedPorts;
+    private readonly engineWatchers;
+    private readonly handledPids;
+    private deathObserver;
     constructor(ctx: Context);
     registerEngine(adapter: EngineAdapter): () => void;
     registerPreset(preset: Preset): () => void;
@@ -120,22 +124,20 @@ export declare class LocalInfer extends Service implements LocalInferService {
     detectOsReserve(config?: Config, options?: DetectOsReserveOptions): Promise<ReserveResolution>;
     /**
      * providerStatuses resolves the running-state the card paints each saved
-     * provider's status dot from. It collects every registered adapter's launch
-     * signature, probes the running process table against those markers, and
-     * ties a running engine's port to the model the plugin launched it with (the
-     * launched-models map), so a plugin-launched engine reads as that model and
-     * a foreign engine reads as "engine running, model unknown". The GPU-usage
-     * reading feeds the busy-card rule. The answer is the core resolver's: a
-     * busy card or no engine running reads as unsure for every provider, an
-     * engine the detector saw but could not tie to a model reads as unsure for
-     * its configs and stopped for the rest, and a confirmed engine-plus-model
-     * reads as running. The options inject the probe results, so a test prices a
-     * busy card or a foreign engine without a live nvidia-smi or ps.
+     * provider's status dot from. It prices each provider's own launch signature
+     * through the registered adapter (the build mode's binary, the port the
+     * provider's config binds, the env keys), so an engine the plugin launched
+     * on a non-default port matches its config instead of reading forever as a
+     * process no signature covers, and ties the matched port to the model the
+     * plugin launched it with (the launched-models map). The GPU-usage reading
+     * feeds the busy-card rule. The answer is the core resolver's: a busy card
+     * or no engine running reads as unsure for every provider, an engine the
+     * detector saw but could not tie to a model reads as unsure for its configs
+     * and stopped for the rest, and a confirmed engine-plus-model reads as
+     * running. The options inject the probe results, so a test prices a busy
+     * card or a foreign engine without a live nvidia-smi or ps.
      */
-    providerStatuses(providers: readonly ProviderRef[], options?: {
-        processes?: ProcessLine[];
-        gpuUsage?: GpuUsageProbe | null;
-    }): Promise<Record<string, ProviderStatus>>;
+    providerStatuses(providers: readonly ProviderRef[], options?: ProviderStatusOptions): Promise<Record<string, ProviderStatus>>;
     /**
      * unsureBannerKillCommands returns the bash kill commands for the engine
      * processes the detector saw holding VRAM, for the "unsure" banner the card
@@ -210,6 +212,47 @@ export declare class LocalInfer extends Service implements LocalInferService {
         processAlive?: (pid: number) => boolean;
         commandLine?: (pid: number) => string | undefined;
     }): Promise<Record<string, ReLinkOutcome>>;
+    /**
+     * setEngineDeathObserver registers the route's hook for engine process
+     * deaths: a crash or pkill seen through a launched handle's exit event, or a
+     * poll-detected death of a process adopted from a stored launch record. The
+     * observer persists the provider entry's cleared state so the card reads the
+     * provider stopped instead of carrying a stale record. Passing undefined
+     * clears it, which the route's effect does on dispose.
+     */
+    setEngineDeathObserver(observer: ((event: EngineDeathEvent) => void) | undefined): void;
+    /**
+     * watchLaunchedHandle ties a launched child's one-shot exit to the live
+     * state: the host's close/error event (a crash, a pkill, or the stop kill)
+     * reports through observeEngineDeath. A handle whose host cannot watch (no
+     * onExit, a stub) is left to the re-link rule to price after a restart.
+     */
+    private watchLaunchedHandle;
+    /**
+     * watchAdoptedEngine re-attaches the exit watch for a process this DSH did
+     * not spawn: a surviving engine adopted from a stored launch record has no
+     * ChildProcess to listen on after a restart, so an unref'd poll on the
+     * liveness probe stands in for the exit event. When the pid dies the watcher
+     * stops itself and reports through observeEngineDeath, so the provider's
+     * state settles without waiting for the next summary re-link to price the
+     * record dead.
+     */
+    private watchAdoptedEngine;
+    /**
+     * stopEngineWatcher cancels one port's adopted-process poll, if it has one.
+     */
+    private stopEngineWatcher;
+    /**
+     * observeEngineDeath settles one engine process's death against the live
+     * state: the port-to-model tie drops when the dead engine still owns the
+     * port, the port leaves the engine's live ledger, the plugin-launched flag
+     * clears with the engine's last live port, the adopted-process watcher for
+     * the port stops, and the registered death observer (the route's persistence
+     * hook) receives the event. The launch record itself is the route's: the
+     * observer clears the provider entry's record so the card reads the provider
+     * stopped, not stale.
+     */
+    private observeEngineDeath;
     /**
      * stop signals the engine a launch started: it resolves the adapter by the
      * plan's engineId and runs the adapter's stop step (kill the tracked process,

@@ -43,18 +43,37 @@ export interface EnginePlatformConfig {
 }
 
 /**
+ * ProcessExitInfo is the one-shot answer to a spawned process's lifetime end:
+ * the exit code (null when a signal or a spawn failure ended it), the signal
+ * name (null when the process exited on its own), and the spawn error message
+ * when the child never ran (a missing binary). The host emits it exactly once
+ * per child, from the close event or the error event, so a crash or a pkill
+ * reaches the plugin's state through one seam instead of an uncaughtException.
+ */
+export interface ProcessExitInfo {
+  code: number | null
+  signal: string | null
+  error?: string
+}
+
+/**
  * ProcessHandle is the handle to a spawned engine process: its pid and a kill
  * the stop step calls. A docker run and a compose up spawn a process the host
  * tracks; a local engine spawn is the process the adapter owns. `logs`, when
  * the host captures the child's stdout and stderr, is the accumulated output
  * the launch step surfaces in the card's Logs section and writes to the log
  * file. A host that does not capture streams (a container it cannot read)
- * omits it.
+ * omits it. `onExit`, when the host watches the child, registers a listener
+ * fired once with the ProcessExitInfo when the child ends (a crash, a signal
+ * like a pkill, or a clean stop); a listener registered after the child has
+ * already ended fires immediately. A host that cannot watch (a stub, or a
+ * container it cannot read) omits it.
  */
 export interface ProcessHandle {
   pid: number
   kill(): void
   logs?: string
+  onExit?(listener: (exit: ProcessExitInfo) => void): void
 }
 
 /**
@@ -76,6 +95,15 @@ export interface FetchResult {
  */
 export interface LifecycleHost {
   run(command: string): Promise<CommandOutcome>
+  /**
+   * Optional: run a command line and stream each stdout/stderr chunk to
+   * onOutput while it runs, so the Get step can append build output to the
+   * card's Logs section as it lands. A host that cannot stream omits it,
+   * and the caller falls back to run. No overall timeout: a full CUDA
+   * build legitimately runs past any fixed cap, and the card prices a
+   * stalled step with its own output-idle watchdog.
+   */
+  runStream?(command: string, onOutput: (chunk: string) => void): Promise<CommandOutcome>
   spawn(argv: readonly string[], env: Record<string, string>, cwd?: string): ProcessHandle
   fetch(url: string): Promise<FetchResult>
   debug?: DebugLogger
@@ -106,7 +134,8 @@ export interface HealthResult {
  * UI. `handle` is the spawned engine process when the deploy step started one
  * locally: the service reads its accumulated `logs` after the health poll, so
  * the launch result carries the engine's output for the card's Logs section and
- * the log file. A deploy that only pulls an image omits it.
+ * the log file, and attaches the handle's `onExit` listener to learn of a crash
+ * or a pkill. A deploy that starts no process (a compose up) omits it.
  */
 export interface DeployResult {
   ok: boolean

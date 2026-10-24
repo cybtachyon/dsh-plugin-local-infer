@@ -15,8 +15,8 @@
  * @module dsh-plugin-local-infer/ui/route
  */
 import type { Context } from '@deepseek-ai/cordis';
-import type { Config, DefaultProvenance, HardwareProfile, InstallResult, ProviderLaunchRecord, ProviderStatus, RegisterResult, VramModel, VramVerdict } from 'dsh-plugin-local-infer/core';
-import type { DownloadResult, LaunchResult, LocalInferService } from 'dsh-plugin-local-infer/service';
+import type { Config, DefaultProvenance, HardwareProfile, InstallResult, LifecycleHost, ProviderLaunchRecord, ProviderStatus, RegisterResult, VramModel, VramVerdict } from 'dsh-plugin-local-infer/core';
+import type { DownloadResult, EngineDeathEvent, LaunchResult, LocalInferService } from 'dsh-plugin-local-infer/service';
 import type { EngineInfo } from '../../providers/lib/index.js';
 import type { DepsModel } from './deps.ts';
 import type { FormModel } from './form.ts';
@@ -41,6 +41,13 @@ interface IncomingLike extends AsyncIterable<Buffer> {
 }
 interface OutgoingLike {
     writeHead(status: number, headers?: Record<string, string>): OutgoingLike;
+    /**
+     * Optional: stream one chunk of the answer, used by the Get route to
+     * append build output to the card's Logs section while it runs. The web
+     * server hands the handler a node ServerResponse; the tests' fake may
+     * omit it, and the route degrades to collecting only.
+     */
+    write?(chunk: string): unknown;
     end(body?: string): void;
 }
 /**
@@ -206,6 +213,18 @@ export declare function readConfig(): StoredConfig;
  */
 export declare function writeConfig(engine: string, config: Config, allowRunDeps: boolean, platform?: Record<string, StoredPlatformConfig>, showHelp?: boolean, providers?: StoredProviderConfig[], logPath?: string, lastLogs?: string): void;
 /**
+ * relinkStoredProviders prices every stored provider launch record against the
+ * live process table through the service's re-link rule and returns the
+ * provider list the card should read: an adopted engine is re-marked plugin-
+ * launched and tied to its model by the service, and a liveness watcher starts
+ * on its port so a later pkill settles the stored state through the death
+ * observer without another summary read; a dead engine's record is cleared on
+ * disk here (the previous-pid list with it), so a recycled pid cannot re-link
+ * to a config whose engine is down. The route calls it on mount and the
+ * summary calls it per read, making re-attach independent of the card opening.
+ */
+export declare function relinkStoredProviders(localInfer: LocalInferService, stored: StoredConfig): Promise<StoredProviderConfig[]>;
+/**
  * buildSummary assembles the card's read model for one engine and config: the
  * static engine and model lists, the detected hardware, the form model the
  * selected engine's parameter surface renders to, the meter model the
@@ -324,12 +343,28 @@ export interface LaunchRequest {
  * launchEngine renders the plan the registered adapter produces for the config
  * and the detected hardware, then runs the service's launch entry point
  * (deploy, then the health poll). The detail the launch returns names the
- * broken step when the engine does not come up. The launch step persists the
+ * broken step when the engine does not come up. The launch line (the engine
+ * binary and its arguments) leads the run logs the card's Logs section and
+ * the log file carry, so a broken setup diagnoses against the exact child
+ * process the launch started. The launch step persists the
  * launch record (the engine pid, start time, launch arguments, and the DSH
  * process pid that launched it) on the request's provider entry, so a DSH
  * restart can re-link a surviving engine to its config.
  */
 export declare function launchEngine(localInfer: LocalInferService, request: LaunchRequest): Promise<LaunchResult>;
+/**
+ * handleEngineDeath persists a provider entry's state when its engine process
+ * dies outside the plugin's stop path: a crash, a pkill of a plugin-launched
+ * child seen through the service's exit watch, or the poll-detected exit of a
+ * process adopted after a DSH restart. The entry whose launch record names the
+ * dead pid (or the dead engine-and-port, when the report carries no pid match)
+ * has its record cleared, so a restart never re-links a dead pid, and the exit
+ * line lands in the card's last-run logs beside the engine's own output. An
+ * event that matches no entry carrying a record (a stop the route already
+ * cleared, an engine the plugin never tracked) is a no-op, which keeps an
+ * expected stop quiet.
+ */
+export declare function handleEngineDeath(event: EngineDeathEvent): void;
 /**
  * persistLaunchLogs stores a launch's captured output as the last run and
  * writes it to the configured log file. The log file is only written when the
@@ -346,6 +381,32 @@ export declare function persistLaunchLogs(result: LaunchResult, engineId: string
  * user just stopped.
  */
 export declare function stopEngine(localInfer: LocalInferService, request: LaunchRequest): Promise<void>;
+/**
+ * GetRequest is the query the card sends for the Get route: the engine and
+ * the config the dep plan and the build mode read from, and the platform
+ * override (the card's unsaved Engine Directory / Engine Fork edits), the
+ * same rule the launch request applies. Absent values fall back to the
+ * stored config.
+ */
+export interface GetRequest {
+    engine?: string;
+    config?: Config;
+    platform?: StoredPlatformConfig;
+}
+/**
+ * getEngine is the Get step: it syncs the engine checkout (clone the git
+ * repo, or the fork when the platform entry provides one; fetch and rebase
+ * a clean checkout; abort with a Logs alert when the checkout has local
+ * changes), runs the system dependency plan, and runs the engine's build
+ * steps. Every command and its output streams through log as it lands, so
+ * the card appends it to the Logs section live. The dependency install only
+ * runs while the Play/Run trust gate is on; with the gate off the deps are
+ * re-checked and a missing one aborts the step with the copy/paste note.
+ */
+export declare function getEngine(localInfer: LocalInferService, request: GetRequest, log: (chunk: string) => void, host?: LifecycleHost): Promise<{
+    ok: boolean;
+    detail?: string;
+}>;
 /**
  * RegisterRequest is the query the card sends for the register and
  * unregister routes: the engine and the config the plan renders from, and
@@ -393,14 +454,17 @@ export declare function unregisterFor(localInfer: LocalInferService, request?: R
     removed: boolean;
 }>;
 /**
- * registerLocalInferRoute registers the summary, save, deps, install, launch,
- * stop, register, and unregister routes on the web server and holds them by
- * an effect, so a bundle switch off removes them before the next switch on
- * re-registers. The scoped context carries the webServer; the localInfer
- * service is passed in because the scope only injects what it names.
+ * registerLocalInferRoute registers the summary, save, deps, install, get,
+ * launch, stop, register, and unregister routes on the web server and holds
+ * them by an effect, so a bundle switch off removes them before the next
+ * switch on re-registers. The scoped context carries the webServer; the
+ * localInfer service is passed in because the scope only injects what it
+ * names. The optional getHost is the lifecycle host the Get route's git and
+ * build steps run through; it defaults to the node host, and a test injects
+ * a stub so the route never clones a real repo in CI.
  */
 export declare function registerLocalInferRoute(scope: Context & {
     webServer: WebServerService;
-}, localInfer: LocalInferService): void;
+}, localInfer: LocalInferService, getHost?: LifecycleHost): void;
 export {};
 //# sourceMappingURL=route.d.ts.map

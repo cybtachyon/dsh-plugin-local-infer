@@ -73,6 +73,25 @@ export interface ProviderStatusOptions {
 }
 
 /**
+ * EngineDeathEvent is the one-shot report that an engine process the plugin
+ * tracked has ended: an observed crash or pkill (the exit code and signal from
+ * a live child's close event, or a spawn error detail for a child that never
+ * ran), or a poll-detected death of a process adopted from a stored launch
+ * record after a DSH restart (a null code and signal with a detail). The route
+ * registers the observer that persists the provider entry's cleared state, so
+ * the card reads the provider stopped instead of carrying a stale record.
+ */
+export interface EngineDeathEvent {
+  engineId: string
+  port?: number
+  modelId?: string
+  pid?: number
+  code: number | null
+  signal: string | null
+  detail?: string
+}
+
+/**
  * LaunchResult is the answer to a launch call: the plan that was started,
  * whether the health check passed, a detail for the UI, and the engine's
  * captured log output (stdout and stderr) when the deploy step read it. The
@@ -271,6 +290,13 @@ export interface LocalInferService {
       commandLine?: (pid: number) => string | undefined
     },
   ): Promise<Record<string, ReLinkOutcome>>
+  /**
+   * setEngineDeathObserver registers the callback the route uses to persist a
+   * provider entry's cleared state when its engine process dies (a crash, a
+   * pkill, or a poll-detected death of an adopted process). Passing undefined
+   * clears it, which the route's effect does on dispose.
+   */
+  setEngineDeathObserver(observer: ((event: EngineDeathEvent) => void) | undefined): void
   registerModel(
     plan: LaunchPlan,
     model: ModelRow,

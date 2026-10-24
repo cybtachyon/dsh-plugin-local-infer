@@ -52,6 +52,7 @@ export {
   launchRecordFromPlan,
   reLinkRecord,
 } from './launch-record.ts'
+export { formatLaunchCommand } from './launch-command.ts'
 export type {
   ProviderLaunchRecord,
   ReLinkInput,
@@ -94,6 +95,7 @@ export type {
   HealthResult,
   LaunchPlan,
   LifecycleHost,
+  ProcessExitInfo,
   ProcessHandle,
 } from './adapter.ts'
 export {

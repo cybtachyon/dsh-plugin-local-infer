@@ -13,13 +13,14 @@ export { DEFAULT_OS_RESERVE_MIB, estimateVram, KV_PAGE_TOKENS, pageRoundUp, TIGH
 export type { EstimateContext, EstimateOptions, SpeculationTerms, VramBreakdown, VramContribution, VramEstimate, VramModel, VramVerdict, } from './estimator.ts';
 export { GPU_USAGE_BUSY_THRESHOLD, matchLaunchSignature, parseNvidiaSmiGpuUsage, resolveOsReserve, } from './reserve.ts';
 export { commandMatchesArgv, launchRecordFromPlan, reLinkRecord, } from './launch-record.ts';
+export { formatLaunchCommand } from './launch-command.ts';
 export type { ProviderLaunchRecord, ReLinkInput, ReLinkOutcome, } from './launch-record.ts';
 export type { EngineLaunchSignature, GpuUsageProbe, ProcessLine, ReserveResolution, ReserveSource, } from './reserve.ts';
 export { computeProviderStatuses, isGpuBusy, } from './status.ts';
 export type { ProviderRef, ProviderStatus, ProviderStatusInput, RunningEngineRef, } from './status.ts';
 export { DEFAULT_LOG_PATH_TEMPLATE, LOG_FILE_NAME_TEMPLATE, LOG_TEMPLATE_ENGINE, LOG_TEMPLATE_HOME, LOG_TEMPLATE_MODEL, LOG_TEMPLATE_TIMESTAMP, formatLogTimestamp, resolveLogPath, slugifyModelName, } from './logs.ts';
 export { EngineAdapter } from './adapter.ts';
-export type { DeployResult, EnginePlatformConfig, FetchResult, HealthCheckOptions, HealthResult, LaunchPlan, LifecycleHost, ProcessHandle, } from './adapter.ts';
+export type { DeployResult, EnginePlatformConfig, FetchResult, HealthCheckOptions, HealthResult, LaunchPlan, LifecycleHost, ProcessExitInfo, ProcessHandle, } from './adapter.ts';
 export { NOOP_DEBUG_LOGGER, createCommandDebugLogger, isHarnessLogDebug, } from './debug.ts';
 export type { CreateCommandDebugLoggerArgs, DebugLogger, } from './debug.ts';
 export { constraintId, evaluateGuidelines, modelGuidelines } from './guideline.ts';

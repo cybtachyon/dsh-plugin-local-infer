@@ -12,6 +12,7 @@ import type {
   HardwareProfile,
   InstallResult,
   LaunchPlan,
+  LifecycleHost,
   ModelDirectoryEntry,
   ModelRow,
   ProviderLaunchRecord,
@@ -28,6 +29,7 @@ import { DEFAULT_LOG_PATH_TEMPLATE, providerIdFor, resolveLogPath } from 'dsh-pl
 import { LocalInfer } from 'dsh-plugin-local-infer/service'
 import type {
   DownloadResult,
+  EngineDeathEvent,
   LaunchResult,
   LocalInferService,
   RegisterModelOptions,
@@ -37,6 +39,8 @@ import {
   buildDeps,
   buildSummary,
   downloadFor,
+  getEngine,
+  handleEngineDeath,
   launchEngine,
   localInferConfigPath,
   readConfig,
@@ -51,6 +55,7 @@ import {
   writeConfig,
 } from '../src/route.ts'
 import type { EngineInfo } from 'dsh-plugin-local-infer/providers'
+import type { StoredProviderConfig } from '../src/route.ts'
 
 const HW: HardwareProfile = {
   os: 'linux',
@@ -124,6 +129,23 @@ function fakeAdapter(
   } as unknown as EngineAdapter
 }
 
+/**
+ * argvAdapter stands in for an engine whose plan carries the child-process
+ * argv, so the launch route's command-line note has a command to print.
+ */
+function argvAdapter(id: string, argv: string[]): EngineAdapter {
+  return {
+    ...fakeAdapter(id),
+    renderLaunch: (): LaunchPlan => ({
+      engineId: id,
+      kind: 'process',
+      argv,
+      port: 18080,
+      healthUrl: 'http://127.0.0.1:18080/health',
+    }),
+  } as unknown as EngineAdapter
+}
+
 function stubService(
   guidelines: GuidelineResult[],
   extras: {
@@ -149,6 +171,9 @@ function stubService(
     reLinkProviders?: (
       entries: readonly { id: string; record: ProviderLaunchRecord }[],
     ) => Promise<Record<string, ReLinkOutcome>>
+    onSetDeathObserver?: (
+      observer: ((event: EngineDeathEvent) => void) | undefined,
+    ) => void
   } = {},
 ): LocalInferService {
   return {
@@ -233,6 +258,11 @@ function stubService(
     },
     modelIsRegistered: async () => extras.modelIsRegisteredResult ?? false,
     listModelDirectory: () => extras.modelEntries ?? [],
+    setEngineDeathObserver: (
+      observer: ((event: EngineDeathEvent) => void) | undefined,
+    ): void => {
+      extras.onSetDeathObserver?.(observer)
+    },
   } as unknown as LocalInferService
 }
 
@@ -483,6 +513,53 @@ describe('launch and stop route helpers', () => {
     expect(entries.some((name) => name.startsWith('ninfer-qwen3-8-27b-') && name.endsWith('.log'))).toBe(
       true,
     )
+  })
+
+  it('prints the plan launch command above the run logs the card shows', async () => {
+    const argv = ['infernix-serve', '/opt/hf-models/m.infernix', '--host', '127.0.0.1', '--port', '18080']
+    const service = stubService([], {
+      engines: [argvAdapter('infernix', argv)],
+      launchResult: {
+        plan: { engineId: 'infernix', kind: 'process', argv, port: 18080, healthUrl: 'http://127.0.0.1:18080/health' },
+        healthy: true,
+        logs: 'engine booted',
+      },
+    })
+    const result = await launchEngine(service, { engine: 'infernix', config: {} })
+    const note = '[local-infer] launch: infernix-serve /opt/hf-models/m.infernix --host 127.0.0.1 --port 18080\n'
+    // The command line leads the result logs the route hands the card and the
+    // persisted last run, so the Logs section diagnoses the exact child process.
+    expect(result.logs).toBe(`${note}engine booted`)
+    expect(readConfig().lastLogs).toBe(`${note}engine booted`)
+  })
+
+  it('persists the launch command before the deploy so a hung launch stays readable', async () => {
+    const service = stubService([], { engines: [argvAdapter('infernix', ['infernix-serve', '--port', '18080'])] })
+    let logsDuringLaunch: string | undefined
+    service.launch = async (plan: LaunchPlan): Promise<LaunchResult> => {
+      // The route wrote the command line before calling the service, so a
+      // reload while the deploy and health poll are in flight still shows it.
+      logsDuringLaunch = readConfig().lastLogs
+      return { plan, healthy: true }
+    }
+    await launchEngine(service, { engine: 'infernix', config: {} })
+    expect(logsDuringLaunch).toBe('[local-infer] launch: infernix-serve --port 18080\n')
+  })
+
+  it('reports the launch command even when the deploy failed silently', async () => {
+    const service = stubService([], {
+      engines: [argvAdapter('infernix', ['infernix-serve', '--port', '18080'])],
+      launchResult: {
+        plan: { engineId: 'infernix', kind: 'process', argv: ['infernix-serve'], port: 18080, healthUrl: 'http://127.0.0.1:18080/health' },
+        healthy: false,
+        detail: 'build failed',
+      },
+    })
+    const result = await launchEngine(service, { engine: 'infernix', config: {} })
+    // A deploy that produced no engine output still carries the command it
+    // tried to run, so the Logs section is never blank on a failed launch.
+    expect(result.logs).toBe('[local-infer] launch: infernix-serve --port 18080\n')
+    expect(readConfig().lastLogs).toBe('[local-infer] launch: infernix-serve --port 18080\n')
   })
 
   it('renders the plan and calls the service stop entry point with it', async () => {
@@ -939,6 +1016,7 @@ describe('route handlers over a fake web server', () => {
       '/local-infer/install',
       '/local-infer/download',
       '/local-infer/chat-template',
+      '/local-infer/get',
       '/local-infer/launch',
       '/local-infer/stop',
       '/local-infer/register',
@@ -1025,15 +1103,16 @@ describe('route handlers over a fake web server', () => {
     for (const route of routes) {
       const res = fakeRes()
       // Each route takes one method; the wrong one is its complement. The
-      // save, provider-delete, install, launch, stop, register, and
-      // unregister routes take a POST, so a GET is wrong; the summary and
-      // deps routes take a GET, so a POST is wrong.
+      // save, provider-delete, install, download, chat-template, get,
+      // launch, stop, register, and unregister routes take a POST, so a GET
+      // is wrong; the summary and deps routes take a GET, so a POST is wrong.
       if (
         route.path === '/local-infer/save' ||
         route.path === '/local-infer/provider-delete' ||
         route.path === '/local-infer/install' ||
         route.path === '/local-infer/download' ||
         route.path === '/local-infer/chat-template' ||
+        route.path === '/local-infer/get' ||
         route.path === '/local-infer/launch' ||
         route.path === '/local-infer/stop' ||
         route.path === '/local-infer/register' ||
@@ -1868,5 +1947,396 @@ describe('VRAM estimator on the sane default configs', () => {
     })
     expect(summary.meterModel.source).not.toBe('not-measured')
     expect(summary.meterModel.segments.some((segment) => segment.bytes > 0)).toBe(true)
+  })
+})
+
+describe('get route (git sync, deps, build)', () => {
+  let home: string
+
+  beforeAll(() => {
+    home = mkdtempSync(join(tmpdir(), 'local-infer-get-'))
+    process.env.HOME = home
+  })
+
+  afterAll(() => {
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  /**
+   * A stub LifecycleHost for the Get steps: `exists` decides whether the
+   * `[ -d <dir>/.git ]` probe finds a checkout, `stream` feeds the streamed
+   * stdout, and `fail` lists command substrings whose run fails.
+   */
+  function stubGetHost(options?: { exists?: boolean; stream?: Record<string, string> }) {
+    const state = { run: [] as string[], streamed: [] as string[], logged: '' }
+    const streamText = (command: string): string => {
+      const stream = options?.stream ?? {}
+      const key = Object.keys(stream).find((needle) => command.includes(needle))
+      return key === undefined ? '' : stream[key]!
+    }
+    const host: LifecycleHost = {
+      async run(command: string) {
+        state.run.push(command)
+        if (command.startsWith('[ -d')) {
+          return options?.exists === false ? { ok: false } : { ok: true }
+        }
+        return { ok: true }
+      },
+      async runStream(command: string, onOutput: (chunk: string) => void) {
+        state.streamed.push(command)
+        const text = streamText(command)
+        if (text !== '') {
+          onOutput(text)
+        }
+        return { ok: true }
+      },
+    }
+    return { host, state }
+  }
+
+  function fakeStreamRes() {
+    const res = {
+      status: 0,
+      headers: {} as Record<string, string>,
+      body: '',
+      chunks: [] as string[],
+      writeHead(status: number, headers?: Record<string, string>) {
+        res.status = status
+        Object.assign(res.headers, headers ?? {})
+        return res
+      },
+      write(chunk: string) {
+        res.chunks.push(chunk)
+        return true
+      },
+      end(body?: string) {
+        res.body = body ?? ''
+        return res
+      },
+    }
+    return res
+  }
+
+  function getRouteWith(host: LifecycleHost | undefined) {
+    const routes: { path: string; handler: (req: unknown, res: unknown) => Promise<void> }[] = []
+    const scope = {
+      webServer: {
+        register(route: { path: string; handler: (req: unknown, res: unknown) => Promise<void> }) {
+          routes.push(route)
+          return () => undefined
+        },
+      },
+      effect(fn: () => unknown): void {
+        fn()
+      },
+    }
+    registerLocalInferRoute(
+      scope as unknown as import('@deepseek-ai/cordis').Context & {
+        webServer: import('../src/route.ts').WebServerService
+      },
+      stubService([]),
+      host,
+    )
+    return routes.find((route) => route.path === '/local-infer/get')!
+  }
+
+  function fakePost(body: string) {
+    return {
+      method: 'POST',
+      url: '/local-infer/get',
+      destroy(): void {
+        /* the handler only destroys on an oversize body */
+      },
+      async *[Symbol.asyncIterator](): AsyncGenerator<Buffer> {
+        yield Buffer.from(body)
+      },
+    }
+  }
+
+  it('clones the upstream repo under the model directory when no override is set', async () => {
+    writeConfig('ninfer', {}, true)
+    const { host } = stubGetHost({ exists: false })
+    let logged = ''
+    const result = await getEngine(
+      stubService([]),
+      { engine: 'ninfer', config: {} },
+      (chunk) => {
+        logged += chunk
+      },
+      host,
+    )
+    expect(result.ok).toBe(true)
+    expect(logged).toContain(`$ git clone https://github.com/Neroued/ninfer ${join(MODEL_DIR, 'ninfer')}`)
+    // The build steps run after the sync, with the checkout path substituted.
+    expect(logged).toContain(`cmake -S ${join(MODEL_DIR, 'ninfer')}`)
+    expect(logged).toContain('get complete')
+  })
+
+  it('uses the Engine Directory override and clones the fork when both are stored', async () => {
+    writeConfig('ninfer', {}, true, { ninfer: { engineDirectory: '/src/ninfer', engineFork: 'https://github.com/me/ninfer' } })
+    const { host } = stubGetHost({ exists: false })
+    let logged = ''
+    const result = await getEngine(
+      stubService([]),
+      { engine: 'ninfer', config: {} },
+      (chunk) => {
+        logged += chunk
+      },
+      host,
+    )
+    expect(result.ok).toBe(true)
+    expect(logged).toContain('$ git clone https://github.com/me/ninfer /src/ninfer')
+    expect(logged).toContain('cmake -S /src/ninfer')
+  })
+
+  it('aborts with a Logs alert when the checkout has local changes', async () => {
+    writeConfig('ninfer', {}, true)
+    const { host, state } = stubGetHost({ stream: { 'status --short': ' M src/engine.c\n' } })
+    let logged = ''
+    const result = await getEngine(
+      stubService([]),
+      { engine: 'ninfer', config: { modelDirectory: MODEL_DIR } },
+      (chunk) => {
+        logged += chunk
+      },
+      host,
+    )
+    expect(result.ok).toBe(false)
+    expect(result.detail).toContain('local changes')
+    expect(logged).toContain('has local changes. Get aborted')
+    // The abort stops the step: no build runs.
+    expect(state.streamed.some((command) => command.includes('cmake'))).toBe(false)
+  })
+
+  it('re-checks deps with the trust gate off and aborts on a missing dep', async () => {
+    writeConfig('ninfer', { buildMode: 'local' }, false)
+    const { host } = stubGetHost({ exists: false })
+    let logged = ''
+    const result = await getEngine(
+      stubService([], { deps: [TEST_DEP] }),
+      { engine: 'ninfer', config: { buildMode: 'local' } },
+      (chunk) => {
+        logged += chunk
+      },
+      host,
+    )
+    expect(result.ok).toBe(false)
+    expect(result.detail).toContain('a system dependency is missing')
+    expect(logged).toContain('  cmake: missing')
+    expect(logged).toContain('one-click install is off')
+    // The missing dep stops the step before the build.
+    expect(logged).not.toContain('cmake -S')
+  })
+
+  it('logs per-dep results when the trust gate is on', async () => {
+    writeConfig('ninfer', { buildMode: 'local' }, true)
+    const { host } = stubGetHost({ exists: false })
+    let logged = ''
+    const result = await getEngine(
+      stubService([], { deps: [TEST_DEP] }),
+      { engine: 'ninfer', config: { buildMode: 'local' } },
+      (chunk) => {
+        logged += chunk
+      },
+      host,
+    )
+    expect(result.ok).toBe(true)
+    expect(logged).toContain('system dependencies (local)')
+    expect(logged).toContain('  cmake: satisfied')
+    expect(logged).toContain('get complete')
+  })
+
+  it('streams the run through the route and persists it as the last logs', async () => {
+    writeConfig('ninfer', {}, true)
+    const { host } = stubGetHost({ exists: false })
+    const route = getRouteWith(host)
+    const res = fakeStreamRes()
+    await route.handler(
+      fakePost(JSON.stringify({ engine: 'ninfer', config: { modelDirectory: MODEL_DIR } })),
+      res,
+    )
+    expect(res.status).toBe(200)
+    expect(res.headers['content-type']).toContain('text/plain')
+    const streamed = res.chunks.join('')
+    expect(streamed).toContain('$ git clone')
+    expect(streamed).toContain('get complete')
+    // The streamed run persists as the last logs the Logs section shows.
+    expect(readConfig().lastLogs).toContain('get complete')
+  })
+
+  it('persists the streamed output on top of the previous last logs', async () => {
+    writeConfig('ninfer', {}, true, undefined, true, [], undefined, 'prior run')
+    const { host } = stubGetHost({ exists: false })
+    const route = getRouteWith(host)
+    const res = fakeStreamRes()
+    await route.handler(fakePost(JSON.stringify({ engine: 'ninfer' })), res)
+    expect(readConfig().lastLogs).toContain('prior run')
+    expect(readConfig().lastLogs).toContain('get complete')
+  })
+
+  it('answers 400 for a broken body and streams nothing', async () => {
+    const route = getRouteWith(stubGetHost({ exists: false }).host)
+    const res = fakeStreamRes()
+    await route.handler(fakePost('{broken'), res)
+    expect(res.status).toBe(400)
+    expect(res.chunks).toHaveLength(0)
+  })
+
+  it('streams the failure note when the run throws', async () => {
+    writeConfig('ninfer', {}, true)
+    const throwingHost: LifecycleHost = {
+      async run(): Promise<{ ok: boolean; detail?: string }> {
+        throw new Error('host exploded')
+      },
+    }
+    const route = getRouteWith(throwingHost)
+    const res = fakeStreamRes()
+    await route.handler(fakePost(JSON.stringify({ engine: 'ninfer' })), res)
+    expect(res.status).toBe(200)
+    expect(res.chunks.join('')).toContain('get failed: host exploded')
+  })
+})
+
+describe('engine death persistence', () => {
+  let home: string
+
+  beforeAll(() => {
+    home = mkdtempSync(join(tmpdir(), 'local-infer-death-'))
+    process.env.HOME = home
+  })
+
+  afterAll(() => {
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  function providerWithRecord(): StoredProviderConfig {
+    return {
+      id: 'p1',
+      engine: 'infernix',
+      config: { port: 18080 },
+      platform: {},
+      launch: {
+        pid: 12345,
+        startedAt: '2026-10-23T12:00:00.000Z',
+        argv: ['infernix-serve', '--port', '18080'],
+        previousPids: [999],
+        engineId: 'infernix',
+        modelId: 'qwen3-27b',
+        port: 18080,
+      },
+    }
+  }
+
+  it('clears the provider record and notes the exit when the engine is killed', () => {
+    writeConfig(
+      'infernix',
+      {},
+      false,
+      undefined,
+      true,
+      [providerWithRecord()],
+      DEFAULT_LOG_PATH_TEMPLATE,
+      'engine up\n',
+    )
+    handleEngineDeath({
+      engineId: 'infernix',
+      port: 18080,
+      pid: 12345,
+      code: null,
+      signal: 'SIGKILL',
+    })
+    const stored = readConfig()
+    // The record (with its previous-pid list) is gone, so a restart cannot
+    // re-link the recycled pid, and the exit line landed in the last-run logs.
+    expect(stored.providers[0]?.launch).toBeUndefined()
+    expect(stored.lastLogs).toContain('engine up')
+    expect(stored.lastLogs).toContain(
+      'engine infernix (port 18080) pid 12345 exited on signal SIGKILL',
+    )
+  })
+
+  it('matches by engine and port when the death carries no tracked pid', () => {
+    writeConfig(
+      'infernix',
+      {},
+      false,
+      undefined,
+      true,
+      [providerWithRecord()],
+      DEFAULT_LOG_PATH_TEMPLATE,
+      '',
+    )
+    handleEngineDeath({
+      engineId: 'infernix',
+      port: 18080,
+      code: 1,
+      signal: null,
+      detail: 'the adopted engine process exited outside this DSH session',
+    })
+    const stored = readConfig()
+    expect(stored.providers[0]?.launch).toBeUndefined()
+    expect(stored.lastLogs).toContain('exited with exit code 1')
+    expect(stored.lastLogs).toContain('outside this DSH session')
+  })
+
+  it('stays quiet when no stored entry carries a matching record', () => {
+    writeConfig(
+      'infernix',
+      {},
+      false,
+      undefined,
+      true,
+      [{ id: 'p2', engine: 'infernix', config: {}, platform: {} }],
+      DEFAULT_LOG_PATH_TEMPLATE,
+      'keep',
+    )
+    handleEngineDeath({ engineId: 'infernix', port: 9999, pid: 777, code: null, signal: null })
+    // An expected stop (the route already cleared the record) or an untracked
+    // engine rewrites nothing: the stored state stays as the stop left it.
+    expect(readConfig().lastLogs).toBe('keep')
+    expect(readConfig().providers[0]?.launch).toBeUndefined()
+  })
+
+  it('mount registers the death observer and dispose clears it', () => {
+    let observer: ((event: EngineDeathEvent) => void) | undefined = 'unset' as never
+    let dispose: (() => void) | undefined
+    const scope = {
+      webServer: {
+        register: (): (() => void) => () => undefined,
+      },
+      effect: (fn: () => unknown): void => {
+        dispose = fn() as () => void
+      },
+    }
+    registerLocalInferRoute(
+      scope as unknown as import('@deepseek-ai/cordis').Context & {
+        webServer: import('../src/route.ts').WebServerService
+      },
+      stubService([], {
+        onSetDeathObserver: (next): void => {
+          observer = next
+        },
+      }),
+    )
+    expect(observer).toBeTypeOf('function')
+    dispose?.()
+    expect(observer).toBeUndefined()
+  })
+
+  it('passes the provider config into the status detector', async () => {
+    let refs: readonly ProviderRef[] | undefined
+    writeConfig('ninfer', {}, false, undefined, true, [
+      { id: 'p1', engine: 'ninfer', config: { model: 'qwen3-27b', port: 18080 }, platform: {} },
+    ])
+    const service = stubService([], {
+      providerStatuses: async (providers) => {
+        refs = providers
+        return {}
+      },
+    })
+    await buildSummary(service)
+    // The config rides into the detector so the signature prices the
+    // provider's own port rather than the adapter's default.
+    expect(refs?.[0]?.config).toEqual({ model: 'qwen3-27b', port: 18080 })
   })
 })

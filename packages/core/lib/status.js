@@ -28,7 +28,12 @@ export function isGpuBusy(usage) {
 export function computeProviderStatuses(input) {
     const statuses = {};
     for (const provider of input.providers) {
-        const matches = input.running.filter((ref) => ref.engineId === provider.engine);
+        // A provider that names a port only counts an engine running on that
+        // port: two configs of one engine on different ports are distinct
+        // engines, and a match on the other port must not confirm (or deny) this
+        // config's model. An unnamed port keeps the engine-wide match.
+        const matches = input.running.filter((ref) => ref.engineId === provider.engine &&
+            (provider.port === undefined || ref.port === undefined || ref.port === provider.port));
         if (matches.length > 0) {
             // The engine is running. The question is which model it serves: the
             // detector's identified model, if it tied one, else unknown.

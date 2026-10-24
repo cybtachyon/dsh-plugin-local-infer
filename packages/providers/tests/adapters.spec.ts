@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   createNodeLifecycleHost,
   HyperQwenAdapter,
+  InfernixAdapter,
+  INFERNIX_MODEL_ARTIFACTS,
   LLAMACPP_DOCKER_IMAGE,
   NINFER_DOCKER_IMAGE,
   NINFER_MODEL_ARTIFACTS,
@@ -25,6 +27,7 @@ import type {
   HardwareProfile,
   LaunchPlan,
   LifecycleHost,
+  ProcessExitInfo,
   ProcessHandle,
 } from '../../core/lib/index.js'
 
@@ -42,6 +45,7 @@ function stubHost() {
     spawn: [] as { argv: string[]; env: Record<string, string>; cwd?: string }[],
     fetch: [] as string[],
     killed: [] as number[],
+    exits: [] as ((exit: ProcessExitInfo) => void)[],
     fetchStatus: 200,
     fetchSequence: [] as number[],
     runOk: true,
@@ -58,6 +62,11 @@ function stubHost() {
         kill: (): void => {
           state.killed.push(1234)
         },
+        // The test drives the child's death by firing these listeners, the
+        // same seam the live host's close/error events reach.
+        onExit: (listener: (exit: ProcessExitInfo) => void): void => {
+          state.exits.push(listener)
+        },
       }
     },
     async fetch(url: string): Promise<FetchResult> {
@@ -68,6 +77,20 @@ function stubHost() {
     },
   }
   return { host, state }
+}
+
+/**
+ * onceExit awaits the handle's one-shot exit report through the onExit seam,
+ * the contract the live node host fulfills from the child's close/error events.
+ */
+function onceExit(handle: ProcessHandle): Promise<ProcessExitInfo> {
+  return new Promise((resolve, reject) => {
+    if (handle.onExit === undefined) {
+      reject(new Error('handle exposes no onExit seam'))
+      return
+    }
+    handle.onExit(resolve)
+  })
 }
 
 describe('NInferAdapter.renderLaunch', () => {
@@ -1017,6 +1040,48 @@ describe('nodeLifecycleHost (the live host the service wires in)', () => {
     handle.kill()
   })
 
+  it('reports a clean child exit through the handle onExit listener', async () => {
+    const host = createNodeLifecycleHost()
+    const handle = host.spawn(['node', '-e', 'process.exit(3)'], {})
+    const exit = await onceExit(handle)
+    expect(exit).toEqual({ code: 3, signal: null })
+  })
+
+  it('settles onExit with the spawn error for a binary that cannot start', async () => {
+    // The crash regression: a child process with no 'error' listener turns a
+    // failed spawn (ENOENT for a missing engine binary) into an
+    // uncaughtException that takes the host down. Here the failure lands on
+    // the handle: the listener fires, the logs carry the note, and this test
+    // process survives the failed spawn.
+    const host = createNodeLifecycleHost()
+    const handle = host.spawn(['dsh-local-infer-missing-binary'], {})
+    const exit = await onceExit(handle)
+    expect(exit.code).toBeNull()
+    expect(exit.error).toContain('dsh-local-infer-missing-binary')
+    expect(handle.logs).toContain('spawn error')
+  })
+
+  it('reports a pkill as a signal exit through onExit', async () => {
+    const host = createNodeLifecycleHost()
+    // The card's kill commands and a stray pkill both signal the engine pid
+    // directly; the close event must surface the signal, not a silent drop.
+    const handle = host.spawn(['node', '-e', 'setTimeout(() => {}, 30000)'], {})
+    const exitPromise = onceExit(handle)
+    process.kill(handle.pid, 'SIGKILL')
+    const exit = await exitPromise
+    expect(exit).toEqual({ code: null, signal: 'SIGKILL' })
+  })
+
+  it('fires a listener registered after the child already ended immediately', async () => {
+    const host = createNodeLifecycleHost()
+    const handle = host.spawn(['node', '-e', 'process.exit(0)'], {})
+    await onceExit(handle)
+    const seen: ProcessExitInfo[] = []
+    handle.onExit?.((exit) => seen.push(exit))
+    expect(seen).toHaveLength(1)
+    expect(seen[0]?.code).toBe(0)
+  })
+
   it('reads a connection failure as status 0, the poll not-ready signal', async () => {
     const { nodeLifecycleHost } = await import('../src/adapters.ts')
     // Port 1 on loopback has nothing listening, so the fetch throws and the
@@ -1024,6 +1089,56 @@ describe('nodeLifecycleHost (the live host the service wires in)', () => {
     const result = await nodeLifecycleHost.fetch('http://127.0.0.1:1/health')
     expect(result.status).toBe(0)
     expect(result.ok).toBe(false)
+  })
+})
+
+describe('tracked children (the adapters children map)', () => {
+  const plan: LaunchPlan = {
+    engineId: 'ninfer',
+    kind: 'process',
+    argv: ['ninfer-serve', '/models/model.ninfer'],
+    port: 18020,
+    healthUrl: 'http://127.0.0.1:18020/health',
+  }
+
+  it('drops the tracked handle when the child dies, so a later stop signals nothing', async () => {
+    const { host, state } = stubHost()
+    const adapter = new NInferAdapter(host)
+    const deploy = await adapter.deploy(plan)
+    // The deploy hands the service a handle to watch, and the child is pkill'd.
+    expect(deploy.handle?.pid).toBe(1234)
+    for (const listener of state.exits) {
+      listener({ code: null, signal: 'SIGKILL' })
+    }
+    await adapter.stop(plan)
+    // The dead handle left the map with its child, so stop signals nothing
+    // rather than a pid a recycled process may have taken over.
+    expect(state.killed).toEqual([])
+  })
+
+  it('keeps the kill for a child that is still running', async () => {
+    const { host, state } = stubHost()
+    const adapter = new NInferAdapter(host)
+    await adapter.deploy(plan)
+    await adapter.stop(plan)
+    expect(state.killed).toEqual([1234])
+  })
+
+  it('returns the spawned handle from every process and docker deploy path', async () => {
+    const { host } = stubHost()
+    const ninfer = new NInferAdapter(host)
+    expect((await ninfer.deploy(plan)).handle?.pid).toBe(1234)
+    const dockerPlan: LaunchPlan = { ...plan, kind: 'docker', containerName: 'llamacpp-18020' }
+    const llamacpp = new LlamaCppAdapter(host)
+    expect((await llamacpp.deploy(dockerPlan)).handle?.pid).toBe(1234)
+    const llamacppPlan: LaunchPlan = { ...plan, engineId: 'llamacpp' }
+    expect((await llamacpp.deploy(llamacppPlan)).handle?.pid).toBe(1234)
+    const strata = new StrataAdapter(host)
+    const strataPlan: LaunchPlan = { ...plan, engineId: 'strata', kind: 'docker', containerName: 'strata-18020' }
+    expect((await strata.deploy(strataPlan)).handle?.pid).toBe(1234)
+    const infernix = new InfernixAdapter(host)
+    const infernixPlan: LaunchPlan = { ...plan, engineId: 'infernix' }
+    expect((await infernix.deploy(infernixPlan)).handle?.pid).toBe(1234)
   })
 })
 
@@ -1107,5 +1222,295 @@ describe('adapter launchSignature (the Phase 10 process-match data)', () => {
       binary: STRATA_DOCKER_IMAGE,
       port: 8082,
     })
+  })
+
+  it('Infernix: the signature is the infernix-serve binary marker and the port', () => {
+    const adapter = new InfernixAdapter()
+    expect(adapter.launchSignature({ port: 8080 })).toEqual({
+      binary: 'infernix-serve',
+      port: 8080,
+    })
+    // The .exe command line carries the marker, so a Windows process matches.
+    expect(adapter.launchSignature()).toEqual({ binary: 'infernix-serve', port: 8080 })
+  })
+})
+
+describe('InfernixAdapter', () => {
+  it('renders a local process plan with the artifact path and the spec flags', () => {
+    const { host } = stubHost()
+    const adapter = new InfernixAdapter(host)
+    const plan = adapter.renderLaunch(
+      {
+        model: 'qwen3-27b',
+        kvDtype: 'int8',
+        maxContext: 240000,
+        port: 8080,
+        modelDirectory: '/models',
+      },
+      HW,
+    )
+    expect(plan.kind).toBe('process')
+    expect(plan.engineId).toBe('infernix')
+    expect(plan.port).toBe(8080)
+    expect(plan.healthUrl).toBe('http://127.0.0.1:8080/health')
+    expect(plan.modelId).toBe('qwen3-27b')
+    expect(plan.modelDirectory).toBe('/models')
+    const argv = plan.argv ?? []
+    expect(argv[0]).toContain('infernix-serve')
+    expect(argv[1]).toBe('/models/qwen3_8_27b_nvfp4-nvidia.ninfer')
+    expect(argv).toContain('--host')
+    expect(argv).toContain('127.0.0.1')
+    expect(argv).toContain('--port')
+    expect(argv).toContain('8080')
+    expect(argv).toContain('--model-id')
+    expect(argv).toContain('Qwen3.8-27B')
+    expect(argv).toContain('--kv-dtype')
+    expect(argv).toContain('int8')
+    expect(argv).toContain('--max-context')
+    expect(argv).toContain('240000')
+  })
+
+  it('spells the Infernix-only flags onto the argv, and only for this engine', () => {
+    const { host } = stubHost()
+    const adapter = new InfernixAdapter(host)
+    const plan = adapter.renderLaunch(
+      {
+        model: 'qwen38-flash-next',
+        spec: 'dflash2',
+        draftTokens: 'auto',
+        lmHeadDraft: true,
+        draftModel: '/models/Qwen3.8-Flash-Next-DFlash2-Infernix.infernix',
+        ngramVolume: '/models/Qwen3.8-Flash-Next-NVIDIA-NVFP4-Infernix.ngram',
+        ngramResidency: 'ram',
+        ngramDraftTokens: 31,
+        ngramMinMatch: 12,
+        expertRamMib: 49152,
+        hostContextMib: 8192,
+        maxConcurrency: 2,
+        prefillChunk: 4096,
+        kvCapacity: 262144,
+        port: 8080,
+        modelDirectory: '/models',
+      },
+      HW,
+    )
+    const argv = plan.argv ?? []
+    expect(argv[1]).toBe(
+      '/models/Qwen3.8-Flash-Next-NVIDIA-NVFP4-Dense8-Infernix-00001-of-00003.infernix',
+    )
+    expect(argv).toContain('--ngram-volume')
+    expect(argv).toContain('/models/Qwen3.8-Flash-Next-NVIDIA-NVFP4-Infernix.ngram')
+    expect(argv).toContain('--draft-model')
+    expect(argv).toContain('/models/Qwen3.8-Flash-Next-DFlash2-Infernix.infernix')
+    expect(argv).toContain('--spec')
+    expect(argv).toContain('dflash2')
+    expect(argv).toContain('--draft-tokens')
+    expect(argv).toContain('auto')
+    expect(argv).toContain('--lm-head-draft')
+    expect(argv).toContain('--ngram-residency')
+    expect(argv).toContain('ram')
+    expect(argv).toContain('--ngram-draft-tokens')
+    expect(argv).toContain('31')
+    expect(argv).toContain('--ngram-min-match')
+    expect(argv).toContain('12')
+    expect(argv).toContain('--expert-ram-mib')
+    expect(argv).toContain('49152')
+    expect(argv).toContain('--host-context-mib')
+    expect(argv).toContain('8192')
+    expect(argv).toContain('--max-concurrency')
+    expect(argv).toContain('2')
+    expect(argv).toContain('--kv-capacity')
+    expect(argv).toContain('262144')
+    // The NInfer adapter never spells the Infernix-only flags.
+    const ninferAdapter = new NInferAdapter(host)
+    const ninferPlan = ninferAdapter.renderLaunch(
+      { model: 'qwen3-27b', port: 18020, modelDirectory: '/models' },
+      HW,
+    )
+    const ninferArgv = ninferPlan.argv ?? []
+    for (const flag of [
+      '--ngram-volume',
+      '--draft-model',
+      '--ngram-residency',
+      '--ngram-draft-tokens',
+      '--ngram-min-match',
+      '--expert-ram-mib',
+      '--host-context-mib',
+      '--max-pending-requests',
+      '--no-cuda-graph',
+      '--reproducible',
+      '--lossless',
+      '--rope-yarn-factor',
+      '--tolerant-tool-calls',
+      '--reasoning-loop',
+      '--expert-state',
+      '--prefix-cache-file',
+      '--expert-pin-mib',
+      '--ram-headroom-mib',
+      '--vram-headroom-mib',
+    ]) {
+      expect(ninferArgv, `${flag} off the NInfer argv`).not.toContain(flag)
+    }
+  })
+
+  it('defaults to the 27B artifact and the 8080 port when the config names neither', () => {
+    const { host } = stubHost()
+    const adapter = new InfernixAdapter(host)
+    const plan = adapter.renderLaunch({}, HW)
+    expect(plan.modelId).toBe('qwen3-27b')
+    expect(plan.port).toBe(8080)
+    expect(plan.argv?.[1]).toBe(INFERNIX_MODEL_ARTIFACTS['qwen3-27b']!.file)
+  })
+
+  it('launches a directory-scanned .infernix file as-is', () => {
+    const { host } = stubHost()
+    const adapter = new InfernixAdapter(host)
+    const plan = adapter.renderLaunch(
+      { model: 'Qwen3.8-Flash-Next-NVIDIA-NVFP4-Dense8-Infernix-00001-of-00003.infernix' },
+      HW,
+    )
+    expect(plan.modelId).toBe(
+      'Qwen3.8-Flash-Next-NVIDIA-NVFP4-Dense8-Infernix-00001-of-00003.infernix',
+    )
+    expect(plan.argv?.[1]).toBe(
+      'Qwen3.8-Flash-Next-NVIDIA-NVFP4-Dense8-Infernix-00001-of-00003.infernix',
+    )
+  })
+
+  it('appends the card custom args to the process argv after the spec flags', () => {
+    const { host } = stubHost()
+    const adapter = new InfernixAdapter(host)
+    const plan = adapter.renderLaunch(
+      {
+        model: 'qwen3-27b',
+        port: 8080,
+        customArgs: [
+          { key: '--log-level', value: 'debug' },
+          { key: '--no-cuda-graph' },
+        ],
+      },
+      HW,
+    )
+    const argv = plan.argv ?? []
+    const flagIndex = argv.indexOf('--log-level')
+    expect(flagIndex).toBeGreaterThan(-1)
+    expect(argv[flagIndex + 1]).toBe('debug')
+    expect(argv).toContain('--no-cuda-graph')
+  })
+
+  it('builds through the engine preset, downloads the model, and spawns the engine', async () => {
+    const { host, state } = stubHost()
+    const adapter = new InfernixAdapter(host)
+    const plan = adapter.renderLaunch(
+      { model: 'qwen3-27b', port: 8080, modelDirectory: '/models' },
+      HW,
+    )
+    const result = await adapter.deploy(plan, {
+      engineId: 'infernix',
+      engineDirectory: '/engines/infernix',
+    })
+    expect(result.ok).toBe(true)
+    expect(result.handle?.pid).toBe(1234)
+    // The build runs the engine's own preset sequence in the engine
+    // directory, then the hf CLI pulls the single-file artifact.
+    expect(state.run).toEqual([
+      'cd /engines/infernix && cmake --preset release && cmake --build build -j',
+      'hf download Wallawalla47/Qwen3.8-27B-NVIDIA-NVFP4-NInferV3 qwen3_8_27b_nvfp4-nvidia.ninfer --local-dir /models',
+    ])
+    expect(state.spawn).toHaveLength(1)
+    expect(state.spawn[0]?.cwd).toBe('/engines/infernix')
+  })
+
+  it('downloads the whole repo for the multi-file Flash-Next artifact', async () => {
+    const { host, state } = stubHost()
+    const adapter = new InfernixAdapter(host)
+    const plan = adapter.renderLaunch(
+      { model: 'qwen38-flash-next', port: 8080, modelDirectory: '/models' },
+      HW,
+    )
+    const result = await adapter.deploy(plan)
+    expect(result.ok).toBe(true)
+    expect(state.run).toEqual([
+      'hf download Wallawalla47/Qwen3.8-Flash-Next-NVIDIA-NVFP4-Dense8-Infernix --local-dir /models',
+    ])
+  })
+
+  it('syncs the engine fork before the build', async () => {
+    const { host, state } = stubHost()
+    const adapter = new InfernixAdapter(host)
+    const plan = adapter.renderLaunch({ model: 'qwen3-27b', port: 8080 }, HW)
+    await adapter.deploy(plan, {
+      engineId: 'infernix',
+      engineDirectory: '/engines/infernix',
+      engineFork: 'https://github.com/wallawalla47/infernix',
+    })
+    expect(state.run[0]).toContain('git -C /engines/infernix fetch https://github.com/wallawalla47/infernix')
+    expect(state.run[1]).toContain('cmake --preset release')
+  })
+
+  it('skips the clone and build when no platform config is stored', async () => {
+    const { host, state } = stubHost()
+    const adapter = new InfernixAdapter(host)
+    const plan = adapter.renderLaunch({ model: 'qwen3-27b', port: 8080, modelDirectory: '/models' }, HW)
+    const result = await adapter.deploy(plan)
+    expect(result.ok).toBe(true)
+    expect(state.run).toEqual([
+      'hf download Wallawalla47/Qwen3.8-27B-NVIDIA-NVFP4-NInferV3 qwen3_8_27b_nvfp4-nvidia.ninfer --local-dir /models',
+    ])
+    expect(state.spawn).toHaveLength(1)
+  })
+
+  it('reports a failed build as not-ok with the detail', async () => {
+    const { host, state } = stubHost()
+    state.runOk = false
+    const adapter = new InfernixAdapter(host)
+    const plan = adapter.renderLaunch({ model: 'qwen3-27b', port: 8080 }, HW)
+    const result = await adapter.deploy(plan, {
+      engineId: 'infernix',
+      engineDirectory: '/engines/infernix',
+    })
+    expect(result.ok).toBe(false)
+    expect(result.detail).toContain('build failed')
+  })
+
+  it('polls the health URL and stops the tracked process', async () => {
+    const { host, state } = stubHost()
+    const adapter = new InfernixAdapter(host)
+    const plan = adapter.renderLaunch({ model: 'qwen3-27b', port: 8080 }, HW)
+    await adapter.deploy(plan)
+    state.fetchStatus = 200
+    const health = await adapter.healthCheck(plan, { pollMs: 0 })
+    expect(health.healthy).toBe(true)
+    await adapter.stop(plan)
+    expect(state.killed).toEqual([1234])
+  })
+
+  it('publishes the artifact model id the engine serves', () => {
+    const { host } = stubHost()
+    const adapter = new InfernixAdapter(host)
+    expect(adapter.modelRef({ model: 'qwen3-27b' })).toEqual({
+      id: 'Qwen3.8-27B',
+      name: 'Qwen3.8-27B',
+    })
+    expect(adapter.modelRef({ model: 'qwen38-flash-next' })).toEqual({
+      id: 'Qwen3.8-Flash-Next',
+      name: 'Qwen3.8-Flash-Next',
+    })
+  })
+
+  it('spells the Infernix spec surface into flags through the shared helper', () => {
+    const flags = flagsFromSpecs(
+      [
+        {
+          key: 'ngramVolume',
+          label: 'N-gram volume',
+          description: 'Points the engine at the PLE n-gram table file.',
+          form: { kind: 'path' },
+          toArgv: (value) => (value ? ['--ngram-volume', String(value)] : []),
+        },
+      ],
+      { ngramVolume: '/models/table.ngram' },
+    )
+    expect(flags).toEqual(['--ngram-volume', '/models/table.ngram'])
   })
 })

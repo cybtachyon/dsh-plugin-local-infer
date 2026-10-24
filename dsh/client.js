@@ -83,6 +83,8 @@ window.__ModuleLoader__.load({
         run: 'Run',
         running: 'running...',
         get: 'Get',
+        getting: 'getting...',
+        getFailed: 'get failed',
         allowRun: 'Allow one-click install (sudo)',
         depsSatisfied: 'All dependencies satisfied.',
         installRejected: 'one-click install is not allowed; copy the install string instead',
@@ -123,7 +125,7 @@ window.__ModuleLoader__.load({
           'How the engine is deployed. local builds it from source on the host; docker pulls a prebuilt image. The dependency plan and hardware guidelines price the selected mode.',
         modelDirHelp: 'Where model files are downloaded and served from.',
         engineDirHelp:
-          'Local directory of the engine source. In local build mode the deploy step clones and builds the engine here.',
+          'Local directory of the engine source. Get clones or updates the git repo and builds the engine here; with no override it lands in the model directory under the engine name.',
         engineForkHelp: 'Git repo that overrides the engine default upstream for the clone step.',
         providers: 'Providers',
         newProvider: 'New provider',
@@ -210,6 +212,8 @@ window.__ModuleLoader__.load({
         run: '运行',
         running: '运行中…',
         get: '获取',
+        getting: '获取中…',
+        getFailed: '获取失败',
         allowRun: '允许一键安装 (sudo)',
         depsSatisfied: '所有依赖已满足。',
         installRejected: '未允许一键安装；请复制安装命令。',
@@ -247,7 +251,7 @@ window.__ModuleLoader__.load({
         buildHelp:
           '引擎的部署方式。local 在主机上从源码构建；docker 拉取预构建镜像。依赖计划和硬件准则按所选模式计价。',
         modelDirHelp: '模型文件的下载和服务目录。',
-        engineDirHelp: '引擎源码的本地目录。本地构建模式下，部署步骤在此克隆并构建引擎。',
+        engineDirHelp: '引擎源码的本地目录。“获取”会在此克隆或更新 git 仓库并构建引擎；未覆盖时，仓库落在模型目录下以引擎命名的子目录中。',
         engineForkHelp: '用于克隆步骤、覆盖引擎默认上游的 git 仓库。',
         providers: '提供方',
         newProvider: '新增提供方',
@@ -1568,6 +1572,11 @@ window.__ModuleLoader__.load({
       );
     }
 
+    // The Get run's output-idle cap. Two minutes without a streamed line
+    // reads as a stalled build: the card re-enables Launch while the run
+    // keeps streaming in the background.
+    var GET_IDLE_MS = 120000;
+
     // The "System dependencies" panel: the per-dep status list, the copy/paste
     // install block, the Play/Run arrow (only while the trust gate is on),
     // and the "Get" gate that stays disabled until every dep reports
@@ -1696,8 +1705,11 @@ window.__ModuleLoader__.load({
             react,
             primitives,
             'primary',
-            { onClick: actions.onGet, disabled: !deps.allSatisfied },
-            t.get,
+            {
+              onClick: actions.onGet,
+              disabled: !deps.allSatisfied || actions.getting === true,
+            },
+            actions.getting === true ? t.getting : t.get,
           ),
         ),
         actions.depsNote
@@ -1766,6 +1778,15 @@ window.__ModuleLoader__.load({
         // does.
         var launchingState = react.useState(false);
         var stoppingState = react.useState(false);
+        // The Get step's state. Get runs the git sync, the dependency plan,
+        // and the engine build on the host through /local-infer/get, and the
+        // streamed output lands in getLogs (the Logs section shows it while
+        // the run is in flight). Launch stays disabled while a Get is in
+        // flight; the idle timer re-enables it once GET_IDLE_MS passes with
+        // no output, so a silent build never parks the button.
+        var gettingState = react.useState(false);
+        var getLogsState = react.useState(null);
+        var getIdleTimerRef = react.useRef(null);
         // Whether the draft's engine is confirmed running, so the single
         // Launch/Stop control reads as Stop while the engine is up and Launch
         // while it is down, the same toggle the per-entry control does. A
@@ -1834,6 +1855,8 @@ window.__ModuleLoader__.load({
         var agentDefault = agentDefaultState[0];
         var launching = launchingState[0];
         var stopping = stoppingState[0];
+        var getting = gettingState[0];
+        var getLogs = getLogsState[0];
         var draftRunning = draftRunningState[0];
         var lifecycleNote = lifecycleNoteState[0];
         var downloading = downloadingState[0];
@@ -1874,6 +1897,10 @@ window.__ModuleLoader__.load({
               )
               .then((next) => {
                 dataState[1](next);
+                // The streamed Get buffer yields to the persisted last-run
+                // logs the summary now carries, so the Logs section keeps
+                // the run's tail without a second copy.
+                getLogsState[1](null);
                 draftState[1]((current) => {
                   // The summary's platformConfigs is the host-persisted
                   // platform state, while the draft's platform entries are
@@ -2572,14 +2599,78 @@ window.__ModuleLoader__.load({
         }, [deps, draft, installing, t]);
 
         var onGet = react.useCallback(() => {
-          if (deps === null || draft === null) {
+          if (deps === null || draft === null || getting) {
             return;
           }
-          // "Get" is the gate: it re-checks the live dep state, so the button
-          // opens only after a re-check passes.
-          fetchDeps(draft.engine, draft.config);
-          depsNoteState[1](t.depsSatisfied);
-        }, [deps, draft, t, fetchDeps]);
+          // "Get" runs the git sync, the dependency plan, and the build on
+          // the host through /local-infer/get. The route streams its output;
+          // each chunk appends to the Logs section and re-arms the idle
+          // timer, and Launch stays disabled until the run finishes, fails,
+          // or falls silent for GET_IDLE_MS.
+          gettingState[1](true);
+          depsNoteState[1]('');
+          getLogsState[1]((data && data.lastLogs) || '');
+          var append = (text) => {
+            getLogsState[1]((current) => (current === null ? '' : current) + text);
+          };
+          var armIdle = () => {
+            if (getIdleTimerRef.current) {
+              clearTimeout(getIdleTimerRef.current);
+            }
+            // Two minutes without a line reads as a stalled build: release
+            // Launch while the run keeps streaming in the background.
+            getIdleTimerRef.current = setTimeout(() => {
+              gettingState[1](false);
+            }, GET_IDLE_MS);
+          };
+          armIdle();
+          var platform = (draft.platform || {})[draft.engine];
+          fetch('/local-infer/get', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              engine: draft.engine,
+              config: draft.config,
+              platform: platform,
+            }),
+          })
+            .then((response) => {
+              if (!response.ok) {
+                return response.text().then((text) => {
+                  throw new Error(text || 'HTTP ' + response.status);
+                });
+              }
+              if (!response.body || typeof response.body.getReader !== 'function') {
+                // A host whose response cannot stream: read the whole body.
+                return response.text().then((text) => append(text));
+              }
+              var reader = response.body.getReader();
+              var decoder = new TextDecoder();
+              var pump = () =>
+                reader.read().then(({ done, value }) => {
+                  if (done) {
+                    return undefined;
+                  }
+                  append(decoder.decode(value, { stream: true }));
+                  armIdle();
+                  return pump();
+                });
+              return pump();
+            })
+            .catch((error) => {
+              append('\n' + t.getFailed + ': ' + (error && error.message ? error.message : '') + '\n');
+            })
+            .then(() => {
+              if (getIdleTimerRef.current) {
+                clearTimeout(getIdleTimerRef.current);
+                getIdleTimerRef.current = null;
+              }
+              gettingState[1](false);
+              // The route persisted the run as the last logs; the summary
+              // re-read hands the Logs section back to the stored value.
+              fetchSummary(draft.engine, draft.config);
+            });
+        }, [deps, draft, getting, data, t, fetchSummary]);
 
         var onRegister = react.useCallback(() => {
           if (draft === null || registering) {
@@ -2723,8 +2814,13 @@ window.__ModuleLoader__.load({
             })
             .then(() => {
               launchingState[1](false);
+              // The route persisted the run's launch command line and engine
+              // output as the last logs; the summary re-read hands the Logs
+              // section the new run, the same rule the per-entry launch and
+              // the Get apply when their run ends.
+              fetchSummary(draft.engine, draft.config);
             });
-        }, [draft, launching, editingProviderId, t]);
+        }, [draft, launching, editingProviderId, t, fetchSummary]);
 
         var onStop = react.useCallback(() => {
           if (draft === null || stopping) {
@@ -3408,6 +3504,7 @@ window.__ModuleLoader__.load({
               onAllowRun: onAllowRun,
               onRun: onRun,
               onGet: onGet,
+              getting: getting,
               installing: installing,
               copyNote: copyNote,
               depsNote: depsNote,
@@ -3418,6 +3515,8 @@ window.__ModuleLoader__.load({
           // read-only text area (a launch fills it; the card never edits it),
           // and the log-file location the launch writes to. The location field
           // edits the template the route resolves and writes on the next run.
+          // While a Get is in flight the streamed buffer wins: the git sync,
+          // dependency, and build output appends there as it lands.
           react.createElement(
             'div',
             { style: { marginTop: 8 } },
@@ -3435,7 +3534,7 @@ window.__ModuleLoader__.load({
                 color: 'inherit',
                 background: 'transparent',
               },
-              value: data.lastLogs || '',
+              value: getLogs !== null ? getLogs : data.lastLogs || '',
               readOnly: true,
               'aria-label': t.logs,
             }),
@@ -3455,8 +3554,9 @@ window.__ModuleLoader__.load({
           // draft's engine is down, Stop while a healthy launch set draftRunning,
           // and an in-flight spinner (disabled) while a launch or stop is in
           // flight. Launch stays disabled while the deps panel reports a
-          // missing host dependency, the same gate the panel's "Get" button
-          // reads. The note reports the answer the route returned.
+          // missing host dependency or a Get run is in flight, and re-enables
+          // when the build finishes, errors, or falls silent for GET_IDLE_MS.
+          // The note reports the answer the route returned.
           react.createElement(
             'div',
             { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 } },
@@ -3491,7 +3591,8 @@ window.__ModuleLoader__.load({
                       'primary',
                       {
                         onClick: onLaunch,
-                        disabled: deps !== null && deps.allSatisfied !== true,
+                        disabled:
+                          getting || (deps !== null && deps.allSatisfied !== true),
                       },
                       t.launch,
                     ),

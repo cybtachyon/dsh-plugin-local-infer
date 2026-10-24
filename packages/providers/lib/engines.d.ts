@@ -19,9 +19,10 @@ export interface EngineInfo {
 }
 /**
  * The engines the Web card offers, in the order the card lists them. NInfer,
- * Hyper-Qwen, and llama.cpp carry parameter surfaces (llama.cpp's is the
- * specified set the plan names, verified when the binary lands); Strata is the
- * placeholder engine, its surface empty until the engine's flag set lands.
+ * Hyper-Qwen, Infernix, and llama.cpp carry parameter surfaces (llama.cpp's
+ * is the specified set the plan names, verified when the binary lands);
+ * Strata is the placeholder engine, its surface empty until the engine's
+ * flag set lands.
  */
 export declare const ENGINES: readonly EngineInfo[];
 //# sourceMappingURL=engines.d.ts.map

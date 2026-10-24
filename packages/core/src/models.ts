@@ -96,7 +96,8 @@ export interface ModelDirectoryEntry {
 /**
  * modelEntriesForEngine filters a model directory listing down to the model
  * entries the engine's Model dropdown offers: NInfer takes `.ninfer`
- * artifacts, llama.cpp takes `.gguf` files, and Hyper-Qwen takes the repo
+ * artifacts, Infernix takes `.ninfer` artifacts and its own `.infernix`
+ * files, llama.cpp takes `.gguf` files, and Hyper-Qwen takes the repo
  * directories that hold a `.safetensors` weight file. Every other engine
  * (Strata) offers nothing, matching its empty default list. The result is
  * sorted, so the dropdown order is stable across summary fetches.
@@ -110,6 +111,17 @@ export function modelEntriesForEngine(
     case 'ninfer':
       names = entries
         .filter((entry) => !entry.isDirectory && entry.name.endsWith('.ninfer'))
+        .map((entry) => entry.name)
+      break
+    case 'infernix':
+      // Infernix loads NInfer artifacts unchanged plus its own `.infernix`
+      // files, so the dropdown offers both extensions.
+      names = entries
+        .filter(
+          (entry) =>
+            !entry.isDirectory &&
+            (entry.name.endsWith('.ninfer') || entry.name.endsWith('.infernix')),
+        )
         .map((entry) => entry.name)
       break
     case 'llamacpp':
