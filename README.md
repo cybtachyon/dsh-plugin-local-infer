@@ -17,7 +17,7 @@ A DeepSeek Harness plugin that manages local inference engines:
 - Strata
 - ...with more coming soon.
 
-![Plugin Screenshot](docs/screenshot-20261014.png)
+![Plugin Screenshot](https://raw.githubusercontent.com/cybtachyon/dsh-plugin-local-infer/refs/heads/main/docs/screenshot-20261014.png)
 
 Pick a model and an engine, tune the parameters, watch a live **VRAM Est.** meter, see **hardware warnings** the moment a value (or a parameter itself) is unsafe for the detected hardware, then the plugin manages **build, deploy, and health-check** for each engine and **automatically register it as a DSH model** once it is confirmed working. No hand-editing of finicky yaml or launchers.
 

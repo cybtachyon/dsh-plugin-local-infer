@@ -17,7 +17,7 @@
 - Strata
 - ...更多即将推出。
 
-![插件截图](../screenshot-20261014.png)
+![插件截图](https://raw.githubusercontent.com/cybtachyon/dsh-plugin-local-infer/refs/heads/main/docs/screenshot-20261014.png)
 
 选择一个模型和引擎，调节参数，实时观察 **VRAM 估算** 仪表，当某个值（或参数本身）对检测到的硬件不安全时立即看到 **硬件警告**，随后该插件会管理每个引擎的 **构建、部署和健康检查**，并在确认其正常工作后 **自动将其注册为 DSH 模型**。无需手动编辑易出错的 yaml 或启动器。
 
