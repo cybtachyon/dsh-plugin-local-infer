@@ -624,12 +624,23 @@ export class LocalInfer extends Service implements LocalInferService {
     // The deploy step reports its download and build sub-steps through the
     // progress sink, so the card's button reads the phase that is running.
     const onProgress = options?.onProgress
-    const deployResult = await adapter.deploy(plan, platform, onProgress)
+    // The trust gate rides into the deploy step, which reads it to decide
+    // whether a rebuild's missing-binary symlink runs (on) or is written to the
+    // card's Logs section (off). exactOptionalPropertyTypes: only pass the
+    // option object when the gate is present.
+    const deployOptions =
+      options?.allowRunDeps !== undefined ? { allowRunDeps: options.allowRunDeps } : undefined
+    const deployResult = await adapter.deploy(plan, platform, onProgress, deployOptions)
     if (!deployResult.ok) {
       // exactOptionalPropertyTypes: only write the detail key when it is present.
       const result: LaunchResult = { plan, healthy: false }
       if (deployResult.detail !== undefined) {
         result.detail = deployResult.detail
+      }
+      // A failed deploy still carries the build decision and output it captured,
+      // so the card's Logs section shows the step that broke.
+      if (deployResult.logs !== undefined && deployResult.logs !== '') {
+        result.logs = deployResult.logs
       }
       return result
     }
@@ -681,10 +692,16 @@ export class LocalInfer extends Service implements LocalInferService {
       }
     }
     // Read the engine's captured output after the health poll, so the result
-    // carries the log lines the engine printed while it came up. The route
-    // persists these as the last run and writes them to the configured file.
-    const handleLogs = deployResult.handle?.logs
-    if (handleLogs !== undefined && handleLogs !== '') {
+    // carries the log lines the engine printed while it came up. The deploy
+    // step's own captured output (the rebuild decision, the build command, and
+    // its output) is kept separate in buildLogs, so the route orders the launch
+    // command after a build (or a direct launch) and before the engine output.
+    const buildLogs = deployResult.logs ?? ''
+    const handleLogs = deployResult.handle?.logs ?? ''
+    if (buildLogs !== '') {
+      launchResult.buildLogs = buildLogs
+    }
+    if (handleLogs !== '') {
       launchResult.logs = handleLogs
     }
     return launchResult

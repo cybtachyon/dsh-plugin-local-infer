@@ -49,10 +49,24 @@ function stubHost() {
     fetchStatus: 200,
     fetchSequence: [] as number[],
     runOk: true,
+    // Per-command output the streaming surface feeds: a command substring maps
+    // to the stdout the command prints, so a test prices a probe (the behind-
+    // check count, the dirty status) without a real git repo.
+    runOutput: {} as Record<string, string>,
   }
   const host: LifecycleHost = {
     async run(command: string): Promise<CommandOutcome> {
       state.run.push(command)
+      return state.runOk ? { ok: true } : { ok: false, detail: 'run failed' }
+    },
+    async runStream(
+      command: string,
+      onOutput: (chunk: string) => void,
+    ): Promise<CommandOutcome> {
+      state.run.push(command)
+      const output =
+        Object.entries(state.runOutput).find(([key]) => command.includes(key))?.[1] ?? ''
+      if (output !== '') onOutput(output)
       return state.runOk ? { ok: true } : { ok: false, detail: 'run failed' }
     },
     spawn(argv: readonly string[], env: Record<string, string>, cwd?: string): ProcessHandle {
@@ -77,6 +91,37 @@ function stubHost() {
     },
   }
   return { host, state }
+}
+
+/**
+ * symlinkHost is a stub LifecycleHost that prices the rebuild's symlink step:
+ * the checkout reads as behind (the rev-list probe prints a non-zero count),
+ * the engine binary reads as off the path (the command -v probe fails), and
+ * every other command (the git sync, the build, the sudo link) succeeds. Every
+ * command lands in runLog, so a test asserts on the sudo link that ran (the
+ * gate on) or did not (the gate off).
+ */
+function symlinkHost() {
+  const runLog: string[] = []
+  const host: LifecycleHost = {
+    async run(command: string): Promise<CommandOutcome> {
+      runLog.push(command)
+      if (command.startsWith('command -v')) return { ok: false }
+      return { ok: true }
+    },
+    async runStream(command: string, onOutput: (chunk: string) => void): Promise<CommandOutcome> {
+      runLog.push(command)
+      if (command.includes('rev-list')) onOutput('3')
+      return { ok: true }
+    },
+    spawn(): ProcessHandle {
+      return { pid: 1, kill: () => {} }
+    },
+    async fetch(): Promise<FetchResult> {
+      return { status: 200, ok: true }
+    },
+  }
+  return { host, runLog }
 }
 
 /**
@@ -207,6 +252,9 @@ describe('NInferAdapter.renderLaunch', () => {
 describe('NInferAdapter.deploy', () => {
   it('builds in the engine directory, downloads the model, and spawns the engine', async () => {
     const { host, state } = stubHost()
+    // The checkout is behind the fork's master, so the conditional rebuild
+    // rebases it (checkout + rebase + clean) and runs the build steps.
+    state.runOutput['rev-list'] = '3'
     const adapter = new NInferAdapter(host)
     const plan: LaunchPlan = {
       engineId: 'ninfer',
@@ -224,20 +272,142 @@ describe('NInferAdapter.deploy', () => {
       engineFork: 'https://github.com/iamwavecut/ninfer-all',
     })
     expect(result.ok).toBe(true)
-    // The git step syncs an existing checkout (fetch + hard reset to the fork's
-    // master) and falls back to a fresh clone, mirroring the qwen-ninfer script.
+    // The conditional rebuild prices the checkout against the fork (added as
+    // the named fork remote), rebases it because it is behind, cleans the tree,
+    // and runs the build steps before the model download and the spawn.
     expect(state.run[0]).toContain('[ -d /src/ninfer/.git ]')
-    expect(state.run[0]).toContain('git -C /src/ninfer fetch https://github.com/iamwavecut/ninfer-all')
-    expect(state.run[0]).toContain('git clone https://github.com/iamwavecut/ninfer-all /src/ninfer')
-    expect(state.run[1]).toContain('cmake -S /src/ninfer -B /src/ninfer/build')
-    expect(state.run[2]).toContain('hf download')
-    expect(state.run[2]).toContain('--local-dir /models')
+    expect(state.run).toContain('git -C /src/ninfer remote add dsh-fork https://github.com/iamwavecut/ninfer-all')
+    expect(state.run).toContain('git -C /src/ninfer fetch dsh-fork || true')
+    expect(state.run.some((c) => c.includes('git -C /src/ninfer rebase dsh-fork/master'))).toBe(true)
+    expect(state.run).toContain('git -C /src/ninfer clean -fxd')
+    expect(state.run.some((c) => c.includes('cmake -S /src/ninfer -B /src/ninfer/build'))).toBe(true)
+    expect(state.run.some((c) => c.includes('hf download'))).toBe(true)
+    expect(state.run.some((c) => c.includes('--local-dir /models'))).toBe(true)
     expect(state.spawn).toHaveLength(1)
     expect(state.spawn[0]?.cwd).toBe('/src/ninfer')
+    // The rebuild decision, the build command, and its output ride the result
+    // logs the service threads to the card's Logs section.
+    expect(result.logs).toContain('is behind dsh-fork/master')
+    expect(result.logs).toContain('cmake -S /src/ninfer -B /src/ninfer/build')
+  })
+
+  it('skips the rebuild when the checkout is up to date with the remote', async () => {
+    const { host, state } = stubHost()
+    // The checkout is not behind (the rev-list count reads as 0), so the
+    // conditional rebuild skips the rebase and the build steps.
+    state.runOutput['rev-list'] = '0'
+    const adapter = new NInferAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      argv: ['ninfer-serve', '/models/x.ninfer'],
+      env: {},
+      modelId: 'qwen3-27b',
+      modelDirectory: '/models',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    const result = await adapter.deploy(plan, {
+      engineId: 'ninfer',
+      engineDirectory: '/src/ninfer',
+      engineFork: 'https://github.com/iamwavecut/ninfer-all',
+    })
+    expect(result.ok).toBe(true)
+    // No rebase, no clean, and no build when the checkout is current.
+    expect(state.run).not.toContain('git -C /src/ninfer clean -fxd')
+    expect(state.run.some((c) => c.includes('cmake -S /src/ninfer -B /src/ninfer/build'))).toBe(false)
+    // The model download still runs, and the decision is logged.
+    expect(state.run.some((c) => c.includes('hf download'))).toBe(true)
+    expect(result.logs).toContain('is up to date with dsh-fork/master')
+  })
+
+  it('skips the rebuild when the checkout has local changes', async () => {
+    const { host, state } = stubHost()
+    // A dirty checkout (the status probe prints a changed file) aborts the
+    // rebase and the build, so the user's work is never rebased away.
+    state.runOutput['status --short'] = ' M src/main.cpp'
+    const adapter = new NInferAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      argv: ['ninfer-serve', '/models/x.ninfer'],
+      env: {},
+      modelId: 'qwen3-27b',
+      modelDirectory: '/models',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    const result = await adapter.deploy(plan, {
+      engineId: 'ninfer',
+      engineDirectory: '/src/ninfer',
+      engineFork: 'https://github.com/iamwavecut/ninfer-all',
+    })
+    expect(result.ok).toBe(true)
+    expect(state.run).not.toContain('git -C /src/ninfer rebase dsh-fork/master')
+    expect(state.run).not.toContain('cmake -S /src/ninfer -B /src/ninfer/build')
+    expect(result.logs).toContain('has local changes')
+  })
+
+  it('links a rebuilt binary into /usr/local/bin when the trust gate is on', async () => {
+    const { host, runLog } = symlinkHost()
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      argv: ['ninfer-serve', '/models/x.ninfer'],
+      env: {},
+      modelId: 'qwen3-27b',
+      modelDirectory: '/models',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    const adapter = new NInferAdapter(host)
+    // The checkout is behind, the binary is off the path, and the trust gate is
+    // on, so the rebuild runs the sudo link into /usr/local/bin.
+    const result = await adapter.deploy(
+      plan,
+      { engineId: 'ninfer', engineDirectory: '/src/ninfer', engineFork: 'https://github.com/iamwavecut/ninfer-all' },
+      undefined,
+      { allowRunDeps: true },
+    )
+    expect(result.ok).toBe(true)
+    expect(runLog).toContain('sudo ln -sf /src/ninfer/build/ninfer-serve /usr/local/bin/ninfer-serve')
+  })
+
+  it('writes the symlink command to the logs when the trust gate is off', async () => {
+    const { host, runLog } = symlinkHost()
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      argv: ['ninfer-serve', '/models/x.ninfer'],
+      env: {},
+      modelId: 'qwen3-27b',
+      modelDirectory: '/models',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    const adapter = new NInferAdapter(host)
+    // The checkout is behind, the binary is off the path, and the trust gate is
+    // off, so the symlink command is written to the logs for the user to run.
+    const result = await adapter.deploy(
+      plan,
+      { engineId: 'ninfer', engineDirectory: '/src/ninfer', engineFork: 'https://github.com/iamwavecut/ninfer-all' },
+      undefined,
+      { allowRunDeps: false },
+    )
+    expect(result.ok).toBe(true)
+    expect(result.logs).toContain(
+      'sudo ln -sf /src/ninfer/build/ninfer-serve /usr/local/bin/ninfer-serve',
+    )
+    expect(result.logs).toContain('must be on the path to launch')
+    // The sudo link did not run when the gate is off.
+    expect(runLog).not.toContain('sudo ln -sf /src/ninfer/build/ninfer-serve /usr/local/bin/ninfer-serve')
   })
 
   it('reports the download and build phases through the progress sink', async () => {
-    const { host } = stubHost()
+    const { host, state } = stubHost()
+    // The checkout is behind, so the conditional rebuild runs the build steps
+    // and the "build" phase is reported.
+    state.runOutput['rev-list'] = '3'
     const adapter = new NInferAdapter(host)
     const plan: LaunchPlan = {
       engineId: 'ninfer',
@@ -265,6 +435,39 @@ describe('NInferAdapter.deploy', () => {
     // The git sync and the model download read as download; the build steps
     // read as build, in the order the deploy runs them.
     expect(steps).toEqual(['download', 'build', 'download', 'download'])
+  })
+
+  it('reports no build phase when the checkout is up to date', async () => {
+    const { host, state } = stubHost()
+    // The checkout is not behind, so the conditional rebuild skips the build
+    // steps and no "build" phase is reported.
+    state.runOutput['rev-list'] = '0'
+    const adapter = new NInferAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      argv: ['ninfer-serve', '/models/x.ninfer'],
+      env: {},
+      modelId: 'qwen3-27b',
+      modelDirectory: '/models',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    const steps: string[] = []
+    const result = await adapter.deploy(
+      plan,
+      {
+        engineId: 'ninfer',
+        engineDirectory: '/src/ninfer',
+        engineFork: 'https://github.com/iamwavecut/ninfer-all',
+      },
+      (step) => {
+        steps.push(step)
+      },
+    )
+    expect(result.ok).toBe(true)
+    // Only the download phases (the git sync and the model download); no build.
+    expect(steps).toEqual(['download', 'download', 'download'])
   })
 
   it('reports the docker pull as the build phase', async () => {
@@ -415,8 +618,16 @@ describe('NInferAdapter.deploy', () => {
 
   it('reports a failed build as not-ok with the detail', async () => {
     const { host, state } = stubHost()
-    state.runOk = false
-    const adapter = new NInferAdapter(host)
+    // The checkout is behind (so the build runs), and only the build step fails.
+    state.runOutput['rev-list'] = '3'
+    const buildHost: LifecycleHost = {
+      ...host,
+      async runStream(command: string, onOutput: (chunk: string) => void): Promise<CommandOutcome> {
+        if (command.includes('cmake')) return { ok: false, detail: 'build failed' }
+        return host.runStream(command, onOutput)
+      },
+    }
+    const adapter = new NInferAdapter(buildHost)
     const plan: LaunchPlan = {
       engineId: 'ninfer',
       kind: 'process',
@@ -817,6 +1028,9 @@ describe('LlamaCppAdapter', () => {
 
   it('builds in the engine directory, downloads the GGUF, and spawns the engine', async () => {
     const { host, state } = stubHost()
+    // The checkout is behind the fork's master, so the conditional rebuild
+    // rebases it (checkout + rebase + clean) and runs the build steps.
+    state.runOutput['rev-list'] = '3'
     const adapter = new LlamaCppAdapter(host)
     const plan: LaunchPlan = {
       engineId: 'llamacpp',
@@ -834,16 +1048,22 @@ describe('LlamaCppAdapter', () => {
       engineFork: 'https://github.com/ggml-org/llama.cpp',
     })
     expect(result.ok).toBe(true)
-    // The git step syncs an existing checkout and falls back to a fresh clone,
-    // mirroring the qwen-ninfer script's fetch + hard reset.
+    // The conditional rebuild prices the checkout against the fork, rebases it
+    // because it is behind, cleans the tree, and runs the build steps before
+    // the model download and the spawn.
     expect(state.run[0]).toContain('[ -d /src/llama.cpp/.git ]')
-    expect(state.run[0]).toContain('git -C /src/llama.cpp fetch https://github.com/ggml-org/llama.cpp')
-    expect(state.run[0]).toContain('git clone https://github.com/ggml-org/llama.cpp /src/llama.cpp')
-    expect(state.run[1]).toContain('cmake -S /src/llama.cpp -B /src/llama.cpp/build')
-    expect(state.run[2]).toContain('hf download')
-    expect(state.run[2]).toContain('--local-dir /models')
+    expect(state.run).toContain('git -C /src/llama.cpp remote add dsh-fork https://github.com/ggml-org/llama.cpp')
+    expect(state.run).toContain('git -C /src/llama.cpp fetch dsh-fork || true')
+    expect(state.run.some((c) => c.includes('git -C /src/llama.cpp rebase dsh-fork/master'))).toBe(true)
+    expect(state.run).toContain('git -C /src/llama.cpp clean -fxd')
+    expect(state.run.some((c) => c.includes('cmake -S /src/llama.cpp -B /src/llama.cpp/build'))).toBe(true)
+    expect(state.run.some((c) => c.includes('hf download'))).toBe(true)
+    expect(state.run.some((c) => c.includes('--local-dir /models'))).toBe(true)
     expect(state.spawn).toHaveLength(1)
     expect(state.spawn[0]?.cwd).toBe('/src/llama.cpp')
+    // The rebuild decision and the build command ride the result logs.
+    expect(result.logs).toContain('is behind dsh-fork/master')
+    expect(result.logs).toContain('cmake -S /src/llama.cpp -B /src/llama.cpp/build')
   })
 
   it('pulls the image and spawns the container for a docker plan', async () => {
@@ -931,30 +1151,39 @@ describe('LlamaCppAdapter', () => {
 
   it('reports a failed clone, build, and download as not-ok with the detail', async () => {
     const { host, state } = stubHost()
-    state.runOk = false
     const adapter = new LlamaCppAdapter(host)
-    // With a fork, the first run is the clone, so a failed run reads as a clone failure.
-    const clonePlan: LaunchPlan = {
+    const plan: LaunchPlan = {
       engineId: 'llamacpp', kind: 'process', argv: ['llama-server', 'x.gguf'], env: {},
       modelId: 'qwen3-27b', port: 8080, healthUrl: 'http://127.0.0.1:8080/health',
     }
-    const cloneResult = await adapter.deploy(clonePlan, {
+    // A missing checkout that cannot be cloned reads as a clone failure.
+    state.runOk = false
+    const cloneResult = await adapter.deploy(plan, {
       engineId: 'llamacpp', engineDirectory: '/src/llama.cpp',
       engineFork: 'https://github.com/ggml-org/llama.cpp',
     })
     expect(cloneResult.ok).toBe(false)
-    expect(cloneResult.detail).toContain('git sync failed')
-    // Without a fork the clone is skipped, so a failed run reads as a build failure.
-    state.run = []
-    const buildResult = await adapter.deploy(clonePlan, {
+    expect(cloneResult.detail).toContain('git clone failed')
+    // A checkout that is behind and whose build step fails reads as a build
+    // failure (the git sync and the rebase succeed; only the cmake step breaks).
+    state.runOk = true
+    state.runOutput['rev-list'] = '3'
+    const buildHost: LifecycleHost = {
+      ...host,
+      async runStream(command: string, onOutput: (chunk: string) => void): Promise<CommandOutcome> {
+        if (command.includes('cmake')) return { ok: false, detail: 'build failed' }
+        return host.runStream(command, onOutput)
+      },
+    }
+    const buildResult = await new LlamaCppAdapter(buildHost).deploy(plan, {
       engineId: 'llamacpp', engineDirectory: '/src/llama.cpp',
     })
     expect(buildResult.ok).toBe(false)
     expect(buildResult.detail).toContain('build failed')
     // Without an engine dir the clone and build are skipped, so a failed run reads
     // as a model-download failure (the plan names the 27B artifact).
-    state.run = []
-    const downloadResult = await adapter.deploy(clonePlan)
+    state.runOk = false
+    const downloadResult = await adapter.deploy(plan)
     expect(downloadResult.ok).toBe(false)
     expect(downloadResult.detail).toContain('model download failed')
     expect(state.run.length).toBeGreaterThan(0)
@@ -1474,6 +1703,9 @@ describe('InfernixAdapter', () => {
 
   it('builds through the engine preset, downloads the model, and spawns the engine', async () => {
     const { host, state } = stubHost()
+    // The checkout is behind the remote main, so the conditional rebuild runs
+    // the engine's own preset sequence.
+    state.runOutput['rev-list'] = '3'
     const adapter = new InfernixAdapter(host)
     const plan = adapter.renderLaunch(
       { model: 'qwen3-27b', port: 8080, modelDirectory: '/models' },
@@ -1487,10 +1719,8 @@ describe('InfernixAdapter', () => {
     expect(result.handle?.pid).toBe(1234)
     // The build runs the engine's own preset sequence in the engine
     // directory, then the hf CLI pulls the single-file artifact.
-    expect(state.run).toEqual([
-      'cd /engines/infernix && cmake --preset release && cmake --build build -j',
-      'hf download Wallawalla47/Qwen3.8-27B-NVIDIA-NVFP4-NInferV3 qwen3_8_27b_nvfp4-nvidia.ninfer --local-dir /models',
-    ])
+    expect(state.run).toContain('cd /engines/infernix && cmake --preset release && cmake --build build -j')
+    expect(state.run).toContain('hf download Wallawalla47/Qwen3.8-27B-NVIDIA-NVFP4-NInferV3 qwen3_8_27b_nvfp4-nvidia.ninfer --local-dir /models')
     expect(state.spawn).toHaveLength(1)
     expect(state.spawn[0]?.cwd).toBe('/engines/infernix')
   })
@@ -1511,6 +1741,9 @@ describe('InfernixAdapter', () => {
 
   it('syncs the engine fork before the build', async () => {
     const { host, state } = stubHost()
+    // The checkout is behind the fork's main, so the conditional rebuild rebases
+    // it onto the fork and runs the engine's preset sequence.
+    state.runOutput['rev-list'] = '3'
     const adapter = new InfernixAdapter(host)
     const plan = adapter.renderLaunch({ model: 'qwen3-27b', port: 8080 }, HW)
     await adapter.deploy(plan, {
@@ -1518,8 +1751,10 @@ describe('InfernixAdapter', () => {
       engineDirectory: '/engines/infernix',
       engineFork: 'https://github.com/wallawalla47/infernix',
     })
-    expect(state.run[0]).toContain('git -C /engines/infernix fetch https://github.com/wallawalla47/infernix')
-    expect(state.run[1]).toContain('cmake --preset release')
+    expect(state.run).toContain('git -C /engines/infernix remote add dsh-fork https://github.com/wallawalla47/infernix')
+    expect(state.run).toContain('git -C /engines/infernix fetch dsh-fork || true')
+    expect(state.run.some((c) => c.includes('git -C /engines/infernix rebase dsh-fork/main'))).toBe(true)
+    expect(state.run).toContain('cd /engines/infernix && cmake --preset release && cmake --build build -j')
   })
 
   it('skips the clone and build when no platform config is stored', async () => {
@@ -1536,8 +1771,16 @@ describe('InfernixAdapter', () => {
 
   it('reports a failed build as not-ok with the detail', async () => {
     const { host, state } = stubHost()
-    state.runOk = false
-    const adapter = new InfernixAdapter(host)
+    // The checkout is behind (so the build runs), and only the build step fails.
+    state.runOutput['rev-list'] = '3'
+    const buildHost: LifecycleHost = {
+      ...host,
+      async runStream(command: string, onOutput: (chunk: string) => void): Promise<CommandOutcome> {
+        if (command.includes('cmake')) return { ok: false, detail: 'build failed' }
+        return host.runStream(command, onOutput)
+      },
+    }
+    const adapter = new InfernixAdapter(buildHost)
     const plan = adapter.renderLaunch({ model: 'qwen3-27b', port: 8080 }, HW)
     const result = await adapter.deploy(plan, {
       engineId: 'infernix',

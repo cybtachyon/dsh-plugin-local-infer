@@ -60,9 +60,16 @@ export {
   buildEngineRepo,
   engineBuildSteps,
   engineSource,
+  syncAndRebuildEngine,
   syncEngineRepo,
 } from './acquire.ts'
-export type { AcquireLog, EngineSource, EngineStepResult } from './acquire.ts'
+export type {
+  AcquireLog,
+  EngineSource,
+  EngineStepResult,
+  SyncRebuildRequest,
+  SyncRebuildResult,
+} from './acquire.ts'
 export { ENGINE_DEP_PLANS, SYSTEM_DEPS } from './deps.ts'
 export { ENGINE_PLATFORM_DEFAULTS, enginePlatformDefaults } from './platform.ts'
 export type { EnginePlatformDefaults } from './platform.ts'

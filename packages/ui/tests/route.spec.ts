@@ -579,6 +579,29 @@ describe('launch and stop route helpers', () => {
     expect(readConfig().lastLogs).toBe(`${note}engine booted`)
   })
 
+  it('orders the build output before the launch command and the engine output', async () => {
+    const argv = ['infernix-serve', '/opt/hf-models/m.infernix', '--host', '127.0.0.1', '--port', '18080']
+    const buildLogs =
+      '>> /engines/infernix is behind dsh-fork/main; rebasing and rebuilding.\n' +
+      '$ cd /engines/infernix && cmake --preset release\nbuild ok\n'
+    const service = stubService([], {
+      engines: [argvAdapter('infernix', argv)],
+      launchResult: {
+        plan: { engineId: 'infernix', kind: 'process', argv, port: 18080, healthUrl: 'http://127.0.0.1:18080/health' },
+        healthy: true,
+        logs: 'engine booted',
+        buildLogs,
+      },
+    })
+    const result = await launchEngine(service, { engine: 'infernix', config: {} })
+    const note = '[local-infer] launch: infernix-serve /opt/hf-models/m.infernix --host 127.0.0.1 --port 18080\n'
+    // The build output leads, the launch command follows it, and the engine
+    // output comes last.
+    expect(result.logs).toBe(`${buildLogs}${note}engine booted`)
+    // The buildLogs transport field is folded into logs and cleared.
+    expect(result.buildLogs).toBeUndefined()
+  })
+
   it('persists the launch command before the deploy so a hung launch stays readable', async () => {
     const service = stubService([], { engines: [argvAdapter('infernix', ['infernix-serve', '--port', '18080'])] })
     let logsDuringLaunch: string | undefined

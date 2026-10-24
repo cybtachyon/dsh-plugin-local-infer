@@ -5,6 +5,7 @@ import {
   buildEngineRepo,
   engineBuildSteps,
   engineSource,
+  syncAndRebuildEngine,
   syncEngineRepo,
 } from '../src/acquire.ts'
 import { ENGINES } from '../src/engines.ts'
@@ -338,6 +339,154 @@ describe('buildEngineRepo', () => {
     })
     expect(result.ok).toBe(false)
     expect(result.detail).toContain('no engine source')
+  })
+})
+
+describe('syncAndRebuildEngine', () => {
+  it('clones a missing checkout and builds it', async () => {
+    const { host, state } = stubHost({ exists: false })
+    const result = await syncAndRebuildEngine(
+      host,
+      { engineId: 'ninfer', directory: '/src/ninfer', binary: 'ninfer-serve' },
+      (chunk) => {
+        state.logged += chunk
+      },
+    )
+    expect(result.ok).toBe(true)
+    expect(result.rebuilt).toBe(true)
+    expect(state.logged).toContain('cloning')
+    expect(state.logged).toContain('git clone https://github.com/Neroued/ninfer /src/ninfer')
+    expect(state.logged).toContain('cmake -S /src/ninfer -B /src/ninfer/build')
+  })
+
+  it('rebases a clean checkout that is behind the remote and rebuilds it', async () => {
+    const { host, state } = stubHost({ stream: { 'rev-list': '3' } })
+    const result = await syncAndRebuildEngine(
+      host,
+      { engineId: 'ninfer', directory: '/src/ninfer', binary: 'ninfer-serve' },
+      (chunk) => {
+        state.logged += chunk
+      },
+    )
+    expect(result.ok).toBe(true)
+    expect(result.rebuilt).toBe(true)
+    expect(state.logged).toContain('is behind origin/master')
+    expect(state.logged).toContain('git -C /src/ninfer checkout master')
+    expect(state.logged).toContain('git -C /src/ninfer clean -fxd')
+    expect(state.logged).toContain('cmake -S /src/ninfer -B /src/ninfer/build')
+  })
+
+  it('skips the rebuild when the checkout is up to date with the remote', async () => {
+    const { host, state } = stubHost({ stream: { 'rev-list': '0' } })
+    const result = await syncAndRebuildEngine(
+      host,
+      { engineId: 'ninfer', directory: '/src/ninfer', binary: 'ninfer-serve' },
+      (chunk) => {
+        state.logged += chunk
+      },
+    )
+    expect(result.ok).toBe(true)
+    expect(result.rebuilt).toBe(false)
+    expect(state.logged).toContain('is up to date with origin/master')
+    expect(state.logged).not.toContain('cmake -S /src/ninfer -B /src/ninfer/build')
+  })
+
+  it('skips the rebuild when the checkout has local changes', async () => {
+    const { host, state } = stubHost({ stream: { 'status --short': ' M src/engine.c' } })
+    const result = await syncAndRebuildEngine(
+      host,
+      { engineId: 'ninfer', directory: '/src/ninfer', binary: 'ninfer-serve' },
+      (chunk) => {
+        state.logged += chunk
+      },
+    )
+    expect(result.ok).toBe(true)
+    expect(result.rebuilt).toBe(false)
+    expect(state.logged).toContain('has local changes')
+    expect(state.logged).not.toContain('cmake -S /src/ninfer -B /src/ninfer/build')
+  })
+
+  it('rebases onto the fork remote when a fork is provided', async () => {
+    const { host, state } = stubHost({ stream: { 'rev-list': '3' } })
+    const result = await syncAndRebuildEngine(
+      host,
+      {
+        engineId: 'infernix',
+        directory: '/src/infernix',
+        fork: 'https://github.com/me/infernix',
+        binary: 'infernix-serve',
+      },
+      (chunk) => {
+        state.logged += chunk
+      },
+    )
+    expect(result.ok).toBe(true)
+    expect(result.rebuilt).toBe(true)
+    expect(
+      state.streamed.some((command) =>
+        command.includes(`remote add ${FORK_REMOTE} https://github.com/me/infernix`),
+      ),
+    ).toBe(true)
+    expect(state.logged).toContain('is behind dsh-fork/main')
+  })
+
+  it('links a rebuilt binary into /usr/local/bin when the trust gate is on', async () => {
+    const { host, state } = stubHost({ stream: { 'rev-list': '3' }, fail: ['command -v'] })
+    const result = await syncAndRebuildEngine(
+      host,
+      {
+        engineId: 'ninfer',
+        directory: '/src/ninfer',
+        binary: 'ninfer-serve',
+        allowRunDeps: true,
+      },
+      (chunk) => {
+        state.logged += chunk
+      },
+    )
+    expect(result.ok).toBe(true)
+    expect(result.rebuilt).toBe(true)
+    expect(state.logged).toContain(
+      'sudo ln -sf /src/ninfer/build/ninfer-serve /usr/local/bin/ninfer-serve',
+    )
+  })
+
+  it('writes the symlink command to the logs when the trust gate is off', async () => {
+    const { host, state } = stubHost({ stream: { 'rev-list': '3' }, fail: ['command -v'] })
+    const result = await syncAndRebuildEngine(
+      host,
+      {
+        engineId: 'ninfer',
+        directory: '/src/ninfer',
+        binary: 'ninfer-serve',
+        allowRunDeps: false,
+      },
+      (chunk) => {
+        state.logged += chunk
+      },
+    )
+    expect(result.ok).toBe(true)
+    expect(result.rebuilt).toBe(true)
+    // The gate is off, so the sudo link is written to the logs for the user
+    // to run, with a note that the command must be on the path to launch.
+    expect(state.logged).toContain(
+      'sudo ln -sf /src/ninfer/build/ninfer-serve /usr/local/bin/ninfer-serve',
+    )
+    expect(state.logged).toContain('must be on the path to launch')
+  })
+
+  it('reports a failed build step', async () => {
+    const { host, state } = stubHost({ stream: { 'rev-list': '3' }, fail: ['cmake'] })
+    const result = await syncAndRebuildEngine(
+      host,
+      { engineId: 'ninfer', directory: '/src/ninfer', binary: 'ninfer-serve' },
+      (chunk) => {
+        state.logged += chunk
+      },
+    )
+    expect(result.ok).toBe(false)
+    expect(result.rebuilt).toBe(true)
+    expect(result.detail).toContain('build failed')
   })
 })
 

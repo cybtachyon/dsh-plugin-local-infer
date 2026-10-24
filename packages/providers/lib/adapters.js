@@ -10,7 +10,7 @@
 import { exec, spawn as nodeSpawn } from 'node:child_process';
 import { basename, dirname, join } from 'node:path';
 import { EngineAdapter, formatLaunchCommand } from '../../core/lib/index.js';
-import { engineBuildSteps } from "./acquire.js";
+import { syncAndRebuildEngine } from "./acquire.js";
 import { NINFER_PARAMETERS } from "./ninfer.js";
 import { HYPERQWEN_PARAMETERS } from "./hyperqwen.js";
 import { LLAMACPP_MODEL_ARTIFACTS, LLAMACPP_PARAMETERS, llamaCppModelKey, } from "./llamacpp.js";
@@ -473,43 +473,40 @@ export class NInferAdapter extends EngineAdapter {
             healthUrl: `http://127.0.0.1:${port}/health`,
         };
     }
-    async deploy(plan, platform, onProgress) {
+    async deploy(plan, platform, onProgress, options) {
         if (plan.kind === 'process') {
             const engineDir = platform?.engineDirectory;
+            let buildLogs = '';
             if (engineDir !== undefined) {
-                const fork = platform?.engineFork;
-                if (fork !== undefined) {
-                    // The git sync is the checkout download: the card's button reads
-                    // "Downloading..." for it, not "Building...".
-                    onProgress?.('download');
-                    // Mirror the qwen-ninfer launcher: an existing checkout (a .git under
-                    // the engine directory) is updated in place with a best-effort fetch
-                    // and a hard reset to the fork's master, then built as-is; a missing
-                    // checkout is a fresh clone. The fetch is best-effort (a `; true`
-                    // pins the branch to success) so an offline host still builds the
-                    // checkout it has; only a missing checkout that cannot be cloned
-                    // fails the step.
-                    const sync = await this.host.run(`if [ -d ${engineDir}/.git ]; then ` +
-                        `git -C ${engineDir} fetch ${fork} 2>/dev/null && git -C ${engineDir} reset --hard ${fork}/master 2>/dev/null; true; ` +
-                        `else git clone ${fork} ${engineDir}; fi`);
-                    if (!sync.ok) {
-                        return { ok: false, detail: `git sync failed: ${sync.detail ?? 'unknown'}` };
-                    }
+                // The git sync is the checkout download: the card's button reads
+                // "Downloading..." for it, not "Building...".
+                onProgress?.('download');
+                // The conditional rebuild fetches the checkout, prices it against the
+                // remote branch, and rebuilds only when it is behind (or a fresh
+                // clone). The decision, the build command, and its output are captured
+                // into buildLogs and threaded to the card's Logs section.
+                const sync = await syncAndRebuildEngine(this.host, {
+                    engineId: this.id,
+                    directory: engineDir,
+                    ...(platform?.engineFork !== undefined ? { fork: platform.engineFork } : {}),
+                    ...(plan.argv?.[0] !== undefined ? { binary: plan.argv[0] } : {}),
+                    ...(options?.allowRunDeps !== undefined ? { allowRunDeps: options.allowRunDeps } : {}),
+                }, () => { });
+                buildLogs = sync.logs;
+                if (!sync.ok) {
+                    return { ok: false, detail: sync.detail ?? 'unknown', logs: buildLogs };
                 }
-                // The build steps come from the engine's acquisition data, the same
-                // list the Get route streams through its build step.
-                onProgress?.('build');
-                for (const step of engineBuildSteps(this.id)) {
-                    const build = await this.host.run(step.replaceAll('{dir}', engineDir));
-                    if (!build.ok) {
-                        return { ok: false, detail: `build failed: ${build.detail ?? 'unknown'}` };
-                    }
+                // The build step reads as "Building..." only when a build actually
+                // ran (a fresh clone, or a rebase of a checkout that was behind).
+                if (sync.rebuilt) {
+                    onProgress?.('build');
                 }
             }
+            const withLogs = (result) => buildLogs !== '' ? { ...result, logs: buildLogs } : result;
             onProgress?.('download');
             const download = await this.downloadModel(plan);
             if (!download.ok)
-                return download;
+                return withLogs(download);
             // A chat template the user picked as an HF repo reference (the combo
             // control's known choices) is not a path the engine can read, so the
             // deploy step downloads it into the model directory and rewrites the
@@ -517,10 +514,10 @@ export class NInferAdapter extends EngineAdapter {
             onProgress?.('download');
             const templateResult = await this.resolveChatTemplate(plan);
             if (!templateResult.ok)
-                return templateResult;
+                return withLogs(templateResult);
             const handle = this.host.spawn(plan.argv ?? [], plan.env ?? {}, engineDir);
             trackChild(this.children, this.planKey(plan), handle);
-            return { ok: true, handle };
+            return withLogs({ ok: true, handle });
         }
         if (plan.kind === 'docker') {
             // The image pull is the docker build step: the card's button reads
@@ -664,7 +661,7 @@ export class HyperQwenAdapter extends EngineAdapter {
             healthUrl: `http://127.0.0.1:${port}/health`,
         };
     }
-    async deploy(plan, platform, onProgress) {
+    async deploy(plan, platform, onProgress, _options) {
         // The card's docker-tag field carries the compose arguments (the profile
         // the up step selects); the deploy step applies it to the plan so the up
         // line and the card's Logs section agree.
@@ -826,44 +823,43 @@ export class LlamaCppAdapter extends EngineAdapter {
             healthUrl: `http://127.0.0.1:${port}/health`,
         };
     }
-    async deploy(plan, platform, onProgress) {
+    async deploy(plan, platform, onProgress, options) {
         if (plan.kind === 'process') {
             const engineDir = platform?.engineDirectory;
+            let buildLogs = '';
             if (engineDir !== undefined) {
-                const fork = platform?.engineFork;
-                if (fork !== undefined) {
-                    // The git sync is the checkout download: the card's button reads
-                    // "Downloading..." for it, not "Building...".
-                    onProgress?.('download');
-                    // Mirror the qwen-ninfer launcher: an existing checkout is updated in
-                    // place with a best-effort fetch and a hard reset to the fork's
-                    // master, then built as-is; a missing checkout is a fresh clone. The
-                    // fetch is best-effort (a `; true` pins the branch to success) so an
-                    // offline host still builds the checkout it has.
-                    const sync = await this.host.run(`if [ -d ${engineDir}/.git ]; then ` +
-                        `git -C ${engineDir} fetch ${fork} 2>/dev/null && git -C ${engineDir} reset --hard ${fork}/master 2>/dev/null; true; ` +
-                        `else git clone ${fork} ${engineDir}; fi`);
-                    if (!sync.ok) {
-                        return { ok: false, detail: `git sync failed: ${sync.detail ?? 'unknown'}` };
-                    }
+                // The git sync is the checkout download: the card's button reads
+                // "Downloading..." for it, not "Building...".
+                onProgress?.('download');
+                // The conditional rebuild fetches the checkout, prices it against the
+                // remote branch, and rebuilds only when it is behind (or a fresh
+                // clone). The decision, the build command, and its output are captured
+                // into buildLogs and threaded to the card's Logs section.
+                const sync = await syncAndRebuildEngine(this.host, {
+                    engineId: this.id,
+                    directory: engineDir,
+                    ...(platform?.engineFork !== undefined ? { fork: platform.engineFork } : {}),
+                    ...(plan.argv?.[0] !== undefined ? { binary: plan.argv[0] } : {}),
+                    ...(options?.allowRunDeps !== undefined ? { allowRunDeps: options.allowRunDeps } : {}),
+                }, () => { });
+                buildLogs = sync.logs;
+                if (!sync.ok) {
+                    return { ok: false, detail: sync.detail ?? 'unknown', logs: buildLogs };
                 }
-                // The build steps come from the engine's acquisition data, the same
-                // list the Get route streams through its build step.
-                onProgress?.('build');
-                for (const step of engineBuildSteps(this.id)) {
-                    const build = await this.host.run(step.replaceAll('{dir}', engineDir));
-                    if (!build.ok) {
-                        return { ok: false, detail: `build failed: ${build.detail ?? 'unknown'}` };
-                    }
+                // The build step reads as "Building..." only when a build actually
+                // ran (a fresh clone, or a rebase of a checkout that was behind).
+                if (sync.rebuilt) {
+                    onProgress?.('build');
                 }
             }
+            const withLogs = (result) => buildLogs !== '' ? { ...result, logs: buildLogs } : result;
             onProgress?.('download');
             const download = await this.downloadModel(plan);
             if (!download.ok)
-                return download;
+                return withLogs(download);
             const handle = this.host.spawn(plan.argv ?? [], plan.env ?? {}, engineDir);
             trackChild(this.children, this.planKey(plan), handle);
-            return { ok: true, handle };
+            return withLogs({ ok: true, handle });
         }
         if (plan.kind === 'docker') {
             // The image pull is the docker build step: the card's button reads
@@ -976,7 +972,7 @@ export class StrataAdapter extends EngineAdapter {
             healthUrl: `http://127.0.0.1:${port}/health`,
         };
     }
-    async deploy(plan, _platform, onProgress) {
+    async deploy(plan, _platform, onProgress, _options) {
         // The image pull is the docker build step: the card's button reads
         // "Building..." for it.
         onProgress?.('build');
@@ -1086,51 +1082,49 @@ export class InfernixAdapter extends EngineAdapter {
             healthUrl: `http://127.0.0.1:${port}/health`,
         };
     }
-    async deploy(plan, platform, onProgress) {
+    async deploy(plan, platform, onProgress, options) {
         if (plan.kind !== 'process') {
             // Infernix renders process plans only; a docker or compose plan is a
             // no-op.
             return { ok: true };
         }
         const engineDir = platform?.engineDirectory;
+        let buildLogs = '';
         if (engineDir !== undefined) {
-            const fork = platform?.engineFork;
-            if (fork !== undefined) {
-                // The git sync is the checkout download: the card's button reads
-                // "Downloading..." for it, not "Building...".
-                onProgress?.('download');
-                // Mirror the NInfer launcher: an existing checkout (a .git under the
-                // engine directory) is updated in place with a best-effort fetch and
-                // a hard reset to the fork's master, then built as-is; a missing
-                // checkout is a fresh clone. The fetch is best-effort (a `; true`
-                // pins the branch to success) so an offline host still builds the
-                // checkout it has; only a missing checkout that cannot be cloned
-                // fails the step.
-                const sync = await this.host.run(`if [ -d ${engineDir}/.git ]; then ` +
-                    `git -C ${engineDir} fetch ${fork} 2>/dev/null && git -C ${engineDir} reset --hard ${fork}/master 2>/dev/null; true; ` +
-                    `else git clone ${fork} ${engineDir}; fi`);
-                if (!sync.ok) {
-                    return { ok: false, detail: `git sync failed: ${sync.detail ?? 'unknown'}` };
-                }
+            // The git sync is the checkout download: the card's button reads
+            // "Downloading..." for it, not "Building...".
+            onProgress?.('download');
+            // The conditional rebuild fetches the checkout, prices it against the
+            // remote branch, and rebuilds only when it is behind (or a fresh
+            // clone). The engine's own quick start (the cmake preset, then the
+            // preset's build) rides the acquisition-data build steps. The decision,
+            // the build command, and its output are captured into buildLogs and
+            // threaded to the card's Logs section.
+            const sync = await syncAndRebuildEngine(this.host, {
+                engineId: this.id,
+                directory: engineDir,
+                ...(platform?.engineFork !== undefined ? { fork: platform.engineFork } : {}),
+                ...(plan.argv?.[0] !== undefined ? { binary: plan.argv[0] } : {}),
+                ...(options?.allowRunDeps !== undefined ? { allowRunDeps: options.allowRunDeps } : {}),
+            }, () => { });
+            buildLogs = sync.logs;
+            if (!sync.ok) {
+                return { ok: false, detail: sync.detail ?? 'unknown', logs: buildLogs };
             }
-            // The engine's own quick start (the cmake preset, then the preset's
-            // build) rides the acquisition-data build steps, the same list the
-            // Get route streams through its build step.
-            onProgress?.('build');
-            for (const step of engineBuildSteps(this.id)) {
-                const build = await this.host.run(step.replaceAll('{dir}', engineDir));
-                if (!build.ok) {
-                    return { ok: false, detail: `build failed: ${build.detail ?? 'unknown'}` };
-                }
+            // The build step reads as "Building..." only when a build actually
+            // ran (a fresh clone, or a rebase of a checkout that was behind).
+            if (sync.rebuilt) {
+                onProgress?.('build');
             }
         }
+        const withLogs = (result) => buildLogs !== '' ? { ...result, logs: buildLogs } : result;
         onProgress?.('download');
         const download = await this.downloadModel(plan);
         if (!download.ok)
-            return download;
+            return withLogs(download);
         const handle = this.host.spawn(plan.argv ?? [], plan.env ?? {}, engineDir);
         this.children.set(this.planKey(plan), handle);
-        return { ok: true, handle };
+        return withLogs({ ok: true, handle });
     }
     async healthCheck(plan, options) {
         return pollHealth(this.host, plan, options);

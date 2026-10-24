@@ -74,6 +74,48 @@ export declare function syncEngineRepo(host: LifecycleHost, request: {
     fork?: string;
 }, log: AcquireLog): Promise<EngineStepResult>;
 /**
+ * SyncRebuildRequest names the checkout the conditional rebuild prices: the
+ * engine, its directory, the optional fork remote, the engine binary the
+ * symlink step links when a rebuild leaves it out of the path, and the
+ * Play/Run trust gate that decides whether that symlink runs (on) or is
+ * written to the logs (off).
+ */
+export interface SyncRebuildRequest {
+    engineId: string;
+    directory: string;
+    fork?: string;
+    binary?: string;
+    allowRunDeps?: boolean;
+}
+/**
+ * SyncRebuildResult reports the conditional rebuild: whether it passed,
+ * whether a build actually ran (a fresh clone, or a rebase of a checkout that
+ * was behind), a detail for a failure, and the captured log text (the decision,
+ * the build command, and its output) the deploy step threads to the card's
+ * Logs section.
+ */
+export interface SyncRebuildResult {
+    ok: boolean;
+    rebuilt: boolean;
+    detail?: string;
+    logs: string;
+}
+/**
+ * syncAndRebuildEngine brings the engine checkout to the listed source and
+ * rebuilds it only when it needs to. A missing checkout is a fresh clone of
+ * the fork (or the upstream repo) and always builds. An existing checkout is
+ * fetched and priced against the remote branch: when it is behind and clean,
+ * the primary branch is checked out, rebased onto the remote branch, and the
+ * working tree is cleaned (git clean -fxd) before the build; when it is not
+ * behind, or it carries local changes, the build is skipped so a launch does
+ * not rebuild a checkout that is current. The decision, the build command,
+ * and its output stream through log and are returned as the result's logs.
+ * After a rebuild, the engine binary is checked against the path; when a build
+ * that did not install it leaves it out, a symlink into /usr/local/bin is
+ * added (run when the trust gate is on, written to the logs when it is off).
+ */
+export declare function syncAndRebuildEngine(host: LifecycleHost, request: SyncRebuildRequest, log: AcquireLog): Promise<SyncRebuildResult>;
+/**
  * buildEngineRepo runs the engine's build steps in the checkout, streaming
  * each step's output through log. An engine with no build steps (the compose
  * engines) passes through with a note; a failing step stops the build with

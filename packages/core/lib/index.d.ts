@@ -20,7 +20,7 @@ export { computeProviderStatuses, isGpuBusy, } from './status.ts';
 export type { ProviderRef, ProviderStatus, ProviderStatusInput, RunningEngineRef, } from './status.ts';
 export { DEFAULT_LOG_PATH_TEMPLATE, LOG_FILE_NAME_TEMPLATE, LOG_TEMPLATE_ENGINE, LOG_TEMPLATE_HOME, LOG_TEMPLATE_MODEL, LOG_TEMPLATE_TIMESTAMP, formatLogTimestamp, resolveLogPath, slugifyModelName, } from './logs.ts';
 export { EngineAdapter } from './adapter.ts';
-export type { DeployResult, EnginePlatformConfig, FetchResult, HealthCheckOptions, HealthResult, LaunchPlan, LaunchProgress, LaunchStep, LifecycleHost, ProcessExitInfo, ProcessHandle, } from './adapter.ts';
+export type { DeployOptions, DeployResult, EnginePlatformConfig, FetchResult, HealthCheckOptions, HealthResult, LaunchPlan, LaunchProgress, LaunchStep, LifecycleHost, ProcessExitInfo, ProcessHandle, } from './adapter.ts';
 export { NOOP_DEBUG_LOGGER, createCommandDebugLogger, isHarnessLogDebug, } from './debug.ts';
 export type { CreateCommandDebugLoggerArgs, DebugLogger, } from './debug.ts';
 export { constraintId, evaluateGuidelines, modelGuidelines } from './guideline.ts';

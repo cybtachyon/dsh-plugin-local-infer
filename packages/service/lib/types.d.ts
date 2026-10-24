@@ -65,13 +65,18 @@ export interface EngineDeathEvent {
  * deploy pulls an image only), and `parentPid` is the DSH process pid that
  * launched the engine (absent when the host process did not identify as
  * DSH), the two fields the route persists as the provider entry's launch
- * record for the restart re-link.
+ * record for the restart re-link. `buildLogs` is the deploy step's own
+ * captured output (the rebuild decision, the build command, and its output)
+ * kept separate from the engine's runtime `logs`, so the route can order the
+ * launch command after a build (or after a direct launch) and before the
+ * engine output.
  */
 export interface LaunchResult {
     plan: LaunchPlan;
     healthy: boolean;
     detail?: string;
     logs?: string;
+    buildLogs?: string;
     pid?: number;
     parentPid?: number;
 }
@@ -81,12 +86,16 @@ export interface LaunchResult {
  * healthMaxAttempts through; an absent option keeps the adapter's default.
  * `onProgress`, when present, is called as each launch phase (the deploy
  * sub-steps and the health poll) begins, so the card's Launch control reads
- * the phase that is actually running.
+ * the phase that is actually running. `allowRunDeps` is the Play/Run trust gate
+ * (the card's "Allow one-click install (sudo)" checkbox) the deploy step reads
+ * to decide whether a rebuild's missing-binary symlink into /usr/local/bin runs
+ * (on) or is written to the card's Logs section (off).
  */
 export interface LaunchOptions {
     pollMs?: number;
     maxAttempts?: number;
     onProgress?: LaunchProgress;
+    allowRunDeps?: boolean;
 }
 /**
  * RegisterModelOptions tunes the model registration: agentDefault points the

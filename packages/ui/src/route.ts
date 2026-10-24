@@ -1289,14 +1289,26 @@ export async function launchEngine(
       return result
     }
   }
+  // The trust gate rides into the deploy step, which reads it to decide
+  // whether a rebuild's missing-binary symlink into /usr/local/bin runs (on)
+  // or is written to the card's Logs section for the user to run (off).
   const result = await localInfer.launch(
     plan,
-    onProgress === undefined ? undefined : { onProgress },
+    {
+      ...(onProgress !== undefined ? { onProgress } : {}),
+      allowRunDeps: stored.allowRunDeps,
+    },
   )
-  if (commandNote !== undefined) {
-    // A deploy that failed before the engine printed anything still reports
-    // the command it tried to run.
-    result.logs = commandNote + (result.logs ?? '')
+  // Order the run logs: the build output (the rebuild decision, the build
+  // command, and its output) leads, the launch command follows it (after a
+  // successful build, or a direct launch with no build), and the engine's
+  // runtime output comes last. A deploy that failed before the engine printed
+  // anything still reports the command it tried to run.
+  const buildLogs = result.buildLogs ?? ''
+  const engineLogs = result.logs ?? ''
+  result.logs = buildLogs + (commandNote ?? '') + engineLogs
+  if (result.buildLogs !== undefined) {
+    delete result.buildLogs
   }
   persistLaunchLogs(result, engineId, config)
   persistLaunchRecord(result, engineId, config, request.providerId)

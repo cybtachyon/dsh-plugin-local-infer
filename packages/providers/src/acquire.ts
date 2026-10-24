@@ -202,6 +202,212 @@ export async function syncEngineRepo(
 }
 
 /**
+ * SyncRebuildRequest names the checkout the conditional rebuild prices: the
+ * engine, its directory, the optional fork remote, the engine binary the
+ * symlink step links when a rebuild leaves it out of the path, and the
+ * Play/Run trust gate that decides whether that symlink runs (on) or is
+ * written to the logs (off).
+ */
+export interface SyncRebuildRequest {
+  engineId: string
+  directory: string
+  fork?: string
+  binary?: string
+  allowRunDeps?: boolean
+}
+
+/**
+ * SyncRebuildResult reports the conditional rebuild: whether it passed,
+ * whether a build actually ran (a fresh clone, or a rebase of a checkout that
+ * was behind), a detail for a failure, and the captured log text (the decision,
+ * the build command, and its output) the deploy step threads to the card's
+ * Logs section.
+ */
+export interface SyncRebuildResult {
+  ok: boolean
+  rebuilt: boolean
+  detail?: string
+  logs: string
+}
+
+/**
+ * syncAndRebuildEngine brings the engine checkout to the listed source and
+ * rebuilds it only when it needs to. A missing checkout is a fresh clone of
+ * the fork (or the upstream repo) and always builds. An existing checkout is
+ * fetched and priced against the remote branch: when it is behind and clean,
+ * the primary branch is checked out, rebased onto the remote branch, and the
+ * working tree is cleaned (git clean -fxd) before the build; when it is not
+ * behind, or it carries local changes, the build is skipped so a launch does
+ * not rebuild a checkout that is current. The decision, the build command,
+ * and its output stream through log and are returned as the result's logs.
+ * After a rebuild, the engine binary is checked against the path; when a build
+ * that did not install it leaves it out, a symlink into /usr/local/bin is
+ * added (run when the trust gate is on, written to the logs when it is off).
+ */
+export async function syncAndRebuildEngine(
+  host: LifecycleHost,
+  request: SyncRebuildRequest,
+  log: AcquireLog,
+): Promise<SyncRebuildResult> {
+  const source = engineSource(request.engineId)
+  if (source === undefined) {
+    return {
+      ok: false,
+      rebuilt: false,
+      detail: `no engine source is registered for "${request.engineId}"`,
+      logs: '',
+    }
+  }
+  const directory = request.directory
+  const fork = request.fork !== undefined && request.fork.trim() !== '' ? request.fork : undefined
+  const remote = fork !== undefined ? FORK_REMOTE : 'origin'
+  const chunks: string[] = []
+  const emit = (chunk: string): void => {
+    chunks.push(chunk)
+    log(chunk)
+  }
+  const present = await host.run(`[ -d ${directory}/.git ]`)
+  let rebuilt = false
+  if (!present.ok) {
+    // A missing checkout is a fresh clone of the fork (or the upstream repo),
+    // which always needs a build.
+    emit(`>> cloning ${fork ?? source.repo} into ${directory}\n`)
+    const clone = await runLogged(host, `git clone ${fork ?? source.repo} ${directory}`, emit)
+    if (!clone.ok) {
+      return {
+        ok: false,
+        rebuilt: false,
+        detail: `git clone failed: ${clone.detail ?? 'unknown'}`,
+        logs: chunks.join(''),
+      }
+    }
+    rebuilt = true
+  } else {
+    if (fork !== undefined) {
+      // Add the fork under its own remote name; a re-launch updates the URL in
+      // place so an edited fork field takes effect on the next run.
+      const add = await runLogged(
+        host,
+        `git -C ${directory} remote add ${FORK_REMOTE} ${fork}`,
+        emit,
+        { echo: false },
+      )
+      if (!add.ok) {
+        await runLogged(
+          host,
+          `git -C ${directory} remote set-url ${FORK_REMOTE} ${fork}`,
+          emit,
+          { echo: false },
+        )
+      }
+    }
+    const status = await runLogged(
+      host,
+      `git -C ${directory} status --short`,
+      emit,
+      { echo: false },
+    )
+    if (!status.ok) {
+      return {
+        ok: false,
+        rebuilt: false,
+        detail: `git status failed: ${status.detail ?? 'unknown'}`,
+        logs: chunks.join(''),
+      }
+    }
+    if (status.output.trim() !== '') {
+      emit(`!! ${directory} has local changes; the rebase and rebuild are skipped.\n`)
+      return { ok: true, rebuilt: false, logs: chunks.join('') }
+    }
+    // The fetch is best-effort: an offline host prices the checkout it has.
+    await runLogged(host, `git -C ${directory} fetch ${remote} || true`, emit, { echo: false })
+    // Price whether the current branch is behind the remote branch. A fetch
+    // that failed (offline) or a missing remote branch reads as not-behind, so
+    // the checkout builds as-is.
+    const count = await runLogged(
+      host,
+      `git -C ${directory} rev-list --count HEAD..${remote}/${source.branch} 2>/dev/null || echo 0`,
+      emit,
+      { echo: false },
+    )
+    const behind = (count.output.trim() || '0') !== '0'
+    if (behind) {
+      emit(`>> ${directory} is behind ${remote}/${source.branch}; rebasing and rebuilding.\n`)
+      const checkout = await runLogged(host, `git -C ${directory} checkout ${source.branch}`, emit)
+      if (!checkout.ok) {
+        return {
+          ok: false,
+          rebuilt: false,
+          detail: `git checkout ${source.branch} failed: ${checkout.detail ?? 'unknown'}`,
+          logs: chunks.join(''),
+        }
+      }
+      const rebase = await runLogged(
+        host,
+        `git -C ${directory} rebase ${remote}/${source.branch} || ` +
+          `{ git -C ${directory} rebase --abort; exit 1; }`,
+        emit,
+      )
+      if (!rebase.ok) {
+        return {
+          ok: false,
+          rebuilt: false,
+          detail: `git rebase ${remote}/${source.branch} failed: ${rebase.detail ?? 'unknown'}`,
+          logs: chunks.join(''),
+        }
+      }
+      const clean = await runLogged(host, `git -C ${directory} clean -fxd`, emit)
+      if (!clean.ok) {
+        return {
+          ok: false,
+          rebuilt: false,
+          detail: `git clean -fxd failed: ${clean.detail ?? 'unknown'}`,
+          logs: chunks.join(''),
+        }
+      }
+      rebuilt = true
+    } else {
+      emit(`>> ${directory} is up to date with ${remote}/${source.branch}; the rebuild is skipped.\n`)
+    }
+  }
+  if (rebuilt) {
+    // Run the engine's build steps, capturing the command and its output.
+    for (const step of source.buildSteps) {
+      const command = step.replaceAll('{dir}', directory)
+      const outcome = await runLogged(host, command, emit)
+      if (!outcome.ok) {
+        return {
+          ok: false,
+          rebuilt: true,
+          detail: `build failed: ${outcome.detail ?? 'unknown'}`,
+          logs: chunks.join(''),
+        }
+      }
+    }
+    // A rebuild that did not install the binary (no make install) leaves it
+    // out of the path. Check, and add a symlink when the trust gate allows.
+    const binary = request.binary
+    if (binary !== undefined) {
+      const which = await host.run(`command -v ${binary}`)
+      if (!which.ok) {
+        const link = `sudo ln -sf ${directory}/build/${binary} /usr/local/bin/${binary}`
+        if (request.allowRunDeps === true) {
+          const result = await runLogged(host, link, emit)
+          if (!result.ok) {
+            emit(`!! ${link} failed: ${result.detail ?? 'unknown'}\n`)
+          }
+        } else {
+          emit(
+            `!! ${binary} is not on the path; run ${link} (the provider command must be on the path to launch)\n`,
+          )
+        }
+      }
+    }
+  }
+  return { ok: true, rebuilt, logs: chunks.join('') }
+}
+
+/**
  * buildEngineRepo runs the engine's build steps in the checkout, streaming
  * each step's output through log. An engine with no build steps (the compose
  * engines) passes through with a note; a failing step stops the build with

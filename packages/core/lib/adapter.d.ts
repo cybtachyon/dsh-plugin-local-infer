@@ -145,17 +145,32 @@ export interface HealthResult {
     detail?: string;
 }
 /**
+ * DeployOptions tunes a deploy run: `allowRunDeps` is the Play/Run trust gate
+ * (the card's "Allow one-click install (sudo)" checkbox). A local deploy that
+ * rebuilds the engine and leaves its binary out of the path links it into
+ * /usr/local/bin; the gate decides whether that sudo link runs (on) or is
+ * written to the card's Logs section for the user to run (off).
+ */
+export interface DeployOptions {
+    allowRunDeps?: boolean;
+}
+/**
  * DeployResult reports whether a build-or-pull succeeded, with a detail for the
  * UI. `handle` is the spawned engine process when the deploy step started one
  * locally: the service reads its accumulated `logs` after the health poll, so
  * the launch result carries the engine's output for the card's Logs section and
  * the log file, and attaches the handle's `onExit` listener to learn of a crash
- * or a pkill. A deploy that starts no process (a compose up) omits it.
+ * or a pkill. A deploy that starts no process (a compose up) omits it. `logs`
+ * is the deploy step's own captured output (the rebuild decision, the build
+ * command, and its output) the service prepends to the engine's output, so the
+ * card's Logs section shows the build a launch ran. A deploy that runs no
+ * rebuild (a docker pull, a compose up) omits it.
  */
 export interface DeployResult {
     ok: boolean;
     detail?: string;
     handle?: ProcessHandle;
+    logs?: string;
 }
 /**
  * EngineAdapter is the abstract base one subclass implements per engine. It
@@ -175,7 +190,7 @@ export declare abstract class EngineAdapter {
     abstract parameters(): readonly ParameterSpec[];
     abstract renderLaunch(config: Config, hw: HardwareProfile): LaunchPlan;
     abstract healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;
-    abstract deploy(plan: LaunchPlan, platform?: EnginePlatformConfig, onProgress?: LaunchProgress): Promise<DeployResult>;
+    abstract deploy(plan: LaunchPlan, platform?: EnginePlatformConfig, onProgress?: LaunchProgress, options?: DeployOptions): Promise<DeployResult>;
     abstract stop(plan: LaunchPlan): Promise<void>;
     /**
      * Optional: the host deps this engine's deploy step needs for a build mode,
