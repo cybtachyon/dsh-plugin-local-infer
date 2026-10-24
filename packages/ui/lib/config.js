@@ -8,7 +8,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { DEFAULT_LOG_PATH_TEMPLATE } from 'dsh-plugin-local-infer/core';
+// Relative, not the root package subpath: a self-referencing bare specifier
+// only resolves when the package sits inside a node_modules tree, so a
+// local-path or pnpm-linked install of this repo would fail the import.
+import { DEFAULT_LOG_PATH_TEMPLATE } from '../../core/lib/index.js';
 /**
  * The config file the route owns. It sits under the dsh home so a web user and
  * a CLI user share one file, the way modsearch shares ~/.modsearch.
