@@ -245,6 +245,17 @@ describe('dsh/client.js browser carrier', () => {
     expect(source).toContain('editingProviderId')
   })
 
+  it('pins the fork repo name the provider title bar renders', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // The provider title bar renders the fork's owner/repo (Ninfer/ninfer-all)
+    // when an entry names a fork, and falls back to the engine label when no
+    // fork is set. The short name is parsed from the fork reference (a
+    // protocol URL, an scp-style git@host:owner/repo, or a short form).
+    expect(source).toContain('repoShortName')
+    expect(source).toContain('repoShortName(provider.platform.engineFork)')
+    expect(source).toContain('var titleLabel = forkName !== undefined ? forkName : engineLabel')
+  })
+
   it('pins the collapsible provider form and the New provider control', () => {
     const source = readFileSync(fileURLToPath(clientPath), 'utf8')
     // The Engine/Model form collapses by default while entries exist, and the
@@ -286,9 +297,38 @@ describe('dsh/client.js browser carrier', () => {
     // Rebuild checkbox (checked by default) rides the launch body: unchecked,
     // the route skips the git sync (fetch, rebase, rebuild) and launches the
     // checkout as-is.
-    expect(source).toContain('[draft, launching, editingProviderId, autoRebuild, t, fetchSummary]')
+    expect(source).toContain(
+      '[draft, launching, editingProviderId, autoRebuild, t, fetchSummary, startProcessLog]',
+    )
     expect(source).toContain('autoRebuildState')
     expect(source).toContain('autoRebuild: autoRebuild')
+  })
+
+  it('pins the title-bar Launch control mirroring the edited provider entry state', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // While a provider is being edited, the title-bar Launch/Stop control reads
+    // that entry's per-entry launch state (a phase throbber, a Stop when
+    // healthy, a red Logs on a failed launch), so clicking the entry's Launch
+    // button drives both controls through the same lifecycle.
+    expect(source).toContain('mirroredPhaseLabel')
+    expect(source).toContain('mirroredStatus')
+    expect(source).toContain('editedProvider')
+  })
+
+  it('pins the reusable process button and the Logs process separator', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // Every stateful process control (Get, Launch, Stop, Run, Download) shares
+    // the Disable/Throbber/Reset lifecycle through renderProcessButton: a
+    // disabled control with the spinner and the in-progress label while the
+    // process is in flight, the idle action button when it settles.
+    expect(source).toContain('renderProcessButton')
+    // The provider process buttons write a "--- {{label}}" separator to the
+    // Logs buffer when clicked, so a new process reads as a fresh section that
+    // will append its commands and output to the buffer and the log file.
+    expect(source).toContain('startProcessLog')
+    expect(source).toContain("'--- ' + label")
+    // The Get button reads the title-cased "Getting..." in-progress label.
+    expect(source).toContain("getting: 'Getting...'")
   })
 
   it('pins the per-entry launch state machine and its phase labels', () => {
@@ -314,6 +354,24 @@ describe('dsh/client.js browser carrier', () => {
     // rebuild steps (prereqs, download, build) run without a timeout.
     expect(source).toContain('LAUNCH_HEALTH_DEADLINE_MS')
     expect(source).toContain("event.step === 'launch'")
+  })
+
+  it('pins the provider stop lifecycle the state machine drives', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // A Stop click moves the entry to the stopping state (a disabled throbber,
+    // the same display the launch phases show), then re-fetches the summary on
+    // a fast cadence so the provider's status dot repaints the moment the
+    // engine is down, instead of waiting out the host's 5-second cycle.
+    expect(source).toContain('STOP_POLL_MS')
+    expect(source).toContain("status === 'stopping'")
+    expect(source).toContain("type === 'stopped'")
+    expect(source).toContain('stoppingLabel')
+    // A provider still running at the 10-second deadline settles to the red
+    // Logs state (the same path a failed launch takes), marked with the cause
+    // 'stop' so the Logs control's reset reads as Stop, not Launch.
+    expect(source).toContain('STOP_HEALTH_DEADLINE_MS')
+    expect(source).toContain("type === 'stopFailed'")
+    expect(source).toContain("cause === 'stop' ? 'running' : 'idle'")
   })
 
   it('pins the launch record contract the restart re-link prices', () => {

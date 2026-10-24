@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -563,9 +563,10 @@ describe('launch and stop route helpers', () => {
       },
     })
     await launchEngine(service, { engine: 'ninfer', config: { port: 18020, model: 'qwen3-8-27b' } })
-    // The last run is persisted, so the card's Logs section shows it after a
-    // reload, and the resolved log file carries the same output.
-    expect(readConfig().lastLogs).toBe('engine booted\nlistening on 18020')
+    // The last run is persisted under the "Launching..." separator, so the
+    // card's Logs section shows it after a reload, and the resolved log file
+    // carries the same output.
+    expect(readConfig().lastLogs).toBe('--- Launching...\nengine booted\nlistening on 18020')
     const logFile = resolveLogPath(
       readConfig().logPath,
       'ninfer',
@@ -594,10 +595,11 @@ describe('launch and stop route helpers', () => {
     })
     const result = await launchEngine(service, { engine: 'infernix', config: {} })
     const note = '[local-infer] launch: infernix-serve /opt/hf-models/m.infernix --host 127.0.0.1 --port 18080\n'
-    // The command line leads the result logs the route hands the card and the
-    // persisted last run, so the Logs section diagnoses the exact child process.
+    // The command line leads the result logs the route hands the card, and the
+    // persisted last run carries it under the "Launching..." separator, so the
+    // Logs section diagnoses the exact child process.
     expect(result.logs).toBe(`${note}engine booted`)
-    expect(readConfig().lastLogs).toBe(`${note}engine booted`)
+    expect(readConfig().lastLogs).toBe(`--- Launching...\n${note}engine booted`)
   })
 
   it('orders the build output before the launch command and the engine output', async () => {
@@ -647,9 +649,12 @@ describe('launch and stop route helpers', () => {
     })
     const result = await launchEngine(service, { engine: 'infernix', config: {} })
     // A deploy that produced no engine output still carries the command it
-    // tried to run, so the Logs section is never blank on a failed launch.
+    // tried to run, so the Logs section is never blank on a failed launch. The
+    // persisted last run leads with the "Launching..." separator.
     expect(result.logs).toBe('[local-infer] launch: infernix-serve --port 18080\n')
-    expect(readConfig().lastLogs).toBe('[local-infer] launch: infernix-serve --port 18080\n')
+    expect(readConfig().lastLogs).toBe(
+      '--- Launching...\n[local-infer] launch: infernix-serve --port 18080\n',
+    )
   })
 
   it('renders the plan and calls the service stop entry point with it', async () => {
@@ -1747,6 +1752,63 @@ describe('model defaults, status, and download read model', () => {
     )
   })
 
+  it('persists the download run under the "Downloading..." separator', async () => {
+    writeConfig('ninfer', { model: 'qwen36-35b', modelDirectory: MODEL_DIR }, false)
+    const routes: { path: string; handler: (req: unknown, res: unknown) => Promise<void> }[] = []
+    const scope = {
+      webServer: {
+        register(route: { path: string; handler: (req: unknown, res: unknown) => Promise<void> }) {
+          routes.push(route)
+          return () => undefined
+        },
+      },
+      effect(fn: () => unknown): void {
+        fn()
+      },
+    }
+    registerLocalInferRoute(
+      scope as unknown as import('@deepseek-ai/cordis').Context & {
+        webServer: import('../src/route.ts').WebServerService
+      },
+      stubService([]),
+    )
+    const route = routes.find((r) => r.path === '/local-infer/download')!
+    const res = {
+      status: 0,
+      body: '' as string,
+      writeHead(status: number): unknown {
+        res.status = status
+        return res
+      },
+      end(body?: string): unknown {
+        res.body = body ?? ''
+        return res
+      },
+    }
+    await route.handler(
+      {
+        method: 'POST',
+        url: '/local-infer/download',
+        destroy(): void {
+          /* the handler only destroys on an oversize body */
+        },
+        async *[Symbol.asyncIterator](): AsyncGenerator<Buffer> {
+          yield Buffer.from(
+            JSON.stringify({ engine: 'ninfer', model: 'qwen36-35b', directory: MODEL_DIR }),
+          )
+        },
+      },
+      res,
+    )
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual({ ok: true })
+    // The download run persists under the "Downloading..." separator, so the
+    // Logs section and the log file show the download beside the Get and launch
+    // runs.
+    expect(readConfig().lastLogs).toContain('--- Downloading...')
+    expect(readConfig().lastLogs).toContain('download complete')
+  })
+
   it('seeds the summary with the directory-scanned model files for the engine', async () => {
     const service = stubService([], {
       modelEntries: [
@@ -2401,8 +2463,32 @@ describe('get route (git sync, deps, build)', () => {
     const streamed = res.chunks.join('')
     expect(streamed).toContain('$ git clone')
     expect(streamed).toContain('get complete')
-    // The streamed run persists as the last logs the Logs section shows.
+    // The streamed run persists as the last logs the Logs section shows, under
+    // the "Getting..." separator the route writes when the Get button is
+    // clicked.
+    expect(readConfig().lastLogs).toContain('--- Getting...')
     expect(readConfig().lastLogs).toContain('get complete')
+  })
+
+  it('writes the Get run (commands and output) to the configured log file', async () => {
+    writeConfig('ninfer', {}, true)
+    const { host } = stubGetHost({ exists: false })
+    const route = getRouteWith(host)
+    const res = fakeStreamRes()
+    await route.handler(
+      fakePost(JSON.stringify({ engine: 'ninfer', config: { modelDirectory: MODEL_DIR } })),
+      res,
+    )
+    // The Get step owns a per-run log file too: the commands and their output
+    // land in the configured log directory under the "Getting..." separator.
+    const logDir = join(home, '.dsh', 'local-infer', 'logs')
+    const entries = existsSync(logDir) ? readdirSync(logDir) : []
+    const logFile = entries.find((name) => name.startsWith('ninfer-') && name.endsWith('.log'))
+    expect(logFile).toBeDefined()
+    const content = readFileSync(join(logDir, logFile!), 'utf8')
+    expect(content).toContain('--- Getting...')
+    expect(content).toContain('$ git clone')
+    expect(content).toContain('get complete')
   })
 
   it('persists the streamed output on top of the previous last logs', async () => {

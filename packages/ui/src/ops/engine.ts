@@ -368,7 +368,11 @@ export function persistLaunchLogs(
   config: Config,
 ): void {
   const stored = readConfig()
-  const logs = result.logs ?? ''
+  // The "Launching..." separator leads the persisted run, so the Logs
+  // section and the log file read the launch as a fresh process section, the
+  // same line the card writes when a Launch button is clicked.
+  const logs =
+    result.logs === undefined || result.logs === '' ? '' : `--- Launching...\n${result.logs}`
   writeConfig(
     stored.engine,
     stored.config,

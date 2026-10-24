@@ -488,7 +488,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     key: 'lmHeadDraft',
     label: 'LM-head draft',
     description:
-      'Drafts from the small proposal head instead of the full output head, cutting the per-draft projection cost. An MTP-backend feature, so the field unlocks only while MTP is selected.',
+      'Drafts from the small proposal head instead of the full output head, cutting the per-draft projection cost.',
     form: { kind: 'boolean' },
     defaultValue: false,
     group: 'Speculation',

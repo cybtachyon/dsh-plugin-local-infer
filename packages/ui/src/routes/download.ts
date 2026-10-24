@@ -12,6 +12,7 @@ import { defineRoute } from '../route.ts'
 import type { LocalInferRoute } from '../route.ts'
 import type { DownloadRequest } from '../request.ts'
 import { downloadFor } from '../ops/hf.ts'
+import { persistDownloadLog } from '../ops/logs.ts'
 
 /**
  * downloadRoute builds the POST /local-infer/download route definition the
@@ -37,7 +38,15 @@ export function downloadRoute(localInfer: LocalInferService): LocalInferRoute {
       if (typeof body.directory === 'string') {
         request.directory = body.directory
       }
-      res.json(200, await downloadFor(localInfer, request))
+      const result = await downloadFor(localInfer, request)
+      // The "Downloading..." separator leads the persisted run, so the Logs
+      // section and the log file read the download as a fresh process section,
+      // the same line the card writes when the Download button is clicked.
+      const line = result.ok
+        ? 'download complete\n'
+        : `!! download failed${result.detail !== undefined ? `: ${result.detail}` : ''}\n`
+      persistDownloadLog(`--- Downloading...\n${line}`)
+      res.json(200, result)
     },
   })
 }

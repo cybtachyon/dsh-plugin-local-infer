@@ -54,7 +54,10 @@ export function getRoute(
       } catch (error) {
         log(`!! get failed: ${String((error as Error)?.message ?? error)}\n`)
       }
-      persistGetLogs(collected)
+      // The "Getting..." separator leads the persisted run, so the Logs
+      // section and the log file read the run as a fresh process section, the
+      // same line the card writes when the Get button is clicked.
+      persistGetLogs(`--- Getting...\n${collected}`)
       res.end()
     },
   })

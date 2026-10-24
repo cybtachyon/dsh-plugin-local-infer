@@ -83,7 +83,7 @@ window.__ModuleLoader__.load({
         run: 'Run',
         running: 'running...',
         get: 'Get',
-        getting: 'getting...',
+        getting: 'Getting...',
         getFailed: 'get failed',
         allowRun: 'Allow one-click install (sudo)',
         depsSatisfied: 'All dependencies satisfied.',
@@ -459,15 +459,23 @@ window.__ModuleLoader__.load({
       border: 'none',
     });
 
-    // The per-entry launch state machine: the card's Launch control lifecycle.
-    // The states are the button's reads: idle (a plain Launch), the four
-    // rebuild phases (prereqs, download, build, launch), running (a Stop), and
+    // The per-entry provider state machine: the card's Launch/Stop control
+    // lifecycle. The states are the button's reads: idle (a plain Launch), the
+    // four rebuild phases (prereqs, download, build, launch), running (a
+    // Stop), stopping (a disabled throbber while the stop is in flight), and
     // failed (a red Logs). launchNextState is the hardened transition: a step
     // event only advances forward through the rebuild phases (a stale or
     // out-of-order step is a no-op), a healthy result settles to running, a
-    // failed result settles to failed, and a stop or a break (the Logs control,
-    // a navigation away) resets to idle. An event that names no legal next
-    // state leaves the control where it is, so a late event never corrupts it.
+    // failed result settles to failed, a stop moves a running (or idle, a
+    // provider running per the summary with no machine entry) engine to
+    // stopping, a confirmed stop settles to idle, a stop that is still running
+    // at the deadline settles to failed with the cause 'stop', and a break
+    // (the Logs control, a navigation away) resets: a launch failure reads as
+    // Launch (idle), a stop timeout reads as Stop (running), because the
+    // engine is probably still up. The machine takes the entry ({status,
+    // cause}) and returns the next entry, so the cause-aware reset stays in
+    // one place. An event that names no legal next state leaves the control
+    // where it is, so a late event never corrupts it.
     var LAUNCH_STEP_ORDER = { prereqs: 0, download: 1, build: 2, launch: 3 };
     var LAUNCH_PHASE_STATES = ['prereqs', 'download', 'build', 'launch'];
     // The health-poll deadline: the route's poll runs up to two minutes, so a
@@ -476,41 +484,89 @@ window.__ModuleLoader__.load({
     // (prereqs, download, build) run as long as they need to, so a slow build
     // never reads as a failure.
     var LAUNCH_HEALTH_DEADLINE_MS = 150000;
+    // The stop-poll interval: while a stop is in flight, the card re-fetches
+    // the summary on this cadence so the provider's status dot repaints the
+    // moment the engine is down, instead of waiting out the host's 5-second
+    // process-watch and probe cycle.
+    var STOP_POLL_MS = 1000;
+    // The stop deadline: a provider still running 10 seconds after a Stop
+    // click settles to the red Logs state (the same path a failed launch
+    // takes), so the user can open the entry, fix the config, and retry.
+    var STOP_HEALTH_DEADLINE_MS = 10000;
 
     function launchIsPhase(state) {
       return LAUNCH_PHASE_STATES.indexOf(state) !== -1;
     }
 
-    function launchNextState(current, event) {
+    function launchNextState(entry, event) {
+      var current = entry && entry.status !== undefined ? entry.status : 'idle';
+      var cause = entry && entry.cause !== undefined ? entry.cause : undefined;
       var type = event.type;
+      var next;
+      var nextCause;
       if (type === 'start') {
         // A launch begins from idle (a plain Launch) or failed (a re-launch
         // after the Logs control cleared the failed state).
-        return current === 'idle' || current === 'failed' ? 'prereqs' : current;
-      }
-      if (type === 'step') {
+        next = current === 'idle' || current === 'failed' ? 'prereqs' : current;
+        nextCause = undefined;
+      } else if (type === 'step') {
         var target = event.step;
-        if (LAUNCH_STEP_ORDER[target] === undefined) return current;
-        if (current === 'idle' || current === 'failed') return target;
-        if (current === 'running') return current;
-        var currentOrder = LAUNCH_STEP_ORDER[current];
-        if (currentOrder === undefined) return current;
-        return LAUNCH_STEP_ORDER[target] >= currentOrder ? target : current;
+        if (LAUNCH_STEP_ORDER[target] === undefined) {
+          next = current;
+          nextCause = cause;
+        } else if (current === 'idle' || current === 'failed') {
+          next = target;
+          nextCause = undefined;
+        } else if (current === 'running' || current === 'stopping') {
+          // A stop in flight supersedes a late launch step.
+          next = current;
+          nextCause = cause;
+        } else {
+          var currentOrder = LAUNCH_STEP_ORDER[current];
+          if (currentOrder === undefined) {
+            next = current;
+            nextCause = cause;
+          } else {
+            next = LAUNCH_STEP_ORDER[target] >= currentOrder ? target : current;
+            nextCause = undefined;
+          }
+        }
+      } else if (type === 'healthy') {
+        next = launchIsPhase(current) ? 'running' : current;
+        nextCause = undefined;
+      } else if (type === 'failed') {
+        next = launchIsPhase(current) ? 'failed' : current;
+        nextCause = undefined;
+      } else if (type === 'stop') {
+        // A stop moves a running engine (or an idle one running per the
+        // summary, or a launch in flight) to the stopping state; a stop
+        // already in flight is a no-op.
+        next =
+          current === 'running' ||
+          current === 'stopping' ||
+          current === 'idle' ||
+          launchIsPhase(current)
+            ? 'stopping'
+            : current;
+        nextCause = undefined;
+      } else if (type === 'stopped') {
+        // The fast poll confirmed the provider is no longer running.
+        next = current === 'stopping' ? 'idle' : current;
+        nextCause = undefined;
+      } else if (type === 'stopFailed') {
+        // The deadline fired while the provider was still running.
+        next = current === 'stopping' ? 'failed' : current;
+        nextCause = current === 'stopping' ? 'stop' : cause;
+      } else if (type === 'reset') {
+        // A launch failure reads as Launch (idle); a stop timeout reads as
+        // Stop (running), because the engine is probably still up.
+        next = current === 'failed' ? (cause === 'stop' ? 'running' : 'idle') : 'idle';
+        nextCause = undefined;
+      } else {
+        next = current;
+        nextCause = cause;
       }
-      if (type === 'healthy') {
-        return launchIsPhase(current) ? 'running' : current;
-      }
-      if (type === 'failed') {
-        return launchIsPhase(current) ? 'failed' : current;
-      }
-      if (type === 'stop') {
-        // A stop settles a running engine (or a launch in flight) back to idle.
-        return current === 'running' || launchIsPhase(current) ? 'idle' : current;
-      }
-      if (type === 'reset') {
-        return 'idle';
-      }
-      return current;
+      return { status: next, cause: nextCause };
     }
 
     // The deps panel. The install block is a copy/paste target, so it gets a
@@ -917,20 +973,24 @@ window.__ModuleLoader__.load({
       };
       var phaseLabel = phaseLabels[status];
       if (phaseLabel !== undefined) {
-        return react.createElement(
-          'button',
-          {
-            type: 'button',
-            disabled: true,
-            style: Object.assign(
-              { display: 'inline-flex', alignItems: 'center', gap: 4, opacity: 0.7 },
-              GHOST_BUTTON,
-            ),
-            'aria-label': phaseLabel,
-          },
-          renderThrobber(react, primitives),
-          react.createElement('span', null, phaseLabel),
-        );
+        return renderProcessButton(react, primitives, {
+          busy: true,
+          label: phaseLabel,
+          busyLabel: phaseLabel,
+          variant: 'ghost',
+          onClick: function () {},
+        });
+      }
+      // A stop in flight: a disabled control with the spinner and the
+      // stopping label, the same throbber the launch phases show.
+      if (status === 'stopping') {
+        return renderProcessButton(react, primitives, {
+          busy: true,
+          label: opts.stoppingLabel,
+          busyLabel: opts.stoppingLabel,
+          variant: 'ghost',
+          onClick: function () {},
+        });
       }
       // The Stop control reads from the provider status dot, not just the
       // per-entry launch state: the launch state is lost when the user
@@ -979,6 +1039,43 @@ window.__ModuleLoader__.load({
       );
     }
 
+    // The owner/repo short name the provider title bar renders when an entry
+    // names a fork (the git repo that overrides the engine default upstream).
+    // It accepts a protocol URL (https://github.com/owner/repo), an scp-style
+    // git@host:owner/repo reference, and an already-short owner/repo form,
+    // stripping a trailing .git. It returns undefined when no repo name is
+    // present, so the title bar falls back to the engine label.
+    function repoShortName(ref) {
+      if (typeof ref !== 'string' || ref.trim() === '') {
+        return undefined;
+      }
+      var value = ref.trim();
+      var isUrl = /^[a-z][a-z0-9+.-]*:\/\//i.test(value);
+      if (isUrl) {
+        // Drop the scheme and the host segment, leaving owner/repo.
+        value = value.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/^[^/]+\//, '');
+      } else {
+        var colon = value.indexOf(':');
+        var slash = value.indexOf('/');
+        // An scp-style git@host:owner/repo reference: drop the host prefix.
+        if (colon !== -1 && (slash === -1 || colon < slash)) {
+          value = value.slice(colon + 1);
+        }
+      }
+      var segments = value.split('/').filter(function (part) {
+        return part !== '';
+      });
+      if (segments.length === 0) {
+        return undefined;
+      }
+      var repo = segments[segments.length - 1].replace(/\.git$/, '');
+      if (repo === '') {
+        return undefined;
+      }
+      var owner = segments.length > 1 ? segments[segments.length - 2] : undefined;
+      return owner ? owner + '/' + repo : repo;
+    }
+
     // unsure), an "Engine: Model" title, and Edit/Delete controls. A New
     // provider button resets the form to a fresh entry. The list sits above
     // the editing form, so a provider's full config form stays the single
@@ -995,6 +1092,15 @@ window.__ModuleLoader__.load({
           ((opts.engines || []).find(function (engine) {
             return engine.id === provider.engine;
           }) || {}).label || provider.engine;
+        // The title bar renders the fork's owner/repo when the entry names a
+        // fork, so a forked engine reads as its repo (Ninfer/ninfer-all)
+        // rather than the engine label (NInfer). No fork, or an unparseable
+        // one, keeps the engine label.
+        var forkName =
+          provider.platform && typeof provider.platform === 'object'
+            ? repoShortName(provider.platform.engineFork)
+            : undefined;
+        var titleLabel = forkName !== undefined ? forkName : engineLabel;
         var modelLabel =
           provider.model && provider.model !== '' ? provider.model : opts.modelAuto;
         return react.createElement(
@@ -1023,21 +1129,21 @@ window.__ModuleLoader__.load({
                 whiteSpace: 'nowrap',
               },
               title:
-                engineLabel +
+                titleLabel +
                 ': ' +
                 modelLabel +
                 ' (' +
                 (statusToLabel[provider.status] || provider.status) +
                 ')',
               'aria-label':
-                engineLabel +
+                titleLabel +
                 ': ' +
                 modelLabel +
                 ' (' +
                 (statusToLabel[provider.status] || provider.status) +
                 ')',
             },
-            engineLabel +
+            titleLabel +
               ': ' +
               modelLabel +
               ' (' +
@@ -1126,6 +1232,39 @@ window.__ModuleLoader__.load({
         },
         'aria-hidden': 'true',
       });
+    }
+
+    // The reusable stateful process button: the Disable/Throbber/Reset
+    // lifecycle every process control (Get, Launch, Stop, Run, Download)
+    // shares. While the process is in flight (busy) it reads as a disabled
+    // control with the spinner and the in-progress label; when it settles the
+    // caller flips busy back to false and the control resets to the idle
+    // action button (the label and the click handler). A host without the
+    // primitives seed keeps the native fallback through renderButton.
+    function renderProcessButton(react, primitives, opts) {
+      if (opts.busy === true) {
+        return react.createElement(
+          'button',
+          {
+            type: 'button',
+            disabled: true,
+            style: Object.assign(
+              { display: 'inline-flex', alignItems: 'center', gap: 4, opacity: 0.7 },
+              GHOST_BUTTON,
+            ),
+            'aria-label': opts.busyLabel,
+          },
+          renderThrobber(react, primitives),
+          react.createElement('span', null, opts.busyLabel),
+        );
+      }
+      return renderButton(
+        react,
+        primitives,
+        opts.variant,
+        { onClick: opts.onClick, disabled: opts.disabled === true },
+        opts.label,
+      );
     }
 
     // The chat-template control, split from the old finicky free-text combo
@@ -1778,24 +1917,22 @@ window.__ModuleLoader__.load({
             label: t.allowRun,
           }),
           deps.runAllowed && !deps.allSatisfied
-            ? renderButton(
-                react,
-                primitives,
-                'ghost',
-                { onClick: actions.onRun, disabled: actions.installing },
-                actions.installing ? t.running : '▶ ' + t.run,
-              )
+            ? renderProcessButton(react, primitives, {
+                busy: actions.installing === true,
+                label: '▶ ' + t.run,
+                busyLabel: t.running,
+                variant: 'ghost',
+                onClick: actions.onRun,
+              })
             : null,
-          renderButton(
-            react,
-            primitives,
-            'primary',
-            {
-              onClick: actions.onGet,
-              disabled: !deps.allSatisfied || actions.getting === true,
-            },
-            actions.getting === true ? t.getting : t.get,
-          ),
+          renderProcessButton(react, primitives, {
+            busy: actions.getting === true,
+            label: t.get,
+            busyLabel: t.getting,
+            variant: 'primary',
+            onClick: actions.onGet,
+            disabled: !deps.allSatisfied,
+          }),
         ),
         actions.depsNote
           ? react.createElement(
@@ -1932,6 +2069,16 @@ window.__ModuleLoader__.load({
         // launch began, so a card entry can show its phase label, Stop, or red
         // Logs control. Absent entries read as idle (a plain Launch button).
         var entryLaunchState = react.useState({});
+        // The provider statuses the summary last painted, mirrored into a ref
+        // so the stop fast-poll reads the value the last fetch settled, not a
+        // stale closure.
+        var providerStatusRef = react.useRef({});
+        // The latest fetchSummary, mirrored into a ref so the stop fast-poll
+        // re-fetches through the current callback, not a stale one.
+        var fetchSummaryRef = react.useRef(null);
+        // The stop fast-poll and deadline timers (per-entry), plus the
+        // draft-based stop's poll timer, so an unmount clears them all.
+        var stopTimersRef = react.useRef({ poll: null, deadline: null, draftPoll: null });
         var data = dataState[0];
         var draft = draftState[0];
         var note = noteState[0];
@@ -1963,6 +2110,24 @@ window.__ModuleLoader__.load({
         var cachedDraft = cachedDraftState[0];
         var logPath = logPathState[0];
         var entryLaunch = entryLaunchState[0];
+        // The title-bar Launch/Stop control mirrors the edited provider's
+        // per-entry launch state, so the entry's Launch button and the form's
+        // control read the same lifecycle (a phase throbber, a Stop when
+        // healthy, a red Logs on a failed launch).
+        var editedProvider =
+          editingProviderId !== null
+            ? (data.providers || []).find((provider) => provider.id === editingProviderId)
+            : undefined;
+        var mirroredStatus =
+          editedProvider !== undefined ? (entryLaunch[editedProvider.id] || {}).status : undefined;
+        var mirroredPhaseLabel =
+          {
+            prereqs: t.entryPrereqs,
+            download: t.entryDownloading,
+            build: t.entryBuilding,
+            launch: t.entryLaunching,
+            stopping: t.stopping,
+          }[mirroredStatus];
         // The no-entries case forces the form into new-provider mode on
         // render: with nothing stored, the form is where the first provider
         // is entered, and the "New provider" control reads as plain text.
@@ -1997,6 +2162,13 @@ window.__ModuleLoader__.load({
               )
               .then((next) => {
                 dataState[1](next);
+                // Mirror the provider statuses the summary painted, so the
+                // stop fast-poll reads the latest dot values.
+                var statuses = {};
+                (next.providers || []).forEach(function (provider) {
+                  statuses[provider.id] = provider.status;
+                });
+                providerStatusRef.current = statuses;
                 // The streamed Get buffer yields to the persisted last-run
                 // logs the summary now carries, so the Logs section keeps
                 // the run's tail without a second copy.
@@ -2039,6 +2211,31 @@ window.__ModuleLoader__.load({
               });
           },
           [t],
+        );
+
+        // Mirror the latest fetchSummary into a ref, so the stop fast-poll
+        // re-fetches through the current callback (its deps change with the
+        // locale), not a stale closure.
+        react.useEffect(() => {
+          fetchSummaryRef.current = fetchSummary;
+        }, [fetchSummary]);
+
+        // Clear the stop fast-poll and deadline timers on unmount, so a
+        // settled or abandoned stop never keeps re-fetching the summary.
+        react.useEffect(
+          () => () => {
+            var timers = stopTimersRef.current;
+            if (timers.poll !== null) {
+              clearTimeout(timers.poll);
+            }
+            if (timers.deadline !== null) {
+              clearTimeout(timers.deadline);
+            }
+            if (timers.draftPoll !== null) {
+              clearInterval(timers.draftPoll);
+            }
+          },
+          [],
         );
 
         // The deps panel reads its own route, because it re-probes the host
@@ -2164,6 +2361,9 @@ window.__ModuleLoader__.load({
             }
             downloadingState[1](true);
             downloadNoteState[1]('');
+            // The click writes the "Downloading..." separator, so the run reads
+            // as a fresh Logs section that the download appends to.
+            startProcessLog(t.downloading);
             fetch('/local-infer/download', {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
@@ -2195,7 +2395,7 @@ window.__ModuleLoader__.load({
                 downloadingState[1](false);
               });
           },
-          [draft, downloading, t, fetchSummary],
+          [draft, downloading, t, fetchSummary, startProcessLog],
         );
 
         // The chat-template download: pulls the selected template (the
@@ -2712,6 +2912,23 @@ window.__ModuleLoader__.load({
             });
         }, [deps, draft, installing, t]);
 
+        // The Logs-section separator a provider process button writes when
+        // clicked: it appends a "--- {{label}}" line to the live Logs buffer
+        // (seeding from the persisted last-run logs when no run is in flight),
+        // so the new process reads as a fresh section that will append its
+        // commands and output to the buffer and the log file. The host route
+        // persists the same separator, so it survives a reload.
+        var startProcessLog = react.useCallback(
+          (label) => {
+            getLogsState[1]((current) => {
+              var base =
+                current !== null ? current : (data !== null && data.lastLogs ? data.lastLogs : '');
+              return base + (base === '' ? '' : '\n') + '--- ' + label + '\n';
+            });
+          },
+          [data],
+        );
+
         var onGet = react.useCallback(() => {
           if (deps === null || draft === null || getting) {
             return;
@@ -2720,10 +2937,11 @@ window.__ModuleLoader__.load({
           // the host through /local-infer/get. The route streams its output;
           // each chunk appends to the Logs section and re-arms the idle
           // timer, and Launch stays disabled until the run finishes, fails,
-          // or falls silent for GET_IDLE_MS.
+          // or falls silent for GET_IDLE_MS. The click writes the "Getting..."
+          // separator, so the run reads as a fresh Logs section.
           gettingState[1](true);
           depsNoteState[1]('');
-          getLogsState[1]((data && data.lastLogs) || '');
+          startProcessLog(t.getting);
           var append = (text) => {
             getLogsState[1]((current) => (current === null ? '' : current) + text);
           };
@@ -2784,7 +3002,7 @@ window.__ModuleLoader__.load({
               // re-read hands the Logs section back to the stored value.
               fetchSummary(draft.engine, draft.config);
             });
-        }, [deps, draft, getting, data, t, fetchSummary]);
+        }, [deps, draft, getting, data, t, fetchSummary, startProcessLog]);
 
         var onRegister = react.useCallback(() => {
           if (draft === null || registering) {
@@ -2903,6 +3121,9 @@ window.__ModuleLoader__.load({
           }
           launchingState[1](true);
           lifecycleNoteState[1]('');
+          // The click writes the "Launching..." separator, so the run reads as
+          // a fresh Logs section that the launch appends to.
+          startProcessLog(t.launching);
           fetch('/local-infer/launch', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -2979,7 +3200,7 @@ window.__ModuleLoader__.load({
               // the Get apply when their run ends.
               fetchSummary(draft.engine, draft.config);
             });
-        }, [draft, launching, editingProviderId, autoRebuild, t, fetchSummary]);
+        }, [draft, launching, editingProviderId, autoRebuild, t, fetchSummary, startProcessLog]);
 
         var onStop = react.useCallback(() => {
           if (draft === null || stopping) {
@@ -2987,6 +3208,15 @@ window.__ModuleLoader__.load({
           }
           stoppingState[1](true);
           lifecycleNoteState[1]('');
+          // Re-fetch the summary on a fast cadence for the duration of the
+          // stop action, so the provider's status dot repaints the moment the
+          // engine is down, instead of waiting out the host's 5-second
+          // process-watch cycle.
+          if (stopTimersRef.current.draftPoll === null) {
+            stopTimersRef.current.draftPoll = setInterval(function () {
+              fetchSummaryRef.current(null, null);
+            }, STOP_POLL_MS);
+          }
           fetch('/local-infer/stop', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -3010,8 +3240,27 @@ window.__ModuleLoader__.load({
             })
             .then(() => {
               stoppingState[1](false);
+              if (stopTimersRef.current.draftPoll !== null) {
+                clearInterval(stopTimersRef.current.draftPoll);
+                stopTimersRef.current.draftPoll = null;
+              }
             });
         }, [draft, stopping, editingProviderId, t]);
+
+        // Move one entry through the provider state machine, reading the
+        // current entry from the latest map so a late event prices the state it
+        // lands on, not a stale one. The per-entry launch and stop both drive
+        // the same machine through this one helper, so a transition is never
+        // priced twice.
+        var moveEntry = react.useCallback((providerId, event) => {
+          entryLaunchState[1]((current) => {
+            var entry = current[providerId] || { status: 'idle' };
+            var next = launchNextState(entry, event);
+            return Object.assign({}, current, {
+              [providerId]: Object.assign({}, next, { startTime: Date.now() }),
+            });
+          });
+        }, []);
 
         // The per-entry launch: a card entry's own Launch control drives its
         // own engine, not the form's draft. It starts the launch state machine
@@ -3026,28 +3275,18 @@ window.__ModuleLoader__.load({
           (provider) => {
             var prior = entryLaunch[provider.id];
             var status = prior !== undefined ? prior.status : 'idle';
-            // A launch in flight (a rebuild phase) is ignored; a running engine
-            // is stopped by its own Stop control, not re-launched.
+            // A launch in flight (a rebuild phase) or a stop in flight is
+            // ignored; a running engine is stopped by its own Stop control,
+            // not re-launched.
             if (status !== 'idle' && status !== 'failed') {
               return;
             }
-            var startStatus = launchNextState(status, { type: 'start' });
-            entryLaunchState[1]((current) =>
-              Object.assign({}, current, {
-                [provider.id]: { status: startStatus, startTime: Date.now() },
-              }),
-            );
-            // Move the entry's launch state through the machine, reading the
-            // current status from the latest map so a late event prices the
-            // state it lands on, not a stale one.
+            moveEntry(provider.id, { type: 'start' });
+            // The click writes the "Launching..." separator, so the entry's run
+            // reads as a fresh Logs section that the launch appends to.
+            startProcessLog(t.entryLaunching);
             var move = function (event) {
-              entryLaunchState[1]((current) => {
-                var entry = current[provider.id];
-                var next = launchNextState(entry !== undefined ? entry.status : 'idle', event);
-                return Object.assign({}, current, {
-                  [provider.id]: { status: next, startTime: Date.now() },
-                });
-              });
+              moveEntry(provider.id, event);
             };
             // The health-poll deadline: the route's poll runs up to two minutes,
             // so a client-side deadline just past that cap forces a hung launch
@@ -3159,15 +3398,64 @@ window.__ModuleLoader__.load({
                 move({ type: 'failed' });
               });
           },
-          [entryLaunch, fetchSummary],
+          [entryLaunch, fetchSummary, startProcessLog, moveEntry],
         );
 
-        // The per-entry stop: a running engine's Stop control settles the
-        // launch state machine back to idle (the control reads as Launch
-        // again). The stop clears the launch record on this entry, so a
-        // recycled pid cannot re-link it.
+        // The per-entry stop: a running engine's Stop control moves the
+        // provider state machine to stopping (the control shows the throbber,
+        // disabled, the same display the launch phases show). For the duration
+        // of the stop action the card re-fetches the summary on a fast cadence
+        // so the provider's status dot repaints the moment the engine is down,
+        // instead of waiting out the host's 5-second process-watch cycle. A
+        // provider still running when the 10-second deadline fires settles to
+        // the red Logs state (the same path a failed launch takes); the Logs
+        // control opens the entry for editing and resets the machine to
+        // running, so the control reads as Stop again. The stop clears the
+        // launch record on this entry, so a recycled pid cannot re-link it.
         var onStopEntry = react.useCallback(
           (provider) => {
+            var prior = entryLaunch[provider.id];
+            var priorStatus = prior !== undefined ? prior.status : 'idle';
+            // A failed launch reads as Logs, not Stop, so a stop only starts
+            // from the other states.
+            if (priorStatus === 'failed') {
+              return;
+            }
+            var move = function (event) {
+              moveEntry(provider.id, event);
+            };
+            var clearStopTimers = function () {
+              if (stopTimersRef.current.poll !== null) {
+                clearTimeout(stopTimersRef.current.poll);
+                stopTimersRef.current.poll = null;
+              }
+              if (stopTimersRef.current.deadline !== null) {
+                clearTimeout(stopTimersRef.current.deadline);
+                stopTimersRef.current.deadline = null;
+              }
+            };
+            // A second Stop click re-arms the timers, so clear the in-flight
+            // ones first, or they would stack and double-settle.
+            clearStopTimers();
+            move({ type: 'stop' });
+            var poll = function () {
+              var status = providerStatusRef.current[provider.id];
+              if (status !== undefined && status !== 'running') {
+                // The provider is no longer running: the stop succeeded.
+                move({ type: 'stopped' });
+                clearStopTimers();
+                return;
+              }
+              fetchSummaryRef.current(null, null);
+              stopTimersRef.current.poll = setTimeout(poll, STOP_POLL_MS);
+            };
+            stopTimersRef.current.poll = setTimeout(poll, STOP_POLL_MS);
+            stopTimersRef.current.deadline = setTimeout(function () {
+              // The provider is still running after the deadline: settle to
+              // the red Logs state, the same path a failed launch takes.
+              clearStopTimers();
+              move({ type: 'stopFailed' });
+            }, STOP_HEALTH_DEADLINE_MS);
             fetch('/local-infer/stop', {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
@@ -3180,25 +3468,12 @@ window.__ModuleLoader__.load({
                 providerId: provider.id,
               }),
             })
-              .then(() => {
-                entryLaunchState[1]((current) => {
-                  var entry = current[provider.id];
-                  var status = entry !== undefined ? entry.status : 'idle';
-                  var next = launchNextState(status, { type: 'stop' });
-                  var map = Object.assign({}, current);
-                  if (next === 'idle') {
-                    delete map[provider.id];
-                  } else {
-                    map[provider.id] = { status: next, startTime: Date.now() };
-                  }
-                  return map;
-                });
-              })
               .catch(() => {
-                /* a stop that fails leaves the entry in its last state */
+                /* a stop that fails leaves the entry in its last state; the
+                   fast-poll and the deadline settle it */
               });
           },
-          [],
+          [entryLaunch, moveEntry],
         );
 
         // The per-entry Logs control: opening the logs loads the entry for
@@ -3210,14 +3485,13 @@ window.__ModuleLoader__.load({
           (provider) => {
             onEditProvider(provider);
             entryLaunchState[1]((current) => {
-              var entry = current[provider.id];
-              var status = entry !== undefined ? entry.status : 'idle';
-              var next = launchNextState(status, { type: 'reset' });
+              var entry = current[provider.id] || { status: 'idle' };
+              var next = launchNextState(entry, { type: 'reset' });
               var map = Object.assign({}, current);
-              if (next === 'idle') {
+              if (next.status === 'idle') {
                 delete map[provider.id];
               } else {
-                map[provider.id] = { status: next, startTime: Date.now() };
+                map[provider.id] = Object.assign({}, next, { startTime: Date.now() });
               }
               return map;
             });
@@ -3386,6 +3660,7 @@ window.__ModuleLoader__.load({
                 onLogs: onLogsEntry,
                 launchLabel: t.entryLaunch,
                 stopLabel: t.entryStop,
+                stoppingLabel: t.stopping,
                 logsLabel: t.entryLogs,
                 launchingLabel: t.entryLaunching,
                 prereqsLabel: t.entryPrereqs,
@@ -3555,13 +3830,13 @@ window.__ModuleLoader__.load({
                   },
                   t.hfCliDetected + ' ' + status.downloadCommand,
                 ),
-                renderButton(
-                  react,
-                  primitives,
-                  'ghost',
-                  { onClick: onDownload, disabled: downloading },
-                  downloading ? t.downloading : t.download,
-                ),
+                renderProcessButton(react, primitives, {
+                  busy: downloading === true,
+                  label: t.download,
+                  busyLabel: t.downloading,
+                  variant: 'ghost',
+                  onClick: onDownload,
+                }),
               );
             }
             return react.createElement(
@@ -3614,18 +3889,15 @@ window.__ModuleLoader__.load({
                   (status.hfCli ? t.hfCliDetected : t.noHfCli) + ' ' + status.downloadCommand,
                 ),
                 status.hfCli
-                  ? renderButton(
-                      react,
-                      primitives,
-                      'ghost',
-                      {
-                        onClick: function () {
-                          onDownloadTemplate(status.repo);
-                        },
-                        disabled: templateDownloading,
+                  ? renderProcessButton(react, primitives, {
+                      busy: templateDownloading === true,
+                      label: t.templateDownload,
+                      busyLabel: t.templateDownloading,
+                      variant: 'ghost',
+                      onClick: function () {
+                        onDownloadTemplate(status.repo);
                       },
-                      templateDownloading ? t.templateDownloading : t.templateDownload,
-                    )
+                    })
                   : null,
               ),
               templateDownloadNote !== ''
@@ -3945,42 +4217,61 @@ window.__ModuleLoader__.load({
           react.createElement(
             'div',
             { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 } },
-            launching
-              ? react.createElement(
-                  'button',
-                  {
-                    type: 'button',
-                    disabled: true,
-                    style: Object.assign(
-                      { display: 'inline-flex', alignItems: 'center', gap: 4, opacity: 0.7 },
-                      GHOST_BUTTON,
-                    ),
-                    'aria-label': t.launching,
-                  },
-                  renderThrobber(react, primitives),
-                  react.createElement('span', null, t.launching),
-                )
-              : stopping
-                ? renderButton(
-                    react,
-                    primitives,
-                    'ghost',
-                    { onClick: function () {}, disabled: true },
-                    t.stopping,
-                  )
-                : draftRunning
-                  ? renderButton(react, primitives, 'ghost', { onClick: onStop }, t.stop)
-                  : renderButton(
-                      react,
-                      primitives,
-                      'primary',
+            mirroredPhaseLabel !== undefined
+              ? renderProcessButton(react, primitives, {
+                  busy: true,
+                  label: mirroredPhaseLabel,
+                  busyLabel: mirroredPhaseLabel,
+                  variant: 'ghost',
+                  onClick: function () {},
+                })
+              : mirroredStatus === 'running'
+                ? renderButton(react, primitives, 'ghost', {
+                    onClick: function () {
+                      onStopEntry(editedProvider);
+                    },
+                  }, t.stop)
+                : mirroredStatus === 'failed'
+                  ? react.createElement(
+                      'button',
                       {
-                        onClick: onLaunch,
-                        disabled:
-                          getting || (deps !== null && deps.allSatisfied !== true),
+                        type: 'button',
+                        onClick: function () {
+                          onLogsEntry(editedProvider);
+                        },
+                        style: Object.assign(
+                          { color: 'var(--dsw-alias-label-error, #ff3b30)' },
+                          GHOST_BUTTON,
+                        ),
+                        'aria-label': t.entryLogs,
                       },
-                      t.launch,
-                    ),
+                      t.entryLogs,
+                    )
+                  : renderProcessButton(react, primitives, {
+                      busy: launching || stopping,
+                      label: draftRunning ? t.stop : t.launch,
+                      busyLabel: launching ? t.launching : t.stopping,
+                      variant: draftRunning ? 'ghost' : 'primary',
+                      // While a provider is being edited, the control drives the
+                      // provider state machine (the same entry the title bar
+                      // mirrors), so the throbber, the fast-poll, and the
+                      // 10-second Logs deadline apply. A fresh provider (no
+                      // entry) keeps the draft-based Launch/Stop.
+                      onClick: draftRunning
+                        ? editedProvider !== undefined
+                          ? function () {
+                              onStopEntry(editedProvider);
+                            }
+                          : onStop
+                        : editedProvider !== undefined
+                          ? function () {
+                              onLaunchEntry(editedProvider);
+                            }
+                          : onLaunch,
+                      disabled:
+                        !draftRunning &&
+                        (getting || (deps !== null && deps.allSatisfied !== true)),
+                    }),
             // The Auto Rebuild checkbox: checked, a launch runs the git sync
             // (fetch, rebase, rebuild) before the spawn; unchecked, the
             // launch starts the checkout as-is.

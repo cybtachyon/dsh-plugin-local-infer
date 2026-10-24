@@ -8,6 +8,7 @@
  */
 import { defineRoute } from "../route.js";
 import { downloadFor } from "../ops/hf.js";
+import { persistDownloadLog } from "../ops/logs.js";
 /**
  * downloadRoute builds the POST /local-infer/download route definition the
  * register step holds by an effect.
@@ -32,7 +33,15 @@ export function downloadRoute(localInfer) {
             if (typeof body.directory === 'string') {
                 request.directory = body.directory;
             }
-            res.json(200, await downloadFor(localInfer, request));
+            const result = await downloadFor(localInfer, request);
+            // The "Downloading..." separator leads the persisted run, so the Logs
+            // section and the log file read the download as a fresh process section,
+            // the same line the card writes when the Download button is clicked.
+            const line = result.ok
+                ? 'download complete\n'
+                : `!! download failed${result.detail !== undefined ? `: ${result.detail}` : ''}\n`;
+            persistDownloadLog(`--- Downloading...\n${line}`);
+            res.json(200, result);
         },
     });
 }
