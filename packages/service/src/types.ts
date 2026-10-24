@@ -12,6 +12,7 @@ import type {
   HardwareProfile,
   InstallResult,
   LaunchPlan,
+  LaunchProgress,
   ModelRow,
   Preset,
   PresetSource,
@@ -116,10 +117,14 @@ export interface LaunchResult {
  * LaunchOptions tunes the launch health poll: the interval between attempts
  * and the attempt cap. The service passes the config's healthPollMs and
  * healthMaxAttempts through; an absent option keeps the adapter's default.
+ * `onProgress`, when present, is called as each launch phase (the deploy
+ * sub-steps and the health poll) begins, so the card's Launch control reads
+ * the phase that is actually running.
  */
 export interface LaunchOptions {
   pollMs?: number
   maxAttempts?: number
+  onProgress?: LaunchProgress
 }
 
 /**

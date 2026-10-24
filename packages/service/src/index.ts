@@ -621,7 +621,10 @@ export class LocalInfer extends Service implements LocalInferService {
       )
     }
     const platform = this.platformConfigRegistry.get(plan.engineId)
-    const deployResult = await adapter.deploy(plan, platform)
+    // The deploy step reports its download and build sub-steps through the
+    // progress sink, so the card's button reads the phase that is running.
+    const onProgress = options?.onProgress
+    const deployResult = await adapter.deploy(plan, platform, onProgress)
     if (!deployResult.ok) {
       // exactOptionalPropertyTypes: only write the detail key when it is present.
       const result: LaunchResult = { plan, healthy: false }
@@ -656,6 +659,10 @@ export class LocalInfer extends Service implements LocalInferService {
     if (deployResult.handle !== undefined) {
       this.watchLaunchedHandle(deployResult.handle, plan)
     }
+    // The health poll is the launch phase: the rebuild (download, build) is
+    // done and the engine process is up, so the card's button reads
+    // "Launching..." while it waits for the engine to report ready.
+    onProgress?.('launch')
     const health = await adapter.healthCheck(plan, options)
     const launchResult: LaunchResult = { plan, healthy: health.healthy }
     if (health.detail !== undefined) {

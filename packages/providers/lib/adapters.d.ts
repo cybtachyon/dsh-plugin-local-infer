@@ -8,7 +8,7 @@
  * @module dsh-plugin-local-infer/providers/adapters
  */
 import { EngineAdapter } from '../../core/lib/index.js';
-import type { Config, DebugLogger, DeployResult, EngineLaunchSignature, EnginePlatformConfig, HealthCheckOptions, HealthResult, HardwareProfile, LaunchPlan, LifecycleHost, ParameterSpec } from '../../core/lib/index.js';
+import type { Config, DebugLogger, DeployResult, EngineLaunchSignature, EnginePlatformConfig, HealthCheckOptions, HealthResult, HardwareProfile, LaunchPlan, LaunchProgress, LifecycleHost, ParameterSpec } from '../../core/lib/index.js';
 export { INFERNIX_MODEL_ARTIFACTS } from './infernix.ts';
 /**
  * NInferModelArtifact is the per-model deploy data: the `.ninfer` artifact
@@ -112,7 +112,7 @@ export declare class NInferAdapter extends EngineAdapter {
     };
     launchSignature(config?: Config): EngineLaunchSignature;
     renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan;
-    deploy(plan: LaunchPlan, platform?: EnginePlatformConfig): Promise<DeployResult>;
+    deploy(plan: LaunchPlan, platform?: EnginePlatformConfig, onProgress?: LaunchProgress): Promise<DeployResult>;
     healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;
     stop(plan: LaunchPlan): Promise<void>;
     private buildMode;
@@ -151,7 +151,7 @@ export declare class HyperQwenAdapter extends EngineAdapter {
     };
     launchSignature(config?: Config): EngineLaunchSignature;
     renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan;
-    deploy(plan: LaunchPlan, platform?: EnginePlatformConfig): Promise<DeployResult>;
+    deploy(plan: LaunchPlan, platform?: EnginePlatformConfig, onProgress?: LaunchProgress): Promise<DeployResult>;
     healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;
     stop(plan: LaunchPlan): Promise<void>;
     private port;
@@ -187,7 +187,7 @@ export declare class LlamaCppAdapter extends EngineAdapter {
     };
     launchSignature(config?: Config): EngineLaunchSignature;
     renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan;
-    deploy(plan: LaunchPlan, platform?: EnginePlatformConfig): Promise<DeployResult>;
+    deploy(plan: LaunchPlan, platform?: EnginePlatformConfig, onProgress?: LaunchProgress): Promise<DeployResult>;
     healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;
     stop(plan: LaunchPlan): Promise<void>;
     private buildMode;
@@ -224,7 +224,7 @@ export declare class StrataAdapter extends EngineAdapter {
     };
     launchSignature(config?: Config): EngineLaunchSignature;
     renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan;
-    deploy(plan: LaunchPlan): Promise<DeployResult>;
+    deploy(plan: LaunchPlan, _platform?: EnginePlatformConfig, onProgress?: LaunchProgress): Promise<DeployResult>;
     healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;
     stop(plan: LaunchPlan): Promise<void>;
     private port;
@@ -259,7 +259,7 @@ export declare class InfernixAdapter extends EngineAdapter {
     };
     launchSignature(config?: Config): EngineLaunchSignature;
     renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan;
-    deploy(plan: LaunchPlan, platform?: EnginePlatformConfig): Promise<DeployResult>;
+    deploy(plan: LaunchPlan, platform?: EnginePlatformConfig, onProgress?: LaunchProgress): Promise<DeployResult>;
     healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;
     stop(plan: LaunchPlan): Promise<void>;
     private port;

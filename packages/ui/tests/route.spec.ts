@@ -487,6 +487,52 @@ describe('launch and stop route helpers', () => {
     expect(result.plan.engineId).toBe('ninfer')
   })
 
+  it('reports the prereqs phase and threads the progress sink to the service launch', async () => {
+    // The trust gate is on, so the route runs the system-dependency install as
+    // the prereqs phase and reports it.
+    writeConfig('ninfer', { port: 18020 }, true)
+    const service = stubService([], {
+      launchResult: { plan: { engineId: 'ninfer', kind: 'process', port: 18020, healthUrl: 'http://127.0.0.1:18020/health' }, healthy: true },
+    })
+    // The stub service's launch records the sink the route threads and reports
+    // the deploy sub-steps it would, so the test prices the full sequence the
+    // card's button reads.
+    let seenSink: ((step: 'prereqs' | 'download' | 'build' | 'launch') => void) | undefined
+    service.launch = async (plan: LaunchPlan, options?: { onProgress?: (step: 'prereqs' | 'download' | 'build' | 'launch') => void }): Promise<LaunchResult> => {
+      seenSink = options?.onProgress
+      options?.onProgress?.('download')
+      options?.onProgress?.('build')
+      return { plan, healthy: true }
+    }
+    const steps: string[] = []
+    await launchEngine(service, { engine: 'ninfer', config: { port: 18020 } }, (step) => {
+      steps.push(step)
+    })
+    expect(typeof seenSink).toBe('function')
+    // The route reports the prereqs phase, then threads the sink to the service,
+    // which reports the deploy sub-steps.
+    expect(steps).toEqual(['prereqs', 'download', 'build'])
+  })
+
+  it('skips the prereqs phase when the trust gate is off', async () => {
+    // The trust gate is off, so no system-dependency install runs and the
+    // prereqs phase is not reported; the sequence starts at the deploy steps.
+    writeConfig('ninfer', { port: 18020 }, false)
+    const service = stubService([], {
+      launchResult: { plan: { engineId: 'ninfer', kind: 'process', port: 18020, healthUrl: 'http://127.0.0.1:18020/health' }, healthy: true },
+    })
+    service.launch = async (plan: LaunchPlan, options?: { onProgress?: (step: 'prereqs' | 'download' | 'build' | 'launch') => void }): Promise<LaunchResult> => {
+      options?.onProgress?.('download')
+      options?.onProgress?.('build')
+      return { plan, healthy: true }
+    }
+    const steps: string[] = []
+    await launchEngine(service, { engine: 'ninfer', config: { port: 18020 } }, (step) => {
+      steps.push(step)
+    })
+    expect(steps).toEqual(['download', 'build'])
+  })
+
   it('persists the launch logs as the last run and writes the log file', async () => {
     const service = stubService([], {
       launchResult: {
@@ -991,8 +1037,16 @@ describe('route handlers over a fake web server', () => {
         res.status = status
         return res
       },
+      // The streaming routes (the launch NDJSON) write lines as they land; the
+      // fake accumulates them so the test reads the full stream.
+      write(chunk: string): FakeRes {
+        res.body += chunk
+        return res
+      },
       end(body?: string): FakeRes {
-        res.body = body ?? ''
+        // A streamed body (the launch NDJSON) is already accumulated; a plain
+        // end body replaces it.
+        res.body = body !== undefined ? body : res.body
         return res
       },
     }
@@ -1159,6 +1213,44 @@ describe('route handlers over a fake web server', () => {
       }
       expect(res.status).toBe(405)
     }
+  })
+
+  it('streams the launch as NDJSON step events then a result event', async () => {
+    const service = stubService([], {
+      launchResult: { plan: { engineId: 'ninfer', kind: 'process', port: 18020, healthUrl: 'http://127.0.0.1:18020/health' }, healthy: true },
+    })
+    // The stub service's launch reports the deploy sub-steps through the sink
+    // the route threads, so the stream carries the full phase sequence the
+    // card's button reads.
+    service.launch = async (
+      plan: LaunchPlan,
+      options?: { onProgress?: (step: 'prereqs' | 'download' | 'build' | 'launch') => void },
+    ): Promise<LaunchResult> => {
+      options?.onProgress?.('download')
+      options?.onProgress?.('build')
+      options?.onProgress?.('launch')
+      return { plan, healthy: true }
+    }
+    const routes = registeredRoutes(service)
+    const launchRoute = routes.find((route) => route.path === '/local-infer/launch')
+    const res = fakeRes()
+    await launchRoute?.handler(
+      fakeReq('POST', '/local-infer/launch', JSON.stringify({ engine: 'ninfer' })),
+      res,
+    )
+    expect(res.status).toBe(200)
+    // The stream is NDJSON: a step event as each phase begins, then a final
+    // result event. The card's button reads the step that is running.
+    const lines = res.body.split('\n').filter((line) => line !== '')
+    const events = lines.map((line) => JSON.parse(line))
+    expect(events.map((event) => (event.step !== undefined ? event.step : 'result'))).toEqual([
+      'prereqs',
+      'download',
+      'build',
+      'launch',
+      'result',
+    ])
+    expect(events[events.length - 1].result.healthy).toBe(true)
   })
 })
 

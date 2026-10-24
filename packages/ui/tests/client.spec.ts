@@ -264,6 +264,31 @@ describe('dsh/client.js browser carrier', () => {
     expect(source).toContain('[draft, launching, editingProviderId, t, fetchSummary]')
   })
 
+  it('pins the per-entry launch state machine and its phase labels', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // The per-entry Launch control is a hardened state machine: the rebuild
+    // phases (prereqs, download, build, launch) advance forward, a healthy
+    // result settles to running, a failed result settles to failed, and a
+    // stop or a break resets to idle.
+    expect(source).toContain('launchNextState')
+    expect(source).toContain('LAUNCH_STEP_ORDER')
+    expect(source).toContain('LAUNCH_PHASE_STATES')
+    // The button reads the phase that is running, not a single "Launching...".
+    expect(source).toContain('entryPrereqs')
+    expect(source).toContain('entryDownloading')
+    expect(source).toContain('entryBuilding')
+    expect(source).toContain('entryLaunching')
+    // The launch stream is NDJSON: a step event as each phase begins, then a
+    // final result event the card reads through the response body stream.
+    expect(source).toContain('response.body.getReader')
+    expect(source).toContain('event.step')
+    expect(source).toContain('event.result')
+    // The health-poll deadline arms only for the launch (health-poll) step; the
+    // rebuild steps (prereqs, download, build) run without a timeout.
+    expect(source).toContain('LAUNCH_HEALTH_DEADLINE_MS')
+    expect(source).toContain("event.step === 'launch'")
+  })
+
   it('pins the launch record contract the restart re-link prices', () => {
     const source = readFileSync(fileURLToPath(clientPath), 'utf8')
     // The card's launch and stop bodies carry the provider entry's id, so the

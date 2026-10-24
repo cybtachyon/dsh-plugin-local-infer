@@ -15,7 +15,7 @@
  * @module dsh-plugin-local-infer/ui/route
  */
 import type { Context } from '@deepseek-ai/cordis';
-import type { Config, DefaultProvenance, HardwareProfile, InstallResult, LifecycleHost, ProviderLaunchRecord, ProviderStatus, RegisterResult, VramModel, VramVerdict } from 'dsh-plugin-local-infer/core';
+import type { Config, DefaultProvenance, HardwareProfile, InstallResult, LaunchStep, LifecycleHost, ProviderLaunchRecord, ProviderStatus, RegisterResult, VramModel, VramVerdict } from 'dsh-plugin-local-infer/core';
 import type { DownloadResult, EngineDeathEvent, LaunchResult, LocalInferService } from 'dsh-plugin-local-infer/service';
 import type { EngineInfo } from '../../providers/lib/index.js';
 import type { DepsModel } from './deps.ts';
@@ -355,7 +355,7 @@ export interface LaunchRequest {
  * process pid that launched it) on the request's provider entry, so a DSH
  * restart can re-link a surviving engine to its config.
  */
-export declare function launchEngine(localInfer: LocalInferService, request: LaunchRequest): Promise<LaunchResult>;
+export declare function launchEngine(localInfer: LocalInferService, request: LaunchRequest, onProgress?: (step: LaunchStep) => void): Promise<LaunchResult>;
 /**
  * handleEngineDeath persists a provider entry's state when its engine process
  * dies outside the plugin's stop path: a crash, a pkill of a plugin-launched

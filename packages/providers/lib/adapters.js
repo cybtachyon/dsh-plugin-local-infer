@@ -473,12 +473,15 @@ export class NInferAdapter extends EngineAdapter {
             healthUrl: `http://127.0.0.1:${port}/health`,
         };
     }
-    async deploy(plan, platform) {
+    async deploy(plan, platform, onProgress) {
         if (plan.kind === 'process') {
             const engineDir = platform?.engineDirectory;
             if (engineDir !== undefined) {
                 const fork = platform?.engineFork;
                 if (fork !== undefined) {
+                    // The git sync is the checkout download: the card's button reads
+                    // "Downloading..." for it, not "Building...".
+                    onProgress?.('download');
                     // Mirror the qwen-ninfer launcher: an existing checkout (a .git under
                     // the engine directory) is updated in place with a best-effort fetch
                     // and a hard reset to the fork's master, then built as-is; a missing
@@ -495,6 +498,7 @@ export class NInferAdapter extends EngineAdapter {
                 }
                 // The build steps come from the engine's acquisition data, the same
                 // list the Get route streams through its build step.
+                onProgress?.('build');
                 for (const step of engineBuildSteps(this.id)) {
                     const build = await this.host.run(step.replaceAll('{dir}', engineDir));
                     if (!build.ok) {
@@ -502,6 +506,7 @@ export class NInferAdapter extends EngineAdapter {
                     }
                 }
             }
+            onProgress?.('download');
             const download = await this.downloadModel(plan);
             if (!download.ok)
                 return download;
@@ -509,6 +514,7 @@ export class NInferAdapter extends EngineAdapter {
             // control's known choices) is not a path the engine can read, so the
             // deploy step downloads it into the model directory and rewrites the
             // --chat-template flag to the local file before the spawn.
+            onProgress?.('download');
             const templateResult = await this.resolveChatTemplate(plan);
             if (!templateResult.ok)
                 return templateResult;
@@ -517,6 +523,9 @@ export class NInferAdapter extends EngineAdapter {
             return { ok: true, handle };
         }
         if (plan.kind === 'docker') {
+            // The image pull is the docker build step: the card's button reads
+            // "Building..." for it.
+            onProgress?.('build');
             const pull = await this.host.run(`docker pull ${NINFER_DOCKER_IMAGE}`);
             if (!pull.ok) {
                 return { ok: false, detail: `docker pull failed: ${pull.detail ?? 'unknown'}` };
@@ -655,7 +664,7 @@ export class HyperQwenAdapter extends EngineAdapter {
             healthUrl: `http://127.0.0.1:${port}/health`,
         };
     }
-    async deploy(plan, platform) {
+    async deploy(plan, platform, onProgress) {
         // The card's docker-tag field carries the compose arguments (the profile
         // the up step selects); the deploy step applies it to the plan so the up
         // line and the card's Logs section agree.
@@ -668,6 +677,9 @@ export class HyperQwenAdapter extends EngineAdapter {
         if (command === undefined) {
             return { ok: false, detail: 'compose plan carries no command' };
         }
+        // The compose up is the docker build step: the card's button reads
+        // "Building..." for it.
+        onProgress?.('build');
         const up = await this.host.run(command);
         if (!up.ok) {
             return { ok: false, detail: `compose up failed: ${up.detail ?? 'unknown'}` };
@@ -814,12 +826,15 @@ export class LlamaCppAdapter extends EngineAdapter {
             healthUrl: `http://127.0.0.1:${port}/health`,
         };
     }
-    async deploy(plan, platform) {
+    async deploy(plan, platform, onProgress) {
         if (plan.kind === 'process') {
             const engineDir = platform?.engineDirectory;
             if (engineDir !== undefined) {
                 const fork = platform?.engineFork;
                 if (fork !== undefined) {
+                    // The git sync is the checkout download: the card's button reads
+                    // "Downloading..." for it, not "Building...".
+                    onProgress?.('download');
                     // Mirror the qwen-ninfer launcher: an existing checkout is updated in
                     // place with a best-effort fetch and a hard reset to the fork's
                     // master, then built as-is; a missing checkout is a fresh clone. The
@@ -834,6 +849,7 @@ export class LlamaCppAdapter extends EngineAdapter {
                 }
                 // The build steps come from the engine's acquisition data, the same
                 // list the Get route streams through its build step.
+                onProgress?.('build');
                 for (const step of engineBuildSteps(this.id)) {
                     const build = await this.host.run(step.replaceAll('{dir}', engineDir));
                     if (!build.ok) {
@@ -841,6 +857,7 @@ export class LlamaCppAdapter extends EngineAdapter {
                     }
                 }
             }
+            onProgress?.('download');
             const download = await this.downloadModel(plan);
             if (!download.ok)
                 return download;
@@ -849,6 +866,9 @@ export class LlamaCppAdapter extends EngineAdapter {
             return { ok: true, handle };
         }
         if (plan.kind === 'docker') {
+            // The image pull is the docker build step: the card's button reads
+            // "Building..." for it.
+            onProgress?.('build');
             const pull = await this.host.run(`docker pull ${LLAMACPP_DOCKER_IMAGE}`);
             if (!pull.ok) {
                 return { ok: false, detail: `docker pull failed: ${pull.detail ?? 'unknown'}` };
@@ -956,7 +976,10 @@ export class StrataAdapter extends EngineAdapter {
             healthUrl: `http://127.0.0.1:${port}/health`,
         };
     }
-    async deploy(plan) {
+    async deploy(plan, _platform, onProgress) {
+        // The image pull is the docker build step: the card's button reads
+        // "Building..." for it.
+        onProgress?.('build');
         const pull = await this.host.run(`docker pull ${STRATA_DOCKER_IMAGE}`);
         if (!pull.ok) {
             return { ok: false, detail: `docker pull failed: ${pull.detail ?? 'unknown'}` };
@@ -1063,7 +1086,7 @@ export class InfernixAdapter extends EngineAdapter {
             healthUrl: `http://127.0.0.1:${port}/health`,
         };
     }
-    async deploy(plan, platform) {
+    async deploy(plan, platform, onProgress) {
         if (plan.kind !== 'process') {
             // Infernix renders process plans only; a docker or compose plan is a
             // no-op.
@@ -1073,6 +1096,9 @@ export class InfernixAdapter extends EngineAdapter {
         if (engineDir !== undefined) {
             const fork = platform?.engineFork;
             if (fork !== undefined) {
+                // The git sync is the checkout download: the card's button reads
+                // "Downloading..." for it, not "Building...".
+                onProgress?.('download');
                 // Mirror the NInfer launcher: an existing checkout (a .git under the
                 // engine directory) is updated in place with a best-effort fetch and
                 // a hard reset to the fork's master, then built as-is; a missing
@@ -1090,6 +1116,7 @@ export class InfernixAdapter extends EngineAdapter {
             // The engine's own quick start (the cmake preset, then the preset's
             // build) rides the acquisition-data build steps, the same list the
             // Get route streams through its build step.
+            onProgress?.('build');
             for (const step of engineBuildSteps(this.id)) {
                 const build = await this.host.run(step.replaceAll('{dir}', engineDir));
                 if (!build.ok) {
@@ -1097,6 +1124,7 @@ export class InfernixAdapter extends EngineAdapter {
                 }
             }
         }
+        onProgress?.('download');
         const download = await this.downloadModel(plan);
         if (!download.ok)
             return download;

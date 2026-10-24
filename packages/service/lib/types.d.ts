@@ -1,4 +1,4 @@
-import type { CommandOutcome, Config, DefaultModel, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, GpuUsageProbe, HardwareProfile, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, ProviderLaunchRecord, ProviderRef, ProviderStatus, ReLinkOutcome, RegisterResult, ReserveResolution, ReserveSource, ResolvedDefaults, SettingsOp, SystemDep, VramBreakdown, VramModel, VramVerdict } from 'dsh-plugin-local-infer/core';
+import type { CommandOutcome, Config, DefaultModel, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, Guideline, GuidelineResult, GpuUsageProbe, HardwareProfile, InstallResult, LaunchPlan, LaunchProgress, ModelRow, Preset, PresetSource, ProcessLine, ProviderLaunchRecord, ProviderRef, ProviderStatus, ReLinkOutcome, RegisterResult, ReserveResolution, ReserveSource, ResolvedDefaults, SettingsOp, SystemDep, VramBreakdown, VramModel, VramVerdict } from 'dsh-plugin-local-infer/core';
 /**
  * EstimateResult is the answer to an estimate call: the full VRAM breakdown,
  * the one-word verdict the meter renders, the source the numbers came from,
@@ -79,10 +79,14 @@ export interface LaunchResult {
  * LaunchOptions tunes the launch health poll: the interval between attempts
  * and the attempt cap. The service passes the config's healthPollMs and
  * healthMaxAttempts through; an absent option keeps the adapter's default.
+ * `onProgress`, when present, is called as each launch phase (the deploy
+ * sub-steps and the health poll) begins, so the card's Launch control reads
+ * the phase that is actually running.
  */
 export interface LaunchOptions {
     pollMs?: number;
     maxAttempts?: number;
+    onProgress?: LaunchProgress;
 }
 /**
  * RegisterModelOptions tunes the model registration: agentDefault points the

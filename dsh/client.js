@@ -150,6 +150,10 @@ window.__ModuleLoader__.load({
         entryLaunch: 'Launch',
         entryStop: 'Stop',
         entryLogs: 'Logs',
+        entryPrereqs: 'Prereqs...',
+        entryDownloading: 'Downloading...',
+        entryBuilding: 'Building...',
+        entryLaunching: 'Launching...',
         chatTemplatePreset: 'Chat template preset',
         customChatTemplate: 'Custom Chat template',
         custom: 'Custom',
@@ -279,6 +283,10 @@ window.__ModuleLoader__.load({
         entryLaunch: '启动',
         entryStop: '停止',
         entryLogs: '日志',
+        entryPrereqs: '前置条件…',
+        entryDownloading: '下载中…',
+        entryBuilding: '构建中…',
+        entryLaunching: '启动中…',
         chatTemplatePreset: '聊天模板预设',
         customChatTemplate: '自定义聊天模板',
         custom: '自定义',
@@ -446,6 +454,61 @@ window.__ModuleLoader__.load({
       color: '#fff',
       border: 'none',
     });
+
+    // The per-entry launch state machine: the card's Launch control lifecycle.
+    // The states are the button's reads: idle (a plain Launch), the four
+    // rebuild phases (prereqs, download, build, launch), running (a Stop), and
+    // failed (a red Logs). launchNextState is the hardened transition: a step
+    // event only advances forward through the rebuild phases (a stale or
+    // out-of-order step is a no-op), a healthy result settles to running, a
+    // failed result settles to failed, and a stop or a break (the Logs control,
+    // a navigation away) resets to idle. An event that names no legal next
+    // state leaves the control where it is, so a late event never corrupts it.
+    var LAUNCH_STEP_ORDER = { prereqs: 0, download: 1, build: 2, launch: 3 };
+    var LAUNCH_PHASE_STATES = ['prereqs', 'download', 'build', 'launch'];
+    // The health-poll deadline: the route's poll runs up to two minutes, so a
+    // client-side deadline just past that cap forces a hung launch to the red
+    // Logs state. It arms only for the launch phase; the rebuild phases
+    // (prereqs, download, build) run as long as they need to, so a slow build
+    // never reads as a failure.
+    var LAUNCH_HEALTH_DEADLINE_MS = 150000;
+
+    function launchIsPhase(state) {
+      return LAUNCH_PHASE_STATES.indexOf(state) !== -1;
+    }
+
+    function launchNextState(current, event) {
+      var type = event.type;
+      if (type === 'start') {
+        // A launch begins from idle (a plain Launch) or failed (a re-launch
+        // after the Logs control cleared the failed state).
+        return current === 'idle' || current === 'failed' ? 'prereqs' : current;
+      }
+      if (type === 'step') {
+        var target = event.step;
+        if (LAUNCH_STEP_ORDER[target] === undefined) return current;
+        if (current === 'idle' || current === 'failed') return target;
+        if (current === 'running') return current;
+        var currentOrder = LAUNCH_STEP_ORDER[current];
+        if (currentOrder === undefined) return current;
+        return LAUNCH_STEP_ORDER[target] >= currentOrder ? target : current;
+      }
+      if (type === 'healthy') {
+        return launchIsPhase(current) ? 'running' : current;
+      }
+      if (type === 'failed') {
+        return launchIsPhase(current) ? 'failed' : current;
+      }
+      if (type === 'stop') {
+        // A stop settles a running engine (or a launch in flight) back to idle.
+        return current === 'running' || launchIsPhase(current) ? 'idle' : current;
+      }
+      if (type === 'reset') {
+        return 'idle';
+      }
+      return current;
+    }
+
     // The deps panel. The install block is a copy/paste target, so it gets a
     // monospace pre with its own copy button; the dep rows read their status
     // from a state dot (the DSH StateDot, or its glyph fallback), not a word,
@@ -832,13 +895,24 @@ window.__ModuleLoader__.load({
     // a collapsed card with a status dot (green running, red stopped, yellow
     // The per-entry Launch control: a card entry's own lifecycle button, shown
     // alongside its Edit and Delete controls. Idle reads as a Launch button
-    // that starts the entry's engine; a launch in flight shows a disabled
-    // control with the spinner inside; a healthy engine reads as an enabled
-    // Stop; a launch that timed out reads as a red Logs control that opens the
-    // entry for editing, the same action as Edit.
+    // that starts the entry's engine; a rebuild in flight shows a disabled
+    // control with the spinner and the phase label (Prereqs, Downloading,
+    // Building, Launching); a healthy engine reads as an enabled Stop; a launch
+    // that timed out reads as a red Logs control that opens the entry for
+    // editing, the same action as Edit.
     function renderEntryLaunchButton(react, primitives, provider, opts) {
       var state = (opts.launchState || {})[provider.id];
-      if (state !== undefined && state.status === 'launching') {
+      var status = state !== undefined ? state.status : 'idle';
+      // A rebuild phase in flight: a disabled control with the spinner and the
+      // phase label, so the button reads the step that is actually running.
+      var phaseLabels = {
+        prereqs: opts.prereqsLabel,
+        download: opts.downloadingLabel,
+        build: opts.buildingLabel,
+        launch: opts.launchingLabel,
+      };
+      var phaseLabel = phaseLabels[status];
+      if (phaseLabel !== undefined) {
         return react.createElement(
           'button',
           {
@@ -848,20 +922,17 @@ window.__ModuleLoader__.load({
               { display: 'inline-flex', alignItems: 'center', gap: 4, opacity: 0.7 },
               GHOST_BUTTON,
             ),
-            'aria-label': opts.launchingLabel,
+            'aria-label': phaseLabel,
           },
           renderThrobber(react, primitives),
-          react.createElement('span', null, opts.launchingLabel),
+          react.createElement('span', null, phaseLabel),
         );
       }
       // The Stop control reads from the provider status dot, not just the
       // per-entry launch state: the launch state is lost when the user
       // navigates away from the plugin page and back, so a running engine
       // (a green dot) must keep the control as Stop, not reset to Launch.
-      if (
-        (state !== undefined && state.status === 'running') ||
-        provider.status === 'running'
-      ) {
+      if (status === 'running' || provider.status === 'running') {
         return renderButton(
           react,
           primitives,
@@ -870,10 +941,10 @@ window.__ModuleLoader__.load({
           opts.stopLabel,
         );
       }
-      if (state !== undefined && state.status === 'failed') {
-        // A launch that timed out: a red Logs control that opens the entry for
-        // editing and clears the failed state, so the control reads as Launch
-        // again and the user can fix the config and re-launch.
+      if (status === 'failed') {
+        // A launch that timed out or failed: a red Logs control that opens the
+        // entry for editing and clears the failed state, so the control reads
+        // as Launch again and the user can fix the config and re-launch.
         return react.createElement(
           'button',
           {
@@ -1847,8 +1918,9 @@ window.__ModuleLoader__.load({
         // from the summary's stored template on load; a Save persists it.
         var logPathState = react.useState('');
         // The per-entry launch state: a map from provider id to the entry's
-        // lifecycle ('launching', 'running', 'failed') and the start time a
-        // launch began, so a card entry can show its spinner, Stop, or red
+        // launch-state-machine state (the rebuild phases 'prereqs', 'download',
+        // 'build', 'launch', plus 'running' and 'failed') and the start time a
+        // launch began, so a card entry can show its phase label, Stop, or red
         // Logs control. Absent entries read as idle (a plain Launch button).
         var entryLaunchState = react.useState({});
         var data = dataState[0];
@@ -2800,9 +2872,48 @@ window.__ModuleLoader__.load({
             headers: { 'content-type': 'application/json' },
             body: launchBody(),
           })
-            .then((response) => response.json().then((body) => ({ ok: response.ok, body: body })))
-            .then(({ ok, body }) => {
-              if (ok) {
+            // The launch route streams NDJSON (a step event per phase, then a
+            // final result event). The main form's control does not show the
+            // phase labels, so read the stream and keep only the result event.
+            .then(function (response) {
+              if (response.body === null || typeof response.body.getReader !== 'function') {
+                return response.json().then(function (body) {
+                  return { ok: response.ok, result: body };
+                });
+              }
+              var reader = response.body.getReader();
+              var decoder = new TextDecoder();
+              var buffer = '';
+              var resultEvent = null;
+              function pump() {
+                return reader.read().then(function (chunk) {
+                  if (chunk.done) {
+                    return { ok: response.ok, result: resultEvent };
+                  }
+                  buffer += decoder.decode(chunk.value, { stream: true });
+                  var lines = buffer.split('\n');
+                  buffer = lines.pop();
+                  for (var i = 0; i < lines.length; i++) {
+                    if (lines[i] === '') {
+                      continue;
+                    }
+                    var event;
+                    try {
+                      event = JSON.parse(lines[i]);
+                    } catch {
+                      continue;
+                    }
+                    if (event.result !== undefined) {
+                      resultEvent = event.result;
+                    }
+                  }
+                  return pump();
+                });
+              }
+              return pump();
+            })
+            .then(({ ok, result: body }) => {
+              if (ok && body !== null) {
                 if (body.healthy) {
                   lifecycleNoteState[1](
                     t.runningOn + ' ' + (body.plan && body.plan.port ? body.plan.port : ''),
@@ -2814,7 +2925,9 @@ window.__ModuleLoader__.load({
                   lifecycleNoteState[1](t.notHealthy + (body.detail ? ': ' + body.detail : ''));
                 }
               } else {
-                lifecycleNoteState[1](t.launchFailed + (body.error ? ': ' + body.error : ''));
+                lifecycleNoteState[1](
+                  t.launchFailed + (body && body.detail ? ': ' + body.detail : ''),
+                );
               }
             })
             .catch((error) => {
@@ -2865,39 +2978,66 @@ window.__ModuleLoader__.load({
         }, [draft, stopping, editingProviderId, t]);
 
         // The per-entry launch: a card entry's own Launch control drives its
-        // own engine, not the form's draft. It records a start time and the
-        // 'launching' state (the spinner), then reads the launch result's
-        // healthy flag: a 200 before the route's health-poll timeout reads as
-        // 'running' (the control becomes Stop), a timeout reads as 'failed'
-        // (the control becomes a red Logs that opens the entry for editing).
+        // own engine, not the form's draft. It starts the launch state machine
+        // at the prereqs phase, then reads the launch stream (an NDJSON step
+        // event as each phase begins, then a final result event) and drives the
+        // machine: each step event advances the phase label (Prereqs,
+        // Downloading, Building, Launching), a healthy result settles to
+        // running (the control becomes Stop), and a failed result or the
+        // health-poll deadline settles to failed (the control becomes a red
+        // Logs that opens the entry for editing).
         var onLaunchEntry = react.useCallback(
           (provider) => {
-            var state = entryLaunch[provider.id];
-            if (state !== undefined && state.status === 'launching') {
+            var prior = entryLaunch[provider.id];
+            var status = prior !== undefined ? prior.status : 'idle';
+            // A launch in flight (a rebuild phase) is ignored; a running engine
+            // is stopped by its own Stop control, not re-launched.
+            if (status !== 'idle' && status !== 'failed') {
               return;
             }
+            var startStatus = launchNextState(status, { type: 'start' });
             entryLaunchState[1]((current) =>
               Object.assign({}, current, {
-                [provider.id]: { status: 'launching', startTime: Date.now() },
+                [provider.id]: { status: startStatus, startTime: Date.now() },
               }),
             );
-            // The route's health-poll can run up to two minutes, and a build
-            // step before it can run longer still, so a slow or hung route
-            // would leave the control on the spinner forever. A client-side
-            // deadline just past the route's cap forces the control to the red
-            // Logs state so the entry can be opened and fixed.
+            // Move the entry's launch state through the machine, reading the
+            // current status from the latest map so a late event prices the
+            // state it lands on, not a stale one.
+            var move = function (event) {
+              entryLaunchState[1]((current) => {
+                var entry = current[provider.id];
+                var next = launchNextState(entry !== undefined ? entry.status : 'idle', event);
+                return Object.assign({}, current, {
+                  [provider.id]: { status: next, startTime: Date.now() },
+                });
+              });
+            };
+            // The health-poll deadline: the route's poll runs up to two minutes,
+            // so a client-side deadline just past that cap forces a hung launch
+            // to the red Logs state. It arms only for the launch phase; the
+            // rebuild phases (prereqs, download, build) run as long as they
+            // need to, so a slow build never reads as a failure.
             var settled = false;
-            var deadline = setTimeout(function () {
-              if (settled) {
+            var deadline = null;
+            var armDeadline = function () {
+              if (deadline !== null) {
                 return;
               }
-              settled = true;
-              entryLaunchState[1]((current) =>
-                Object.assign({}, current, {
-                  [provider.id]: { status: 'failed', startTime: Date.now() },
-                }),
-              );
-            }, 150000);
+              deadline = setTimeout(function () {
+                if (settled) {
+                  return;
+                }
+                settled = true;
+                move({ type: 'failed' });
+              }, LAUNCH_HEALTH_DEADLINE_MS);
+            };
+            var clearDeadline = function () {
+              if (deadline !== null) {
+                clearTimeout(deadline);
+                deadline = null;
+              }
+            };
             fetch('/local-infer/launch', {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
@@ -2910,34 +3050,86 @@ window.__ModuleLoader__.load({
                 providerId: provider.id,
               }),
             })
-              .then((response) => response.json().then((body) => ({ ok: response.ok, body: body })))
-              .then(({ ok, body }) => {
-                settled = true;
-                clearTimeout(deadline);
-                var nextStatus = ok && body.healthy ? 'running' : 'failed';
-                entryLaunchState[1]((current) =>
-                  Object.assign({}, current, {
-                    [provider.id]: { status: nextStatus, startTime: Date.now() },
-                  }),
-                );
-                // The provider status dots price the process probe on a
-                // summary fetch, so a launch that turned an engine healthy
-                // re-fetches the summary to repaint the dot from red to green.
-                fetchSummary(provider.engine, provider.config || {});
+              .then(function (response) {
+                // The launch streams NDJSON: a step event as each phase begins,
+                // then a final result event. Read the stream and drive the
+                // state machine; a response with no body (a host without
+                // streaming) settles straight to failed.
+                if (response.body === null || typeof response.body.getReader !== 'function') {
+                  settled = true;
+                  clearDeadline();
+                  move({ type: 'failed' });
+                  return Promise.resolve();
+                }
+                var reader = response.body.getReader();
+                var decoder = new TextDecoder();
+                var buffer = '';
+                function pump() {
+                  return reader.read().then(function (result) {
+                    if (result.done) {
+                      // The stream ended without a result event (a host that
+                      // cannot stream, a route that broke mid-stream): settle
+                      // to failed so the control does not sit on a phase label.
+                      if (!settled) {
+                        settled = true;
+                        clearDeadline();
+                        move({ type: 'failed' });
+                      }
+                      return;
+                    }
+                    buffer += decoder.decode(result.value, { stream: true });
+                    var lines = buffer.split('\n');
+                    buffer = lines.pop();
+                    for (var i = 0; i < lines.length; i++) {
+                      var line = lines[i];
+                      if (line === '') {
+                        continue;
+                      }
+                      var event;
+                      try {
+                        event = JSON.parse(line);
+                      } catch {
+                        // A malformed line is not a launch event; skip it.
+                        continue;
+                      }
+                      if (event.step !== undefined) {
+                        move({ type: 'step', step: event.step });
+                        // Arm the deadline only for the launch (health-poll)
+                        // step; the rebuild steps run without a timeout.
+                        if (event.step === 'launch') {
+                          armDeadline();
+                        }
+                      } else if (event.result !== undefined) {
+                        settled = true;
+                        clearDeadline();
+                        var healthy = event.result.healthy === true;
+                        move(healthy ? { type: 'healthy' } : { type: 'failed' });
+                        // The provider status dots price the process probe on a
+                        // summary fetch, so a launch that turned an engine
+                        // healthy re-fetches the summary to repaint the dot
+                        // from red to green.
+                        fetchSummary(provider.engine, provider.config || {});
+                        return;
+                      }
+                    }
+                    return pump();
+                  });
+                }
+                return pump();
               })
-              .catch(() => {
+              .catch(function () {
                 settled = true;
-                clearTimeout(deadline);
-                entryLaunchState[1]((current) =>
-                  Object.assign({}, current, {
-                    [provider.id]: { status: 'failed', startTime: Date.now() },
-                  }),
-                );
+                clearDeadline();
+                move({ type: 'failed' });
               });
           },
           [entryLaunch, fetchSummary],
         );
 
+        // The per-entry stop: a running engine's Stop control settles the
+        // launch state machine back to idle (the control reads as Launch
+        // again). The stop clears the launch record on this entry, so a
+        // recycled pid cannot re-link it.
         var onStopEntry = react.useCallback(
           (provider) => {
             fetch('/local-infer/stop', {
@@ -2954,9 +3146,16 @@ window.__ModuleLoader__.load({
             })
               .then(() => {
                 entryLaunchState[1]((current) => {
-                  var next = Object.assign({}, current);
-                  delete next[provider.id];
-                  return next;
+                  var entry = current[provider.id];
+                  var status = entry !== undefined ? entry.status : 'idle';
+                  var next = launchNextState(status, { type: 'stop' });
+                  var map = Object.assign({}, current);
+                  if (next === 'idle') {
+                    delete map[provider.id];
+                  } else {
+                    map[provider.id] = { status: next, startTime: Date.now() };
+                  }
+                  return map;
                 });
               })
               .catch(() => {
@@ -2967,17 +3166,24 @@ window.__ModuleLoader__.load({
         );
 
         // The per-entry Logs control: opening the logs loads the entry for
-        // editing AND clears the failed launch state, so the per-entry control
-        // reads as Launch again. The user fixes the config in the form and
-        // re-launches from the same entry, instead of being stuck on a
+        // editing AND resets the launch state machine to idle, so the per-entry
+        // control reads as Launch again. The user fixes the config in the form
+        // and re-launches from the same entry, instead of being stuck on a
         // non-actionable Logs control.
         var onLogsEntry = react.useCallback(
           (provider) => {
             onEditProvider(provider);
             entryLaunchState[1]((current) => {
-              var next = Object.assign({}, current);
-              delete next[provider.id];
-              return next;
+              var entry = current[provider.id];
+              var status = entry !== undefined ? entry.status : 'idle';
+              var next = launchNextState(status, { type: 'reset' });
+              var map = Object.assign({}, current);
+              if (next === 'idle') {
+                delete map[provider.id];
+              } else {
+                map[provider.id] = { status: next, startTime: Date.now() };
+              }
+              return map;
             });
           },
           [onEditProvider],
@@ -3117,7 +3323,10 @@ window.__ModuleLoader__.load({
                 launchLabel: t.entryLaunch,
                 stopLabel: t.entryStop,
                 logsLabel: t.entryLogs,
-                launchingLabel: t.launching,
+                launchingLabel: t.entryLaunching,
+                prereqsLabel: t.entryPrereqs,
+                downloadingLabel: t.entryDownloading,
+                buildingLabel: t.entryBuilding,
               })
             : null,
           // The provider form: the Engine/Model config the card prices. It is

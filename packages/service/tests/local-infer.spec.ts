@@ -569,6 +569,57 @@ describe('ctx.localInfer launch and stop (Phase 5)', () => {
     expect(stopped).toBe(true)
   })
 
+  it('reports the launch phases through the progress sink', async () => {
+    const ctx = await seam()
+    // The adapter reports its deploy sub-steps (download, build) through the
+    // sink the service threads from the launch options; the service reports
+    // the launch (health-poll) phase before the poll.
+    class ProgressAdapter extends StubAdapter {
+      async deploy(
+        _p: LaunchPlan,
+        _platform?: EnginePlatformConfig,
+        onProgress?: (step: 'prereqs' | 'download' | 'build' | 'launch') => void,
+      ): Promise<DeployResult> {
+        onProgress?.('download')
+        onProgress?.('build')
+        return { ok: true }
+      }
+      async healthCheck(_p: LaunchPlan): Promise<HealthResult> {
+        return { healthy: true }
+      }
+    }
+    ctx.localInfer.registerEngine(new ProgressAdapter('ninfer'))
+    const steps: string[] = []
+    await ctx.localInfer.launch(plan('ninfer'), {
+      onProgress: (step) => {
+        steps.push(step)
+      },
+    })
+    expect(steps).toEqual(['download', 'build', 'launch'])
+  })
+
+  it('reports no progress when the launch names no sink', async () => {
+    const ctx = await seam()
+    // A deploy that reads the sink must not throw when the launch passes none.
+    let sawSink: unknown = 'unset'
+    class SinkAdapter extends StubAdapter {
+      async deploy(
+        _p: LaunchPlan,
+        _platform?: EnginePlatformConfig,
+        onProgress?: (step: 'prereqs' | 'download' | 'build' | 'launch') => void,
+      ): Promise<DeployResult> {
+        sawSink = onProgress
+        return { ok: true }
+      }
+      async healthCheck(_p: LaunchPlan): Promise<HealthResult> {
+        return { healthy: true }
+      }
+    }
+    ctx.localInfer.registerEngine(new SinkAdapter('ninfer'))
+    await ctx.localInfer.launch(plan('ninfer'))
+    expect(sawSink).toBeUndefined()
+  })
+
   it('registers an engine platform config keyed by engine id and releases it', async () => {
     const ctx = await seam()
     const dispose = ctx.localInfer.registerEnginePlatformConfig({

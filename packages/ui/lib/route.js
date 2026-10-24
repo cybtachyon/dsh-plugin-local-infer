@@ -777,7 +777,7 @@ function persistStoredLogs(logs) {
  * process pid that launched it) on the request's provider entry, so a DSH
  * restart can re-link a surviving engine to its config.
  */
-export async function launchEngine(localInfer, request) {
+export async function launchEngine(localInfer, request, onProgress) {
     const stored = readConfig();
     const engineId = request.engine ?? stored.engine;
     const config = request.config ?? stored.config;
@@ -799,7 +799,28 @@ export async function launchEngine(localInfer, request) {
         // engine output has not landed yet.
         persistStoredLogs(commandNote);
     }
-    const result = await localInfer.launch(plan);
+    // The prereqs phase: the system-dependency install the local build needs. It
+    // runs only while the Play/Run trust gate is on, the same rule the Get step
+    // applies; a failed install aborts the launch before the deploy starts. The
+    // card's button reads "Prereqs..." for this phase, so the phase is reported
+    // only while an install actually runs (the gate on), not when the deps are
+    // already satisfied and the phase is skipped.
+    if (stored.allowRunDeps === true) {
+        onProgress?.('prereqs');
+        const buildMode = plan.kind === 'docker' ? 'docker' : 'local';
+        const install = await localInfer.runInstall(engineId, buildMode, hardware);
+        if (!install.ok) {
+            const result = {
+                plan,
+                healthy: false,
+                detail: 'a system dependency install failed',
+            };
+            persistLaunchLogs(result, engineId, config);
+            persistLaunchRecord(result, engineId, config, request.providerId);
+            return result;
+        }
+    }
+    const result = await localInfer.launch(plan, onProgress === undefined ? undefined : { onProgress });
     if (commandNote !== undefined) {
         // A deploy that failed before the engine printed anything still reports
         // the command it tried to run.
@@ -1635,7 +1656,34 @@ export function registerLocalInferRoute(scope, localInfer, getHost) {
                     chunks.push(chunk);
                 }
                 const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-                send(200, await launchEngine(localInfer, launchRequestFromBody(body)));
+                // The launch streams its progress as NDJSON: a step event as each phase
+                // (prereqs, download, build, launch) begins, then a final result event.
+                // The card's Launch control reads the step that is running and times
+                // out only the launch (health-poll) step; the rebuild steps run as long
+                // as they need to.
+                res.writeHead(200, { 'content-type': 'application/x-ndjson; charset=utf-8' });
+                const writeLine = (line) => {
+                    if (typeof res.write === 'function') {
+                        res.write(JSON.stringify(line) + '\n');
+                    }
+                };
+                const onProgress = (step) => {
+                    writeLine({ step });
+                };
+                try {
+                    const result = await launchEngine(localInfer, launchRequestFromBody(body), onProgress);
+                    writeLine({ result });
+                }
+                catch (error) {
+                    // A launch that breaks before a plan renders (an unknown engine, a
+                    // hardware probe failure) still settles the card's control to the red
+                    // Logs state through a result event, not a bare 500.
+                    const detail = error instanceof RouteError
+                        ? error.message
+                        : String(error?.message ?? error);
+                    writeLine({ result: { healthy: false, detail } });
+                }
+                res.end();
             }
             catch (error) {
                 if (error instanceof RouteError) {

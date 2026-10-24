@@ -236,6 +236,56 @@ describe('NInferAdapter.deploy', () => {
     expect(state.spawn[0]?.cwd).toBe('/src/ninfer')
   })
 
+  it('reports the download and build phases through the progress sink', async () => {
+    const { host } = stubHost()
+    const adapter = new NInferAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      argv: ['ninfer-serve', '/models/x.ninfer'],
+      env: {},
+      modelId: 'qwen3-27b',
+      modelDirectory: '/models',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    const steps: string[] = []
+    const result = await adapter.deploy(
+      plan,
+      {
+        engineId: 'ninfer',
+        engineDirectory: '/src/ninfer',
+        engineFork: 'https://github.com/iamwavecut/ninfer-all',
+      },
+      (step) => {
+        steps.push(step)
+      },
+    )
+    expect(result.ok).toBe(true)
+    // The git sync and the model download read as download; the build steps
+    // read as build, in the order the deploy runs them.
+    expect(steps).toEqual(['download', 'build', 'download', 'download'])
+  })
+
+  it('reports the docker pull as the build phase', async () => {
+    const { host } = stubHost()
+    const adapter = new NInferAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'docker',
+      argv: ['docker', 'run', 'ghcr.io/iamwavecut/ninfer-all'],
+      env: {},
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    const steps: string[] = []
+    const result = await adapter.deploy(plan, undefined, (step) => {
+      steps.push(step)
+    })
+    expect(result.ok).toBe(true)
+    expect(steps).toEqual(['build'])
+  })
+
   it('skips the clone and build when no platform config is stored', async () => {
     const { host, state } = stubHost()
     const adapter = new NInferAdapter(host)

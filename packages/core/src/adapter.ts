@@ -131,6 +131,25 @@ export interface HealthCheckOptions {
 }
 
 /**
+ * LaunchStep is the phase of a launch the card's Launch control prices: the
+ * system-dependency install (prereqs), the model and git checkout download
+ * (download), the source build or image pull (build), and the health poll that
+ * waits for the engine to come ready (launch). The service and the adapters
+ * report the step as each phase begins, so the card's button reads the phase
+ * that is actually running instead of a single "Launching..." for the whole
+ * rebuild. The card times out only the launch step; the rebuild steps (prereqs,
+ * download, build) run as long as they need to.
+ */
+export type LaunchStep = 'prereqs' | 'download' | 'build' | 'launch'
+
+/**
+ * LaunchProgress is the callback the launch flow calls as each phase begins.
+ * The route threads it from the streamed launch response through the service
+ * and the adapter's deploy step; a launch with no progress sink omits it.
+ */
+export type LaunchProgress = (step: LaunchStep) => void
+
+/**
  * HealthResult is the answer to a /health poll: whether the engine is up, the
  * HTTP status, and a detail string for the UI.
  */
@@ -169,7 +188,11 @@ export abstract class EngineAdapter {
   abstract parameters(): readonly ParameterSpec[]
   abstract renderLaunch(config: Config, hw: HardwareProfile): LaunchPlan
   abstract healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>
-  abstract deploy(plan: LaunchPlan, platform?: EnginePlatformConfig): Promise<DeployResult>
+  abstract deploy(
+    plan: LaunchPlan,
+    platform?: EnginePlatformConfig,
+    onProgress?: LaunchProgress,
+  ): Promise<DeployResult>
   abstract stop(plan: LaunchPlan): Promise<void>
 
   /**

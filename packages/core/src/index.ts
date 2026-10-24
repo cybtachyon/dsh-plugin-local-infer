@@ -94,6 +94,8 @@ export type {
   HealthCheckOptions,
   HealthResult,
   LaunchPlan,
+  LaunchProgress,
+  LaunchStep,
   LifecycleHost,
   ProcessExitInfo,
   ProcessHandle,
