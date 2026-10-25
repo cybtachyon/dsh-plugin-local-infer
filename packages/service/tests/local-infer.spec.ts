@@ -1242,6 +1242,155 @@ describe('ctx.localInfer provider statuses', () => {
   })
 })
 
+describe('ctx.localInfer in-flight launch and stop state machine', () => {
+  // A Strata-shaped signature: the engine sizes its own model, so a launch
+  // carries no model tie. The in-flight flag is what keeps the provider's
+  // linked read while the launch or stop is in flight.
+  const STRATA_SIG: EngineLaunchSignature = { binary: 'strata', port: 8080 }
+  const STRATA_LINE: ProcessLine = {
+    pid: 12345,
+    command: 'strata launch --port 8080',
+  }
+  const GPU_IDLE: GpuUsageProbe = { usedMiB: 2048, totalMiB: 24576 }
+
+  /**
+   * An adapter whose health poll is held open by the test, so a launch is
+   * in flight (the deploy is done and the poll has not settled) while the
+   * test prices the provider statuses. A settle that lands before the poll
+   * starts is held as a pending result the poll resolves with immediately,
+   * so the test need not race the microtask queue.
+   */
+  class HeldHealthAdapter extends EngineAdapter {
+    readonly supports = { docker: true, local: true, binary: true }
+    private healthResolve: ((result: HealthResult) => void) | null = null
+    private pendingResult: HealthResult | null = null
+    constructor(readonly id: string, private readonly signature: EngineLaunchSignature) {
+      super()
+    }
+    parameters(): ParameterSpec[] {
+      return []
+    }
+    renderLaunch(_config: Config, _hw: HardwareProfile): LaunchPlan {
+      return { kind: 'process', port: 8080, healthUrl: 'http://127.0.0.1:8080/health' }
+    }
+    launchSignature(): EngineLaunchSignature {
+      return this.signature
+    }
+    async deploy(_plan: LaunchPlan): Promise<DeployResult> {
+      return { ok: true, handle: { pid: 12345, kill: () => undefined } }
+    }
+    healthCheck(_plan: LaunchPlan): Promise<HealthResult> {
+      if (this.pendingResult !== null) {
+        const result = this.pendingResult
+        this.pendingResult = null
+        return Promise.resolve(result)
+      }
+      return new Promise<HealthResult>((resolve) => {
+        this.healthResolve = resolve
+      })
+    }
+    settleHealth(result: HealthResult): void {
+      if (this.healthResolve !== null) {
+        const resolve = this.healthResolve
+        this.healthResolve = null
+        resolve(result)
+      } else {
+        this.pendingResult = result
+      }
+    }
+    async stop(_plan: LaunchPlan): Promise<void> {
+      /* the stop is a no-op; the test prices the in-flight flag */
+    }
+  }
+
+  it('keeps an in-flight launch linked (running) for an engine with no model tie', async () => {
+    const ctx = await seam()
+    const adapter = new HeldHealthAdapter('strata', STRATA_SIG)
+    ctx.localInfer.registerEngine(adapter)
+    const plan: LaunchPlan = {
+      engineId: 'strata',
+      kind: 'process',
+      port: 8080,
+      healthUrl: 'http://127.0.0.1:8080/health',
+    }
+    // The launch is in flight: the deploy is done and the health poll is held.
+    const launchPromise = ctx.localInfer.launch(plan)
+    // While the launch is in flight, the provider (no model tie) keeps its
+    // linked read, so it reads as running, not the "Unable to link" unsure.
+    const providers: ProviderRef[] = [{ id: 'a', engine: 'strata' }]
+    const statuses = await ctx.localInfer.providerStatuses(providers, {
+      gpuUsage: GPU_IDLE,
+      processes: [STRATA_LINE],
+    })
+    expect(statuses).toEqual({ a: 'running' })
+    // Settle the launch so the test does not leak a held promise.
+    adapter.settleHealth({ healthy: true, status: 200 })
+    await launchPromise
+  })
+
+  it('clears the in-flight launch flag on a failed deploy', async () => {
+    const ctx = await seam()
+    class FailedDeployAdapter extends HeldHealthAdapter {
+      async deploy(_plan: LaunchPlan): Promise<DeployResult> {
+        return { ok: false, detail: 'the build failed' }
+      }
+    }
+    const adapter = new FailedDeployAdapter('strata', STRATA_SIG)
+    ctx.localInfer.registerEngine(adapter)
+    const plan: LaunchPlan = {
+      engineId: 'strata',
+      kind: 'process',
+      port: 8080,
+      healthUrl: 'http://127.0.0.1:8080/health',
+    }
+    const result = await ctx.localInfer.launch(plan)
+    expect(result.healthy).toBe(false)
+    // The failed deploy settled the launch: the in-flight flag is cleared, so
+    // the provider (no model tie, no live process) reads as stopped, not a
+    // stuck launch.
+    const providers: ProviderRef[] = [{ id: 'a', engine: 'strata' }]
+    const statuses = await ctx.localInfer.providerStatuses(providers, {
+      gpuUsage: GPU_IDLE,
+      processes: [],
+    })
+    expect(statuses).toEqual({ a: 'stopped' })
+  })
+
+  it('keeps an in-flight stop linked (running) until the process is down', async () => {
+    const ctx = await seam()
+    const adapter = new HeldHealthAdapter('strata', STRATA_SIG)
+    ctx.localInfer.registerEngine(adapter)
+    const plan: LaunchPlan = {
+      engineId: 'strata',
+      kind: 'process',
+      port: 8080,
+      modelId: 'strata',
+      healthUrl: 'http://127.0.0.1:8080/health',
+    }
+    // Launch the engine (the model tie is set), then settle it.
+    const launchPromise = ctx.localInfer.launch(plan)
+    adapter.settleHealth({ healthy: true, status: 200 })
+    await launchPromise
+    // Stop the engine: the in-flight stop flag is set and the model tie is
+    // deferred to the death observer, so the provider keeps its linked read
+    // for the moment the process is still up.
+    await ctx.localInfer.stop(plan)
+    const providers: ProviderRef[] = [{ id: 'a', engine: 'strata', model: 'strata' }]
+    const whileUp = await ctx.localInfer.providerStatuses(providers, {
+      gpuUsage: GPU_IDLE,
+      processes: [STRATA_LINE],
+    })
+    expect(whileUp).toEqual({ a: 'running' })
+    // The process is down: the provider reads as stopped and the in-flight
+    // stop flag clears with it.
+    const whileDown = await ctx.localInfer.providerStatuses(providers, {
+      gpuUsage: GPU_IDLE,
+      processes: [],
+    })
+    expect(whileDown).toEqual({ a: 'stopped' })
+  })
+})
+
 describe('ctx.localInfer launch records and restart re-link', () => {
   const NINFER_SIG: EngineLaunchSignature = { binary: 'ninfer-serve', port: 18020 }
   const NINFER_LINE: ProcessLine = {

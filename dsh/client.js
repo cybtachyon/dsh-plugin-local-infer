@@ -505,9 +505,13 @@ window.__ModuleLoader__.load({
       var next;
       var nextCause;
       if (type === 'start') {
-        // A launch begins from idle (a plain Launch) or failed (a re-launch
-        // after the Logs control cleared the failed state).
-        next = current === 'idle' || current === 'failed' ? 'prereqs' : current;
+        // A launch begins from idle (a plain Launch), failed (a re-launch
+        // after the Logs control cleared the failed state), or downloading
+        // (a re-poll while the engine fetches its model files).
+        next =
+          current === 'idle' || current === 'failed' || current === 'downloading'
+            ? 'prereqs'
+            : current;
         nextCause = undefined;
       } else if (type === 'step') {
         var target = event.step;
@@ -536,6 +540,12 @@ window.__ModuleLoader__.load({
         nextCause = undefined;
       } else if (type === 'failed') {
         next = launchIsPhase(current) ? 'failed' : current;
+        nextCause = undefined;
+      } else if (type === 'downloading') {
+        // The engine is fetching its model files: a busy throbber, not a
+        // failure. The card re-polls (a re-launch) until the engine reports
+        // ready, which settles the control to running.
+        next = launchIsPhase(current) ? 'downloading' : current;
         nextCause = undefined;
       } else if (type === 'stop') {
         // A stop moves a running engine (or an idle one running per the
@@ -988,6 +998,18 @@ window.__ModuleLoader__.load({
           busy: true,
           label: opts.stoppingLabel,
           busyLabel: opts.stoppingLabel,
+          variant: 'ghost',
+          onClick: function () {},
+        });
+      }
+      // The engine is fetching its model files (the Strata download): a busy
+      // throbber that reads as in progress, not a failure. The card re-polls
+      // (a re-launch) until the engine reports ready.
+      if (status === 'downloading') {
+        return renderProcessButton(react, primitives, {
+          busy: true,
+          label: opts.downloadingLabel,
+          busyLabel: opts.downloadingLabel,
           variant: 'ghost',
           onClick: function () {},
         });
@@ -2126,6 +2148,10 @@ window.__ModuleLoader__.load({
             download: t.entryDownloading,
             build: t.entryBuilding,
             launch: t.entryLaunching,
+            // The engine model fetch (the Strata download): the same throbber
+            // label the download phase shows, so the title bar mirrors the
+            // entry's Launch button while the engine fetches its files.
+            downloading: t.entryDownloading,
             stopping: t.stopping,
           }[mirroredStatus];
         // The no-entries case forces the form into new-provider mode on
@@ -3369,6 +3395,16 @@ window.__ModuleLoader__.load({
                       }
                       if (event.step !== undefined) {
                         move({ type: 'step', step: event.step });
+                        // The build step writes a "Building..." separator to
+                        // the live Logs buffer, so the build reads as a fresh
+                        // section the way the launch click writes
+                        // "Launching...".
+                        if (event.step === 'build') {
+                          getLogsState[1]((current) => {
+                            var base = current !== null ? current : '';
+                            return base + (base === '' ? '' : '\n') + '--- ' + t.entryBuilding + '\n';
+                          });
+                        }
                         // Arm the deadline only for the launch (health-poll)
                         // step; the rebuild steps run without a timeout.
                         if (event.step === 'launch') {
@@ -3378,7 +3414,17 @@ window.__ModuleLoader__.load({
                         settled = true;
                         clearDeadline();
                         var healthy = event.result.healthy === true;
-                        move(healthy ? { type: 'healthy' } : { type: 'failed' });
+                        // A launch that is still fetching its model files reads
+                        // as downloading (a busy throbber the card re-polls),
+                        // not as a failure; only a result that is neither
+                        // healthy nor downloading settles to the red Logs.
+                        if (healthy) {
+                          move({ type: 'healthy' });
+                        } else if (event.result.state === 'downloading') {
+                          move({ type: 'downloading' });
+                        } else {
+                          move({ type: 'failed' });
+                        }
                         // The provider status dots price the process probe on a
                         // summary fetch, so a launch that turned an engine
                         // healthy re-fetches the summary to repaint the dot
@@ -3398,7 +3444,7 @@ window.__ModuleLoader__.load({
                 move({ type: 'failed' });
               });
           },
-          [entryLaunch, fetchSummary, startProcessLog, moveEntry],
+          [entryLaunch, fetchSummary, startProcessLog, moveEntry, getLogsState, t],
         );
 
         // The per-entry stop: a running engine's Stop control moves the

@@ -86,6 +86,8 @@ export interface SyncRebuildRequest {
     fork?: string;
     binary?: string;
     allowRunDeps?: boolean;
+    buildCommands?: string;
+    onBuildStart?: () => void;
 }
 /**
  * SyncRebuildResult reports the conditional rebuild: whether it passed,
@@ -121,5 +123,5 @@ export declare function syncAndRebuildEngine(host: LifecycleHost, request: SyncR
  * engines) passes through with a note; a failing step stops the build with
  * the step's detail.
  */
-export declare function buildEngineRepo(host: LifecycleHost, engineId: string, directory: string, log: AcquireLog): Promise<EngineStepResult>;
+export declare function buildEngineRepo(host: LifecycleHost, engineId: string, directory: string, log: AcquireLog, buildCommands?: string): Promise<EngineStepResult>;
 //# sourceMappingURL=acquire.d.ts.map

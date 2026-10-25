@@ -94,6 +94,20 @@ export class LocalInfer extends Service {
     // handle. A summary re-link that adopts this DSH's own launch record must
     // not stack a poll watcher on top of the handle's close event.
     handledPids = new Set();
+    // The engine keys (engineId:port) whose launch this service is in flight
+    // for: the deploy has started and the health poll has not settled. While a
+    // key is here the provider-status detector keeps the provider's linked read
+    // (running, not unsure), so an engine that sizes its own model (Strata, no
+    // model tie) or a launch mid-poll never flashes the "Unable to link" banner.
+    // The key clears when the launch settles (a healthy poll, a failed deploy).
+    launchingEngines = new Set();
+    // The engine keys (engineId:port) whose stop this service is in flight for:
+    // the stop step signalled the engine and the process has not died yet. While
+    // a key is here the detector keeps the linked read, so a stop never reads as
+    // an unlinked provider for the moment the engine takes to shut down. The key
+    // clears when the process dies (the death observer) or the detector sees the
+    // process down (a stop of an engine it cannot watch).
+    stoppingEngines = new Set();
     // The route-registered hook for engine process deaths (a crash, a pkill, or
     // a poll-detected death of an adopted process). The observer persists the
     // provider entry's cleared state; a headless profile registers none and the
@@ -352,7 +366,29 @@ export class LocalInfer extends Service {
             const port = signatures[index]?.port;
             return port !== undefined ? { ...provider, port } : provider;
         });
-        return computeProviderStatuses({ providers: priced, running, gpuBusy: isGpuBusy(gpuUsage) });
+        const statuses = computeProviderStatuses({ providers: priced, running, gpuBusy: isGpuBusy(gpuUsage) });
+        // The in-flight launch and stop state machine: a provider the launch or
+        // stop step is in flight for keeps its linked read (running, not unsure)
+        // while the engine process is still up, so neither a stop (the record is
+        // cleared but the process is still shutting down) nor a launch (an engine
+        // that sizes its own model carries no model tie) flashes the "Unable to
+        // link" banner. A stopped provider whose process is down reads as stopped,
+        // and the stopping flag clears with it, so a stop of an engine the service
+        // cannot watch (no death event) never leaves a stale flag behind.
+        for (const provider of priced) {
+            const key = this.engineKey(provider.engine, provider.port);
+            const launching = this.launchingEngines.has(key);
+            const stopping = this.stoppingEngines.has(key);
+            if (!launching && !stopping)
+                continue;
+            if (statuses[provider.id] === 'unsure') {
+                statuses[provider.id] = 'running';
+            }
+            else if (stopping) {
+                this.stoppingEngines.delete(key);
+            }
+        }
+        return statuses;
     }
     /**
      * unsureBannerKillCommands returns the bash kill commands for the engine
@@ -472,8 +508,16 @@ export class LocalInfer extends Service {
                 ...(options?.autoRebuild !== undefined ? { autoRebuild: options.autoRebuild } : {}),
             }
             : undefined;
+        // The in-flight launch flag: the provider-status detector keeps this
+        // provider's linked read while the deploy and health poll run, so an engine
+        // that sizes its own model (no model tie) never flashes "Unable to link".
+        const launchKey = this.engineKey(plan.engineId, plan.port);
+        this.launchingEngines.add(launchKey);
         const deployResult = await adapter.deploy(plan, platform, onProgress, deployOptions);
         if (!deployResult.ok) {
+            // A failed deploy settles the launch: clear the in-flight flag so the
+            // provider reads from the process state (stopped), not a stuck launch.
+            this.launchingEngines.delete(launchKey);
             // exactOptionalPropertyTypes: only write the detail key when it is present.
             const result = { plan, healthy: false };
             if (deployResult.detail !== undefined) {
@@ -517,9 +561,19 @@ export class LocalInfer extends Service {
         // "Launching..." while it waits for the engine to report ready.
         onProgress?.('launch');
         const health = await adapter.healthCheck(plan, options);
+        // The launch has settled (a healthy poll, a failed one, or a download that
+        // the card re-polls): clear the in-flight flag so the provider reads from
+        // the model tie (a healthy launch) or the process state (a failed one).
+        this.launchingEngines.delete(launchKey);
         const launchResult = { plan, healthy: health.healthy };
         if (health.detail !== undefined) {
             launchResult.detail = health.detail;
+        }
+        // The start phase the poll observed (downloading, starting, ready, failed)
+        // rides the result so the card reads a long model download as in progress
+        // instead of a broken launch.
+        if (health.state !== undefined) {
+            launchResult.state = health.state;
         }
         // The launch record the route persists for the provider config entry: the
         // engine's pid and the DSH process pid that launched it. The parent pid is
@@ -672,6 +726,15 @@ export class LocalInfer extends Service {
         this.engineWatchers.set(port, { pid: record.pid, timer });
     }
     /**
+     * engineKey is the in-flight state machine's key for one engine: the engine
+     * id plus its port when the plan names one, so two configs of one engine on
+     * different ports are distinct engines. A plan with no port keys on the
+     * engine id alone.
+     */
+    engineKey(engineId, port) {
+        return port !== undefined ? `${engineId}:${port}` : engineId;
+    }
+    /**
      * stopEngineWatcher cancels one port's adopted-process poll, if it has one.
      */
     stopEngineWatcher(port) {
@@ -693,6 +756,10 @@ export class LocalInfer extends Service {
      */
     observeEngineDeath(event) {
         if (event.port !== undefined) {
+            // The process is down: the in-flight stop (if one was in flight) has
+            // settled, so drop the flag and the deferred port-to-model tie the stop
+            // step kept for the provider's linked read.
+            this.stoppingEngines.delete(this.engineKey(event.engineId, event.port));
             const tracked = this.launchedModels.get(event.port);
             if (tracked !== undefined && tracked.engineId === event.engineId) {
                 this.launchedModels.delete(event.port);
@@ -722,12 +789,19 @@ export class LocalInfer extends Service {
         if (adapter === undefined) {
             throw new LocalInferError(`no engine adapter is registered for "${plan.engineId}"`, 'LOCAL_INFER_INVALID_ENGINE');
         }
+        // The in-flight stop flag: the provider-status detector keeps this
+        // provider's linked read while the engine shuts down, so a stop never
+        // flashes the "Unable to link" banner for the moment the process takes to
+        // die. The flag clears when the process dies (the death observer) or the
+        // detector sees the process down (a stop of an engine it cannot watch).
+        this.stoppingEngines.add(this.engineKey(plan.engineId, plan.port));
         await adapter.stop(plan);
-        // Clear the port-to-model entry too, so the provider-status detector no
-        // longer ties this port to the model the plugin launched it with, and
-        // cancel any adopted-process watcher standing on the port.
+        // Clear the live-port ledger and the plugin-launched flag, and cancel any
+        // adopted-process watcher standing on the port. The port-to-model tie is
+        // deferred to the death observer, so the provider keeps its linked read
+        // (running, not unsure) for the moment the engine is still shutting down;
+        // the observer drops it the instant the process is down.
         if (plan.port !== undefined) {
-            this.launchedModels.delete(plan.port);
             this.stopEngineWatcher(plan.port);
             const ports = this.launchedPorts.get(plan.engineId);
             if (ports !== undefined) {

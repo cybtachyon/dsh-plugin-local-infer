@@ -158,13 +158,26 @@ export type LaunchStep = 'prereqs' | 'download' | 'build' | 'launch'
 export type LaunchProgress = (step: LaunchStep) => void
 
 /**
+ * EngineLaunchState is the phase of an engine start the health poll reports:
+ * downloading (the engine is fetching its engine or model files, the health
+ * endpoint is not up yet), starting (the files are in place and the engine is
+ * coming up), ready (the health endpoint reports 200), and failed (the start
+ * did not reach readiness). An engine that downloads before it can serve (the
+ * Strata Terminal) spends a long time in downloading, so the poll reports the
+ * phase instead of timing out and reading the start as broken.
+ */
+export type EngineLaunchState = 'downloading' | 'starting' | 'ready' | 'failed'
+
+/**
  * HealthResult is the answer to a /health poll: whether the engine is up, the
- * HTTP status, and a detail string for the UI.
+ * HTTP status, a detail string for the UI, and the start phase the poll
+ * observed (absent for an engine whose start has no download phase).
  */
 export interface HealthResult {
   healthy: boolean
   status?: number
   detail?: string
+  state?: EngineLaunchState
 }
 
 /**
@@ -240,6 +253,27 @@ export abstract class EngineAdapter {
    * data omits it, and the route falls back to the plan's model id.
    */
   modelRef?(config: Config): { id: string; name: string } | undefined
+
+  /**
+   * Optional: the model the running engine actually serves, read live from the
+   * engine (a terminal query against its model endpoint) rather than derived
+   * from the config. An engine that sizes and picks the model itself publishes
+   * the served id this returns instead of the config-derived modelRef; it
+   * returns undefined when the engine is not up, the answer cannot be read, or
+   * the config names a model, and the route falls back to modelRef. The
+   * register, save-sync, unregister, and summary paths await it, so it must
+   * never reject.
+   */
+  discoverModel?(config: Config): Promise<{ id: string; name: string } | undefined>
+
+  /**
+   * Optional: the request modalities the engine serves under a config, the
+   * input types the DSH model row carries. An engine whose vision control is
+   * not the plain boolean flag (Strata's on|off|gpu|cpu enum, on by default)
+   * declares this so the Image input follows the engine's own vocabulary; an
+   * engine that declares none keeps the register step's boolean rule.
+   */
+  modelInput?(config: Config): string[] | undefined
 
   /**
    * Optional: the launch signature the engine's toArgv/toEnv produce for a

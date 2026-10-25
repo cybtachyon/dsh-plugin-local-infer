@@ -6,6 +6,7 @@ import type {
   ModelDirectoryEntry,
   EngineAdapter,
   EngineDepPlan,
+  EngineLaunchState,
   EnginePlatformConfig,
   Guideline,
   GuidelineResult,
@@ -117,6 +118,10 @@ export interface LaunchResult {
   buildLogs?: string
   pid?: number
   parentPid?: number
+  // The start phase the health poll observed: downloading (the engine is
+  // fetching its engine or model files), starting, ready, or failed. Absent
+  // for an engine whose start has no download phase.
+  state?: EngineLaunchState
 }
 
 /**

@@ -18,6 +18,7 @@ import type {
   DeployOptions,
   DeployResult,
   EngineLaunchSignature,
+  EngineLaunchState,
   EnginePlatformConfig,
   FetchResult,
   HealthCheckOptions,
@@ -563,6 +564,12 @@ export class NInferAdapter extends EngineAdapter {
             ...(platform?.engineFork !== undefined ? { fork: platform.engineFork } : {}),
             ...(plan.argv?.[0] !== undefined ? { binary: plan.argv[0] } : {}),
             ...(options?.allowRunDeps !== undefined ? { allowRunDeps: options.allowRunDeps } : {}),
+            ...(platform?.buildCommands !== undefined
+              ? { buildCommands: platform.buildCommands }
+              : {}),
+            // Report the build phase the moment the build steps start, so the
+            // card's button reads "Building..." while the build is in flight.
+            onBuildStart: () => onProgress?.('build'),
           },
           () => {},
         )
@@ -570,10 +577,11 @@ export class NInferAdapter extends EngineAdapter {
         if (!sync.ok) {
           return { ok: false, detail: sync.detail ?? 'unknown', logs: buildLogs }
         }
-        // The build step reads as "Building..." only when a build actually
-        // ran (a fresh clone, or a rebase of a checkout that was behind).
-        if (sync.rebuilt) {
-          onProgress?.('build')
+        // The build output reads as a fresh Logs section: a "Building..."
+        // separator leads the build decision and output, the same line the
+        // card writes when the build step event lands.
+        if (sync.rebuilt && buildLogs !== '') {
+          buildLogs = `--- Building...\n${buildLogs}`
         }
       }
       const withLogs = (result: DeployResult): DeployResult =>
@@ -959,6 +967,12 @@ export class LlamaCppAdapter extends EngineAdapter {
             ...(platform?.engineFork !== undefined ? { fork: platform.engineFork } : {}),
             ...(plan.argv?.[0] !== undefined ? { binary: plan.argv[0] } : {}),
             ...(options?.allowRunDeps !== undefined ? { allowRunDeps: options.allowRunDeps } : {}),
+            ...(platform?.buildCommands !== undefined
+              ? { buildCommands: platform.buildCommands }
+              : {}),
+            // Report the build phase the moment the build steps start, so the
+            // card's button reads "Building..." while the build is in flight.
+            onBuildStart: () => onProgress?.('build'),
           },
           () => {},
         )
@@ -966,10 +980,11 @@ export class LlamaCppAdapter extends EngineAdapter {
         if (!sync.ok) {
           return { ok: false, detail: sync.detail ?? 'unknown', logs: buildLogs }
         }
-        // The build step reads as "Building..." only when a build actually
-        // ran (a fresh clone, or a rebase of a checkout that was behind).
-        if (sync.rebuilt) {
-          onProgress?.('build')
+        // The build output reads as a fresh Logs section: a "Building..."
+        // separator leads the build decision and output, the same line the
+        // card writes when the build step event lands.
+        if (sync.rebuilt && buildLogs !== '') {
+          buildLogs = `--- Building...\n${buildLogs}`
         }
       }
       const withLogs = (result: DeployResult): DeployResult =>
@@ -1056,6 +1071,56 @@ export const STRATA_BINARY_INSTALL =
   'curl -fsSL https://github.com/Niko1221/Strata/releases/latest/download/install.sh -o install.sh && sh install.sh'
 
 /**
+ * strataPreReadyState reads the phase the strata process is in from the tail of
+ * its accumulated output. The Terminal downloads the engine and the model files
+ * before it can serve, and prints a progress line for each (Downloading,
+ * Unpacking, Checking the package signature, Getting the model files, ...), so
+ * a tail that carries one of those reads as downloading. A tail past the
+ * download (the engine starting, the API binding) reads as starting. The tail
+ * is the most recent output, so a finished download no longer reads as
+ * downloading even though its progress lines are still in the buffer.
+ */
+export function strataPreReadyState(logs: string): Exclude<EngineLaunchState, 'ready' | 'failed'> {
+  const tail = logs.slice(-2000)
+  const downloading =
+    /Downloading|Unpacking|Checking the package signature|Test-starting|Getting the model files|Getting your model ready|Getting the helper packages/i.test(
+      tail,
+    )
+  return downloading ? 'downloading' : 'starting'
+}
+
+/**
+ * strataServedModelId reads the served model id out of a /v1/models answer:
+ * the id of the first entry in the JSON `data` list. The engine names the
+ * model it auto-selected with family and size (qwen3.8-flash-next-iq3_s), so
+ * the registrar can publish the id the engine actually serves. A body that is
+ * not JSON, or carries no usable id (an error page, a truncated answer), reads
+ * as no discovery.
+ */
+export function strataServedModelId(body: string): string | undefined {
+  const start = body.indexOf('{')
+  const end = body.lastIndexOf('}')
+  if (start < 0 || end <= start) {
+    return undefined
+  }
+  try {
+    const parsed = JSON.parse(body.slice(start, end + 1)) as { data?: unknown }
+    const list = Array.isArray(parsed.data) ? parsed.data : []
+    for (const item of list) {
+      const id =
+        typeof item === 'object' && item !== null ? (item as { id?: unknown }).id : undefined
+      if (typeof id === 'string' && id !== '') {
+        return id
+      }
+    }
+  } catch {
+    // A partial or non-JSON answer (an error page, a truncated body) carries
+    // no served id.
+  }
+  return undefined
+}
+
+/**
  * StrataAdapter is the Strata engine, three build modes. `renderLaunch` renders
  * a `docker run` of the ghcr image (docker mode), a `strata launch` process
  * (binary mode), or a `setup.sh` run with the model (local mode); `deploy` pulls
@@ -1065,7 +1130,10 @@ export const STRATA_BINARY_INSTALL =
  * stops the named container, runs `strata launch --stop`, or signals the
  * tracked process. The model the engine serves is the config model (or the
  * engine's own pick when none is named), and the engine downloads it itself, so
- * the deploy step runs no model download of its own.
+ * the deploy step runs no model download of its own. When the config names no
+ * model, `discoverModel` queries the running engine's model endpoint through
+ * the terminal for the id it actually loaded (family and size sized to the
+ * host), so the registrar publishes the served model, not a placeholder.
  */
 export class StrataAdapter extends EngineAdapter {
   readonly id = 'strata'
@@ -1088,6 +1156,45 @@ export class StrataAdapter extends EngineAdapter {
     // routes to it.
     const model = strataModelKey(config)
     return model !== '' ? { id: model, name: model } : { id: 'strata', name: 'Strata' }
+  }
+
+  override async discoverModel(
+    config: Config,
+  ): Promise<{ id: string; name: string } | undefined> {
+    // A config that names a model already routes through modelRef; discovery
+    // answers only for the model the engine auto-selected for the host.
+    if (strataModelKey(config) !== '') {
+      return undefined
+    }
+    // The terminal query: curl the running engine's model list, capped at a
+    // few seconds so a down engine fails fast rather than parking the
+    // register route. A host without output capture cannot read the answer,
+    // so it discovers nothing and the route falls back to modelRef.
+    const runStream = this.host.runStream
+    if (runStream === undefined) {
+      return undefined
+    }
+    const port = this.port(config)
+    const chunks: string[] = []
+    const outcome = await runStream.call(
+      this.host,
+      `curl -fsS --max-time 3 http://127.0.0.1:${port}/v1/models`,
+      (chunk: string) => {
+        chunks.push(chunk)
+      },
+    )
+    if (!outcome.ok) {
+      return undefined
+    }
+    const id = strataServedModelId(chunks.join(''))
+    return id === undefined ? undefined : { id, name: id }
+  }
+
+  override modelInput(config: Config): string[] {
+    // Strata's models read pictures and the vision control is on by default
+    // (on, gpu, and cpu all enable a vision runner), so only 'off' withholds
+    // the Image input on the DSH model row.
+    return config.vision === 'off' ? ['text'] : ['text', 'image']
   }
 
   override launchSignature(config: Config = {}): EngineLaunchSignature {
@@ -1263,6 +1370,13 @@ export class StrataAdapter extends EngineAdapter {
               directory: engineDir,
               ...(platform?.engineFork !== undefined ? { fork: platform.engineFork } : {}),
               ...(options?.allowRunDeps !== undefined ? { allowRunDeps: options.allowRunDeps } : {}),
+              ...(platform?.buildCommands !== undefined
+                ? { buildCommands: platform.buildCommands }
+                : {}),
+              // Report the build phase the moment the build steps start, so
+              // the card's button reads "Building..." while the build is in
+              // flight.
+              onBuildStart: () => onProgress?.('build'),
             },
             () => {},
           )
@@ -1270,8 +1384,11 @@ export class StrataAdapter extends EngineAdapter {
           if (!sync.ok) {
             return { ok: false, detail: sync.detail ?? 'unknown', logs: buildLogs }
           }
-          if (sync.rebuilt) {
-            onProgress?.('build')
+          // The build output reads as a fresh Logs section: a "Building..."
+          // separator leads the build decision and output, the same line the
+          // card writes when the build step event lands.
+          if (sync.rebuilt && buildLogs !== '') {
+            buildLogs = `--- Building...\n${buildLogs}`
           }
         }
       }
@@ -1293,7 +1410,54 @@ export class StrataAdapter extends EngineAdapter {
   }
 
   async healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult> {
-    return pollHealth(this.host, plan, options)
+    // The Strata Terminal downloads its engine and the model files before it
+    // can serve, so the health endpoint is not up for a long time (the model
+    // download can be tens of gigabytes). A plain poll times out and reads the
+    // start as broken, so this poll reads the tracked process's output and
+    // reports the start phase: a 200 is ready, a process that ended before
+    // readiness is failed, and a process still fetching its files after the
+    // attempt cap is downloading (in progress, not a failure) so the card
+    // re-polls instead of showing a broken launch.
+    const pollMs = options?.pollMs ?? 1000
+    const maxAttempts = options?.maxAttempts ?? 120
+    let last: FetchResult = { status: 0, ok: false }
+    let lastPreReady: 'downloading' | 'starting' | null = null
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      last = await this.host.fetch(plan.healthUrl)
+      if (last.status === 200) {
+        return { healthy: true, status: 200, state: 'ready' }
+      }
+      // A running tracked process reports its start phase from its output. A
+      // missing handle (no deploy tracked one, or the process already ended)
+      // falls through to the plain poll: the health URL stays down, so the
+      // loop times out and reads the start as failed.
+      const handle = this.children.get(this.planKey(plan))
+      if (handle !== undefined) {
+        lastPreReady = strataPreReadyState(handle.logs ?? '')
+      }
+      if (pollMs > 0 && attempt < maxAttempts) {
+        await delay(pollMs)
+      }
+    }
+    // The engine did not report ready within the attempt cap. If it was still
+    // downloading its files, read the start as in progress (downloading): the
+    // download is not a broken launch, and the card re-polls until the engine
+    // reports ready. If the download was done and the engine was starting,
+    // read the start as failed (a stuck start timed out).
+    if (lastPreReady === 'downloading') {
+      return {
+        healthy: false,
+        status: last.status,
+        state: 'downloading',
+        detail: 'the engine is still downloading its model files',
+      }
+    }
+    return {
+      healthy: false,
+      status: last.status,
+      state: 'failed',
+      detail: `health check did not return 200 within ${maxAttempts} attempts`,
+    }
   }
 
   async stop(plan: LaunchPlan): Promise<void> {
@@ -1460,6 +1624,12 @@ export class InfernixAdapter extends EngineAdapter {
           ...(platform?.engineFork !== undefined ? { fork: platform.engineFork } : {}),
           ...(plan.argv?.[0] !== undefined ? { binary: plan.argv[0] } : {}),
           ...(options?.allowRunDeps !== undefined ? { allowRunDeps: options.allowRunDeps } : {}),
+          ...(platform?.buildCommands !== undefined
+            ? { buildCommands: platform.buildCommands }
+            : {}),
+          // Report the build phase the moment the build steps start, so the
+          // card's button reads "Building..." while the build is in flight.
+          onBuildStart: () => onProgress?.('build'),
         },
         () => {},
       )
@@ -1467,10 +1637,11 @@ export class InfernixAdapter extends EngineAdapter {
       if (!sync.ok) {
         return { ok: false, detail: sync.detail ?? 'unknown', logs: buildLogs }
       }
-      // The build step reads as "Building..." only when a build actually
-      // ran (a fresh clone, or a rebase of a checkout that was behind).
-      if (sync.rebuilt) {
-        onProgress?.('build')
+      // The build output reads as a fresh Logs section: a "Building..."
+      // separator leads the build decision and output, the same line the
+      // card writes when the build step event lands.
+      if (sync.rebuilt && buildLogs !== '') {
+        buildLogs = `--- Building...\n${buildLogs}`
       }
     }
     const withLogs = (result: DeployResult): DeployResult =>

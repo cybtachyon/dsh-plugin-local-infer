@@ -218,6 +218,14 @@ export interface SyncRebuildRequest {
   fork?: string
   binary?: string
   allowRunDeps?: boolean
+  // The user's local build command (the card's Build commands field) that
+  // overrides the engine's default build steps. When set, it runs in the
+  // checkout instead of the engine's acquisition build steps.
+  buildCommands?: string
+  // Fires the moment the build steps are about to run (a fresh clone, or a
+  // rebase of a checkout that was behind), so the caller can report the
+  // "Building..." phase while the build runs, not after it completes.
+  onBuildStart?: () => void
 }
 
 /**
@@ -375,8 +383,22 @@ export async function syncAndRebuildEngine(
     }
   }
   if (rebuilt) {
-    // Run the engine's build steps, capturing the command and its output.
-    for (const step of source.buildSteps) {
+    // The user's local build command (the card's Build commands field)
+    // overrides the engine's default build steps: it runs in the checkout, so
+    // it is wrapped with a cd into the directory. Absent falls back to the
+    // engine's acquisition build steps.
+    const buildCommands =
+      request.buildCommands !== undefined && request.buildCommands.trim() !== ''
+        ? request.buildCommands
+        : undefined
+    const steps =
+      buildCommands !== undefined
+        ? [`cd ${directory} && ${buildCommands}`]
+        : source.buildSteps
+    // Report the build phase before the first step runs, so the card's button
+    // reads "Building..." while the build is in flight, not after it completes.
+    request.onBuildStart?.()
+    for (const step of steps) {
       const command = step.replaceAll('{dir}', directory)
       const outcome = await runLogged(host, command, emit)
       if (!outcome.ok) {
@@ -422,16 +444,23 @@ export async function buildEngineRepo(
   engineId: string,
   directory: string,
   log: AcquireLog,
+  buildCommands?: string,
 ): Promise<EngineStepResult> {
   const source = engineSource(engineId)
   if (source === undefined) {
     return { ok: false, detail: `no engine source is registered for "${engineId}"` }
   }
-  if (source.buildSteps.length === 0) {
+  // The user's local build command (the card's Build commands field) overrides
+  // the engine's default build steps: it runs in the checkout, so it is wrapped
+  // with a cd into the directory. Absent falls back to the engine's steps.
+  const commands =
+    buildCommands !== undefined && buildCommands.trim() !== '' ? buildCommands : undefined
+  const steps = commands !== undefined ? [`cd ${directory} && ${commands}`] : source.buildSteps
+  if (steps.length === 0) {
     log(`no local build steps for ${engineId}\n`)
     return { ok: true }
   }
-  for (const step of source.buildSteps) {
+  for (const step of steps) {
     const command = step.replaceAll('{dir}', directory)
     const outcome = await runLogged(host, command, log)
     if (!outcome.ok) {

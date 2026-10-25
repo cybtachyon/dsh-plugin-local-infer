@@ -22,9 +22,14 @@ import type { RegisterRequest } from '../request.ts';
 export declare function resolveContextWindow(config: Config, models: readonly VramModel[]): number;
 /**
  * resolveModelRow picks the model row the registrar publishes for an engine
- * and config: the adapter's modelRef (the id the engine serves on its
- * OpenAI endpoint) when it declares one, else the plan's model id, else the
- * engine id. The display name follows the same fall-through.
+ * and config: the adapter's discovered model (what the running engine
+ * advertises on its model endpoint, read live) when the adapter discovers
+ * one, else the adapter's static modelRef, else the plan's model id, else the
+ * engine id. The display name follows the same fall-through. The discovery
+ * step awaits a terminal query, so the row is resolved asynchronously; an
+ * engine that is down discovers nothing and falls back through modelRef, so
+ * register, save-sync, unregister, and the summary flag stay consistent with
+ * whatever the engine answers while it is up.
  */
 export declare function resolveModelRow(adapter: {
     id: string;
@@ -32,9 +37,13 @@ export declare function resolveModelRow(adapter: {
         id: string;
         name: string;
     } | undefined;
+    discoverModel?(config: Config): Promise<{
+        id: string;
+        name: string;
+    } | undefined>;
 }, plan: {
     modelId?: string;
-}, config: Config): ModelRow;
+}, config: Config): Promise<ModelRow>;
 /**
  * registerFor renders the plan through the registered adapter, resolves the
  * model row and the context window, and runs the service's register entry

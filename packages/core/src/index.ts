@@ -91,6 +91,7 @@ export type {
   BuildMode,
   DeployOptions,
   DeployResult,
+  EngineLaunchState,
   EnginePlatformConfig,
   FetchResult,
   HealthCheckOptions,

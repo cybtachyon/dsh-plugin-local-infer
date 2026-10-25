@@ -569,7 +569,10 @@ export async function getEngine(
       return { ok: false, detail: 'a system dependency is missing' }
     }
   }
-  const build = await buildEngineRepo(host, engineId, directory, log)
+  // The user's local build command (the card's Build commands field) overrides
+  // the engine's default build steps; absent runs the engine's acquisition
+  // steps.
+  const build = await buildEngineRepo(host, engineId, directory, log, platform?.buildCommands)
   if (!build.ok) {
     if (build.detail !== undefined) {
       log(`!! ${build.detail}\n`)

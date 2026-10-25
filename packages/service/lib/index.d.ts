@@ -53,6 +53,8 @@ export declare class LocalInfer extends Service implements LocalInferService {
     private readonly launchedPorts;
     private readonly engineWatchers;
     private readonly handledPids;
+    private readonly launchingEngines;
+    private readonly stoppingEngines;
     private deathObserver;
     constructor(ctx: Context);
     registerEngine(adapter: EngineAdapter): () => void;
@@ -238,6 +240,13 @@ export declare class LocalInfer extends Service implements LocalInferService {
      * record dead.
      */
     private watchAdoptedEngine;
+    /**
+     * engineKey is the in-flight state machine's key for one engine: the engine
+     * id plus its port when the plan names one, so two configs of one engine on
+     * different ports are distinct engines. A plan with no port keys on the
+     * engine id alone.
+     */
+    private engineKey;
     /**
      * stopEngineWatcher cancels one port's adopted-process poll, if it has one.
      */

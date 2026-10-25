@@ -10,6 +10,8 @@ import {
   NInferAdapter,
   STRATA_DOCKER_IMAGE,
   StrataAdapter,
+  strataPreReadyState,
+  strataServedModelId,
   LlamaCppAdapter,
   customArgEnv,
   customArgFlags,
@@ -470,6 +472,91 @@ describe('NInferAdapter.deploy', () => {
     // The git sync and the model download read as download; the build steps
     // read as build, in the order the deploy runs them.
     expect(steps).toEqual(['download', 'build', 'download', 'download'])
+  })
+
+  it('reports the build phase before the build command runs', async () => {
+    const { host, state } = stubHost()
+    // The checkout is behind, so the conditional rebuild runs the build steps.
+    state.runOutput['rev-list'] = '3'
+    // An ordered log of the progress events and the build command run, so the
+    // test reads the "build" phase landing before the build command starts.
+    const order: string[] = []
+    const progress = (step: string): void => {
+      order.push(step)
+    }
+    const originalRunStream = host.runStream
+    host.runStream = async (command: string, onOutput: (chunk: string) => void) => {
+      if (command.includes('cmake')) {
+        order.push('build-command')
+      }
+      return originalRunStream?.(command, onOutput)
+    }
+    const adapter = new NInferAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      argv: ['ninfer-serve', '/models/x.ninfer'],
+      env: {},
+      modelId: 'qwen3-27b',
+      modelDirectory: '/models',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    const result = await adapter.deploy(
+      plan,
+      {
+        engineId: 'ninfer',
+        engineDirectory: '/src/ninfer',
+        engineFork: 'https://github.com/iamwavecut/ninfer-all',
+      },
+      progress,
+    )
+    expect(result.ok).toBe(true)
+    // The "build" phase is reported the moment the build steps start, so it
+    // lands before the build command runs, not after it completes.
+    const buildPhase = order.indexOf('build')
+    const buildCommand = order.indexOf('build-command')
+    expect(buildPhase).toBeGreaterThanOrEqual(0)
+    expect(buildCommand).toBeGreaterThanOrEqual(0)
+    expect(buildPhase).toBeLessThan(buildCommand)
+  })
+
+  it('runs the user build command from the platform config', async () => {
+    const { host, state } = stubHost()
+    // The checkout is behind, so the conditional rebuild runs the build steps.
+    state.runOutput['rev-list'] = '3'
+    const adapter = new NInferAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      argv: ['ninfer-serve', '/models/x.ninfer'],
+      env: {},
+      modelId: 'qwen3-27b',
+      modelDirectory: '/models',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    const result = await adapter.deploy(
+      plan,
+      {
+        engineId: 'ninfer',
+        engineDirectory: '/src/ninfer',
+        engineFork: 'https://github.com/iamwavecut/ninfer-all',
+        // The user's local build command overrides the engine default.
+        buildCommands:
+          'cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build',
+      },
+      () => {},
+    )
+    expect(result.ok).toBe(true)
+    // The user command runs in the checkout, wrapped with a cd into the dir.
+    expect(state.run.some((command) => command.includes('cd /src/ninfer && cmake -S . -B build'))).toBe(
+      true,
+    )
+    // The engine default build step is not run.
+    expect(state.run.some((command) => command.includes('cmake -S /src/ninfer -B /src/ninfer/build'))).toBe(
+      false,
+    )
   })
 
   it('reports no build phase when the checkout is up to date', async () => {
@@ -1446,7 +1533,201 @@ describe('StrataAdapter', () => {
     }
     const result = await adapter.healthCheck(plan, { pollMs: 0, maxAttempts: 3 })
     expect(result.healthy).toBe(true)
+    expect(result.state).toBe('ready')
     expect(state.fetch).toHaveLength(2)
+  })
+
+  it('reports the downloading state while the process fetches its files', async () => {
+    // A host whose spawned handle exposes a mutable logs buffer the test drives
+    // to show the download in progress; the health URL stays down (503) for
+    // the whole poll.
+    const logs = 'Downloading the engine… 10%'
+    const host: LifecycleHost = {
+      async run(): Promise<CommandOutcome> {
+        return { ok: true }
+      },
+      spawn(): ProcessHandle {
+        return {
+          pid: 1234,
+          kill: (): void => {},
+          get logs(): string {
+            return logs
+          },
+        }
+      },
+      async fetch(): Promise<FetchResult> {
+        return { status: 503, ok: false }
+      },
+    }
+    const adapter = new StrataAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'strata', kind: 'process', argv: ['strata', 'launch'],
+      env: {}, port: 8080, healthUrl: 'http://127.0.0.1:8080/health',
+    }
+    // The deploy step tracks the spawned handle, so the health poll reads it.
+    await adapter.deploy(plan)
+    const result = await adapter.healthCheck(plan, { pollMs: 0, maxAttempts: 3 })
+    expect(result.healthy).toBe(false)
+    expect(result.state).toBe('downloading')
+    expect(result.detail).toContain('downloading')
+  })
+
+  it('reports the failed state when a tracked start times out', async () => {
+    // The process is running (the handle is tracked) and past the download
+    // (the logs show the start), but the health URL never returns 200, so the
+    // start times out and reads as failed.
+    const logs = 'Engine 0.1.48 is installed and will be used on the next start'
+    const host: LifecycleHost = {
+      async run(): Promise<CommandOutcome> {
+        return { ok: true }
+      },
+      spawn(): ProcessHandle {
+        return {
+          pid: 1234,
+          kill: (): void => {},
+          get logs(): string {
+            return logs
+          },
+        }
+      },
+      async fetch(): Promise<FetchResult> {
+        return { status: 503, ok: false }
+      },
+    }
+    const adapter = new StrataAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'strata', kind: 'process', argv: ['strata', 'launch'],
+      env: {}, port: 8080, healthUrl: 'http://127.0.0.1:8080/health',
+    }
+    await adapter.deploy(plan)
+    const result = await adapter.healthCheck(plan, { pollMs: 0, maxAttempts: 3 })
+    expect(result.healthy).toBe(false)
+    expect(result.state).toBe('failed')
+  })
+})
+
+describe('StrataAdapter model discovery and modalities', () => {
+  it('discovers the model the running engine auto-selected', async () => {
+    const { host, state } = stubHost()
+    state.runOutput['/v1/models'] = JSON.stringify({
+      object: 'list',
+      data: [{ id: 'qwen3.8-flash-next-iq3_s', object: 'model', owned_by: 'strata' }],
+    })
+    const adapter = new StrataAdapter(host)
+    const ref = await adapter.discoverModel?.({ port: 8090 })
+    expect(ref).toEqual({
+      id: 'qwen3.8-flash-next-iq3_s',
+      name: 'qwen3.8-flash-next-iq3_s',
+    })
+    // The query runs through the terminal (curl, capped at a few seconds)
+    // against the config port's model endpoint.
+    expect(
+      state.run.some((command) =>
+        command.includes('curl -fsS --max-time 3 http://127.0.0.1:8090/v1/models'),
+      ),
+    ).toBe(true)
+  })
+
+  it('skips discovery when the config names a model', async () => {
+    const { host, state } = stubHost()
+    state.runOutput['/v1/models'] = '{"data":[{"id":"qwen3.8-flash-next-iq3_s"}]}'
+    const adapter = new StrataAdapter(host)
+    // A named model routes through modelRef; discovery answers only for the
+    // engine's auto-selected model, and it does not even query the engine.
+    const ref = await adapter.discoverModel?.({ port: 8090, model: 'iq3_s' })
+    expect(ref).toBeUndefined()
+    expect(state.run).toHaveLength(0)
+  })
+
+  it('reads a down engine (a failed curl) as no discovery', async () => {
+    const { host, state } = stubHost()
+    state.runOk = false
+    const adapter = new StrataAdapter(host)
+    expect(await adapter.discoverModel?.({ port: 8090 })).toBeUndefined()
+  })
+
+  it('reads a non-JSON answer as no discovery', async () => {
+    const { host, state } = stubHost()
+    state.runOutput['/v1/models'] = '<html>502 Bad Gateway</html>'
+    const adapter = new StrataAdapter(host)
+    expect(await adapter.discoverModel?.({ port: 8090 })).toBeUndefined()
+  })
+
+  it('discovers nothing on a host without output capture', async () => {
+    // A LifecycleHost without runStream cannot read the command's stdout, so
+    // discovery stays a no-op and the register route falls back to modelRef.
+    const streamlessHost: LifecycleHost = {
+      async run(): Promise<CommandOutcome> {
+        return { ok: true }
+      },
+      spawn(): ProcessHandle {
+        return { pid: 1, logs: '', kill: () => {} }
+      },
+      async fetch(): Promise<FetchResult> {
+        return { ok: true, status: 200 }
+      },
+    }
+    const adapter = new StrataAdapter(streamlessHost)
+    expect(await adapter.discoverModel?.({ port: 8090 })).toBeUndefined()
+  })
+
+  it('publishes image input by default and text-only with vision off', () => {
+    const { host } = stubHost()
+    const adapter = new StrataAdapter(host)
+    // Strata's models read pictures and vision (on|gpu|cpu) is on by default,
+    // so only 'off' withholds the Image input.
+    expect(adapter.modelInput?.({ port: 8090 })).toEqual(['text', 'image'])
+    expect(adapter.modelInput?.({ port: 8090, vision: 'on' })).toEqual(['text', 'image'])
+    expect(adapter.modelInput?.({ port: 8090, vision: 'gpu' })).toEqual(['text', 'image'])
+    expect(adapter.modelInput?.({ port: 8090, vision: 'off' })).toEqual(['text'])
+  })
+})
+
+describe('strataServedModelId (the /v1/models reader)', () => {
+  it('reads the first served model id', () => {
+    expect(
+      strataServedModelId('{"object":"list","data":[{"id":"qwen3.8-flash-next-iq3_s"},{"id":"x"}]}'),
+    ).toBe('qwen3.8-flash-next-iq3_s')
+  })
+
+  it('reads the id when curl noise surrounds the JSON body', () => {
+    const body = 'curl: (2) warning\n{"data":[{"id":"qwen3.8-flash-next-iq3_s"}]}\n'
+    expect(strataServedModelId(body)).toBe('qwen3.8-flash-next-iq3_s')
+  })
+
+  it('skips entries with no usable id', () => {
+    expect(strataServedModelId('{"data":[{"id":""},{"object":"model"},{"id":"qwen"}]}')).toBe(
+      'qwen',
+    )
+  })
+
+  it('reads no id from a non-JSON body, an empty list, or a missing data field', () => {
+    expect(strataServedModelId('<html>502 Bad Gateway</html>')).toBeUndefined()
+    expect(strataServedModelId('')).toBeUndefined()
+    expect(strataServedModelId('{"data":[]}')).toBeUndefined()
+    expect(strataServedModelId('{"error":{"message":"unauthorized"}}')).toBeUndefined()
+  })
+})
+
+describe('strataPreReadyState (the download-phase reader)', () => {
+  it('reads a download progress line as downloading', () => {
+    expect(strataPreReadyState('Downloading the engine… 50%')).toBe('downloading')
+    expect(strataPreReadyState('Getting the model files: 43.4 of 84.5 GB')).toBe('downloading')
+    expect(strataPreReadyState('Unpacking 0.1.48 linux-x86_64-cuda-cuda13')).toBe('downloading')
+    expect(strataPreReadyState('Checking the package signature and every file')).toBe('downloading')
+  })
+
+  it('reads a post-download start (or no output) as starting', () => {
+    expect(strataPreReadyState('Engine 0.1.48 is installed and will be used on the next start')).toBe('starting')
+    expect(strataPreReadyState('')).toBe('starting')
+  })
+
+  it('reads the tail, so a finished download no longer reads as downloading', () => {
+    // The download lines are in the buffer, but the tail (the most recent
+    // output, past the 2000-char window) is past the download, so it reads as
+    // starting even though the progress lines are still in the log.
+    const logs = 'Downloading the engine… 100%\n' + 'x'.repeat(2500) + '\nEngine is installed'
+    expect(strataPreReadyState(logs)).toBe('starting')
   })
 })
 

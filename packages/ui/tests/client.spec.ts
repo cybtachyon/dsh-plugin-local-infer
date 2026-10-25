@@ -356,6 +356,20 @@ describe('dsh/client.js browser carrier', () => {
     expect(source).toContain("event.step === 'launch'")
   })
 
+  it('pins the downloading state the engine model fetch reports', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // A launch that is still fetching its model files (the Strata download)
+    // reads as a downloading throbber, not a failure: the result event's
+    // downloading state drives the machine to the downloading state, and the
+    // button renders a busy throbber the card re-polls. The title bar mirrors
+    // the entry's Launch button, so its phase-label map carries the downloading
+    // state too (a missing key desyncs the title bar from the entry control).
+    expect(source).toContain("type === 'downloading'")
+    expect(source).toContain("status === 'downloading'")
+    expect(source).toContain("event.result.state === 'downloading'")
+    expect(source).toContain('downloading: t.entryDownloading')
+  })
+
   it('pins the provider stop lifecycle the state machine drives', () => {
     const source = readFileSync(fileURLToPath(clientPath), 'utf8')
     // A Stop click moves the entry to the stopping state (a disabled throbber,

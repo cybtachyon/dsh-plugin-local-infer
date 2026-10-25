@@ -40,16 +40,25 @@ export function resolveContextWindow(config: Config, models: readonly VramModel[
 
 /**
  * resolveModelRow picks the model row the registrar publishes for an engine
- * and config: the adapter's modelRef (the id the engine serves on its
- * OpenAI endpoint) when it declares one, else the plan's model id, else the
- * engine id. The display name follows the same fall-through.
+ * and config: the adapter's discovered model (what the running engine
+ * advertises on its model endpoint, read live) when the adapter discovers
+ * one, else the adapter's static modelRef, else the plan's model id, else the
+ * engine id. The display name follows the same fall-through. The discovery
+ * step awaits a terminal query, so the row is resolved asynchronously; an
+ * engine that is down discovers nothing and falls back through modelRef, so
+ * register, save-sync, unregister, and the summary flag stay consistent with
+ * whatever the engine answers while it is up.
  */
-export function resolveModelRow(
-  adapter: { id: string; modelRef?(config: Config): { id: string; name: string } | undefined },
+export async function resolveModelRow(
+  adapter: {
+    id: string
+    modelRef?(config: Config): { id: string; name: string } | undefined
+    discoverModel?(config: Config): Promise<{ id: string; name: string } | undefined>
+  },
   plan: { modelId?: string },
   config: Config,
-): ModelRow {
-  const ref = adapter.modelRef?.(config)
+): Promise<ModelRow> {
+  const ref = (await adapter.discoverModel?.(config)) ?? adapter.modelRef?.(config)
   const id = ref?.id ?? plan.modelId ?? adapter.id
   return { id, name: ref?.name ?? id, contextWindow: 0 }
 }
@@ -71,12 +80,15 @@ export async function registerFor(
   const adapter = resolveAdapter(localInfer, engineId)
   const hardware = await localInfer.detectHardware()
   const plan = adapter.renderLaunch(config, hardware)
-  const row = resolveModelRow(adapter, plan, config)
+  const row = await resolveModelRow(adapter, plan, config)
   row.contextWindow = resolveContextWindow(config, localInfer.registeredVramModels())
-  // The vision flag publishes the Image input type on the DSH model row, so a
+  // The adapter's declared modalities publish the input types on the DSH
+  // model row (Strata's vision enum, on by default, declares ['text',
+  // 'image']); an adapter that declares none keeps the boolean vision flag: a
   // vision engine advertises ['text', 'image'] and a text-only engine
   // ['text']. The registrar copies it into the entry it writes.
-  row.input = config.vision === true ? ['text', 'image'] : ['text']
+  row.input =
+    adapter.modelInput?.(config) ?? (config.vision === true ? ['text', 'image'] : ['text'])
   const options: RegisterModelOptions | undefined =
     request?.agentDefault === true ? { agentDefault: true } : undefined
   return localInfer.registerModel(plan, row, options)
@@ -98,7 +110,7 @@ export async function syncRegisteredModel(
   const adapter = resolveAdapter(localInfer, engine)
   const hardware = await localInfer.detectHardware()
   const plan = adapter.renderLaunch(config, hardware)
-  const row = resolveModelRow(adapter, plan, config)
+  const row = await resolveModelRow(adapter, plan, config)
   const buildMode = plan.kind === 'docker' ? 'docker' : 'local'
   const providerId = providerIdFor(adapter.id, row.id, buildMode)
   if (await localInfer.modelIsRegistered(providerId, row.id)) {
@@ -121,7 +133,7 @@ export async function unregisterFor(
   const adapter = resolveAdapter(localInfer, engineId)
   const hardware = await localInfer.detectHardware()
   const plan = adapter.renderLaunch(config, hardware)
-  const row = resolveModelRow(adapter, plan, config)
+  const row = await resolveModelRow(adapter, plan, config)
   // The removal must target the exact entry the register step wrote, so the
   // provider id is computed through buildModelEntry (the same function the
   // register step uses) rather than a parallel providerIdFor call, which

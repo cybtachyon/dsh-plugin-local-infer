@@ -323,6 +323,24 @@ describe('buildEngineRepo', () => {
     expect(result.detail).toContain('build failed')
   })
 
+  it('runs the user build command instead of the engine default', async () => {
+    const { host, state } = stubHost()
+    const result = await buildEngineRepo(
+      host,
+      'ninfer',
+      '/src/ninfer',
+      (chunk) => {
+        state.logged += chunk
+      },
+      'cmake -S . -B build && cmake --build build',
+    )
+    expect(result.ok).toBe(true)
+    // The user command runs in the checkout, wrapped with a cd into the dir.
+    expect(state.logged).toContain('cd /src/ninfer && cmake -S . -B build && cmake --build build')
+    // The engine default build step is not run.
+    expect(state.logged).not.toContain('cmake -S /src/ninfer -B /src/ninfer/build')
+  })
+
   it('passes through an engine with no local build steps', async () => {
     const { host, state } = stubHost()
     const result = await buildEngineRepo(host, 'hyperqwen', '/src/vllm', (chunk) => {
@@ -487,6 +505,90 @@ describe('syncAndRebuildEngine', () => {
     expect(result.ok).toBe(false)
     expect(result.rebuilt).toBe(true)
     expect(result.detail).toContain('build failed')
+  })
+
+  it('fires onBuildStart the moment the build steps begin', async () => {
+    const { host, state } = stubHost({ exists: false })
+    let buildStartCalled = false
+    const result = await syncAndRebuildEngine(
+      host,
+      {
+        engineId: 'ninfer',
+        directory: '/src/ninfer',
+        binary: 'ninfer-serve',
+        onBuildStart: () => {
+          buildStartCalled = true
+        },
+      },
+      (chunk) => {
+        state.logged += chunk
+      },
+    )
+    expect(result.ok).toBe(true)
+    expect(result.rebuilt).toBe(true)
+    // The callback fires before the build steps run, so the caller can report
+    // the "Building..." phase while the build is in flight.
+    expect(buildStartCalled).toBe(true)
+  })
+
+  it('does not fire onBuildStart when no build runs (the checkout is current)', async () => {
+    const { host, state } = stubHost({ stream: { 'rev-list': '0' } })
+    let buildStartCalled = false
+    const result = await syncAndRebuildEngine(
+      host,
+      {
+        engineId: 'ninfer',
+        directory: '/src/ninfer',
+        binary: 'ninfer-serve',
+        onBuildStart: () => {
+          buildStartCalled = true
+        },
+      },
+      (chunk) => {
+        state.logged += chunk
+      },
+    )
+    expect(result.ok).toBe(true)
+    expect(result.rebuilt).toBe(false)
+    expect(buildStartCalled).toBe(false)
+  })
+
+  it('runs the user build command instead of the engine default', async () => {
+    const { host, state } = stubHost({ exists: false })
+    const result = await syncAndRebuildEngine(
+      host,
+      {
+        engineId: 'ninfer',
+        directory: '/src/ninfer',
+        binary: 'ninfer-serve',
+        buildCommands: 'cmake -S . -B build && cmake --build build',
+      },
+      (chunk) => {
+        state.logged += chunk
+      },
+    )
+    expect(result.ok).toBe(true)
+    expect(result.rebuilt).toBe(true)
+    // The user command runs in the checkout, wrapped with a cd into the dir.
+    expect(state.logged).toContain(
+      'cd /src/ninfer && cmake -S . -B build && cmake --build build',
+    )
+    // The engine default build step is not run.
+    expect(state.logged).not.toContain('cmake -S /src/ninfer -B /src/ninfer/build')
+  })
+
+  it('falls back to the engine default build steps when no build command is set', async () => {
+    const { host, state } = stubHost({ exists: false })
+    const result = await syncAndRebuildEngine(
+      host,
+      { engineId: 'ninfer', directory: '/src/ninfer', binary: 'ninfer-serve' },
+      (chunk) => {
+        state.logged += chunk
+      },
+    )
+    expect(result.ok).toBe(true)
+    expect(result.rebuilt).toBe(true)
+    expect(state.logged).toContain('cmake -S /src/ninfer -B /src/ninfer/build')
   })
 })
 

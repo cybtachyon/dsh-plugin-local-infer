@@ -152,12 +152,15 @@ export async function buildSummary(localInfer, request) {
     // and model are already in the DSH settings, so the Remove button shows
     // only when there is something to remove. A profile without the settings
     // seam (a host that predates the typert remote) or a host without the
-    // engine adapter registered reads as unregistered.
+    // engine adapter registered reads as unregistered. The row resolves through
+    // the same discovery plus modelRef fall-through the register step uses, so
+    // the flag names the same entry the register step wrote while the engine
+    // answers, and a down engine (no discovery) reads as unregistered.
     let registered = false;
     try {
         const regAdapter = resolveAdapter(localInfer, engine.id);
         const regPlan = regAdapter.renderLaunch(config, hardware);
-        const regRow = resolveModelRow(regAdapter, regPlan, config);
+        const regRow = await resolveModelRow(regAdapter, regPlan, config);
         const regEntry = buildModelEntry(regPlan, regRow);
         registered = await localInfer.modelIsRegistered(regEntry.providerId, regRow.id);
     }

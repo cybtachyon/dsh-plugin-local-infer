@@ -977,6 +977,87 @@ describe('register and unregister route helpers', () => {
     expect(seen?.options).toBeUndefined()
   })
 
+  it('registers the model the adapter discovers live, ahead of its modelRef', async () => {
+    let seen: { plan: LaunchPlan; model: ModelRow; options?: RegisterModelOptions } | undefined
+    // Stands in for Strata: a placeholder modelRef, a live discovery of the
+    // model the running engine auto-selected, and declared modalities (its
+    // vision enum defaults to on).
+    const strataLike = {
+      ...fakeAdapter('strata', { id: 'strata', name: 'Strata' }),
+      discoverModel: async () => ({
+        id: 'qwen3.8-flash-next-iq3_s',
+        name: 'qwen3.8-flash-next-iq3_s',
+      }),
+      modelInput: () => ['text', 'image'],
+    } as unknown as EngineAdapter
+    const service = stubService([], {
+      engines: [strataLike],
+      onRegister: (args) => {
+        seen = args
+      },
+    })
+    await registerFor(service, { engine: 'strata', config: { port: 8090 } })
+    // The discovered id wins over the placeholder modelRef, and the declared
+    // modalities win over the boolean vision flag (unset here, so the flag
+    // path would have published text-only).
+    expect(seen?.model).toEqual({
+      id: 'qwen3.8-flash-next-iq3_s',
+      name: 'qwen3.8-flash-next-iq3_s',
+      contextWindow: 32768,
+      input: ['text', 'image'],
+    })
+  })
+
+  it('falls back to the adapter modelRef when live discovery finds nothing', async () => {
+    let seen: { plan: LaunchPlan; model: ModelRow; options?: RegisterModelOptions } | undefined
+    // A down engine discovers nothing, so the register step publishes the
+    // modelRef row and the card stays consistent with the summary flag.
+    const strataLike = {
+      ...fakeAdapter('strata', { id: 'strata', name: 'Strata' }),
+      discoverModel: async () => undefined,
+    } as unknown as EngineAdapter
+    const service = stubService([], {
+      engines: [strataLike],
+      onRegister: (args) => {
+        seen = args
+      },
+    })
+    await registerFor(service, { engine: 'strata', config: { port: 8090 } })
+    expect(seen?.model?.id).toBe('strata')
+    expect(seen?.model?.name).toBe('Strata')
+  })
+
+  it('removes the exact discovered entry the register step wrote', async () => {
+    let registered: { providerId: string; modelId: string } | undefined
+    let removed: { providerId: string; modelId: string } | undefined
+    const strataLike = {
+      ...fakeAdapter('strata', { id: 'strata', name: 'Strata' }),
+      discoverModel: async () => ({
+        id: 'qwen3.8-flash-next-iq3_s',
+        name: 'qwen3.8-flash-next-iq3_s',
+      }),
+    } as unknown as EngineAdapter
+    const service = stubService([], {
+      engines: [strataLike],
+      onRegister: (args) => {
+        registered = {
+          providerId: providerIdFor(args.plan.engineId, args.model.id, 'local'),
+          modelId: args.model.id,
+        }
+      },
+      onRemove: (args) => {
+        removed = args
+      },
+    })
+    await registerFor(service, { engine: 'strata', config: { port: 8090 } })
+    const result = await unregisterFor(service, { engine: 'strata', config: { port: 8090 } })
+    expect(result).toEqual({ removed: true })
+    // Discovery resolves the same served id in both steps, so the removal
+    // targets the discovered entry, not the placeholder the modelRef names.
+    expect(removed).toEqual(registered)
+    expect(removed?.modelId).toBe('qwen3.8-flash-next-iq3_s')
+  })
+
   it('unregisters the provider and model the register step resolved', async () => {
     let seen: { providerId: string; modelId: string } | undefined
     const service = stubService([], {
