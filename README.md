@@ -26,10 +26,18 @@ Pick a model and an engine, tune the parameters, watch a live **VRAM Est.** mete
 Command line:
 
 ```bash
+# Latest NPM package.
+dsh plugin --profile web add dsh-plugin-local-infer
+```
+
+```bash
+# From source.
 dsh plugin --profile web add https://github.com/cybtachyon/dsh-plugin-local-infer
 ```
 
-Web UI: click **Plugins** → **Add Plugin** → paste `https://github.com/cybtachyon/dsh-plugin-local-infer`.
+Web UI: click **Plugins** → **Add Plugin** → paste `dsh-plugin-local-infer`.
+
+Or add from the DSH Plugin Marketplace.
 
 ## Using the plugin
 

@@ -26,10 +26,18 @@
 命令行：
 
 ```bash
+# 最新 NPM 包。
+dsh plugin --profile web add dsh-plugin-local-infer
+```
+
+```bash
+# 从源码。
 dsh plugin --profile web add https://github.com/cybtachyon/dsh-plugin-local-infer
 ```
 
-Web UI：点击 **插件** → **添加插件** → 粘贴 `https://github.com/cybtachyon/dsh-plugin-local-infer`。
+Web UI：点击 **插件** → **添加插件** → 粘贴 `dsh-plugin-local-infer`。
+
+或从 DSH 插件市场添加。
 
 ## 使用插件
 
