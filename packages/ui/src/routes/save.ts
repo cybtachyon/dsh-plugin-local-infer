@@ -1,10 +1,11 @@
 /**
  * The POST /local-infer/save route: it upserts a provider entry (an id
- * updates the stored entry in place, an absent id mints a new id and
- * prepends the entry), persists the global fields the card's toggles edit,
- * re-syncs the service's platform registry with the saved map, and re-runs
- * the registration for an already-registered model so its input types stay
- * in step with the saved config.
+ * updates the stored entry in place, an absent id updates a stored entry that
+ * already matches the engine, config, and platform in place, and only a save
+ * with no match mints a new id and prepends the entry), persists the global
+ * fields the card's toggles edit, re-syncs the service's platform registry with
+ * the saved map, and re-runs the registration for an already-registered model
+ * so its input types stay in step with the saved config.
  * @module dsh-plugin-local-infer/ui/routes/save
  */
 
@@ -54,36 +55,69 @@ export function saveRoute(localInfer: LocalInferService): LocalInferRoute {
       const logPath =
         typeof body.logPath === 'string' && body.logPath !== '' ? body.logPath : stored.logPath
       // Save upserts a provider entry: an id updates the stored entry in
-      // place, an absent id mints a new id and prepends the entry, so a Save
-      // always adds (or refreshes) a card entry at the top of the list. The
-      // provider's platform config is the per-engine entry the deploy step
-      // reads, so a provider never carries a field it cannot price. A save
-      // that updates an entry in place carries the entry's launch record
-      // over, so editing a running provider's config never drops the record
-      // the restart re-link prices. A settings-only save skips the upsert:
-      // it persists the global fields the toggle edits and keeps the stored
-      // list intact, so the help and allow-run toggles never mint a
-      // duplicate entry.
+      // place, an absent id updates a stored entry that already matches the
+      // engine, config, and platform in place, and only a save with no match
+      // mints a new id and prepends the entry, so a Save always adds (or
+      // refreshes) a card entry at the top of the list without duplicating a
+      // provider that is already stored. The provider's platform config is the
+      // per-engine entry the deploy step reads, so a provider never carries a
+      // field it cannot price. A save that updates an entry in place carries
+      // the entry's launch record over, so editing a running provider's config
+      // never drops the record the restart re-link prices. A settings-only
+      // save skips the upsert: it persists the global fields the toggle edits
+      // and keeps the stored list intact, so the help and allow-run toggles
+      // never mint a duplicate entry.
       let providers: StoredProviderConfig[]
       if (body.settingsOnly === true) {
         providers = stored.providers
-      } else {
+      } else if (providerId !== undefined) {
+        // An id updates the stored entry in place, carrying its launch record
+        // over so editing a running provider's config never drops the record
+        // the restart re-link prices.
+        const existing = stored.providers.find((entry) => entry.id === providerId)
         const provider: StoredProviderConfig = {
-          id: providerId ?? newProviderId(),
+          id: providerId,
           engine,
           config,
           platform: platform[engine] ?? {},
         }
-        if (providerId !== undefined) {
-          const existing = stored.providers.find((entry) => entry.id === providerId)
-          if (existing?.launch !== undefined) {
-            provider.launch = existing.launch
-          }
+        if (existing?.launch !== undefined) {
+          provider.launch = existing.launch
         }
-        providers =
-          providerId !== undefined
-            ? stored.providers.map((entry) => (entry.id === providerId ? provider : entry))
-            : [provider, ...stored.providers]
+        providers = stored.providers.map((entry) => (entry.id === providerId ? provider : entry))
+      } else {
+        // No id: a "New provider" save. If a stored entry already matches the
+        // engine, config, and platform, update it in place (carrying its launch
+        // record) instead of minting a duplicate: a "New provider" that restores
+        // the cached draft and Saves without a change would otherwise prepend a
+        // second copy of the same provider.
+        const platformConfig = platform[engine] ?? {}
+        const matching = stored.providers.find(
+          (entry) =>
+            entry.engine === engine &&
+            JSON.stringify(entry.config) === JSON.stringify(config) &&
+            JSON.stringify(entry.platform) === JSON.stringify(platformConfig),
+        )
+        if (matching !== undefined) {
+          const provider: StoredProviderConfig = {
+            id: matching.id,
+            engine,
+            config,
+            platform: platformConfig,
+          }
+          if (matching.launch !== undefined) {
+            provider.launch = matching.launch
+          }
+          providers = stored.providers.map((entry) => (entry.id === matching.id ? provider : entry))
+        } else {
+          const provider: StoredProviderConfig = {
+            id: newProviderId(),
+            engine,
+            config,
+            platform: platformConfig,
+          }
+          providers = [provider, ...stored.providers]
+        }
       }
       writeConfig(engine, config, allowRunDeps, platform, showHelp, providers, logPath)
       // Re-sync the service registry with the saved platform map, so the next

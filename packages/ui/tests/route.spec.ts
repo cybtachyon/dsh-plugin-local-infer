@@ -2195,6 +2195,62 @@ describe('provider list round trip', () => {
     expect(stored.providers[0]?.config).toEqual({ model: 'qwen3-35b' })
   })
 
+  it('updates a matching stored provider in place on an id-less save (no duplicate)', async () => {
+    // A "New provider" save that matches a stored entry (the same engine,
+    // config, and platform) updates it in place instead of minting a
+    // duplicate, so a "New provider" then Save without a change never
+    // prepends a second copy of the same provider.
+    rmSync(localInferConfigPath(), { force: true })
+    writeConfig('ninfer', { model: 'qwen3-27b' }, false, {}, true, [
+      { id: 'p1', engine: 'ninfer', config: { model: 'qwen3-27b' }, platform: {} },
+    ])
+    const service = stubService([])
+    const list = routes(service)
+    const save = find(list, '/local-infer/save')
+    const res = fakeRes()
+    await save.handler(
+      fakeReq(
+        'POST',
+        '/local-infer/save',
+        JSON.stringify({ engine: 'ninfer', config: { model: 'qwen3-27b' } }),
+      ),
+      res,
+    )
+    expect(res.status).toBe(200)
+    const stored = readConfig()
+    // The matching entry is updated in place (its id is kept), not duplicated.
+    expect(stored.providers).toHaveLength(1)
+    expect(stored.providers[0]?.id).toBe('p1')
+    expect(stored.providers[0]?.config).toEqual({ model: 'qwen3-27b' })
+  })
+
+  it('mints a new entry on an id-less save that matches no stored provider', async () => {
+    rmSync(localInferConfigPath(), { force: true })
+    writeConfig('ninfer', { model: 'qwen3-27b' }, false, {}, true, [
+      { id: 'p1', engine: 'ninfer', config: { model: 'qwen3-27b' }, platform: {} },
+    ])
+    const service = stubService([])
+    const list = routes(service)
+    const save = find(list, '/local-infer/save')
+    const res = fakeRes()
+    await save.handler(
+      fakeReq(
+        'POST',
+        '/local-infer/save',
+        JSON.stringify({ engine: 'ninfer', config: { model: 'qwen3-35b' } }),
+      ),
+      res,
+    )
+    expect(res.status).toBe(200)
+    const stored = readConfig()
+    // A different config does not match the stored entry, so a new id is
+    // minted and the entry is prepended.
+    expect(stored.providers).toHaveLength(2)
+    expect(stored.providers[0]?.config).toEqual({ model: 'qwen3-35b' })
+    expect(stored.providers[0]?.id).not.toBe('p1')
+    expect(stored.providers[1]?.id).toBe('p1')
+  })
+
   it('carries the launch record over when a save updates the entry in place', async () => {
     // Editing a running provider's config must not drop the record the
     // restart re-link prices, so the save keeps the entry's launch record.
