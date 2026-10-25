@@ -34,10 +34,13 @@ jobs:
           version: 12.11.2
 
       # No pnpm cache: a poisoned cache entry must not reach npm publish.
+      # Node 24: trusted publishing requires the npm CLI >= 11.5.1 that
+      # Node 24 bundles. Node 22 ships npm 10.x, which cannot do the OIDC
+      # exchange and publishes anonymously, so the registry answers E404.
       - name: Setup Node.js
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22
+          node-version: 24
           registry-url: 'https://registry.npmjs.org'
           package-manager-cache: false
 
@@ -60,8 +63,5 @@ jobs:
           RELEASE_VERSION: ${{ inputs.version }}
         run: npx tsx scripts/release/git-release.ts "$RELEASE_VERSION"
 
-      # No NPM_TOKEN secret: the npm CLI detects the GitHub OIDC environment
-      # (id-token: write + registry-url above) and authenticates via the
-      # trusted publisher configured for this package on npmjs.com.
       - name: Publish to npm
         run: npm publish --provenance
