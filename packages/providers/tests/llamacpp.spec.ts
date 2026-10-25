@@ -4,7 +4,7 @@ import {
   LLAMACPP_MODEL_ARTIFACTS,
   LLAMACPP_PARAMETERS,
   llamaCppModelKey,
-} from '../src/llamacpp.ts'
+} from '../src/engines/llamacpp.ts'
 import type { ParameterSpec } from 'dsh-plugin-local-infer/core'
 
 // The same opener test the local-infer/behavior-first-description eslint rule

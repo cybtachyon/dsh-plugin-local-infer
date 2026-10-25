@@ -11,7 +11,7 @@
  * a model, not against the hardware alone.
  * @module dsh-plugin-local-infer/providers/guidelines
  */
-import { infernixDraftModelPath } from "./infernix.js";
+import { infernixDraftModelPath } from "./engines/infernix.js";
 /**
  * One pinned Host StateImage, in bytes. The NInfer measured figure for the
  * 27B artifact (195,897,344 B, the README's Host StateImage size), used as

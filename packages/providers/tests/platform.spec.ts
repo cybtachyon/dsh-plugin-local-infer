@@ -3,11 +3,9 @@ import {
   ENGINE_PLATFORM_DEFAULTS,
   enginePlatformDefaults,
 } from '../src/platform.ts'
-import {
-  LLAMACPP_DOCKER_IMAGE,
-  NINFER_DOCKER_IMAGE,
-  STRATA_DOCKER_IMAGE,
-} from '../src/adapters.ts'
+import { LLAMACPP_DOCKER_IMAGE } from '../src/engines/llamacppAdapter.ts'
+import { NINFER_DOCKER_IMAGE } from '../src/engines/ninferAdapter.ts'
+import { STRATA_DOCKER_IMAGE } from '../src/engines/strataAdapter.ts'
 import { engineBuildSteps } from '../src/acquire.ts'
 
 describe('engine platform defaults', () => {

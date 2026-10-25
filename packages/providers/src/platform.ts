@@ -6,11 +6,9 @@
  * @module dsh-plugin-local-infer/providers/platform
  */
 
-import {
-  LLAMACPP_DOCKER_IMAGE,
-  NINFER_DOCKER_IMAGE,
-  STRATA_DOCKER_IMAGE,
-} from './adapters.ts'
+import { LLAMACPP_DOCKER_IMAGE } from './engines/llamacppAdapter.ts'
+import { NINFER_DOCKER_IMAGE } from './engines/ninferAdapter.ts'
+import { STRATA_DOCKER_IMAGE } from './engines/strataAdapter.ts'
 import { engineBuildSteps } from './acquire.ts'
 
 /**

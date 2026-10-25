@@ -15,14 +15,12 @@ import type { Context } from '@deepseek-ai/cordis'
 // The service's `declare module` adds `localInfer` to the cordis Context; the
 // type import loads that augmentation without a runtime edge.
 import type { LocalInferService } from 'dsh-plugin-local-infer/service'
-import {
-  createNodeLifecycleHost,
-  HyperQwenAdapter,
-  InfernixAdapter,
-  LlamaCppAdapter,
-  NInferAdapter,
-  StrataAdapter,
-} from './adapters.ts'
+import { createNodeLifecycleHost } from './adapters.ts'
+import { HyperQwenAdapter } from './engines/hyperqwenAdapter.ts'
+import { InfernixAdapter } from './engines/infernixAdapter.ts'
+import { LlamaCppAdapter } from './engines/llamacppAdapter.ts'
+import { NInferAdapter } from './engines/ninferAdapter.ts'
+import { StrataAdapter } from './engines/strataAdapter.ts'
 import { createDshDebugLogger } from './debug.ts'
 import { ENGINE_DEP_PLANS } from './deps.ts'
 import { BUILTIN_GUIDELINES } from './guidelines.ts'
@@ -42,14 +40,14 @@ export {
   HYPERQWEN_PARAMETERS,
   KV_OPTIONS,
   SPEC_OPTIONS as HYPERQWEN_SPEC_OPTIONS,
-} from './hyperqwen.ts'
+} from './engines/hyperqwen.ts'
 export {
   CHAT_TEMPLATE_OPTIONS,
   DEVICE_PROFILE_OPTIONS,
   KV_DTYPE_OPTIONS,
   NINFER_PARAMETERS,
   SPEC_OPTIONS as NINFER_SPEC_OPTIONS,
-} from './ninfer.ts'
+} from './engines/ninfer.ts'
 export { NINFER_VRAM_MODELS, ninferVramModel } from './vram.ts'
 export { BUILTIN_GUIDELINES, HOST_STATE_IMAGE_BYTES } from './guidelines.ts'
 export { ENGINES } from './engines.ts'
@@ -76,14 +74,6 @@ export type { EnginePlatformDefaults } from './platform.ts'
 export { BUILTIN_PRESETS, PRESET_SOURCES, extractJsonBlock } from './presets.ts'
 export { DEFAULT_MODELS, defaultModelFor, defaultModelsForEngine } from './model-defaults.ts'
 export {
-  HyperQwenAdapter,
-  LLAMACPP_DOCKER_IMAGE,
-  NINFER_DOCKER_IMAGE,
-  NINFER_MODEL_ARTIFACTS,
-  NInferAdapter,
-  STRATA_DOCKER_IMAGE,
-  StrataAdapter,
-  LlamaCppAdapter,
   customArgEnv,
   customArgFlags,
   envFromSpecs,
@@ -91,14 +81,19 @@ export {
   nodeLifecycleHost,
   pollHealth,
 } from './adapters.ts'
-export type { NInferModelArtifact } from './adapters.ts'
+export { HyperQwenAdapter } from './engines/hyperqwenAdapter.ts'
+export { InfernixAdapter } from './engines/infernixAdapter.ts'
+export { LLAMACPP_DOCKER_IMAGE, LlamaCppAdapter } from './engines/llamacppAdapter.ts'
+export { NINFER_DOCKER_IMAGE, NINFER_MODEL_ARTIFACTS, NInferAdapter } from './engines/ninferAdapter.ts'
+export { STRATA_DOCKER_IMAGE, StrataAdapter } from './engines/strataAdapter.ts'
+export type { NInferModelArtifact } from './engines/ninferAdapter.ts'
 export {
   KV_CACHE_TYPE_OPTIONS,
   LLAMACPP_MODEL_ARTIFACTS,
   LLAMACPP_PARAMETERS,
   llamaCppModelKey,
-} from './llamacpp.ts'
-export type { LlamaCppModelArtifact } from './llamacpp.ts'
+} from './engines/llamacpp.ts'
+export type { LlamaCppModelArtifact } from './engines/llamacpp.ts'
 export {
   DFLASH2_CUSTOM_VALUE,
   DFLASH2_GATE_MESSAGE,
@@ -116,13 +111,13 @@ export {
   infernixDraftModelPath,
   infernixGetDownloads,
   infernixModelKey,
-} from './infernix.ts'
+} from './engines/infernix.ts'
 export type {
   InfernixDFlash2Model,
   InfernixModelArtifact,
   InfernixNgramVolume,
-} from './infernix.ts'
-export { STRATA_PARAMETERS } from './strata.ts'
+} from './engines/infernix.ts'
+export { STRATA_PARAMETERS } from './engines/strata.ts'
 
 /**
  * Mount the providers. The NInfer measured VramModels register here so the

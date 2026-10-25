@@ -1,18 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
   createNodeLifecycleHost,
-  HyperQwenAdapter,
-  InfernixAdapter,
-  INFERNIX_MODEL_ARTIFACTS,
-  LLAMACPP_DOCKER_IMAGE,
-  NINFER_DOCKER_IMAGE,
-  NINFER_MODEL_ARTIFACTS,
-  NInferAdapter,
-  STRATA_DOCKER_IMAGE,
-  StrataAdapter,
-  strataPreReadyState,
-  strataServedModelId,
-  LlamaCppAdapter,
   customArgEnv,
   customArgFlags,
   envFromSpecs,
@@ -20,9 +8,20 @@ import {
   nodeLifecycleHost,
   pollHealth,
 } from '../src/adapters.ts'
-import { NINFER_PARAMETERS } from '../src/ninfer.ts'
-import { HYPERQWEN_PARAMETERS } from '../src/hyperqwen.ts'
-import { LLAMACPP_PARAMETERS } from '../src/llamacpp.ts'
+import { HyperQwenAdapter } from '../src/engines/hyperqwenAdapter.ts'
+import { InfernixAdapter } from '../src/engines/infernixAdapter.ts'
+import { LLAMACPP_DOCKER_IMAGE, LlamaCppAdapter } from '../src/engines/llamacppAdapter.ts'
+import { NINFER_DOCKER_IMAGE, NINFER_MODEL_ARTIFACTS, NInferAdapter } from '../src/engines/ninferAdapter.ts'
+import {
+  STRATA_DOCKER_IMAGE,
+  StrataAdapter,
+  strataPreReadyState,
+  strataServedModelId,
+} from '../src/engines/strataAdapter.ts'
+import { HYPERQWEN_PARAMETERS } from '../src/engines/hyperqwen.ts'
+import { INFERNIX_MODEL_ARTIFACTS } from '../src/engines/infernix.ts'
+import { LLAMACPP_PARAMETERS } from '../src/engines/llamacpp.ts'
+import { NINFER_PARAMETERS } from '../src/engines/ninfer.ts'
 import type {
   CommandOutcome,
   FetchResult,

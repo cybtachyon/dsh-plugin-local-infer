@@ -9,11 +9,11 @@
  */
 
 import type { ParameterSpec } from 'dsh-plugin-local-infer/core'
-import { HYPERQWEN_PARAMETERS } from './hyperqwen.ts'
-import { INFERNIX_PARAMETERS } from './infernix.ts'
-import { LLAMACPP_PARAMETERS } from './llamacpp.ts'
-import { NINFER_PARAMETERS } from './ninfer.ts'
-import { STRATA_PARAMETERS } from './strata.ts'
+import { HYPERQWEN_PARAMETERS } from './engines/hyperqwen.ts'
+import { INFERNIX_PARAMETERS } from './engines/infernix.ts'
+import { LLAMACPP_PARAMETERS } from './engines/llamacpp.ts'
+import { NINFER_PARAMETERS } from './engines/ninfer.ts'
+import { STRATA_PARAMETERS } from './engines/strata.ts'
 
 export interface EngineInfo {
   id: string

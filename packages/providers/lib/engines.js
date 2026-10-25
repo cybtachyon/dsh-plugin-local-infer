@@ -7,11 +7,11 @@
  * here, never a rewire of the card.
  * @module dsh-plugin-local-infer/providers/engines
  */
-import { HYPERQWEN_PARAMETERS } from "./hyperqwen.js";
-import { INFERNIX_PARAMETERS } from "./infernix.js";
-import { LLAMACPP_PARAMETERS } from "./llamacpp.js";
-import { NINFER_PARAMETERS } from "./ninfer.js";
-import { STRATA_PARAMETERS } from "./strata.js";
+import { HYPERQWEN_PARAMETERS } from "./engines/hyperqwen.js";
+import { INFERNIX_PARAMETERS } from "./engines/infernix.js";
+import { LLAMACPP_PARAMETERS } from "./engines/llamacpp.js";
+import { NINFER_PARAMETERS } from "./engines/ninfer.js";
+import { STRATA_PARAMETERS } from "./engines/strata.js";
 /**
  * The engines the Web card offers, in the order the card lists them. NInfer,
  * Hyper-Qwen, Infernix, llama.cpp, and Strata all carry parameter surfaces

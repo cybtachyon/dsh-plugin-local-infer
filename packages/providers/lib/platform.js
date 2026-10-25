@@ -5,7 +5,9 @@
  * defaults are a data edit here, never a card rewire.
  * @module dsh-plugin-local-infer/providers/platform
  */
-import { LLAMACPP_DOCKER_IMAGE, NINFER_DOCKER_IMAGE, STRATA_DOCKER_IMAGE, } from "./adapters.js";
+import { LLAMACPP_DOCKER_IMAGE } from "./engines/llamacppAdapter.js";
+import { NINFER_DOCKER_IMAGE } from "./engines/ninferAdapter.js";
+import { STRATA_DOCKER_IMAGE } from "./engines/strataAdapter.js";
 import { engineBuildSteps } from "./acquire.js";
 // The local build command is the engine's first acquisition build step (the
 // cmake build the deploy step runs in the checkout), read through

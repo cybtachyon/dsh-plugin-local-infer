@@ -13,7 +13,7 @@
  */
 
 import type { Guideline } from 'dsh-plugin-local-infer/core'
-import { infernixDraftModelPath } from './infernix.ts'
+import { infernixDraftModelPath } from './engines/infernix.ts'
 
 /**
  * One pinned Host StateImage, in bytes. The NInfer measured figure for the

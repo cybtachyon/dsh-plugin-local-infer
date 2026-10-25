@@ -6,7 +6,7 @@ import {
   STRATA_TUNE_OPTIONS,
   STRATA_VISION_OPTIONS,
   strataModelKey,
-} from '../src/strata.ts'
+} from '../src/engines/strata.ts'
 
 describe('Strata parameter surface', () => {
   it('ships the strata launch flag surface, one spec per flag', () => {
