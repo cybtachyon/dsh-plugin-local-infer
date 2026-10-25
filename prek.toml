@@ -1,0 +1,17 @@
+# Configuration file for `prek`, a git hook framework written in Rust.
+# See https://prek.j178.dev for more information.
+#:schema https://www.schemastore.org/prek.json
+
+[[repos]]
+repo = "builtin"
+hooks = [
+    { id = "trailing-whitespace" },
+    { id = "end-of-file-fixer" },
+    { id = "check-added-large-files" },
+]
+
+[[repos]]
+repo = "local"
+hooks = [
+    { id = "jactionlint", name = "jactionlint (GitHub Actions workflows)", entry = "jactionlint", language = "system", files = "^\\.github/workflows/.*\\.ya?ml$", pass_filenames = false },
+]

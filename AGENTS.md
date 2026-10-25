@@ -132,7 +132,11 @@ Fetch these docs to answer questions about their covered topic.
   in `vitest.config.ts` (lines 90 / functions 93 / branches 78 / statements 90).
 - Lint the whole repo with `pnpm lint` (runs `eslint .`). This is the
   repo-wide lint gate; do not run `npx eslint` on a subset.
-- Lint GitHub Actions with `actionlint`.
+- Lint GitHub Actions with `jactionlint` (installed via mise; run
+  `mise x jactionlint@2.3.0 -- jactionlint` to check the repo, or pass
+  explicit workflow file paths; a bare `jactionlint` checks the nearest
+  `.github/workflows` directory). A `jactionlint` prek hook in `prek.toml`
+  runs it when workflow files are staged.
 - For testing GitHub Actions Workflows, use the local docker image
   `w-act-latest:chrome` = `catthehacker/ubuntu:act-latest` + Google Chrome
   stable 153:

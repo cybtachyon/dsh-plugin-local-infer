@@ -8,30 +8,37 @@ on:
         required: true
         type: string
 
-permissions:
-  contents: write
-  id-token: write
+# Least privilege at the workflow level; the single job grants what it needs.
+permissions: {}
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      id-token: write
     steps:
+      # persist-credentials: false keeps the token out of the git config so
+      # later steps cannot publish it; git-release.ts re-authenticates the
+      # origin remote itself from the GITHUB_TOKEN env var.
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
         with:
           version: 12.11.2
 
+      # No pnpm cache: a poisoned cache entry must not reach npm publish.
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
-          cache: 'pnpm'
           package-manager-cache: false
 
       - name: Install dependencies
@@ -40,13 +47,18 @@ jobs:
       - name: Build
         run: pnpm run build
 
+      # inputs.version is user-chosen and unvalidated; pass it through an
+      # environment variable so it cannot inject shell syntax into the run.
       - name: Bump versions
-        run: npx tsx scripts/release/bump-versions.ts "${{ inputs.version }}"
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: npx tsx scripts/release/bump-versions.ts "$RELEASE_VERSION"
 
       - name: Commit, tag, and push
-        run: npx tsx scripts/release/git-release.ts "${{ inputs.version }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: npx tsx scripts/release/git-release.ts "$RELEASE_VERSION"
 
       # No NPM_TOKEN secret: the npm CLI detects the GitHub OIDC environment
       # (id-token: write + registry-url above) and authenticates via the

@@ -2,8 +2,11 @@
  * Commit the staged release, tag it, and push both to `origin`. Run via
  * `npx tsx scripts/release/git-release.ts <version>`.
  *
- * Auth uses the `GITHUB_TOKEN` that `actions/checkout` embeds in the `origin`
- * remote, so `git push` works without a separate credential.
+ * In CI, `actions/checkout` runs with `persist-credentials: false`, so the
+ * `origin` remote carries no token. When `GITHUB_TOKEN` and
+ * `GITHUB_REPOSITORY` are set, the remote is re-pointed at a URL that embeds
+ * the token so `git push` authenticates. Locally, the existing `origin`
+ * credentials are used as-is.
  */
 import { execSync } from 'node:child_process';
 
@@ -16,6 +19,12 @@ if (!version) {
 function run(cmd: string): void {
   console.log(`$ ${cmd}`);
   execSync(cmd, { stdio: 'inherit' });
+}
+
+// Re-point origin at a URL that carries the token. The shell expands the
+// env vars, so the echoed command line never shows the token value.
+if (process.env.GITHUB_TOKEN && process.env.GITHUB_REPOSITORY) {
+  run('git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"');
 }
 
 run('git config user.name "github-actions[bot]"');
