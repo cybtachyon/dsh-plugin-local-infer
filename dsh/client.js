@@ -149,6 +149,7 @@ window.__ModuleLoader__.load({
         registerNeedsSave: 'Save the Provider configuration before registering with DSH.',
         logs: 'Logs',
         logLocation: 'Log location',
+        resize: 'resize',
         entryLaunch: 'Launch',
         entryStop: 'Stop',
         entryLogs: 'Logs',
@@ -284,6 +285,7 @@ window.__ModuleLoader__.load({
         registerNeedsSave: '注册到 DSH 之前请先保存该提供方配置。',
         logs: '日志',
         logLocation: '日志位置',
+        resize: '调整大小',
         entryLaunch: '启动',
         entryStop: '停止',
         entryLogs: '日志',
@@ -2085,6 +2087,23 @@ window.__ModuleLoader__.load({
         // The log-file location the card's log-location field edits. Seeded
         // from the summary's stored template on load; a Save persists it.
         var logPathState = react.useState('');
+        // The Logs section's textarea height in px, resized by the diagonal
+        // chevron drag handle in the section's bottom-right corner.
+        var logsHeightState = react.useState(96);
+        // The Logs section's auto-scroll mode. 'fresh' is the pane just
+        // opened: the first content render scrolls to the bottom and arms
+        // 'scrolling'. 'scrolling' pins the view to the bottom on content
+        // updates. 'manual' means the user scrolled up, so content updates
+        // leave the view where the user put it. A scroll to the very bottom
+        // re-arms 'scrolling'.
+        var logsScrollModeState = react.useState('fresh');
+        // The Logs textarea element, so the auto-scroll effect and the scroll
+        // handler read the live scroll metrics.
+        var logsTextareaRef = react.useRef(null);
+        // The in-flight chevron drag: the pointer's starting Y and the height
+        // it started from, so a move computes the new height from a stable
+        // base instead of a stale render closure.
+        var logsDragRef = react.useRef(null);
         // The per-entry launch state: a map from provider id to the entry's
         // launch-state-machine state (the rebuild phases 'prereqs', 'download',
         // 'build', 'launch', plus 'running' and 'failed') and the start time a
@@ -2131,6 +2150,13 @@ window.__ModuleLoader__.load({
         var providerFormMode = providerFormModeState[0];
         var cachedDraft = cachedDraftState[0];
         var logPath = logPathState[0];
+        var logsHeight = logsHeightState[0];
+        var logsScrollMode = logsScrollModeState[0];
+        // The Logs section's displayed text: the streamed Get buffer while a
+        // run is in flight, else the persisted last-run logs the summary
+        // carries. One value the auto-scroll effect and the textarea share.
+        var displayedLogs =
+          getLogs !== null ? getLogs : data !== null && data.lastLogs ? data.lastLogs : '';
         var entryLaunch = entryLaunchState[0];
         // The title-bar Launch/Stop control mirrors the edited provider's
         // per-entry launch state, so the entry's Launch button and the form's
@@ -2170,6 +2196,69 @@ window.__ModuleLoader__.load({
         react.useEffect(() => {
           draftRef.current = draft;
         }, [draft]);
+
+        // The Logs auto-scroll: while the mode is 'fresh' (the pane just
+        // opened) or 'scrolling', a content update pins the view to the
+        // bottom. The first render scrolls and arms 'scrolling'; a manual
+        // scroll up parks the mode at 'manual', so later updates leave the
+        // view where the user put it.
+        react.useEffect(() => {
+          var el = logsTextareaRef.current;
+          if (el === null) {
+            return;
+          }
+          if (logsScrollMode === 'fresh' || logsScrollMode === 'scrolling') {
+            el.scrollTop = el.scrollHeight;
+            if (logsScrollMode === 'fresh') {
+              logsScrollModeState[1]('scrolling');
+            }
+          }
+        }, [displayedLogs, logsScrollMode]);
+
+        // The Logs scroll handler: a scroll to the very bottom re-arms
+        // auto-scroll ('scrolling'); any other position parks the mode at
+        // 'manual', so content updates stop pinning the view. The 4px
+        // tolerance absorbs sub-pixel rounding at the end of the range.
+        var onLogsScroll = react.useCallback(() => {
+          var el = logsTextareaRef.current;
+          if (el === null) {
+            return;
+          }
+          var atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 4;
+          logsScrollModeState[1](atBottom ? 'scrolling' : 'manual');
+        }, []);
+
+        // The Logs resize handle: a pointerdown on the chevron starts a
+        // vertical drag. A move computes the new height from the stable
+        // starting base (drag up shrinks the section to the default height,
+        // drag down expands it), clamped to a readable range. The window
+        // listeners read the drag base from the ref, so a re-render mid-drag
+        // never resets it.
+        var onLogsResizeStart = react.useCallback(
+          (event) => {
+            event.preventDefault();
+            logsDragRef.current = { startClientY: event.clientY, startHeight: logsHeight };
+            var onMove = (moveEvent) => {
+              var drag = logsDragRef.current;
+              if (drag === null) {
+                return;
+              }
+              moveEvent.preventDefault();
+              // Drag down (clientY grows) expands, drag up shrinks to the
+              // default height, so the delta is the pointer's downward travel.
+              var delta = moveEvent.clientY - drag.startClientY;
+              logsHeightState[1](Math.max(96, Math.min(480, drag.startHeight + delta)));
+            };
+            var onUp = () => {
+              logsDragRef.current = null;
+              window.removeEventListener('pointermove', onMove);
+              window.removeEventListener('pointerup', onUp);
+            };
+            window.addEventListener('pointermove', onMove);
+            window.addEventListener('pointerup', onUp);
+          },
+          [logsHeight],
+        );
 
         var fetchSummary = react.useCallback(
           (engine, config) => {
@@ -4211,33 +4300,85 @@ window.__ModuleLoader__.load({
             },
             primitives,
           ),
-          // The Logs section: the last run's captured output in a fixed-height
-          // read-only text area (a launch fills it; the card never edits it),
-          // and the log-file location the launch writes to. The location field
-          // edits the template the route resolves and writes on the next run.
-          // While a Get is in flight the streamed buffer wins: the git sync,
+          // The Logs section: the last run's captured output in a read-only
+          // text area (a launch fills it; the card never edits it), and the
+          // log-file location the launch writes to. The location field edits
+          // the template the route resolves and writes on the next run. While
+          // a Get is in flight the streamed buffer wins: the git sync,
           // dependency, and build output appends there as it lands.
+          //
+          // The textarea auto-scrolls to the bottom while the scroll mode is
+          // 'fresh' (the pane just opened) or 'scrolling'; a manual scroll up
+          // parks the mode at 'manual' so updates stop moving the view, and a
+          // scroll back to the bottom re-arms 'scrolling'. The diagonal
+          // chevron in the section's bottom-right corner drags the height
+          // vertically only.
           react.createElement(
             'div',
             { style: { marginTop: 8 } },
             react.createElement('div', { style: LABEL_STYLE }, t.logs),
-            react.createElement('textarea', {
-              style: {
-                width: '100%',
-                height: 96,
-                resize: 'none',
-                fontFamily: 'monospace',
-                fontSize: 11,
-                padding: 6,
-                border: '1px solid rgba(127,127,127,0.25)',
-                borderRadius: 6,
-                color: 'inherit',
-                background: 'transparent',
-              },
-              value: getLogs !== null ? getLogs : data.lastLogs || '',
-              readOnly: true,
-              'aria-label': t.logs,
-            }),
+            react.createElement(
+              'div',
+              { style: { position: 'relative' } },
+              react.createElement('textarea', {
+                ref: logsTextareaRef,
+                style: {
+                  width: '100%',
+                  height: logsHeight,
+                  boxSizing: 'border-box',
+                  resize: 'none',
+                  fontFamily: 'monospace',
+                  fontSize: 11,
+                  padding: 6,
+                  border: '1px solid rgba(127,127,127,0.25)',
+                  borderRadius: 6,
+                  color: 'inherit',
+                  background: 'transparent',
+                },
+                value: displayedLogs,
+                readOnly: true,
+                onScroll: onLogsScroll,
+                'aria-label': t.logs,
+              }),
+              // The diagonal resize chevron: a DSH primitives down chevron
+              // rotated -45 degrees points into the bottom-right corner and
+              // reads as a resize handle. Dragging it vertically resizes the
+              // section; a host without the seed keeps the native corner glyph.
+              react.createElement(
+                'div',
+                {
+                  style: {
+                    position: 'absolute',
+                    bottom: 0,
+                    right: 0,
+                    width: 16,
+                    height: 16,
+                    display: 'flex',
+                    alignItems: 'flex-end',
+                    justifyContent: 'flex-end',
+                    cursor: 'ns-resize',
+                    color: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))',
+                    userSelect: 'none',
+                    touchAction: 'none',
+                  },
+                  onPointerDown: onLogsResizeStart,
+                  role: 'button',
+                  'aria-label': t.logs + ' ' + t.resize,
+                },
+                primitives && typeof primitives.IconChevronDownOutlineRegular === 'function'
+                  ? react.createElement(
+                      'span',
+                      {
+                        style: {
+                          display: 'inline-flex',
+                          transform: 'rotate(-45deg)',
+                        },
+                      },
+                      react.createElement(primitives.IconChevronDownOutlineRegular, { size: 12 }),
+                    )
+                  : '\u231F',
+              ),
+            ),
             react.createElement(
               'div',
               { style: ROW_STYLE },

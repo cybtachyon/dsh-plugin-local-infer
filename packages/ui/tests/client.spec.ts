@@ -304,6 +304,28 @@ describe('dsh/client.js browser carrier', () => {
     expect(source).toContain('autoRebuild: autoRebuild')
   })
 
+  it('pins the Logs auto-scroll and the vertical resize handle', () => {
+    const source = readFileSync(fileURLToPath(clientPath), 'utf8')
+    // The Logs text area auto-scrolls to the bottom while the scroll mode is
+    // 'fresh' (the pane just opened) or 'scrolling'; a manual scroll up parks
+    // the mode at 'manual' so content updates stop moving the view, and a
+    // scroll back to the bottom re-arms 'scrolling'. The mode and the shared
+    // displayed value drive the effect and the textarea.
+    expect(source).toContain('logsScrollModeState')
+    expect(source).toContain("logsScrollMode === 'fresh'")
+    expect(source).toContain("atBottom ? 'scrolling' : 'manual'")
+    expect(source).toContain('onLogsScroll')
+    expect(source).toContain('displayedLogs')
+    // The diagonal chevron in the section's bottom-right corner drags the
+    // height vertically only, through a pointer drag that clamps the height.
+    // The glyph is the primitives seed's chevron rotated 45 degrees; a host
+    // without the seed keeps the native corner glyph.
+    expect(source).toContain('logsHeightState')
+    expect(source).toContain('onLogsResizeStart')
+    expect(source).toContain('IconChevronDownOutlineRegular')
+    expect(source).toContain('ns-resize')
+  })
+
   it('pins the title-bar Launch control mirroring the edited provider entry state', () => {
     const source = readFileSync(fileURLToPath(clientPath), 'utf8')
     // While a provider is being edited, the title-bar Launch/Stop control reads
