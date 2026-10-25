@@ -63,5 +63,16 @@ jobs:
           RELEASE_VERSION: ${{ inputs.version }}
         run: npx tsx scripts/release/git-release.ts "$RELEASE_VERSION"
 
+      # Publishes via the trusted publisher (tokenless OIDC). Re-running a
+      # release whose version is already live must not fail: npm rejects a
+      # second PUT of the same version with E403, so skip the publish when
+      # the version is already in the registry.
       - name: Publish to npm
-        run: npm publish --provenance
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          if npm view "dsh-plugin-local-infer@${RELEASE_VERSION}" version >/dev/null 2>&1; then
+            echo "dsh-plugin-local-infer@${RELEASE_VERSION} is already published; skipping."
+            exit 0
+          fi
+          npm publish --provenance
