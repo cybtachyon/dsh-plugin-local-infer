@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-local-infer-providers",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "description": "Concrete providers for the dsh local-inference plugin: the ninfer, hyperqwen, llamacpp, and strata engine adapters, the NInfer VramModel, the built-in presets, the built-in guidelines, and the per-OS SystemDep install command data. Each registers itself with ctx.localInfer.",
   "keywords": [
     "dsh",

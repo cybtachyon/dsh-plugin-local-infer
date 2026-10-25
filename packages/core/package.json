@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-local-infer-core",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "description": "Pure, framework-free domain model for the dsh local-inference plugin: ParameterSpec, HardwareProfile, EngineAdapter, VramEstimator, GuidelineEngine, DefaultsResolver, DshModelRegistrar, and SystemDepProvisioner primitives shared by every engine and model",
   "keywords": [
     "dsh",

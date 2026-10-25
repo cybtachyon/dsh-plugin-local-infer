@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-local-infer-tool",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "description": "Model-facing tools for the dsh local-inference plugin: local_infer_estimate, local_infer_launch, local_infer_status, and local_infer_register, each on its own timeout budget, plus the system-prompt section that tells the agent when to use them",
   "keywords": [
     "dsh",
