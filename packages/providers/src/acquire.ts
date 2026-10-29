@@ -22,6 +22,9 @@ export interface EngineSource {
   repo: string
   branch: string
   buildSteps: readonly string[]
+  // The Windows variant of the build steps. A Windows host reads this when
+  // present (the vcpkg route); the base list is the Linux/WSL list.
+  windowsBuildSteps?: readonly string[]
 }
 
 /**
@@ -44,6 +47,14 @@ export const ENGINE_SOURCES: Record<string, EngineSource> = {
     branch: 'master',
     buildSteps: [
       'cmake -S {dir} -B {dir}/build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build {dir}/build -j',
+    ],
+    // The Windows route is the ninfer-all fork's vcpkg build: the manifest
+    // pulls the dev libraries, then the engine's own build-native.bat
+    // configures and builds. The step cds into the checkout first (the {dir}
+    // placeholder), because vcpkg install and the relative script path both
+    // resolve against the checkout root.
+    windowsBuildSteps: [
+      'cd {dir} && vcpkg install && .\\scripts\\build-native.bat configure && .\\scripts\\build-native.bat build',
     ],
   },
   hyperqwen: {
@@ -100,11 +111,21 @@ export function engineSource(engineId: string): EngineSource | undefined {
 }
 
 /**
- * engineBuildSteps reads the build steps an engine runs in its checkout, so
- * the adapter's deploy step and the Get build step share one list.
+ * engineBuildSteps reads the build steps an engine runs in its checkout for an
+ * OS, so the adapter's deploy step and the Get build step share one list. A
+ * Windows host reads the engine's `windowsBuildSteps` when present and falls
+ * back to the base list when it is not; every other OS reads the base list.
  */
-export function engineBuildSteps(engineId: string): readonly string[] {
-  return ENGINE_SOURCES[engineId]?.buildSteps ?? []
+export function engineBuildSteps(
+  engineId: string,
+  os: 'linux' | 'windows' | 'macos' = 'linux',
+): readonly string[] {
+  const source = ENGINE_SOURCES[engineId]
+  if (source === undefined) return []
+  if (os === 'windows' && source.windowsBuildSteps !== undefined) {
+    return source.windowsBuildSteps
+  }
+  return source.buildSteps
 }
 
 /**
@@ -226,6 +247,10 @@ export interface SyncRebuildRequest {
   // rebase of a checkout that was behind), so the caller can report the
   // "Building..." phase while the build runs, not after it completes.
   onBuildStart?: () => void
+  // The host OS the build steps pick for: a Windows host reads the engine's
+  // Windows build steps (the vcpkg route) when the user carries no build-
+  // command override. Absent reads as Linux.
+  os?: 'linux' | 'windows' | 'macos'
 }
 
 /**
@@ -394,7 +419,7 @@ export async function syncAndRebuildEngine(
     const steps =
       buildCommands !== undefined
         ? [`cd ${directory} && ${buildCommands}`]
-        : source.buildSteps
+        : engineBuildSteps(request.engineId, request.os ?? 'linux')
     // Report the build phase before the first step runs, so the card's button
     // reads "Building..." while the build is in flight, not after it completes.
     request.onBuildStart?.()
@@ -445,6 +470,7 @@ export async function buildEngineRepo(
   directory: string,
   log: AcquireLog,
   buildCommands?: string,
+  os: 'linux' | 'windows' | 'macos' = 'linux',
 ): Promise<EngineStepResult> {
   const source = engineSource(engineId)
   if (source === undefined) {
@@ -452,10 +478,12 @@ export async function buildEngineRepo(
   }
   // The user's local build command (the card's Build commands field) overrides
   // the engine's default build steps: it runs in the checkout, so it is wrapped
-  // with a cd into the directory. Absent falls back to the engine's steps.
+  // with a cd into the directory. Absent falls back to the engine's steps for
+  // the host OS (the Windows vcpkg route on a Windows host).
   const commands =
     buildCommands !== undefined && buildCommands.trim() !== '' ? buildCommands : undefined
-  const steps = commands !== undefined ? [`cd ${directory} && ${commands}`] : source.buildSteps
+  const steps =
+    commands !== undefined ? [`cd ${directory} && ${commands}`] : engineBuildSteps(engineId, os)
   if (steps.length === 0) {
     log(`no local build steps for ${engineId}\n`)
     return { ok: true }

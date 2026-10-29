@@ -25,7 +25,7 @@ import { Service } from '@deepseek-ai/cordis';
 // Relative, not the root package subpath: a self-referencing bare specifier
 // only resolves when the package sits inside a node_modules tree, so a
 // local-path or pnpm-linked install of this repo would fail the import.
-import { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, buildModelEntry, detectHardware as detectHardwareFromProbes, detectPackageManager, evaluateGuidelines, estimateVram, hfChatTemplateCommand, hfDownloadCommand, isGpuBusy, LLM_PI_AI_NAMESPACE, matchLaunchSignature, modelGuidelines, reLinkRecord, computeProviderStatuses, modelRowsFrom, parseNvidiaSmiGpu, parseNvidiaSmiGpuUsage, presetFromFetch, providerRegistrationOps, providerRemovalOps, removeModelRow, renderInstallString, resolveDefaults as resolveDefaultsFromPresets, resolveOsReserve, runInstall, } from '../../core/lib/index.js';
+import { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, buildModelEntry, detectHardware as detectHardwareFromProbes, detectPackageManager, evaluateGuidelines, estimateVram, hfChatTemplateCommand, hfDownloadCommand, isGpuBusy, LLM_PI_AI_NAMESPACE, matchLaunchSignature, modelGuidelines, reLinkRecord, computeProviderStatuses, modelRowsFrom, parseNvidiaSmiGpu, parseNvidiaSmiGpuUsage, planDepsForOs, presetFromFetch, providerRegistrationOps, providerRemovalOps, removeModelRow, renderInstallString, resolveDefaults as resolveDefaultsFromPresets, resolveOsReserve, runInstall, } from '../../core/lib/index.js';
 /**
  * Local-inference failure. Extends Error with a stable `code`
  * (`LOCAL_INFER_CONFLICT`, `LOCAL_INFER_INVALID_ENGINE`,
@@ -458,7 +458,13 @@ export class LocalInfer extends Service {
         if (adapter !== undefined && typeof adapter.systemDeps === 'function') {
             return adapter.systemDeps(buildMode, hw);
         }
-        return this.depPlanRegistry.get(engineId)?.[buildMode] ?? [];
+        const plan = this.depPlanRegistry.get(engineId);
+        if (plan === undefined)
+            return [];
+        // The plan's base lists are the Linux/WSL lists; a Windows host reads the
+        // plan's windows variant for the mode when present, so the System
+        // dependencies section shows the winget toolchain on Windows.
+        return planDepsForOs(plan, buildMode, hw.os);
     }
     /**
      * installString renders the copy/paste block for the resolved dep plan,
@@ -938,7 +944,10 @@ export class LocalInfer extends Service {
         const injected = options?.cliPath;
         if (injected !== undefined && injected.trim() !== '')
             return injected;
-        const which = await runCommand('which', ['hf']);
+        // The presence probe is `which` on Linux/macOS and `where` on Windows, so
+        // an installed hf CLI is found on every host.
+        const probe = platform() === 'win32' ? 'where' : 'which';
+        const which = await runCommand(probe, ['hf']);
         if (which.ok && which.stdout.trim() !== '')
             return which.stdout.trim();
         return null;
@@ -1044,7 +1053,9 @@ export class LocalInfer extends Service {
         const env = process.env.MODSEARCH_CLI;
         if (env !== undefined && env.trim() !== '')
             return env;
-        const which = await runCommand('which', ['modsearch']);
+        // The presence probe is `which` on Linux/macOS and `where` on Windows.
+        const probe = platform() === 'win32' ? 'where' : 'which';
+        const which = await runCommand(probe, ['modsearch']);
         if (which.ok && which.stdout.trim() !== '')
             return which.stdout.trim();
         return null;
@@ -1519,12 +1530,14 @@ async function probeDocker() {
     return result.ok;
 }
 /**
- * probePackageManager checks which of the four package-manager binaries exist
- * on the host. `which` is a read-only probe, so each answer is a plain
- * presence flag the pure detectPackageManager mapping turns into the winner.
+ * probePackageManager checks whether a package-manager binary exists on the
+ * host. The probe is `which` on Linux and macOS and `where` on Windows (the
+ * OS's own presence probe), so each answer is a plain presence flag the pure
+ * detectPackageManager mapping turns into the winner.
  */
-async function probePackageManager(binary) {
-    const result = await runCommand('which', [binary]);
+async function probePackageManager(binary, os) {
+    const probe = os === 'windows' ? 'where' : 'which';
+    const result = await runCommand(probe, [binary]);
     return result.ok;
 }
 /**
@@ -1541,13 +1554,14 @@ export async function runHardwareProbes() {
         darwin: 'macos',
     };
     const os = osMap[platform()] ?? 'linux';
-    const [gpu, dockerAvailable, apt, dnf, pacman, brew] = await Promise.all([
+    const [gpu, dockerAvailable, apt, dnf, pacman, brew, winget] = await Promise.all([
         probeGpu(),
         probeDocker(),
-        probePackageManager('apt-get'),
-        probePackageManager('dnf'),
-        probePackageManager('pacman'),
-        probePackageManager('brew'),
+        probePackageManager('apt-get', os),
+        probePackageManager('dnf', os),
+        probePackageManager('pacman', os),
+        probePackageManager('brew', os),
+        probePackageManager('winget', os),
     ]);
     return {
         os,
@@ -1556,7 +1570,7 @@ export async function runHardwareProbes() {
         wsl2: os === 'linux' && release().toLowerCase().includes('wsl'),
         hostRamGiB: totalmem() / 2 ** 30,
         gpu,
-        packageManager: detectPackageManager({ os, apt, dnf, pacman, brew }) ?? null,
+        packageManager: detectPackageManager({ os, apt, dnf, pacman, brew, winget }) ?? null,
     };
 }
 export default LocalInfer;

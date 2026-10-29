@@ -41,6 +41,21 @@ describe('engine platform defaults', () => {
     expect(enginePlatformDefaults('ninfer')).toEqual(ENGINE_PLATFORM_DEFAULTS.ninfer)
   })
 
+  it('seeds the Windows build command from the engine Windows build steps', () => {
+    expect(enginePlatformDefaults('ninfer', 'windows').defaultBuildCommand).toBe(
+      engineBuildSteps('ninfer', 'windows')[0],
+    )
+    expect(enginePlatformDefaults('ninfer', 'windows').defaultBuildCommand).toContain('vcpkg install')
+    // The docker tag is OS-independent and rides the registered entry.
+    expect(enginePlatformDefaults('ninfer', 'windows').defaultDockerTag).toBe(NINFER_DOCKER_IMAGE)
+  })
+
+  it('keeps the Linux build command for a Linux host', () => {
+    expect(enginePlatformDefaults('ninfer', 'linux').defaultBuildCommand).toBe(
+      engineBuildSteps('ninfer', 'linux')[0],
+    )
+  })
+
   it('reads an empty object for an unregistered engine', () => {
     expect(enginePlatformDefaults('no-such-engine')).toEqual({})
   })

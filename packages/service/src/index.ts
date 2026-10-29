@@ -48,6 +48,7 @@ import {
   modelRowsFrom,
   parseNvidiaSmiGpu,
   parseNvidiaSmiGpuUsage,
+  planDepsForOs,
   presetFromFetch,
   providerRegistrationOps,
   providerRemovalOps,
@@ -616,7 +617,12 @@ export class LocalInfer extends Service implements LocalInferService {
     if (adapter !== undefined && typeof adapter.systemDeps === 'function') {
       return adapter.systemDeps(buildMode, hw)
     }
-    return this.depPlanRegistry.get(engineId)?.[buildMode] ?? []
+    const plan = this.depPlanRegistry.get(engineId)
+    if (plan === undefined) return []
+    // The plan's base lists are the Linux/WSL lists; a Windows host reads the
+    // plan's windows variant for the mode when present, so the System
+    // dependencies section shows the winget toolchain on Windows.
+    return planDepsForOs(plan, buildMode, hw.os)
   }
 
   /**
@@ -1139,7 +1145,10 @@ export class LocalInfer extends Service implements LocalInferService {
   async hfCliAvailable(options?: HfCliOptions): Promise<string | null> {
     const injected = options?.cliPath
     if (injected !== undefined && injected.trim() !== '') return injected
-    const which = await runCommand('which', ['hf'])
+    // The presence probe is `which` on Linux/macOS and `where` on Windows, so
+    // an installed hf CLI is found on every host.
+    const probe = platform() === 'win32' ? 'where' : 'which'
+    const which = await runCommand(probe, ['hf'])
     if (which.ok && which.stdout.trim() !== '') return which.stdout.trim()
     return null
   }
@@ -1251,7 +1260,9 @@ export class LocalInfer extends Service implements LocalInferService {
     if (cliPath !== undefined && cliPath.trim() !== '') return cliPath
     const env = process.env.MODSEARCH_CLI
     if (env !== undefined && env.trim() !== '') return env
-    const which = await runCommand('which', ['modsearch'])
+    // The presence probe is `which` on Linux/macOS and `where` on Windows.
+    const probe = platform() === 'win32' ? 'where' : 'which'
+    const which = await runCommand(probe, ['modsearch'])
     if (which.ok && which.stdout.trim() !== '') return which.stdout.trim()
     return null
   }
@@ -1763,12 +1774,14 @@ async function probeDocker(): Promise<boolean> {
 }
 
 /**
- * probePackageManager checks which of the four package-manager binaries exist
- * on the host. `which` is a read-only probe, so each answer is a plain
- * presence flag the pure detectPackageManager mapping turns into the winner.
+ * probePackageManager checks whether a package-manager binary exists on the
+ * host. The probe is `which` on Linux and macOS and `where` on Windows (the
+ * OS's own presence probe), so each answer is a plain presence flag the pure
+ * detectPackageManager mapping turns into the winner.
  */
-async function probePackageManager(binary: string): Promise<boolean> {
-  const result = await runCommand('which', [binary])
+async function probePackageManager(binary: string, os: 'linux' | 'windows' | 'macos'): Promise<boolean> {
+  const probe = os === 'windows' ? 'where' : 'which'
+  const result = await runCommand(probe, [binary])
   return result.ok
 }
 
@@ -1786,13 +1799,14 @@ export async function runHardwareProbes(): Promise<HardwareProbes> {
     darwin: 'macos',
   }
   const os = osMap[platform()] ?? 'linux'
-  const [gpu, dockerAvailable, apt, dnf, pacman, brew] = await Promise.all([
+  const [gpu, dockerAvailable, apt, dnf, pacman, brew, winget] = await Promise.all([
     probeGpu(),
     probeDocker(),
-    probePackageManager('apt-get'),
-    probePackageManager('dnf'),
-    probePackageManager('pacman'),
-    probePackageManager('brew'),
+    probePackageManager('apt-get', os),
+    probePackageManager('dnf', os),
+    probePackageManager('pacman', os),
+    probePackageManager('brew', os),
+    probePackageManager('winget', os),
   ])
   return {
     os,
@@ -1801,7 +1815,7 @@ export async function runHardwareProbes(): Promise<HardwareProbes> {
     wsl2: os === 'linux' && release().toLowerCase().includes('wsl'),
     hostRamGiB: totalmem() / 2 ** 30,
     gpu,
-    packageManager: detectPackageManager({ os, apt, dnf, pacman, brew }) ?? null,
+    packageManager: detectPackageManager({ os, apt, dnf, pacman, brew, winget }) ?? null,
   }
 }
 

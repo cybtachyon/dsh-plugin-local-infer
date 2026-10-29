@@ -1,13 +1,42 @@
 /**
+ * planDepsForOs reads the dep list a plan carries for a build mode on an OS.
+ * A Windows host reads the plan's `windows` variant for the mode when present
+ * and falls back to the base list when it is not; every other OS reads the
+ * base list. A mode the plan does not carry (a binary list for a non-Strata
+ * engine) reads as an empty list.
+ */
+export function planDepsForOs(plan, buildMode, os) {
+    if (os === 'windows' && plan.windows !== undefined) {
+        return plan.windows[buildMode] ?? plan[buildMode] ?? [];
+    }
+    return plan[buildMode] ?? [];
+}
+/**
+ * osLabel is the friendly OS name the install string's header and the card's
+ * System dependencies section show: WSL on a WSL2 kernel, Windows on Windows,
+ * OSX on macOS, and Linux on every other Linux host.
+ */
+export function osLabel(hw) {
+    if (hw.os === 'windows')
+        return 'Windows';
+    if (hw.os === 'macos')
+        return 'OSX';
+    return hw.wsl2 === true ? 'WSL' : 'Linux';
+}
+/**
  * detectPackageManager picks the single package manager the install commands
- * key against, from the which-probe results. macOS keys on brew. Linux tries
- * the distro-native manager in the order the plan lists them (apt, dnf,
- * pacman); a distro that ships two keeps the first. Windows has no command
- * set yet and reads as undetected, which the renderer degrades to.
+ * key against, from the which-probe results. macOS keys on brew. Windows keys
+ * on winget, the package manager that ships with the OS. Linux tries the
+ * distro-native manager in the order the plan lists them (apt, dnf, pacman);
+ * a distro that ships two keeps the first. A host whose manager probe reads
+ * absent reads as undetected, which the renderer degrades to.
  */
 export function detectPackageManager(probes) {
     if (probes.os === 'macos') {
         return probes.brew ? 'brew' : undefined;
+    }
+    if (probes.os === 'windows') {
+        return probes.winget ? 'winget' : undefined;
     }
     if (probes.os === 'linux') {
         if (probes.apt)
@@ -46,7 +75,7 @@ export async function checkDeps(deps, hw) {
  * in. It is the order the plan lists them, so the block the user's host
  * would have picked sits at the top.
  */
-const MANAGER_ORDER = ['apt', 'dnf', 'pacman', 'brew'];
+const MANAGER_ORDER = ['apt', 'dnf', 'pacman', 'brew', 'winget'];
 /**
  * renderInstallString emits the copy/paste block for the user's detected OS
  * and package manager, mirroring the qwen-ninfer header: the apt and CUDA-
@@ -59,7 +88,7 @@ const MANAGER_ORDER = ['apt', 'dnf', 'pacman', 'brew'];
 export function renderInstallString(deps, hw) {
     const pm = hw.packageManager;
     const lines = [];
-    lines.push(`# System dependencies on ${hw.os}`);
+    lines.push(`# System dependencies on ${osLabel(hw)}`);
     if (pm === undefined) {
         lines.push('# No package manager detected; blocks are grouped by manager.');
     }

@@ -490,9 +490,10 @@ describe('ctx.localInfer dep provisioning', () => {
     const profile = await ctx.localInfer.detectHardware()
     // The probe reads the real host, so the field is either a known manager or
     // absent, never an unknown value.
-    expect(profile.packageManager === undefined || ['apt', 'dnf', 'pacman', 'brew'].includes(profile.packageManager)).toBe(
-      true,
-    )
+    expect(
+      profile.packageManager === undefined ||
+        ['apt', 'dnf', 'pacman', 'brew', 'winget'].includes(profile.packageManager),
+    ).toBe(true)
     const probes = await runHardwareProbes()
     expect(probes.packageManager === undefined || probes.packageManager === null || typeof probes.packageManager === 'string').toBe(
       true,

@@ -86,6 +86,13 @@ describe('ENGINE_SOURCES', () => {
     expect(engineBuildSteps('nope')).toEqual([])
   })
 
+  it('reads the Windows build steps for a Windows host and the base list otherwise', () => {
+    expect(engineBuildSteps('ninfer', 'windows')).toEqual(ENGINE_SOURCES.ninfer?.windowsBuildSteps)
+    expect(engineBuildSteps('ninfer', 'windows')?.[0]).toContain('vcpkg install')
+    // An engine with no Windows variant falls back to its base list.
+    expect(engineBuildSteps('llamacpp', 'windows')).toEqual(ENGINE_SOURCES.llamacpp?.buildSteps)
+  })
+
   it('reads an unknown engine as no source', () => {
     expect(engineSource('nope')).toBeUndefined()
   })

@@ -354,8 +354,10 @@ export async function buildSummary(
     engines: ENGINES.map((entry) => {
       // The platform defaults ride the engine entry so the card's Engine
       // platform section seeds the build-command and docker-tag placeholders
-      // from the same data the deploy step consumes.
-      const defaults = enginePlatformDefaults(entry.id)
+      // from the same data the deploy step consumes. The build command is the
+      // engine's first build step for the detected host OS, so a Windows host
+      // seeds the vcpkg route and a Linux host seeds the cmake route.
+      const defaults = enginePlatformDefaults(entry.id, hardware.os)
       return {
         id: entry.id,
         label: entry.label,

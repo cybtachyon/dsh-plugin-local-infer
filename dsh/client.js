@@ -1856,7 +1856,10 @@ window.__ModuleLoader__.load({
                 color: 'var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))',
               },
             },
-            dep.purpose + (dep.requiresSudo ? ' (sudo)' : ''),
+            // The sudo hint is a Linux/macOS concept; a winget (Windows) host
+            // installs without elevation, so the hint is suppressed there.
+            dep.purpose +
+              (dep.requiresSudo && deps.packageManager !== 'winget' ? ' (sudo)' : ''),
           ),
         ),
       );

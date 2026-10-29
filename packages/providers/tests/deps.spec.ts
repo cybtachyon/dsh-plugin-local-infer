@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { renderInstallString } from 'dsh-plugin-local-infer/core'
+import { planDepsForOs, renderInstallString } from 'dsh-plugin-local-infer/core'
 import type { HardwareProfile } from 'dsh-plugin-local-infer/core'
 import LocalInfer from 'dsh-plugin-local-infer/service'
 import { ENGINE_DEP_PLANS, SYSTEM_DEPS } from '../src/deps.ts'
@@ -37,7 +37,20 @@ describe('SystemDep install data', () => {
     for (const manager of ['apt', 'dnf', 'pacman', 'brew']) {
       expect(SYSTEM_DEPS.hfCli.install[manager]?.commands).toEqual([script])
     }
+    // The Windows installer is the PowerShell script, not the bash one.
+    expect(SYSTEM_DEPS.hfCli.install.winget?.commands).toEqual([
+      'powershell -ExecutionPolicy ByPass -c "irm https://hf.co/cli/install.ps1 | iex"',
+    ])
     expect(SYSTEM_DEPS.hfCli.requiresSudo).toBe(false)
+  })
+
+  it('carries the winget toolchain blocks the Windows NInfer build needs', () => {
+    expect(SYSTEM_DEPS.cmake.install.winget?.commands).toEqual(['winget install Kitware.CMake'])
+    expect(SYSTEM_DEPS.ninja.install.winget?.commands).toEqual(['winget install -e --id Ninja-build.Ninja'])
+    expect(SYSTEM_DEPS.cudaToolkit.install.winget?.commands).toEqual(['winget install --id=Nvidia.CUDA -e'])
+    expect(SYSTEM_DEPS.visualStudio.install.winget?.commands).toEqual([
+      'winget install --id Microsoft.VisualStudio.Community --override "--passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"',
+    ])
   })
 
   it('mirrors the qwen-ninfer CUDA keyring header on apt', () => {
@@ -91,6 +104,18 @@ describe('engine dep plans', () => {
       'curl',
       'cuda-toolkit',
       'hf-cli',
+    ])
+  })
+
+  it('plans the NInfer Windows local toolchain as the winget vcpkg route', () => {
+    const ids = ENGINE_DEP_PLANS.ninfer.windows?.local?.map((dep) => dep.id)
+    expect(ids).toEqual([
+      'cmake',
+      'ninja',
+      'visual-studio',
+      'cuda-toolkit',
+      'hf-cli',
+      'git',
     ])
   })
 
@@ -153,6 +178,26 @@ describe('engine dep plans', () => {
     })
     expect(block).toContain('# no brew install commands for nvidia-container-toolkit; install it by hand')
     expect(block).toContain('brew install --cask docker')
+  })
+
+  it('renders the NInfer Windows local winget block over the vcpkg toolchain', () => {
+    const WINDOWS: HardwareProfile = {
+      os: 'windows',
+      cpuThreads: 8,
+      dockerAvailable: true,
+      wsl2: false,
+      packageManager: 'winget',
+    }
+    const block = renderInstallString(
+      planDepsForOs(ENGINE_DEP_PLANS.ninfer, 'local', 'windows'),
+      WINDOWS,
+    )
+    expect(block).toContain('# System dependencies on Windows')
+    expect(block).toContain('# Package manager: winget')
+    expect(block).toContain('winget install Kitware.CMake')
+    expect(block).toContain('winget install -e --id Ninja-build.Ninja')
+    expect(block).toContain('winget install --id=Nvidia.CUDA -e')
+    expect(block).toContain('powershell -ExecutionPolicy ByPass -c "irm https://hf.co/cli/install.ps1 | iex"')
   })
 })
 

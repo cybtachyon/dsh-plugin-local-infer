@@ -11,15 +11,16 @@ export type DepStatus = 'satisfied' | 'missing' | 'installing' | 'failed'
 /**
  * PackageManager is the detected host package manager the install commands are
  * keyed against. The same dep renders the right commands for the user's OS
- * through this key.
+ * through this key. Windows keys on winget, the package manager that ships
+ * with the OS.
  */
-export type PackageManager = 'apt' | 'dnf' | 'pacman' | 'brew'
+export type PackageManager = 'apt' | 'dnf' | 'pacman' | 'brew' | 'winget'
 
 /**
  * PackageManagerProbes are the raw which-probe results a detection run
- * collects: which of the four package-manager binaries exist on the host, plus
- * the OS. The pure mapping below turns them into the single winner; the
- * probes are the service's job.
+ * collects: which of the package-manager binaries exist on the host, plus the
+ * OS. The pure mapping below turns them into the single winner; the probes are
+ * the service's job.
  */
 export interface PackageManagerProbes {
   os: 'linux' | 'windows' | 'macos'
@@ -27,6 +28,7 @@ export interface PackageManagerProbes {
   dnf: boolean
   pacman: boolean
   brew: boolean
+  winget: boolean
 }
 
 /**
@@ -61,7 +63,9 @@ export interface SystemDep {
  * EngineDepPlan is the per-engine answer to "which host deps does this engine
  * need": the docker list and the local list. A docker build skips the compile
  * toolchain entirely; a local build needs it. The providers ship the plans as
- * data, so adding an engine is a data edit.
+ * data, so adding an engine is a data edit. The base lists are the Linux/WSL
+ * lists; `windows` carries the Windows variant of a build mode's list (the
+ * winget toolchain), which a Windows host reads when present.
  */
 export interface EngineDepPlan {
   docker: readonly SystemDep[]
@@ -69,6 +73,42 @@ export interface EngineDepPlan {
   // The prebuilt-binary install list (the Strata Terminal). Absent for engines
   // that ship no binary install path.
   binary?: readonly SystemDep[]
+  // The Windows variant of a build mode's list. A Windows host reads the
+  // matching key when present and falls back to the base list when it is not.
+  windows?: {
+    local?: readonly SystemDep[]
+    docker?: readonly SystemDep[]
+    binary?: readonly SystemDep[]
+  }
+}
+
+/**
+ * planDepsForOs reads the dep list a plan carries for a build mode on an OS.
+ * A Windows host reads the plan's `windows` variant for the mode when present
+ * and falls back to the base list when it is not; every other OS reads the
+ * base list. A mode the plan does not carry (a binary list for a non-Strata
+ * engine) reads as an empty list.
+ */
+export function planDepsForOs(
+  plan: EngineDepPlan,
+  buildMode: BuildMode,
+  os: 'linux' | 'windows' | 'macos',
+): readonly SystemDep[] {
+  if (os === 'windows' && plan.windows !== undefined) {
+    return plan.windows[buildMode] ?? plan[buildMode] ?? []
+  }
+  return plan[buildMode] ?? []
+}
+
+/**
+ * osLabel is the friendly OS name the install string's header and the card's
+ * System dependencies section show: WSL on a WSL2 kernel, Windows on Windows,
+ * OSX on macOS, and Linux on every other Linux host.
+ */
+export function osLabel(hw: { os: 'linux' | 'windows' | 'macos'; wsl2?: boolean }): string {
+  if (hw.os === 'windows') return 'Windows'
+  if (hw.os === 'macos') return 'OSX'
+  return hw.wsl2 === true ? 'WSL' : 'Linux'
 }
 
 /**
@@ -121,14 +161,18 @@ export interface SystemDepProvisioner {
 
 /**
  * detectPackageManager picks the single package manager the install commands
- * key against, from the which-probe results. macOS keys on brew. Linux tries
- * the distro-native manager in the order the plan lists them (apt, dnf,
- * pacman); a distro that ships two keeps the first. Windows has no command
- * set yet and reads as undetected, which the renderer degrades to.
+ * key against, from the which-probe results. macOS keys on brew. Windows keys
+ * on winget, the package manager that ships with the OS. Linux tries the
+ * distro-native manager in the order the plan lists them (apt, dnf, pacman);
+ * a distro that ships two keeps the first. A host whose manager probe reads
+ * absent reads as undetected, which the renderer degrades to.
  */
 export function detectPackageManager(probes: PackageManagerProbes): PackageManager | undefined {
   if (probes.os === 'macos') {
     return probes.brew ? 'brew' : undefined
+  }
+  if (probes.os === 'windows') {
+    return probes.winget ? 'winget' : undefined
   }
   if (probes.os === 'linux') {
     if (probes.apt) return 'apt'
@@ -174,7 +218,7 @@ export async function checkDeps(
  * in. It is the order the plan lists them, so the block the user's host
  * would have picked sits at the top.
  */
-const MANAGER_ORDER: readonly PackageManager[] = ['apt', 'dnf', 'pacman', 'brew']
+const MANAGER_ORDER: readonly PackageManager[] = ['apt', 'dnf', 'pacman', 'brew', 'winget']
 
 /**
  * renderInstallString emits the copy/paste block for the user's detected OS
@@ -188,7 +232,7 @@ const MANAGER_ORDER: readonly PackageManager[] = ['apt', 'dnf', 'pacman', 'brew'
 export function renderInstallString(deps: readonly SystemDep[], hw: HardwareProfile): string {
   const pm = hw.packageManager
   const lines: string[] = []
-  lines.push(`# System dependencies on ${hw.os}`)
+  lines.push(`# System dependencies on ${osLabel(hw)}`)
   if (pm === undefined) {
     lines.push('# No package manager detected; blocks are grouped by manager.')
   } else {

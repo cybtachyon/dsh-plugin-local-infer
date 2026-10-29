@@ -56,9 +56,17 @@ export const ENGINE_PLATFORM_DEFAULTS = {
 };
 /**
  * enginePlatformDefaults reads the registered platform defaults for an engine
- * id, or an empty object when none is registered.
+ * id on an OS, or an empty object when none is registered. The build command
+ * is the engine's first build step for the OS (the Windows vcpkg route on a
+ * Windows host), so the card's placeholder seeds the OS-appropriate default.
+ * The docker tag is OS-independent and rides the registered entry.
  */
-export function enginePlatformDefaults(engineId) {
-    return ENGINE_PLATFORM_DEFAULTS[engineId] ?? {};
+export function enginePlatformDefaults(engineId, os = 'linux') {
+    const base = ENGINE_PLATFORM_DEFAULTS[engineId] ?? {};
+    const buildCommand = engineBuildSteps(engineId, os)[0];
+    return {
+        ...base,
+        ...(buildCommand !== undefined ? { defaultBuildCommand: buildCommand } : {}),
+    };
 }
 //# sourceMappingURL=platform.js.map

@@ -36,6 +36,9 @@ export declare const SYSTEM_DEPS: {
             brew: {
                 commands: string[];
             };
+            winget: {
+                commands: string[];
+            };
         };
     };
     ninja: {
@@ -54,6 +57,20 @@ export declare const SYSTEM_DEPS: {
                 commands: string[];
             };
             brew: {
+                commands: string[];
+            };
+            winget: {
+                commands: string[];
+            };
+        };
+    };
+    visualStudio: {
+        id: string;
+        purpose: string;
+        requiresSudo: false;
+        detect: (hw: HardwareProfile) => Promise<boolean>;
+        install: {
+            winget: {
                 commands: string[];
             };
         };
@@ -150,6 +167,9 @@ export declare const SYSTEM_DEPS: {
                     CUDACXX: string;
                 };
             };
+            winget: {
+                commands: string[];
+            };
         };
     };
     git: {
@@ -170,6 +190,9 @@ export declare const SYSTEM_DEPS: {
             brew: {
                 commands: string[];
             };
+            winget: {
+                commands: string[];
+            };
         };
     };
     docker: {
@@ -188,6 +211,9 @@ export declare const SYSTEM_DEPS: {
                 commands: string[];
             };
             brew: {
+                commands: string[];
+            };
+            winget: {
                 commands: string[];
             };
         };
@@ -228,6 +254,9 @@ export declare const SYSTEM_DEPS: {
                 commands: string[];
             };
             brew: {
+                commands: string[];
+            };
+            winget: {
                 commands: string[];
             };
         };

@@ -29,7 +29,7 @@ export { hardwareClass, presetFromFetch, resolveDefaults, WILDCARD_HARDWARE_CLAS
 export type { DefaultProvenance, DefaultsResolver, HardwareClass, Preset, PresetSource, ResolvedDefaults, } from './defaults.ts';
 export { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, apiKeyEnvFor, buildModelEntry, LLM_PI_AI_NAMESPACE, modelRowsFrom, modelSlug, providerIdFor, providerRegistrationOps, providerRemovalOps, removeModelRow, upsertModelRow, } from './registrar.ts';
 export type { DshModelEntry, DshModelRegistrar, ModelRow, RegisterResult, SettingsOp, } from './registrar.ts';
-export { checkDeps, detectPackageManager, planDeps, renderInstallString, runInstall, } from './deps.ts';
+export { checkDeps, detectPackageManager, osLabel, planDeps, planDepsForOs, renderInstallString, runInstall, } from './deps.ts';
 export { CHAT_TEMPLATE_FILE, hfChatTemplateCommand, hfDownloadCommand, modelArtifactPath, modelEntriesForEngine, repoIdFromUrl, repoNameFromUrl, } from './models.ts';
 export type { DefaultModel, ModelDirectoryEntry } from './models.ts';
 export type { CommandOutcome, CommandRunner, DepCheck, DepStatus, EngineDepPlan, InstallCommands, InstallResult, PackageManager, PackageManagerProbes, SystemDep, SystemDepProvisioner, } from './deps.ts';

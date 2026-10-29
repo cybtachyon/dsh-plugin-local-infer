@@ -49,6 +49,7 @@ export const SYSTEM_DEPS = {
             dnf: { commands: ['sudo dnf install cmake'] },
             pacman: { commands: ['sudo pacman -S --noconfirm cmake'] },
             brew: { commands: ['brew install cmake'] },
+            winget: { commands: ['winget install Kitware.CMake'] },
         },
     },
     ninja: {
@@ -61,6 +62,25 @@ export const SYSTEM_DEPS = {
             dnf: { commands: ['sudo dnf install ninja'] },
             pacman: { commands: ['sudo pacman -S --noconfirm ninja'] },
             brew: { commands: ['brew install ninja'] },
+            winget: { commands: ['winget install -e --id Ninja-build.Ninja'] },
+        },
+    },
+    // The MSVC compiler the Windows vcpkg build links against. The winget block
+    // installs the Community edition with the C++ workload the build needs. The
+    // probe reads the cl compiler, which is on the path only inside a Visual
+    // Studio developer prompt, so a plain shell degrades to missing and the
+    // user installs by hand.
+    visualStudio: {
+        id: 'visual-studio',
+        purpose: 'provides the MSVC compiler the vcpkg build needs',
+        requiresSudo: false,
+        detect: probe('where', ['cl']),
+        install: {
+            winget: {
+                commands: [
+                    'winget install --id Microsoft.VisualStudio.Community --override "--passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"',
+                ],
+            },
         },
     },
     pkgConfig: {
@@ -134,6 +154,9 @@ export const SYSTEM_DEPS = {
                 commands: ['brew install --cask nvidia-cuda'],
                 envAfter: { CUDACXX: '/usr/local/cuda/bin/nvcc' },
             },
+            // The NVIDIA CUDA toolkit the winget catalog ships. The build reads the
+            // toolkit from the default install path, so no envAfter export is needed.
+            winget: { commands: ['winget install --id=Nvidia.CUDA -e'] },
         },
     },
     git: {
@@ -146,6 +169,7 @@ export const SYSTEM_DEPS = {
             dnf: { commands: ['sudo dnf install git'] },
             pacman: { commands: ['sudo pacman -S --noconfirm git'] },
             brew: { commands: ['brew install git'] },
+            winget: { commands: ['winget install Git.Git'] },
         },
     },
     docker: {
@@ -158,6 +182,7 @@ export const SYSTEM_DEPS = {
             dnf: { commands: ['sudo dnf install docker'] },
             pacman: { commands: ['sudo pacman -S --noconfirm docker'] },
             brew: { commands: ['brew install --cask docker'] },
+            winget: { commands: ['winget install Docker.Docker-Desktop'] },
         },
     },
     nvidiaContainerToolkit: {
@@ -189,11 +214,15 @@ export const SYSTEM_DEPS = {
         detect: probe('hf', ['--version']),
         install: {
             // The hf CLI installs through its own script, not a package manager, so
-            // every manager keys the same block.
+            // every manager keys the same block. Windows runs the PowerShell
+            // installer through the OS's own irm alias.
             apt: { commands: ['curl -LsSf https://hf.co/cli/install.sh | bash'] },
             dnf: { commands: ['curl -LsSf https://hf.co/cli/install.sh | bash'] },
             pacman: { commands: ['curl -LsSf https://hf.co/cli/install.sh | bash'] },
             brew: { commands: ['curl -LsSf https://hf.co/cli/install.sh | bash'] },
+            winget: {
+                commands: ['powershell -ExecutionPolicy ByPass -c "irm https://hf.co/cli/install.ps1 | iex"'],
+            },
         },
     },
 };
@@ -220,6 +249,20 @@ export const ENGINE_DEP_PLANS = {
             SYSTEM_DEPS.hfCli,
         ],
         docker: [SYSTEM_DEPS.docker, SYSTEM_DEPS.nvidiaContainerToolkit, SYSTEM_DEPS.hfCli],
+        // The Windows local build is the vcpkg route: the winget toolchain (CMake,
+        // Ninja, the MSVC compiler, the CUDA toolkit) plus the hf CLI and git. The
+        // vcpkg manifest pulls the ffmpeg and curl dev libraries, so the Linux
+        // pkg-config/ffmpeg/curl deps do not ride the Windows list.
+        windows: {
+            local: [
+                SYSTEM_DEPS.cmake,
+                SYSTEM_DEPS.ninja,
+                SYSTEM_DEPS.visualStudio,
+                SYSTEM_DEPS.cudaToolkit,
+                SYSTEM_DEPS.hfCli,
+                SYSTEM_DEPS.git,
+            ],
+        },
     },
     hyperqwen: {
         local: [],
@@ -240,6 +283,18 @@ export const ENGINE_DEP_PLANS = {
             SYSTEM_DEPS.hfCli,
         ],
         docker: [],
+        // Infernix builds through the engine's own cmake preset, so its Windows
+        // local list is the same winget toolchain as NInfer's.
+        windows: {
+            local: [
+                SYSTEM_DEPS.cmake,
+                SYSTEM_DEPS.ninja,
+                SYSTEM_DEPS.visualStudio,
+                SYSTEM_DEPS.cudaToolkit,
+                SYSTEM_DEPS.hfCli,
+                SYSTEM_DEPS.git,
+            ],
+        },
     },
     strata: {
         // The source build git-clones the repo and runs setup.sh, which downloads

@@ -144,6 +144,7 @@ export class LlamaCppAdapter extends EngineAdapter {
         ...(modelDirectory === '' ? {} : { modelDirectory }),
         port,
         healthUrl: `http://127.0.0.1:${port}/health`,
+        os: _hw.os,
       }
     }
     const modelPath = modelDirectory === '' ? file : join(modelDirectory, file)
@@ -167,6 +168,7 @@ export class LlamaCppAdapter extends EngineAdapter {
       ...(modelDirectory === '' ? {} : { modelDirectory }),
       port,
       healthUrl: `http://127.0.0.1:${port}/health`,
+      os: _hw.os,
     }
   }
 
@@ -200,6 +202,10 @@ export class LlamaCppAdapter extends EngineAdapter {
             ...(platform?.buildCommands !== undefined
               ? { buildCommands: platform.buildCommands }
               : {}),
+            // The host OS the build steps pick for: a Windows host reads the
+            // engine's Windows build steps when the user carries no build-
+            // command override.
+            ...(plan.os !== undefined ? { os: plan.os } : {}),
             // Report the build phase the moment the build steps start, so the
             // card's button reads "Building..." while the build is in flight.
             onBuildStart: () => onProgress?.('build'),

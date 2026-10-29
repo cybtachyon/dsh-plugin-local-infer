@@ -3,10 +3,13 @@ import {
   checkDeps,
   detectPackageManager,
   EngineAdapter,
+  osLabel,
   planDeps,
+  planDepsForOs,
   renderInstallString,
   runInstall,
 } from '../src/index.ts'
+import type { EngineDepPlan } from '../src/index.ts'
 import type {
   CommandOutcome,
   CommandRunner,
@@ -53,19 +56,36 @@ function recordingRunner(outcomes: CommandOutcome[]): {
 
 describe('detectPackageManager', () => {
   it('keys a macOS host on brew', () => {
-    expect(detectPackageManager({ os: 'macos', apt: false, dnf: false, pacman: false, brew: true })).toBe('brew')
-    expect(detectPackageManager({ os: 'macos', apt: false, dnf: false, pacman: false, brew: false })).toBeUndefined()
+    expect(
+      detectPackageManager({ os: 'macos', apt: false, dnf: false, pacman: false, brew: true, winget: false }),
+    ).toBe('brew')
+    expect(
+      detectPackageManager({ os: 'macos', apt: false, dnf: false, pacman: false, brew: false, winget: false }),
+    ).toBeUndefined()
+  })
+
+  it('keys a Windows host on winget', () => {
+    expect(
+      detectPackageManager({ os: 'windows', apt: false, dnf: false, pacman: false, brew: false, winget: true }),
+    ).toBe('winget')
+    expect(
+      detectPackageManager({ os: 'windows', apt: false, dnf: false, pacman: false, brew: false, winget: false }),
+    ).toBeUndefined()
   })
 
   it('tries the linux managers in the plan order, apt first', () => {
-    expect(detectPackageManager({ os: 'linux', apt: true, dnf: true, pacman: true, brew: false })).toBe('apt')
-    expect(detectPackageManager({ os: 'linux', apt: false, dnf: true, pacman: true, brew: false })).toBe('dnf')
-    expect(detectPackageManager({ os: 'linux', apt: false, dnf: false, pacman: true, brew: false })).toBe('pacman')
-    expect(detectPackageManager({ os: 'linux', apt: false, dnf: false, pacman: false, brew: false })).toBeUndefined()
-  })
-
-  it('reads a windows host as undetected until a command set lands', () => {
-    expect(detectPackageManager({ os: 'windows', apt: true, dnf: false, pacman: false, brew: false })).toBeUndefined()
+    expect(
+      detectPackageManager({ os: 'linux', apt: true, dnf: true, pacman: true, brew: false, winget: false }),
+    ).toBe('apt')
+    expect(
+      detectPackageManager({ os: 'linux', apt: false, dnf: true, pacman: true, brew: false, winget: false }),
+    ).toBe('dnf')
+    expect(
+      detectPackageManager({ os: 'linux', apt: false, dnf: false, pacman: true, brew: false, winget: false }),
+    ).toBe('pacman')
+    expect(
+      detectPackageManager({ os: 'linux', apt: false, dnf: false, pacman: false, brew: false, winget: false }),
+    ).toBeUndefined()
   })
 })
 
@@ -135,6 +155,47 @@ describe('planDeps', () => {
   })
 })
 
+describe('planDepsForOs', () => {
+  const localDep = dep({ id: 'cmake' })
+  const windowsDep = dep({ id: 'visual-studio' })
+  const plan: EngineDepPlan = {
+    local: [localDep],
+    docker: [],
+    windows: { local: [windowsDep] },
+  }
+
+  it('reads the windows variant for a Windows host when present', () => {
+    expect(planDepsForOs(plan, 'local', 'windows').map((entry) => entry.id)).toEqual(['visual-studio'])
+  })
+
+  it('falls back to the base list for a Windows host with no windows variant', () => {
+    expect(planDepsForOs({ local: [localDep], docker: [] }, 'local', 'windows').map((entry) => entry.id)).toEqual([
+      'cmake',
+    ])
+  })
+
+  it('reads the base list for a Linux host even when a windows variant exists', () => {
+    expect(planDepsForOs(plan, 'local', 'linux').map((entry) => entry.id)).toEqual(['cmake'])
+  })
+
+  it('reads an empty list for a mode the plan does not carry', () => {
+    expect(planDepsForOs(plan, 'binary', 'linux')).toEqual([])
+  })
+})
+
+describe('osLabel', () => {
+  it('names WSL on a WSL2 kernel and Linux on every other Linux host', () => {
+    expect(osLabel({ os: 'linux', wsl2: true })).toBe('WSL')
+    expect(osLabel({ os: 'linux', wsl2: false })).toBe('Linux')
+    expect(osLabel({ os: 'linux' })).toBe('Linux')
+  })
+
+  it('names Windows and OSX for their hosts', () => {
+    expect(osLabel({ os: 'windows' })).toBe('Windows')
+    expect(osLabel({ os: 'macos' })).toBe('OSX')
+  })
+})
+
 describe('checkDeps', () => {
   it('reports a satisfied probe as satisfied and a failed probe as missing', async () => {
     const present = dep({
@@ -187,7 +248,7 @@ describe('renderInstallString', () => {
     const block = renderInstallString([aptDep, noPacmanDep], HW)
     expect(block).toBe(
       [
-        '# System dependencies on linux',
+        '# System dependencies on Linux',
         '# Package manager: apt',
         '# cuda-toolkit: compiles the CUDA kernels',
         'wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2604/x86_64/cuda-keyring_1.1-1_all.deb',

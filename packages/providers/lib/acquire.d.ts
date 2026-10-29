@@ -20,6 +20,7 @@ export interface EngineSource {
     repo: string;
     branch: string;
     buildSteps: readonly string[];
+    windowsBuildSteps?: readonly string[];
 }
 /**
  * The remote name a user-provided fork is added under, so the checkout's own
@@ -56,10 +57,12 @@ export interface EngineStepResult {
  */
 export declare function engineSource(engineId: string): EngineSource | undefined;
 /**
- * engineBuildSteps reads the build steps an engine runs in its checkout, so
- * the adapter's deploy step and the Get build step share one list.
+ * engineBuildSteps reads the build steps an engine runs in its checkout for an
+ * OS, so the adapter's deploy step and the Get build step share one list. A
+ * Windows host reads the engine's `windowsBuildSteps` when present and falls
+ * back to the base list when it is not; every other OS reads the base list.
  */
-export declare function engineBuildSteps(engineId: string): readonly string[];
+export declare function engineBuildSteps(engineId: string, os?: 'linux' | 'windows' | 'macos'): readonly string[];
 /**
  * syncEngineRepo brings the engine checkout to the listed source. A missing
  * checkout is a fresh clone of the fork (or the engine's upstream repo when
@@ -88,6 +91,7 @@ export interface SyncRebuildRequest {
     allowRunDeps?: boolean;
     buildCommands?: string;
     onBuildStart?: () => void;
+    os?: 'linux' | 'windows' | 'macos';
 }
 /**
  * SyncRebuildResult reports the conditional rebuild: whether it passed,
@@ -123,5 +127,5 @@ export declare function syncAndRebuildEngine(host: LifecycleHost, request: SyncR
  * engines) passes through with a note; a failing step stops the build with
  * the step's detail.
  */
-export declare function buildEngineRepo(host: LifecycleHost, engineId: string, directory: string, log: AcquireLog, buildCommands?: string): Promise<EngineStepResult>;
+export declare function buildEngineRepo(host: LifecycleHost, engineId: string, directory: string, log: AcquireLog, buildCommands?: string, os?: 'linux' | 'windows' | 'macos'): Promise<EngineStepResult>;
 //# sourceMappingURL=acquire.d.ts.map

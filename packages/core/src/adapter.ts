@@ -40,6 +40,11 @@ export interface LaunchPlan {
   modelDirectory?: string
   port: number
   healthUrl: string
+  // The host OS the plan renders for, stamped by renderLaunch from the
+  // detected HardwareProfile. The deploy step's build step reads it to pick
+  // the OS-appropriate engine build steps (the Windows vcpkg route versus the
+  // Linux cmake route) when the user carries no build-command override.
+  os?: 'linux' | 'windows' | 'macos'
 }
 
 /**

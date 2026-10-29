@@ -25,7 +25,10 @@ export interface EnginePlatformDefaults {
 export declare const ENGINE_PLATFORM_DEFAULTS: Record<string, EnginePlatformDefaults>;
 /**
  * enginePlatformDefaults reads the registered platform defaults for an engine
- * id, or an empty object when none is registered.
+ * id on an OS, or an empty object when none is registered. The build command
+ * is the engine's first build step for the OS (the Windows vcpkg route on a
+ * Windows host), so the card's placeholder seeds the OS-appropriate default.
+ * The docker tag is OS-independent and rides the registered entry.
  */
-export declare function enginePlatformDefaults(engineId: string): EnginePlatformDefaults;
+export declare function enginePlatformDefaults(engineId: string, os?: 'linux' | 'windows' | 'macos'): EnginePlatformDefaults;
 //# sourceMappingURL=platform.d.ts.map
