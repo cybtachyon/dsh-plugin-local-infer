@@ -118,8 +118,9 @@ export interface LocalInferSummary {
   lastLogs: string
   // The "unsure" banner shown at the top of the card when no provider is
   // confirmed running but at least one reads as unsure: the message the
-  // banner renders and the bash kill commands for the engine processes the
-  // detector saw holding VRAM. Null when the banner is not shown.
+  // banner renders and the host-OS stop commands (Stop-Process on Windows,
+  // kill on Linux and macOS) for the engine processes the detector saw
+  // holding VRAM. Null when the banner is not shown.
   unsureBanner: { message: string; killCommands: string[] } | null
   // Whether the current config's provider and model are registered in the
   // DSH settings. The card shows the Remove button only when true, so a
@@ -318,9 +319,10 @@ export async function buildSummary(
   }))
   // The "unsure" banner: shown when no provider is confirmed running but at
   // least one reads as unsure (a foreign engine the detector saw but could
-  // not tie to a model, or a busy card). The banner offers bash kill commands
-  // for the engine processes the detector saw holding VRAM, so the user can
-  // stop a provider launched in another session.
+  // not tie to a model, or a busy card). The banner offers the host-OS stop
+  // commands (Stop-Process on Windows, kill on Linux and macOS) for the engine
+  // processes the detector saw holding VRAM, so the user can stop a provider
+  // launched in another session.
   const anyRunning = providers.some((p) => p.status === 'running')
   const anyUnsure = providers.some((p) => p.status === 'unsure')
   const unsureBanner =

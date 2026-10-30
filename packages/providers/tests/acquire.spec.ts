@@ -3,6 +3,8 @@ import {
   ENGINE_SOURCES,
   FORK_REMOTE,
   buildEngineRepo,
+  engineBinary,
+  engineBuildDir,
   engineBuildSteps,
   engineSource,
   syncAndRebuildEngine,
@@ -91,6 +93,24 @@ describe('ENGINE_SOURCES', () => {
     expect(engineBuildSteps('ninfer', 'windows')?.[0]).toContain('vcpkg install')
     // An engine with no Windows variant falls back to its base list.
     expect(engineBuildSteps('llamacpp', 'windows')).toEqual(ENGINE_SOURCES.llamacpp?.buildSteps)
+  })
+
+  it('reads the OS-specific build directory and binary name from the engine profile', () => {
+    // The NInfer Windows vcpkg route writes the Release binary into the Windows
+    // build tree, not the shared Linux build directory, and the binary is the
+    // .exe. A Linux host reads the shared build directory and the plain name.
+    expect(engineBuildDir('ninfer', 'windows')).toBe('build-windows\\apps\\Release')
+    expect(engineBuildDir('ninfer')).toBe('build')
+    expect(engineBinary('ninfer', 'windows')).toBe('ninfer-serve.exe')
+    expect(engineBinary('ninfer')).toBe('ninfer-serve')
+    // An engine that installs its binary to the path (Strata) carries no build
+    // directory, so it reads as the shared default.
+    expect(engineBuildDir('strata')).toBe('build')
+    // A compose engine (Hyper-Qwen) carries no local binary.
+    expect(engineBinary('hyperqwen')).toBeUndefined()
+    // An unknown engine reads as the shared default directory and no binary.
+    expect(engineBuildDir('nope')).toBe('build')
+    expect(engineBinary('nope')).toBeUndefined()
   })
 
   it('reads an unknown engine as no source', () => {

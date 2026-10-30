@@ -20,6 +20,9 @@ import { EngineAdapter } from '../../../core/lib/index.js';
 import { customArgEnv, customArgFlags, delay, envFromSpecs, flagsFromSpecs, nodeLifecycleHost, trackChild, } from "../adapters.js";
 import { syncAndRebuildEngine } from "../acquire.js";
 import { STRATA_PARAMETERS, strataModelKey } from "./strata.js";
+import { strataLinuxSourceLaunch } from "./strataLinux.js";
+import { strataMacOSSourceLaunch } from "./strataMacOS.js";
+import { strataWindowsSourceLaunch } from "./strataWindows.js";
 /**
  * The Strata docker image the adapter pulls and runs. The image is the
  * upstream GitHub Container Registry artifact for the newest release's CUDA 13
@@ -34,6 +37,17 @@ export const STRATA_DOCKER_IMAGE = 'ghcr.io/niko1221/strata:latest-cuda13';
  * docs/AI_SETUP.md step 2 (Linux and Mac; Windows uses the PowerShell twin).
  */
 export const STRATA_BINARY_INSTALL = 'curl -fsSL https://github.com/Niko1221/Strata/releases/latest/download/install.sh -o install.sh && sh install.sh';
+/**
+ * The source-build wrapper is OS-specific (setup.sh on Linux/Mac,
+ * START-HERE.bat on Windows), so the launch argv comes from the host OS's
+ * launch function. The adapter's renderLaunch reads this map by the hardware
+ * profile's os, keeping the per-OS command in its own OS file.
+ */
+const STRATA_SOURCE_LAUNCH = {
+    linux: strataLinuxSourceLaunch,
+    macos: strataMacOSSourceLaunch,
+    windows: strataWindowsSourceLaunch,
+};
 /**
  * strataPreReadyState reads the phase the strata process is in from the tail of
  * its accumulated output. The Terminal downloads the engine and the model files
@@ -229,34 +243,25 @@ export class StrataAdapter extends EngineAdapter {
                 os: _hw.os,
             };
         }
-        // The source build: run setup.sh with the model. It reuses the engine the
-        // Get step built (the acquisition build step), downloads the named model,
-        // and starts the engine. Running setup.sh (rather than a pre-written
-        // run-<model>.sh start script) is model-aware and self-contained, so the
+        // The source build: run the OS wrapper (setup.sh on Linux/Mac,
+        // START-HERE.bat on Windows) with the model. It reuses the engine the Get
+        // step built (the acquisition build step), downloads the named model, and
+        // starts the engine. Running the wrapper (rather than a pre-written
+        // run-<model> start script) is model-aware and self-contained, so the
         // launch does not depend on the build step having written a script for this
-        // exact model. The deploy step resolves setup.sh to an absolute path in the
-        // checkout before spawning.
+        // exact model. The deploy step resolves the wrapper to an absolute path in
+        // the checkout before spawning.
         const family = typeof config.family === 'string' && config.family !== '' ? config.family : 'qwen';
         const vision = typeof config.vision === 'string' && config.vision !== '' ? config.vision : 'on';
         const context = typeof config.context === 'string' && config.context !== '' ? config.context : undefined;
-        // setup.sh's --vision takes yes|no|gpu|cpu; the surface's on|off maps onto
-        // it (gpu and cpu pass through).
-        const visionFlag = vision === 'on' ? 'yes' : vision === 'off' ? 'no' : vision;
+        // The source-build wrapper is OS-specific (setup.sh on Linux/Mac,
+        // START-HERE.bat on Windows), so the argv comes from the host OS's launch
+        // function. The config reads (family, vision, context) are OS-agnostic.
+        const sourceLaunch = STRATA_SOURCE_LAUNCH[_hw.os];
         return {
             engineId: this.id,
             kind: 'process',
-            argv: [
-                'setup.sh',
-                '--yes',
-                ...(model !== '' ? ['--model', model] : []),
-                ...(family !== 'qwen' ? ['--family', family] : []),
-                '--vision',
-                visionFlag,
-                ...(context !== undefined ? ['--context', context] : []),
-                '--port',
-                String(port),
-                ...customArgs,
-            ],
+            argv: sourceLaunch({ model, family, vision, context, port, customArgs }),
             env: {},
             ...(modelId !== undefined ? { modelId } : {}),
             port,
@@ -281,9 +286,9 @@ export class StrataAdapter extends EngineAdapter {
             const engineDir = platform?.engineDirectory;
             // The binary plan runs the strata command (on the PATH after the install
             // script), so its build step is the one-line install. The source-build
-            // plan runs setup.sh in the checkout, so its build step is the git sync
-            // plus the engine's own setup.sh (the acquisition build steps), and the
-            // launch resolves setup.sh to an absolute path in that checkout.
+            // plan runs the OS wrapper in the checkout, so its build step is the git
+            // sync plus the engine's own wrapper (the acquisition build steps), and
+            // the launch resolves the wrapper to an absolute path in that checkout.
             const isBinary = plan.argv?.[0] === 'strata';
             let buildLogs = '';
             if (isBinary) {
@@ -296,12 +301,12 @@ export class StrataAdapter extends EngineAdapter {
                 }
             }
             else {
-                // The source build needs the checkout directory to resolve setup.sh;
-                // without it the launch cannot find the engine.
+                // The source build needs the checkout directory to resolve the OS
+                // wrapper; without it the launch cannot find the engine.
                 if (engineDir === undefined) {
                     return {
                         ok: false,
-                        detail: 'the source build needs an engine directory (the Get step checkout) to run setup.sh',
+                        detail: 'the source build needs an engine directory (the Get step checkout) to run the OS wrapper',
                     };
                 }
                 if (options?.autoRebuild !== false) {
@@ -335,10 +340,10 @@ export class StrataAdapter extends EngineAdapter {
                 }
             }
             const withLogs = (result) => buildLogs !== '' ? { ...result, logs: buildLogs } : result;
-            // The source-build plan names setup.sh relative to the checkout; resolve
-            // it to an absolute path so spawn finds it (spawn resolves a bare name
-            // against PATH, not the cwd). The binary plan's strata is on the PATH, so
-            // it spawns as-is.
+            // The source-build plan names the OS wrapper relative to the checkout;
+            // resolve it to an absolute path so spawn finds it (spawn resolves a bare
+            // name against PATH, not the cwd). The binary plan's strata is on the
+            // PATH, so it spawns as-is.
             const argv = plan.argv ?? [];
             const spawnArgv = !isBinary && engineDir !== undefined
                 ? [join(engineDir, argv[0] ?? 'setup.sh'), ...argv.slice(1)]

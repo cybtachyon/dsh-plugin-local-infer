@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   CHAT_TEMPLATE_FILE,
@@ -49,12 +50,14 @@ describe('repoNameFromUrl', () => {
 
 describe('modelArtifactPath', () => {
   it('joins the entry file into the directory when the entry names one', () => {
-    expect(modelArtifactPath(ENTRY, '/models')).toBe('/models/qwen3_8_27b_nvfp4.ninfer')
+    // The builder joins with the host path separator, so the expectation joins
+    // the same way: /models/file on Linux, \models\file on Windows.
+    expect(modelArtifactPath(ENTRY, '/models')).toBe(join('/models', 'qwen3_8_27b_nvfp4.ninfer'))
   })
 
   it('falls back to the repo-name directory when the entry names no file', () => {
     expect(modelArtifactPath(NO_FILE, '/models')).toBe(
-      '/models/Qwen3.8-27B-W4A16-AutoRound-fast',
+      join('/models', 'Qwen3.8-27B-W4A16-AutoRound-fast'),
     )
   })
 })

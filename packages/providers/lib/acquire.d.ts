@@ -9,6 +9,7 @@
  * @module dsh-plugin-local-infer/providers/acquire
  */
 import type { LifecycleHost } from '../../core/lib/index.js';
+import type { EngineOsProfile } from './engines/engineOs.ts';
 /**
  * EngineSource is the per-engine acquisition data: the upstream git repo the
  * clone step uses when no fork is provided, the branch the fetch/rebase step
@@ -34,8 +35,33 @@ export declare const FORK_REMOTE = "dsh-fork";
  * engine, so it carries no local build steps (the compose up pulls the
  * image); Strata builds through its own setup.sh (the README's
  * Build-from-source route), which the source-build mode runs in the checkout.
+ * The build steps are read from the per-engine OS profiles, so a build command
+ * has one home (the OS-specific files under engines/).
  */
 export declare const ENGINE_SOURCES: Record<string, EngineSource>;
+/**
+ * engineOsProfile reads the registered build profile for an engine id on an OS,
+ * or undefined when none is registered. A host OS with no dedicated profile
+ * (a Windows host for an engine that carries no Windows route) reads the
+ * shared Linux profile.
+ */
+export declare function engineOsProfile(engineId: string, os?: 'linux' | 'windows' | 'macos'): EngineOsProfile | undefined;
+/**
+ * engineBuildDir reads the directory, relative to the checkout, where an
+ * engine's build leaves its binary on an OS, so the binary symlink step reads
+ * the right tree. A Windows host reads the engine's Windows build tree (the
+ * vcpkg route for NInfer writes into build-windows\apps\Release); every other
+ * host reads the shared Linux build directory. An engine that installs its
+ * binary to the path (Strata) carries no build directory, so it reads as
+ * `build`, the shared default.
+ */
+export declare function engineBuildDir(engineId: string, os?: 'linux' | 'windows' | 'macos'): string;
+/**
+ * engineBinary reads the engine binary name on an OS (the .exe on Windows), so
+ * the adapters and the symlink step share one source. An engine with no local
+ * binary (the compose engines) reads as undefined.
+ */
+export declare function engineBinary(engineId: string, os?: 'linux' | 'windows' | 'macos'): string | undefined;
 /**
  * AcquireLog receives one line (or chunk) of Get output as it lands, so the
  * route can stream it to the card's Logs section.
@@ -58,9 +84,10 @@ export interface EngineStepResult {
 export declare function engineSource(engineId: string): EngineSource | undefined;
 /**
  * engineBuildSteps reads the build steps an engine runs in its checkout for an
- * OS, so the adapter's deploy step and the Get build step share one list. A
- * Windows host reads the engine's `windowsBuildSteps` when present and falls
- * back to the base list when it is not; every other OS reads the base list.
+ * OS, so the adapter's deploy step and the Get build step share one list. The
+ * steps come from the engine's OS profile: a Windows host reads the engine's
+ * Windows profile (the vcpkg route for NInfer), and a host OS with no
+ * dedicated profile reads the shared Linux profile.
  */
 export declare function engineBuildSteps(engineId: string, os?: 'linux' | 'windows' | 'macos'): readonly string[];
 /**

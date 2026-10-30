@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   DFLASH2_CUSTOM_VALUE,
@@ -239,7 +240,7 @@ describe('Infernix parameter surface', () => {
         draftModelPreset: presetFile,
         modelDirectory: '/models',
       }),
-    ).toBe(`/models/${presetFile}/${presetFile}`)
+    ).toBe(join('/models', presetFile, presetFile))
     // The Custom selection (or no preset) falls through to the Draft model
     // path field.
     expect(
@@ -262,8 +263,10 @@ describe('Infernix parameter surface', () => {
       { spec: 'dflash2', model: 'qwen38-flash-next', draftModelPreset: presetFile },
       '/models',
     )
+    // The drafter target joins the model dir with the host separator; the
+    // n-gram volume targets the bare model dir, so only the first line joins.
     expect(commands).toEqual([
-      `hf download Wallawalla47/Qwen3.8-Flash-Next-DFlash2-Infernix ${presetFile} --local-dir /models/${presetFile}`,
+      `hf download Wallawalla47/Qwen3.8-Flash-Next-DFlash2-Infernix ${presetFile} --local-dir ${join('/models', presetFile)}`,
       `hf download ${INFERNIX_NGRAM_VOLUMES['qwen38-flash-next']!.repo} ${INFERNIX_NGRAM_VOLUMES['qwen38-flash-next']!.file} --local-dir /models`,
     ])
     // A Custom drafter pulls no preset, so only the n-gram volume downloads.

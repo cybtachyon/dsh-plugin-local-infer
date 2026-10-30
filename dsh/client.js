@@ -3669,9 +3669,10 @@ window.__ModuleLoader__.load({
           ),
           // The "unsure" banner: shown at the top of the card when no provider
           // is confirmed running but at least one reads as unsure. The banner
-          // offers the message and a read-only text area with bash kill
-          // commands for the engine processes the detector saw holding VRAM,
-          // so the user can stop a provider launched in another session.
+          // offers the message and a read-only text area with the host-OS stop
+          // commands (Stop-Process on Windows, kill on Linux and macOS) for the
+          // engine processes the detector saw holding VRAM, so the user can
+          // stop a provider launched in another session.
           data.unsureBanner !== null && data.unsureBanner !== undefined
             ? react.createElement(
                 'div',

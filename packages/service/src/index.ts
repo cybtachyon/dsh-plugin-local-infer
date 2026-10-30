@@ -539,14 +539,16 @@ export class LocalInfer extends Service implements LocalInferService {
   }
 
   /**
-   * unsureBannerKillCommands returns the bash kill commands for the engine
+   * unsureBannerKillCommands returns the stop commands for the engine
    * processes the detector saw holding VRAM, for the "unsure" banner the card
    * shows when no provider is confirmed running but at least one reads as
    * unsure. A process is included when its command line carries an engine
    * binary marker and the card's VRAM usage is above 30% of the total (the
    * threshold below which a foreign engine is not considered to be holding
-   * the card). The commands are one `kill <pid>` per matching process, in
-   * pid order. An empty list means no matching process was seen, so the
+   * the card). The command form switches on the host OS: one
+   * `Stop-Process -Id <pid>` per matching process on Windows (the PowerShell
+   * cmdlet the banner's text area runs), one `kill <pid>` on Linux and macOS,
+   * in pid order. An empty list means no matching process was seen, so the
    * banner's text area renders empty.
    */
   async unsureBannerKillCommands(
@@ -570,10 +572,13 @@ export class LocalInfer extends Service implements LocalInferService {
     ) {
       return []
     }
+    // The stop command form follows the host OS: Stop-Process on Windows,
+    // kill on Linux and macOS.
+    const isWindows = platform() === 'win32'
     const commands: string[] = []
     for (const line of processes) {
       if (markers.some((marker) => line.command.includes(marker))) {
-        commands.push(`kill ${line.pid}`)
+        commands.push(isWindows ? `Stop-Process -Id ${line.pid}` : `kill ${line.pid}`)
       }
     }
     return commands
@@ -1661,15 +1666,21 @@ async function probeGpuUsage(): Promise<GpuUsageProbe | null> {
 }
 
 /**
- * probeProcesses reads the running process table (`ps -eo pid,args`) into
- * process lines the launch-signature matcher consumes. The env element of a
- * line is read from the Linux /proc environ, and only for a pid whose command
- * line carries one of the engine markers: a full table of env reads is slow,
- * and the matcher's env-key element only fires on a marker-matched process
- * anyway. A host without /proc (macOS) degrades to env-less lines, which the
- * matcher reads as a neutral env element.
+ * probeProcesses reads the running process table into process lines the
+ * launch-signature matcher consumes. The path switches on the host OS:
+ * Windows reads the table through PowerShell's Win32_Process CIM class (the
+ * pid and the full command line), and Linux and macOS read it through
+ * `ps -eo pid,args`. The env element of a line is read from the Linux /proc
+ * environ, and only for a pid whose command line carries one of the engine
+ * markers: a full table of env reads is slow, and the matcher's env-key
+ * element only fires on a marker-matched process anyway. A host without /proc
+ * (macOS, Windows) degrades to env-less lines, which the matcher reads as a
+ * neutral env element.
  */
 async function probeProcesses(markers: readonly string[]): Promise<ProcessLine[]> {
+  if (platform() === 'win32') {
+    return probeWindowsProcesses()
+  }
   const result = await runCommand('ps', ['-eo', 'pid,args'])
   if (!result.ok) return []
   const lines: ProcessLine[] = []
@@ -1687,6 +1698,49 @@ async function probeProcesses(markers: readonly string[]): Promise<ProcessLine[]
     lines.push({ pid, command, ...(env !== undefined ? { env } : {}) })
   }
   return lines
+}
+
+/**
+ * parseWindowsProcessTable reads the `pid<TAB>commandLine` rows PowerShell's
+ * Win32_Process probe emits into process lines the launch-signature matcher
+ * consumes. Each row is split on its first tab: the pid is the left field, the
+ * command line the right. A row with no tab (a system process with an empty
+ * command line, trimmed to its pid alone) is skipped, and a non-numeric pid is
+ * dropped. The env element stays undefined: Windows has no /proc environ to
+ * read, and the matcher reads a missing env as neutral.
+ */
+export function parseWindowsProcessTable(stdout: string): ProcessLine[] {
+  const lines: ProcessLine[] = []
+  for (const raw of stdout.split('\n')) {
+    const trimmed = raw.trim()
+    if (trimmed === '') continue
+    const tab = trimmed.indexOf('\t')
+    if (tab <= 0) continue
+    const pid = Number(trimmed.slice(0, tab))
+    const command = trimmed.slice(tab + 1).trim()
+    if (!Number.isFinite(pid) || command === '') continue
+    lines.push({ pid, command })
+  }
+  return lines
+}
+
+/**
+ * probeWindowsProcesses reads the running process table through PowerShell's
+ * Win32_Process CIM class (the pid and the full command line), the Windows
+ * binding for probeProcesses. The probe emits one `pid<TAB>commandLine` row
+ * per process, which parseWindowsProcessTable turns into lines. A host without
+ * the CIM service (a hung WMI) or a missing powershell degrades to an empty
+ * table, which the detector reads as "no foreign engine" rather than a crash.
+ */
+async function probeWindowsProcesses(): Promise<ProcessLine[]> {
+  const result = await runCommand('powershell', [
+    '-NoProfile',
+    '-NonInteractive',
+    '-Command',
+    'Get-CimInstance Win32_Process | ForEach-Object { "{0}`t{1}" -f $_.ProcessId, $_.CommandLine }',
+  ])
+  if (!result.ok) return []
+  return parseWindowsProcessTable(result.stdout)
 }
 
 /**

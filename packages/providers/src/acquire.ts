@@ -10,6 +10,22 @@
  */
 
 import type { CommandOutcome, LifecycleHost } from '../../core/lib/index.js'
+import type { EngineOsProfile } from './engines/engineOs.ts'
+import { NINFER_LINUX } from './engines/ninferLinux.ts'
+import { NINFER_MACOS } from './engines/ninferMacOS.ts'
+import { NINFER_WINDOWS } from './engines/ninferWindows.ts'
+import { INFERNIX_LINUX } from './engines/infernixLinux.ts'
+import { INFERNIX_MACOS } from './engines/infernixMacOS.ts'
+import { INFERNIX_WINDOWS } from './engines/infernixWindows.ts'
+import { LLAMACPP_LINUX } from './engines/llamacppLinux.ts'
+import { LLAMACPP_MACOS } from './engines/llamacppMacOS.ts'
+import { LLAMACPP_WINDOWS } from './engines/llamacppWindows.ts'
+import { HYPERQWEN_LINUX } from './engines/hyperqwenLinux.ts'
+import { HYPERQWEN_MACOS } from './engines/hyperqwenMacOS.ts'
+import { HYPERQWEN_WINDOWS } from './engines/hyperqwenWindows.ts'
+import { STRATA_LINUX } from './engines/strataLinux.ts'
+import { STRATA_MACOS } from './engines/strataMacOS.ts'
+import { STRATA_WINDOWS } from './engines/strataWindows.ts'
 
 /**
  * EngineSource is the per-engine acquisition data: the upstream git repo the
@@ -34,45 +50,59 @@ export interface EngineSource {
 export const FORK_REMOTE = 'dsh-fork'
 
 /**
+ * The per-engine, per-OS build profiles, keyed by engine id then OS. The
+ * distro-specific Linux profiles (Arch, Debian, Fedora) reuse the shared Linux
+ * profile, so they are not separate keys here. A host OS with no dedicated
+ * profile (a Windows host for an engine that carries no Windows route) reads
+ * the shared Linux profile.
+ */
+const ENGINE_OS_PROFILES: Record<
+  string,
+  Record<'linux' | 'windows' | 'macos', EngineOsProfile | undefined>
+> = {
+  ninfer: { linux: NINFER_LINUX, macos: NINFER_MACOS, windows: NINFER_WINDOWS },
+  hyperqwen: { linux: HYPERQWEN_LINUX, macos: HYPERQWEN_MACOS, windows: HYPERQWEN_WINDOWS },
+  llamacpp: { linux: LLAMACPP_LINUX, macos: LLAMACPP_MACOS, windows: LLAMACPP_WINDOWS },
+  infernix: { linux: INFERNIX_LINUX, macos: INFERNIX_MACOS, windows: INFERNIX_WINDOWS },
+  strata: { linux: STRATA_LINUX, macos: STRATA_MACOS, windows: STRATA_WINDOWS },
+}
+
+/**
  * The per-engine git sources, keyed by engine id. NInfer and Infernix build
  * through cmake (Infernix through its own preset); llama.cpp builds through
  * the same cmake shape as NInfer; Hyper-Qwen is the compose-driven vLLM
  * engine, so it carries no local build steps (the compose up pulls the
  * image); Strata builds through its own setup.sh (the README's
  * Build-from-source route), which the source-build mode runs in the checkout.
+ * The build steps are read from the per-engine OS profiles, so a build command
+ * has one home (the OS-specific files under engines/).
  */
 export const ENGINE_SOURCES: Record<string, EngineSource> = {
   ninfer: {
     repo: 'https://github.com/Neroued/ninfer',
     branch: 'master',
-    buildSteps: [
-      'cmake -S {dir} -B {dir}/build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build {dir}/build -j',
-    ],
+    buildSteps: NINFER_LINUX.buildSteps,
     // The Windows route is the ninfer-all fork's vcpkg build: the manifest
     // pulls the dev libraries, then the engine's own build-native.bat
     // configures and builds. The step cds into the checkout first (the {dir}
     // placeholder), because vcpkg install and the relative script path both
     // resolve against the checkout root.
-    windowsBuildSteps: [
-      'cd {dir} && vcpkg install && .\\scripts\\build-native.bat configure && .\\scripts\\build-native.bat build',
-    ],
+    windowsBuildSteps: NINFER_WINDOWS.buildSteps,
   },
   hyperqwen: {
     repo: 'https://github.com/vllm-project/vllm',
     branch: 'main',
-    buildSteps: [],
+    buildSteps: HYPERQWEN_LINUX.buildSteps,
   },
   llamacpp: {
     repo: 'https://github.com/ggml-org/llama.cpp',
     branch: 'master',
-    buildSteps: [
-      'cmake -S {dir} -B {dir}/build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build {dir}/build -j',
-    ],
+    buildSteps: LLAMACPP_LINUX.buildSteps,
   },
   infernix: {
     repo: 'https://github.com/Wallawalla47/Infernix',
     branch: 'main',
-    buildSteps: ['cd {dir} && cmake --preset release && cmake --build build -j'],
+    buildSteps: INFERNIX_LINUX.buildSteps,
   },
   strata: {
     // The README's Build-from-source route: git clone the repo, then run the
@@ -81,8 +111,51 @@ export const ENGINE_SOURCES: Record<string, EngineSource> = {
     // without starting the server, which the adapter's launch step then does.
     repo: 'https://github.com/Niko1221/Strata',
     branch: 'main',
-    buildSteps: ['cd {dir} && ./setup.sh --yes --no-start'],
+    buildSteps: STRATA_LINUX.buildSteps,
   },
+}
+
+/**
+ * engineOsProfile reads the registered build profile for an engine id on an OS,
+ * or undefined when none is registered. A host OS with no dedicated profile
+ * (a Windows host for an engine that carries no Windows route) reads the
+ * shared Linux profile.
+ */
+export function engineOsProfile(
+  engineId: string,
+  os: 'linux' | 'windows' | 'macos' = 'linux',
+): EngineOsProfile | undefined {
+  const profiles = ENGINE_OS_PROFILES[engineId]
+  if (profiles === undefined) return undefined
+  return profiles[os] ?? profiles.linux
+}
+
+/**
+ * engineBuildDir reads the directory, relative to the checkout, where an
+ * engine's build leaves its binary on an OS, so the binary symlink step reads
+ * the right tree. A Windows host reads the engine's Windows build tree (the
+ * vcpkg route for NInfer writes into build-windows\apps\Release); every other
+ * host reads the shared Linux build directory. An engine that installs its
+ * binary to the path (Strata) carries no build directory, so it reads as
+ * `build`, the shared default.
+ */
+export function engineBuildDir(
+  engineId: string,
+  os: 'linux' | 'windows' | 'macos' = 'linux',
+): string {
+  return engineOsProfile(engineId, os)?.buildDir ?? 'build'
+}
+
+/**
+ * engineBinary reads the engine binary name on an OS (the .exe on Windows), so
+ * the adapters and the symlink step share one source. An engine with no local
+ * binary (the compose engines) reads as undefined.
+ */
+export function engineBinary(
+  engineId: string,
+  os: 'linux' | 'windows' | 'macos' = 'linux',
+): string | undefined {
+  return engineOsProfile(engineId, os)?.binary
 }
 
 /**
@@ -112,20 +185,16 @@ export function engineSource(engineId: string): EngineSource | undefined {
 
 /**
  * engineBuildSteps reads the build steps an engine runs in its checkout for an
- * OS, so the adapter's deploy step and the Get build step share one list. A
- * Windows host reads the engine's `windowsBuildSteps` when present and falls
- * back to the base list when it is not; every other OS reads the base list.
+ * OS, so the adapter's deploy step and the Get build step share one list. The
+ * steps come from the engine's OS profile: a Windows host reads the engine's
+ * Windows profile (the vcpkg route for NInfer), and a host OS with no
+ * dedicated profile reads the shared Linux profile.
  */
 export function engineBuildSteps(
   engineId: string,
   os: 'linux' | 'windows' | 'macos' = 'linux',
 ): readonly string[] {
-  const source = ENGINE_SOURCES[engineId]
-  if (source === undefined) return []
-  if (os === 'windows' && source.windowsBuildSteps !== undefined) {
-    return source.windowsBuildSteps
-  }
-  return source.buildSteps
+  return engineOsProfile(engineId, os)?.buildSteps ?? []
 }
 
 /**
@@ -441,7 +510,12 @@ export async function syncAndRebuildEngine(
     if (binary !== undefined) {
       const which = await host.run(`command -v ${binary}`)
       if (!which.ok) {
-        const link = `sudo ln -sf ${directory}/build/${binary} /usr/local/bin/${binary}`
+        // The build directory is OS-specific: a Windows host reads the
+        // engine's Windows build tree (the vcpkg route for NInfer writes into
+        // build-windows\apps\Release), every other host the shared Linux build
+        // directory.
+        const buildDir = engineBuildDir(request.engineId, request.os ?? 'linux')
+        const link = `sudo ln -sf ${directory}/${buildDir}/${binary} /usr/local/bin/${binary}`
         if (request.allowRunDeps === true) {
           const result = await runLogged(host, link, emit)
           if (!result.ok) {

@@ -38,6 +38,22 @@ import {
 } from '../adapters.ts'
 import { syncAndRebuildEngine } from '../acquire.ts'
 import { NINFER_PARAMETERS } from './ninfer.ts'
+import { ninferLinuxBinary } from './ninferLinux.ts'
+import { ninferMacOSBinary } from './ninferMacOS.ts'
+import { ninferWindowsBinary } from './ninferWindows.ts'
+
+/**
+ * The NInfer engine binary is OS-specific (the .exe on Windows, where the
+ * vcpkg build-native route writes the Release binary), so the launch binary
+ * comes from the host OS's binary function. The adapter's renderLaunch reads
+ * this map by the hardware profile's os, keeping the per-OS name in its own OS
+ * file.
+ */
+const NINFER_BINARY: Record<'linux' | 'windows' | 'macos', () => string> = {
+  linux: ninferLinuxBinary,
+  macos: ninferMacOSBinary,
+  windows: ninferWindowsBinary,
+}
 
 /**
  * NInferModelArtifact is the per-model deploy data: the `.ninfer` artifact
@@ -202,7 +218,9 @@ export class NInferAdapter extends EngineAdapter {
       engineId: this.id,
       kind: 'process',
       argv: [
-        'ninfer-serve',
+        // The engine binary is OS-specific (the .exe on Windows), so the name
+        // comes from the host OS's binary function.
+        NINFER_BINARY[_hw.os](),
         modelPath,
         '--host',
         '127.0.0.1',

@@ -137,9 +137,10 @@ export async function buildSummary(localInfer, request) {
     }));
     // The "unsure" banner: shown when no provider is confirmed running but at
     // least one reads as unsure (a foreign engine the detector saw but could
-    // not tie to a model, or a busy card). The banner offers bash kill commands
-    // for the engine processes the detector saw holding VRAM, so the user can
-    // stop a provider launched in another session.
+    // not tie to a model, or a busy card). The banner offers the host-OS stop
+    // commands (Stop-Process on Windows, kill on Linux and macOS) for the engine
+    // processes the detector saw holding VRAM, so the user can stop a provider
+    // launched in another session.
     const anyRunning = providers.some((p) => p.status === 'running');
     const anyUnsure = providers.some((p) => p.status === 'unsure');
     const unsureBanner = !anyRunning && anyUnsure

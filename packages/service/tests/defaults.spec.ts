@@ -117,11 +117,15 @@ describe('ctx.localInfer.fetchPreset', () => {
 
   beforeAll(() => {
     home = mkdtempSync(join(tmpdir(), 'local-infer-fetch-'))
+    // homedir() reads HOME on POSIX and USERPROFILE on Windows, so both are
+    // pointed at the scratch dir and the preset store never touches the real home.
     process.env.HOME = home
+    process.env.USERPROFILE = home
   })
 
   afterAll(() => {
     delete process.env.HOME
+    delete process.env.USERPROFILE
     rmSync(home, { recursive: true, force: true })
   })
 

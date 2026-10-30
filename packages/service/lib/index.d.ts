@@ -141,14 +141,16 @@ export declare class LocalInfer extends Service implements LocalInferService {
      */
     providerStatuses(providers: readonly ProviderRef[], options?: ProviderStatusOptions): Promise<Record<string, ProviderStatus>>;
     /**
-     * unsureBannerKillCommands returns the bash kill commands for the engine
+     * unsureBannerKillCommands returns the stop commands for the engine
      * processes the detector saw holding VRAM, for the "unsure" banner the card
      * shows when no provider is confirmed running but at least one reads as
      * unsure. A process is included when its command line carries an engine
      * binary marker and the card's VRAM usage is above 30% of the total (the
      * threshold below which a foreign engine is not considered to be holding
-     * the card). The commands are one `kill <pid>` per matching process, in
-     * pid order. An empty list means no matching process was seen, so the
+     * the card). The command form switches on the host OS: one
+     * `Stop-Process -Id <pid>` per matching process on Windows (the PowerShell
+     * cmdlet the banner's text area runs), one `kill <pid>` on Linux and macOS,
+     * in pid order. An empty list means no matching process was seen, so the
      * banner's text area renders empty.
      */
     unsureBannerKillCommands(options?: {
@@ -445,6 +447,16 @@ export declare class LocalInfer extends Service implements LocalInferService {
      */
     private collectSpecs;
 }
+/**
+ * parseWindowsProcessTable reads the `pid<TAB>commandLine` rows PowerShell's
+ * Win32_Process probe emits into process lines the launch-signature matcher
+ * consumes. Each row is split on its first tab: the pid is the left field, the
+ * command line the right. A row with no tab (a system process with an empty
+ * command line, trimmed to its pid alone) is skipped, and a non-numeric pid is
+ * dropped. The env element stays undefined: Windows has no /proc environ to
+ * read, and the matcher reads a missing env as neutral.
+ */
+export declare function parseWindowsProcessTable(stdout: string): ProcessLine[];
 /**
  * runHardwareProbes collects the raw probe results the detector consumes: the
  * OS, CPU thread count, host RAM, the GPU reading, docker availability,

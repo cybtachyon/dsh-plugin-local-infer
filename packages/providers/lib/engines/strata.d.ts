@@ -50,4 +50,27 @@ export declare const STRATA_PARAMETERS: readonly ParameterSpec[];
  * local artifact file passes through unchanged.
  */
 export declare function strataModelKey(config: Config): string;
+/**
+ * StrataSourceLaunchArgs is the resolved input the OS-specific source-build
+ * launch functions take: the model (empty lets the engine pick), the family,
+ * the vision mode, the optional context, the port, and the card's Custom
+ * Arguments. The adapter resolves these from the config and hands them to the
+ * function for the host OS.
+ */
+export interface StrataSourceLaunchArgs {
+    model: string;
+    family: string;
+    vision: string;
+    context: string | undefined;
+    port: number;
+    customArgs: readonly string[];
+}
+/**
+ * strataSourceLaunchArgs renders the source-build wrapper argv shared by every
+ * OS. The wrapper's `--vision` takes yes|no|gpu|cpu, so the surface's on|off
+ * maps onto it (gpu and cpu pass through). The command name is the one
+ * OS-specific piece, supplied by the caller (setup.sh on Linux/Mac,
+ * START-HERE.bat on Windows).
+ */
+export declare function strataSourceLaunchArgs(command: string, args: StrataSourceLaunchArgs): string[];
 //# sourceMappingURL=strata.d.ts.map

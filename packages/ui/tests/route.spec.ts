@@ -262,6 +262,16 @@ function stubService(
  */
 const MODEL_DIR = mkdtempSync(join(tmpdir(), 'local-infer-models-'))
 
+/**
+ * pointHomeAt points os.homedir() at a scratch dir so the config, log, and
+ * preset file paths never touch the real home. homedir() reads HOME on POSIX
+ * and USERPROFILE on Windows, so both are set and the suite stays portable.
+ */
+function pointHomeAt(dir: string): void {
+  process.env.HOME = dir
+  process.env.USERPROFILE = dir
+}
+
 describe('local-infer route read model', () => {
   let home: string
 
@@ -269,7 +279,7 @@ describe('local-infer route read model', () => {
     // readConfig and writeConfig key the config file on homedir(), so the
     // suite points HOME at a scratch dir and never touches the real one.
     home = mkdtempSync(join(tmpdir(), 'local-infer-route-'))
-    process.env.HOME = home
+    pointHomeAt(home)
   })
 
   afterAll(() => {
@@ -415,7 +425,7 @@ describe('deps panel read model', () => {
 
   beforeAll(() => {
     home = mkdtempSync(join(tmpdir(), 'local-infer-deps-'))
-    process.env.HOME = home
+    pointHomeAt(home)
   })
 
   afterAll(() => {
@@ -471,7 +481,7 @@ describe('launch and stop route helpers', () => {
 
   beforeAll(() => {
     home = mkdtempSync(join(tmpdir(), 'local-infer-launch-'))
-    process.env.HOME = home
+    pointHomeAt(home)
   })
 
   afterAll(() => {
@@ -797,7 +807,7 @@ describe('platform config (§3.10) round trip and launch pass-through', () => {
 
   beforeAll(() => {
     home = mkdtempSync(join(tmpdir(), 'local-infer-platform-'))
-    process.env.HOME = home
+    pointHomeAt(home)
   })
 
   afterAll(() => {
@@ -916,7 +926,7 @@ describe('register and unregister route helpers', () => {
 
   beforeAll(() => {
     home = mkdtempSync(join(tmpdir(), 'local-infer-register-'))
-    process.env.HOME = home
+    pointHomeAt(home)
   })
 
   afterAll(() => {
@@ -1147,7 +1157,7 @@ describe('route handlers over a fake web server', () => {
 
   beforeAll(() => {
     home = mkdtempSync(join(tmpdir(), 'local-infer-route-http-'))
-    process.env.HOME = home
+    pointHomeAt(home)
   })
 
   afterAll(() => {
@@ -1416,7 +1426,7 @@ describe('route handler error branches', () => {
 
   beforeAll(() => {
     home = mkdtempSync(join(tmpdir(), 'local-infer-route-err-'))
-    process.env.HOME = home
+    pointHomeAt(home)
   })
 
   afterAll(() => {
@@ -1693,7 +1703,7 @@ describe('model defaults, status, and download read model', () => {
 
   beforeAll(() => {
     home = mkdtempSync(join(tmpdir(), 'local-infer-models-route-'))
-    process.env.HOME = home
+    pointHomeAt(home)
   })
 
   afterAll(() => {
@@ -1918,7 +1928,7 @@ describe('provider list round trip', () => {
 
   beforeAll(() => {
     home = mkdtempSync(join(tmpdir(), 'local-infer-route-prov-'))
-    process.env.HOME = home
+    pointHomeAt(home)
   })
 
   afterAll(() => {
@@ -2395,7 +2405,7 @@ describe('get route (git sync, deps, build)', () => {
 
   beforeAll(() => {
     home = mkdtempSync(join(tmpdir(), 'local-infer-get-'))
-    process.env.HOME = home
+    pointHomeAt(home)
   })
 
   afterAll(() => {
@@ -2660,9 +2670,9 @@ describe('get route (git sync, deps, build)', () => {
     )
     expect(result.ok).toBe(true)
     // The selected DFlash2 drafter downloads into the model directory, the
-    // layout the --draft-model path expects.
+    // layout the --draft-model path expects, joined with the host separator.
     expect(logged).toContain(
-      `$ hf download Wallawalla47/Qwen3.8-Flash-Next-DFlash2-Infernix Qwen3.8-Flash-Next-DFlash2-Infernix.infernix --local-dir ${MODEL_DIR}/Qwen3.8-Flash-Next-DFlash2-Infernix.infernix`,
+      `$ hf download Wallawalla47/Qwen3.8-Flash-Next-DFlash2-Infernix Qwen3.8-Flash-Next-DFlash2-Infernix.infernix --local-dir ${join(MODEL_DIR, 'Qwen3.8-Flash-Next-DFlash2-Infernix.infernix')}`,
     )
     // The Flash-Next model's PLE n-gram volume downloads into the model
     // directory, so the --ngram-volume flag reads a file the same Get left.
@@ -2717,7 +2727,7 @@ describe('engine death persistence', () => {
 
   beforeAll(() => {
     home = mkdtempSync(join(tmpdir(), 'local-infer-death-'))
-    process.env.HOME = home
+    pointHomeAt(home)
   })
 
   afterAll(() => {

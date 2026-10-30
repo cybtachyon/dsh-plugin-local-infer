@@ -6,7 +6,11 @@ import {
   STRATA_TUNE_OPTIONS,
   STRATA_VISION_OPTIONS,
   strataModelKey,
+  strataSourceLaunchArgs,
 } from '../src/engines/strata.ts'
+import { strataLinuxSourceLaunch } from '../src/engines/strataLinux.ts'
+import { strataMacOSSourceLaunch } from '../src/engines/strataMacOS.ts'
+import { strataWindowsSourceLaunch } from '../src/engines/strataWindows.ts'
 
 describe('Strata parameter surface', () => {
   it('ships the strata launch flag surface, one spec per flag', () => {
@@ -87,5 +91,64 @@ describe('Strata parameter surface', () => {
     // A falsy value spells no flag for the optional specs.
     expect(byKey['context']?.toArgv?.('')).toEqual([])
     expect(byKey['gpu']?.toArgv?.('')).toEqual([])
+  })
+})
+
+describe('Strata source-build launch argv', () => {
+  const args = {
+    model: 'iq3_s',
+    family: 'coder',
+    vision: 'on',
+    context: '128k',
+    port: 8090,
+    customArgs: ['--device', 'cuda:1'],
+  }
+
+  it('spells the shared wrapper argv with the vision mapping and the command name', () => {
+    expect(strataSourceLaunchArgs('setup.sh', args)).toEqual([
+      'setup.sh',
+      '--yes',
+      '--model',
+      'iq3_s',
+      '--family',
+      'coder',
+      '--vision',
+      'yes',
+      '--context',
+      '128k',
+      '--port',
+      '8090',
+      '--device',
+      'cuda:1',
+    ])
+  })
+
+  it('omits the model and family flags when they are empty or the default', () => {
+    expect(
+      strataSourceLaunchArgs('setup.sh', { ...args, model: '', family: 'qwen', context: undefined }),
+    ).toEqual(['setup.sh', '--yes', '--vision', 'yes', '--port', '8090', '--device', 'cuda:1'])
+  })
+
+  it('maps the surface vision onto the wrapper yes|no and passes gpu/cpu through', () => {
+    const visionOf = (vision: string): string => {
+      const argv = strataSourceLaunchArgs('setup.sh', { ...args, vision })
+      return argv[argv.indexOf('--vision') + 1]
+    }
+    expect(visionOf('on')).toBe('yes')
+    expect(visionOf('off')).toBe('no')
+    expect(visionOf('gpu')).toBe('gpu')
+    expect(visionOf('cpu')).toBe('cpu')
+  })
+
+  it('renders the Linux and Mac routes through setup.sh', () => {
+    expect(strataLinuxSourceLaunch(args)[0]).toBe('setup.sh')
+    expect(strataMacOSSourceLaunch(args)).toEqual(strataLinuxSourceLaunch(args))
+  })
+
+  it('renders the Windows route through START-HERE.bat with the shared flags', () => {
+    const argv = strataWindowsSourceLaunch(args)
+    expect(argv[0]).toBe('START-HERE.bat')
+    // The flags after the command are the shared wrapper argv.
+    expect(argv.slice(1)).toEqual(strataSourceLaunchArgs('setup.sh', args).slice(1))
   })
 })

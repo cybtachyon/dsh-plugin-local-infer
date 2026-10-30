@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   createNodeLifecycleHost,
@@ -155,7 +156,8 @@ describe('NInferAdapter.renderLaunch', () => {
     expect(plan.modelDirectory).toBe('/models')
     const argv = plan.argv ?? []
     expect(argv[0]).toBe('ninfer-serve')
-    expect(argv[1]).toBe('/models/qwen3_8_27b_nvfp4.ninfer')
+    // The process plan joins the model dir with the host separator.
+    expect(argv[1]).toBe(join('/models', 'qwen3_8_27b_nvfp4.ninfer'))
     expect(argv).toContain('--port')
     expect(argv).toContain('18020')
     expect(argv).toContain('--kv-dtype')
@@ -246,7 +248,7 @@ describe('NInferAdapter.renderLaunch', () => {
       HW,
     )
     expect(plan.modelId).toBe('qwen3_8_27b_swift15abl_nvfp4full-dflash2.ninfer')
-    expect(plan.argv?.[1]).toBe('/models/qwen3_8_27b_swift15abl_nvfp4full-dflash2.ninfer')
+    expect(plan.argv?.[1]).toBe(join('/models', 'qwen3_8_27b_swift15abl_nvfp4full-dflash2.ninfer'))
   })
 })
 
@@ -1085,7 +1087,8 @@ describe('LlamaCppAdapter', () => {
     const argv = plan.argv ?? []
     expect(argv[0]).toBe('llama-server')
     expect(argv).toContain('--model')
-    expect(argv).toContain('/models/Qwen3.8-27B-Q4_K_M.gguf')
+    // The process plan joins the model dir with the host separator.
+    expect(argv).toContain(join('/models', 'Qwen3.8-27B-Q4_K_M.gguf'))
     expect(argv).toContain('--ctx-size')
     expect(argv).toContain('8192')
     expect(argv).toContain('--cache-type-k')
@@ -1144,7 +1147,7 @@ describe('LlamaCppAdapter', () => {
       HW,
     )
     expect(plan.modelId).toBe('Qwen3.8-27B-Q4_K_M.gguf')
-    expect(plan.argv).toContain('/models/Qwen3.8-27B-Q4_K_M.gguf')
+    expect(plan.argv).toContain(join('/models', 'Qwen3.8-27B-Q4_K_M.gguf'))
   })
 
   it('builds in the engine directory, downloads the GGUF, and spawns the engine', async () => {
@@ -1442,6 +1445,35 @@ describe('StrataAdapter', () => {
     expect(argv).toContain('yes')
   })
 
+  it('renders the source-build plan as START-HERE.bat on a Windows host', () => {
+    const { host } = stubHost()
+    const adapter = new StrataAdapter(host)
+    const plan = adapter.renderLaunch(
+      { port: 8090, buildMode: 'local', model: 'iq3_s', family: 'coder' },
+      { ...HW, os: 'windows' },
+    )
+    expect(plan.kind).toBe('process')
+    const argv = plan.argv ?? []
+    expect(argv[0]).toBe('START-HERE.bat')
+    expect(argv).toContain('--model')
+    expect(argv).toContain('iq3_s')
+    expect(argv).toContain('--family')
+    expect(argv).toContain('coder')
+    expect(plan.os).toBe('windows')
+  })
+
+  it('renders the source-build plan as setup.sh on a macOS host', () => {
+    const { host } = stubHost()
+    const adapter = new StrataAdapter(host)
+    const plan = adapter.renderLaunch(
+      { port: 8090, buildMode: 'local', model: 'iq3_s' },
+      { ...HW, os: 'macos' },
+    )
+    const argv = plan.argv ?? []
+    expect(argv[0]).toBe('setup.sh')
+    expect(plan.os).toBe('macos')
+  })
+
   it('resolves the source-build setup.sh to an absolute path in the checkout', async () => {
     const { host, state } = stubHost()
     const adapter = new StrataAdapter(host)
@@ -1454,7 +1486,9 @@ describe('StrataAdapter', () => {
     // spawn resolves a bare name against PATH, so the launch names the script
     // by its absolute path in the checkout, with the checkout as the cwd.
     expect(state.spawn).toHaveLength(1)
-    expect(state.spawn[0]?.argv[0]).toBe('/src/strata/setup.sh')
+    // The spawn resolves the bare script name against the checkout with the
+    // host separator; the cwd is the checkout dir itself.
+    expect(state.spawn[0]?.argv[0]).toBe(join('/src/strata', 'setup.sh'))
     expect(state.spawn[0]?.cwd).toBe('/src/strata')
   })
 
@@ -1785,7 +1819,13 @@ describe('nodeLifecycleHost (the live host the service wires in)', () => {
     const exitPromise = onceExit(handle)
     process.kill(handle.pid, 'SIGKILL')
     const exit = await exitPromise
-    expect(exit).toEqual({ code: null, signal: 'SIGKILL' })
+    // Windows emulates signals by terminating the process, so the close event
+    // reports a non-zero code and no signal; POSIX reports the signal itself.
+    if (process.platform === 'win32') {
+      expect(exit).toEqual({ code: 1, signal: null })
+    } else {
+      expect(exit).toEqual({ code: null, signal: 'SIGKILL' })
+    }
   })
 
   it('fires a listener registered after the child already ended immediately', async () => {
@@ -1981,7 +2021,8 @@ describe('InfernixAdapter', () => {
     expect(plan.modelDirectory).toBe('/models')
     const argv = plan.argv ?? []
     expect(argv[0]).toContain('infernix-serve')
-    expect(argv[1]).toBe('/models/qwen3_8_27b_nvfp4-nvidia.ninfer')
+    // The process plan joins the model dir with the host separator.
+    expect(argv[1]).toBe(join('/models', 'qwen3_8_27b_nvfp4-nvidia.ninfer'))
     expect(argv).toContain('--host')
     expect(argv).toContain('127.0.0.1')
     expect(argv).toContain('--port')
@@ -2020,7 +2061,7 @@ describe('InfernixAdapter', () => {
     )
     const argv = plan.argv ?? []
     expect(argv[1]).toBe(
-      '/models/Qwen3.8-Flash-Next-NVIDIA-NVFP4-Dense8-Infernix-00001-of-00003.infernix',
+      join('/models', 'Qwen3.8-Flash-Next-NVIDIA-NVFP4-Dense8-Infernix-00001-of-00003.infernix'),
     )
     expect(argv).toContain('--ngram-volume')
     expect(argv).toContain('/models/Qwen3.8-Flash-Next-NVIDIA-NVFP4-Infernix.ngram')
@@ -2103,8 +2144,8 @@ describe('InfernixAdapter', () => {
     const argv = plan.argv ?? []
     expect(argv).toContain('--draft-model')
     // The preset resolves to the model directory plus the drafter file, the
-    // layout the hf CLI download leaves.
-    expect(argv).toContain(`/models/${presetFile}/${presetFile}`)
+    // layout the hf CLI download leaves, joined with the host separator.
+    expect(argv).toContain(join('/models', presetFile, presetFile))
   })
 
   it('spells --draft-model from the Custom path field when dflash2 is on', () => {

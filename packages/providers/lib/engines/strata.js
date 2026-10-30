@@ -194,4 +194,28 @@ export const STRATA_PARAMETERS = [
 export function strataModelKey(config) {
     return typeof config.model === 'string' ? config.model : '';
 }
+/**
+ * strataSourceLaunchArgs renders the source-build wrapper argv shared by every
+ * OS. The wrapper's `--vision` takes yes|no|gpu|cpu, so the surface's on|off
+ * maps onto it (gpu and cpu pass through). The command name is the one
+ * OS-specific piece, supplied by the caller (setup.sh on Linux/Mac,
+ * START-HERE.bat on Windows).
+ */
+export function strataSourceLaunchArgs(command, args) {
+    // The wrapper's --vision takes yes|no|gpu|cpu; the surface's on|off maps onto
+    // it (gpu and cpu pass through).
+    const visionFlag = args.vision === 'on' ? 'yes' : args.vision === 'off' ? 'no' : args.vision;
+    return [
+        command,
+        '--yes',
+        ...(args.model !== '' ? ['--model', args.model] : []),
+        ...(args.family !== 'qwen' ? ['--family', args.family] : []),
+        '--vision',
+        visionFlag,
+        ...(args.context !== undefined ? ['--context', args.context] : []),
+        '--port',
+        String(args.port),
+        ...args.customArgs,
+    ];
+}
 //# sourceMappingURL=strata.js.map

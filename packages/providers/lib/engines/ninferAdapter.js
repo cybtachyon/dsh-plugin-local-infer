@@ -16,6 +16,21 @@ import { EngineAdapter } from '../../../core/lib/index.js';
 import { customArgFlags, flagsFromSpecs, nodeLifecycleHost, pollHealth, trackChild, } from "../adapters.js";
 import { syncAndRebuildEngine } from "../acquire.js";
 import { NINFER_PARAMETERS } from "./ninfer.js";
+import { ninferLinuxBinary } from "./ninferLinux.js";
+import { ninferMacOSBinary } from "./ninferMacOS.js";
+import { ninferWindowsBinary } from "./ninferWindows.js";
+/**
+ * The NInfer engine binary is OS-specific (the .exe on Windows, where the
+ * vcpkg build-native route writes the Release binary), so the launch binary
+ * comes from the host OS's binary function. The adapter's renderLaunch reads
+ * this map by the hardware profile's os, keeping the per-OS name in its own OS
+ * file.
+ */
+const NINFER_BINARY = {
+    linux: ninferLinuxBinary,
+    macos: ninferMacOSBinary,
+    windows: ninferWindowsBinary,
+};
 /**
  * The NInfer model artifacts, keyed by the model registry id. The 27B entry
  * is the default the DEFAULT_MODELS list names; the 35B-A3B entries are the
@@ -158,7 +173,9 @@ export class NInferAdapter extends EngineAdapter {
             engineId: this.id,
             kind: 'process',
             argv: [
-                'ninfer-serve',
+                // The engine binary is OS-specific (the .exe on Windows), so the name
+                // comes from the host OS's binary function.
+                NINFER_BINARY[_hw.os](),
                 modelPath,
                 '--host',
                 '127.0.0.1',

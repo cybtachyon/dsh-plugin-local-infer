@@ -44,6 +44,22 @@ import {
   infernixDraftModelPath,
   infernixModelKey,
 } from './infernix.ts'
+import { infernixLinuxBinary } from './infernixLinux.ts'
+import { infernixMacOSBinary } from './infernixMacOS.ts'
+import { infernixWindowsBinary } from './infernixWindows.ts'
+
+/**
+ * The Infernix engine binary is OS-specific (the .exe on Windows, where the
+ * published release zip ships the server and its DLLs), so the launch binary
+ * comes from the host OS's binary function. The adapter's renderLaunch reads
+ * this map by the hardware profile's os, keeping the per-OS name in its own OS
+ * file.
+ */
+const INFERNIX_BINARY: Record<'linux' | 'windows' | 'macos', () => string> = {
+  linux: infernixLinuxBinary,
+  macos: infernixMacOSBinary,
+  windows: infernixWindowsBinary,
+}
 
 /**
  * InfernixAdapter is the local-only engine for Infernix, the C++/CUDA fork
@@ -103,8 +119,9 @@ export class InfernixAdapter extends EngineAdapter {
     const modelDirectory = typeof config.modelDirectory === 'string' ? config.modelDirectory : ''
     const modelPath = modelDirectory === '' ? file : join(modelDirectory, file)
     // The engine binary is the .exe on a Windows host, where the published
-    // release zip ships the server and its DLLs.
-    const binary = process.platform === 'win32' ? 'infernix-serve.exe' : 'infernix-serve'
+    // release zip ships the server and its DLLs. The name comes from the host
+    // OS's binary function, so the .exe spelling has one home in the OS file.
+    const binary = INFERNIX_BINARY[_hw.os]()
     const flags = flagsFromSpecs(INFERNIX_PARAMETERS, config)
     // The dflash2 backend always loads a drafter through --draft-model, so the
     // flag is spelled here from the resolved path (the selected DFlash2 preset,

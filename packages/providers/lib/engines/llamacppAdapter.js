@@ -13,6 +13,20 @@ import { EngineAdapter } from '../../../core/lib/index.js';
 import { customArgFlags, flagsFromSpecs, nodeLifecycleHost, pollHealth, trackChild, } from "../adapters.js";
 import { syncAndRebuildEngine } from "../acquire.js";
 import { LLAMACPP_MODEL_ARTIFACTS, LLAMACPP_PARAMETERS, llamaCppModelKey, } from "./llamacpp.js";
+import { llamacppLinuxBinary } from "./llamacppLinux.js";
+import { llamacppMacOSBinary } from "./llamacppMacOS.js";
+import { llamacppWindowsBinary } from "./llamacppWindows.js";
+/**
+ * The llama.cpp engine binary is OS-specific (the .exe on Windows), so the
+ * launch binary comes from the host OS's binary function. The adapter's
+ * renderLaunch reads this map by the hardware profile's os, keeping the per-OS
+ * name in its own OS file.
+ */
+const LLAMACPP_BINARY = {
+    linux: llamacppLinuxBinary,
+    macos: llamacppMacOSBinary,
+    windows: llamacppWindowsBinary,
+};
 /**
  * The llama.cpp docker image the adapter pulls and runs. The engineFork
  * platform config overrides the git source for a local build; the image stays
@@ -117,7 +131,9 @@ export class LlamaCppAdapter extends EngineAdapter {
             engineId: this.id,
             kind: 'process',
             argv: [
-                'llama-server',
+                // The engine binary is OS-specific (the .exe on Windows), so the name
+                // comes from the host OS's binary function.
+                LLAMACPP_BINARY[_hw.os](),
                 '--model',
                 modelPath,
                 '--host',

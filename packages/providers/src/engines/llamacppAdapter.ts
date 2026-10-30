@@ -40,6 +40,21 @@ import {
   llamaCppModelKey,
 } from './llamacpp.ts'
 import type { LlamaCppModelArtifact } from './llamacpp.ts'
+import { llamacppLinuxBinary } from './llamacppLinux.ts'
+import { llamacppMacOSBinary } from './llamacppMacOS.ts'
+import { llamacppWindowsBinary } from './llamacppWindows.ts'
+
+/**
+ * The llama.cpp engine binary is OS-specific (the .exe on Windows), so the
+ * launch binary comes from the host OS's binary function. The adapter's
+ * renderLaunch reads this map by the hardware profile's os, keeping the per-OS
+ * name in its own OS file.
+ */
+const LLAMACPP_BINARY: Record<'linux' | 'windows' | 'macos', () => string> = {
+  linux: llamacppLinuxBinary,
+  macos: llamacppMacOSBinary,
+  windows: llamacppWindowsBinary,
+}
 
 /**
  * The llama.cpp docker image the adapter pulls and runs. The engineFork
@@ -153,7 +168,9 @@ export class LlamaCppAdapter extends EngineAdapter {
       engineId: this.id,
       kind: 'process',
       argv: [
-        'llama-server',
+        // The engine binary is OS-specific (the .exe on Windows), so the name
+        // comes from the host OS's binary function.
+        LLAMACPP_BINARY[_hw.os](),
         '--model',
         modelPath,
         '--host',

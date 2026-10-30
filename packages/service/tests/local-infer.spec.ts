@@ -2,6 +2,22 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+
+// The service reads the host OS through node:os's platform. The ESM namespace
+// is not configurable, so a per-test spyOn cannot redefine it. This module
+// mock delegates to the real platform by default (a test that sets no
+// override reads the running host, the way detectHardware's test expects) and
+// yields the override while one is armed, so the OS-branching tests can price
+// a Windows, Linux, or macOS host from any runner.
+const osPlatformMock = vi.hoisted(() => ({ platform: undefined as NodeJS.Platform | undefined }))
+vi.mock('node:os', async (importOriginal) => {
+  const original = await importOriginal<typeof import('node:os')>()
+  return {
+    ...original,
+    platform: () =>
+      osPlatformMock.platform !== undefined ? osPlatformMock.platform : original.platform(),
+  }
+})
 import { Context } from '@deepseek-ai/cordis'
 import { EngineAdapter, estimateVram } from 'dsh-plugin-local-infer/core'
 import type {
@@ -26,7 +42,11 @@ import type {
   SystemDep,
   VramModel,
 } from 'dsh-plugin-local-infer/core'
-import LocalInfer, { LocalInferError, runHardwareProbes } from '../src/index.ts'
+import LocalInfer, {
+  LocalInferError,
+  parseWindowsProcessTable,
+  runHardwareProbes,
+} from '../src/index.ts'
 import type { EngineDeathEvent } from '../src/types.ts'
 
 const HW: HardwareProfile = { dockerAvailable: false, wsl2: false, os: 'linux', cpuThreads: 4 }
@@ -266,14 +286,18 @@ describe('ctx.localInfer scaffold', () => {
 
   it('detects the host hardware from the live probes', async () => {
     const ctx = await seam()
+    // The probe reads the real host, so the os field is the running platform,
+    // not a fixed value: windows on a Windows host, linux elsewhere.
+    const expectedOs =
+      process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux'
     const profile = await ctx.localInfer.detectHardware()
-    expect(profile.os).toBe('linux')
+    expect(profile.os).toBe(expectedOs)
     expect(profile.cpuThreads).toBeGreaterThan(0)
     expect(typeof profile.dockerAvailable).toBe('boolean')
     expect(typeof profile.wsl2).toBe('boolean')
     // The probe results feed the same pure mapping the core suite pins.
     const probes = await runHardwareProbes()
-    expect(probes.os).toBe('linux')
+    expect(probes.os).toBe(expectedOs)
     expect(probes.cpuThreads).toBe(profile.cpuThreads)
   })
 })
@@ -451,6 +475,10 @@ describe('ctx.localInfer dep provisioning', () => {
 
   it('runs install commands through the shell runner and captures the exit', async () => {
     const ctx = await seam()
+    // `true`/`false` are POSIX sh builtins; on Windows the runner's shell is
+    // cmd.exe, where a clean no-op is `echo` and a failing command is `exit 1`.
+    const noopCommand = process.platform === 'win32' ? 'echo ok' : 'true'
+    const brokenCommand = process.platform === 'win32' ? 'exit 1' : 'false'
     const plan: EngineDepPlan = {
       docker: [],
       local: [
@@ -458,13 +486,13 @@ describe('ctx.localInfer dep provisioning', () => {
           id: 'noop',
           purpose: 'a no-op command',
           requiresSudo: false,
-          install: { apt: { commands: ['true'] } },
+          install: { apt: { commands: [noopCommand] } },
         },
         {
           id: 'broken',
           purpose: 'a failing command',
           requiresSudo: false,
-          install: { apt: { commands: ['false'] } },
+          install: { apt: { commands: [brokenCommand] } },
         },
       ],
     }
@@ -1243,6 +1271,116 @@ describe('ctx.localInfer provider statuses', () => {
   })
 })
 
+describe('ctx.localInfer unsure banner kill commands', () => {
+  const NINFER_SIG: EngineLaunchSignature = { binary: 'ninfer-serve', port: 18020 }
+  // A Windows-shaped command line: the engine exe under a drive path. The
+  // marker match is a substring test, so the .exe suffix still carries the
+  // binary marker.
+  const NINFER_WIN_LINE: ProcessLine = {
+    pid: 12345,
+    command: 'C:\\engines\\ninfer-serve.exe --host 127.0.0.1 --port 18020',
+  }
+  const GPU_BUSY: GpuUsageProbe = { usedMiB: 24576, totalMiB: 24576 }
+  const GPU_IDLE: GpuUsageProbe = { usedMiB: 2048, totalMiB: 24576 }
+
+  class SigningAdapter extends StubAdapter {
+    constructor(id: string, private readonly signature: EngineLaunchSignature) {
+      super(id)
+    }
+    launchSignature(): EngineLaunchSignature {
+      return this.signature
+    }
+  }
+
+  it('emits Stop-Process -Id commands on a Windows host', async () => {
+    osPlatformMock.platform = 'win32'
+    try {
+      const ctx = await seam()
+      ctx.localInfer.registerEngine(new SigningAdapter('ninfer', NINFER_SIG))
+      const commands = await ctx.localInfer.unsureBannerKillCommands({
+        gpuUsage: GPU_BUSY,
+        processes: [NINFER_WIN_LINE],
+      })
+      expect(commands).toEqual(['Stop-Process -Id 12345'])
+    } finally {
+      osPlatformMock.platform = undefined
+    }
+  })
+
+  it('emits kill commands on a Linux host', async () => {
+    osPlatformMock.platform = 'linux'
+    try {
+      const ctx = await seam()
+      ctx.localInfer.registerEngine(new SigningAdapter('ninfer', NINFER_SIG))
+      const commands = await ctx.localInfer.unsureBannerKillCommands({
+        gpuUsage: GPU_BUSY,
+        processes: [NINFER_WIN_LINE],
+      })
+      expect(commands).toEqual(['kill 12345'])
+    } finally {
+      osPlatformMock.platform = undefined
+    }
+  })
+
+  it('emits kill commands on a macOS host', async () => {
+    osPlatformMock.platform = 'darwin'
+    try {
+      const ctx = await seam()
+      ctx.localInfer.registerEngine(new SigningAdapter('ninfer', NINFER_SIG))
+      const commands = await ctx.localInfer.unsureBannerKillCommands({
+        gpuUsage: GPU_BUSY,
+        processes: [NINFER_WIN_LINE],
+      })
+      expect(commands).toEqual(['kill 12345'])
+    } finally {
+      osPlatformMock.platform = undefined
+    }
+  })
+
+  it('offers no commands below the 30% usage threshold', async () => {
+    const ctx = await seam()
+    ctx.localInfer.registerEngine(new SigningAdapter('ninfer', NINFER_SIG))
+    const commands = await ctx.localInfer.unsureBannerKillCommands({
+      gpuUsage: GPU_IDLE,
+      processes: [NINFER_WIN_LINE],
+    })
+    expect(commands).toEqual([])
+  })
+
+  it('offers no commands when no process carries an engine marker', async () => {
+    const ctx = await seam()
+    ctx.localInfer.registerEngine(new SigningAdapter('ninfer', NINFER_SIG))
+    const commands = await ctx.localInfer.unsureBannerKillCommands({
+      gpuUsage: GPU_BUSY,
+      processes: [{ pid: 1, command: 'vim PLAN.md' }],
+    })
+    expect(commands).toEqual([])
+  })
+})
+
+describe('parseWindowsProcessTable', () => {
+  it('reads pid and command line from tab-separated rows', () => {
+    const stdout =
+      '4\tC:\\Windows\\System32\\smss.exe\n' +
+      '12345\tC:\\engines\\ninfer-serve.exe --host 127.0.0.1 --port 18020\n' +
+      '5678\t'
+    const lines = parseWindowsProcessTable(stdout)
+    expect(lines).toEqual([
+      { pid: 4, command: 'C:\\Windows\\System32\\smss.exe' },
+      { pid: 12345, command: 'C:\\engines\\ninfer-serve.exe --host 127.0.0.1 --port 18020' },
+    ])
+  })
+
+  it('skips rows with an empty command line and a non-numeric pid', () => {
+    const stdout = '12345\t\nabc\tC:\\x.exe\n'
+    expect(parseWindowsProcessTable(stdout)).toEqual([])
+  })
+
+  it('reads an empty table from blank output', () => {
+    expect(parseWindowsProcessTable('')).toEqual([])
+  })
+})
+
 describe('ctx.localInfer in-flight launch and stop state machine', () => {
   // A Strata-shaped signature: the engine sizes its own model, so a launch
   // carries no model tie. The in-flight flag is what keeps the provider's
@@ -1761,13 +1899,16 @@ describe('model directory, hf CLI, and model download', () => {
   let home: string
 
   beforeAll(() => {
-    // defaultModelDirectory keys on homedir(), so the suite points HOME at a
-    // scratch dir and never touches the real one.
+    // defaultModelDirectory keys on homedir(), so the suite points the home at
+    // a scratch dir and never touches the real one. homedir() reads HOME on
+    // POSIX and USERPROFILE on Windows, so both are set.
     home = mkdtempSync(join(tmpdir(), 'local-infer-service-'))
     process.env.HOME = home
+    process.env.USERPROFILE = home
   })
 
   afterAll(() => {
+    delete process.env.USERPROFILE
     rmSync(home, { recursive: true, force: true })
   })
 

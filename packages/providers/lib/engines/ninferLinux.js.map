@@ -1,0 +1,1 @@
+{"version":3,"file":"ninferLinux.js","sourceRoot":"","sources":["../../src/engines/ninferLinux.ts"],"names":[],"mappings":"AAAA;;;;;;;GAOG;AAIH,MAAM,CAAC,MAAM,YAAY,GAAoB;IAC3C,UAAU,EAAE;QACV,mGAAmG;KACpG;IACD,QAAQ,EAAE,OAAO;IACjB,MAAM,EAAE,cAAc;CACvB,CAAA;AAED;;;;GAIG;AACH,MAAM,UAAU,iBAAiB;IAC/B,OAAO,YAAY,CAAC,MAAM,IAAI,cAAc,CAAA;AAC9C,CAAC"}
