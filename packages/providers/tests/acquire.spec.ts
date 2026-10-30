@@ -12,14 +12,14 @@ import {
 } from '../src/acquire.ts'
 import { ENGINES } from '../src/engines.ts'
 import { createNodeLifecycleHost } from '../src/adapters.ts'
-import type { CommandOutcome, LifecycleHost } from '../../core/lib/index.js'
+import type { CommandOutcome, LifecycleHost, RunOptions } from '../../core/lib/index.js'
 
 /**
  * A stub LifecycleHost for the Get steps. `exists` decides whether the
- * `[ -d <dir>/.git ]` probe finds a checkout; `stream` feeds the stdout a
- * streamed command prints (the dirty-check reads it); `fail` lists command
- * substrings whose run fails. Every command and every streamed chunk is
- * recorded so the assertions read the sequence.
+ * `git -C <dir> rev-parse --is-inside-work-tree` probe finds a checkout;
+ * `stream` feeds the stdout a streamed command prints (the dirty-check reads
+ * it); `fail` lists command substrings whose run fails. Every command and
+ * every streamed chunk is recorded so the assertions read the sequence.
  */
 function stubHost(options?: {
   exists?: boolean
@@ -30,6 +30,11 @@ function stubHost(options?: {
   const state = {
     run: [] as string[],
     streamed: [] as string[],
+    // The shell option each run/runStream call carried (the engine OS
+    // profile's shell, e.g. powershell.exe for the Windows vcpkg route);
+    // undefined when the call kept the host's default shell.
+    runShells: [] as (string | undefined)[],
+    streamedShells: [] as (string | undefined)[],
     logged: '',
   }
   const fails = (command: string): boolean =>
@@ -42,9 +47,10 @@ function stubHost(options?: {
     return key === undefined ? '' : stream[key]!
   }
   const host: LifecycleHost = {
-    async run(command: string): Promise<CommandOutcome> {
+    async run(command: string, runOptions?: RunOptions): Promise<CommandOutcome> {
       state.run.push(command)
-      if (command.startsWith('[ -d')) {
+      state.runShells.push(runOptions?.shell)
+      if (command.includes('rev-parse --is-inside-work-tree')) {
         return options?.exists === false ? { ok: false } : { ok: true }
       }
       return outcome(command)
@@ -55,8 +61,10 @@ function stubHost(options?: {
           async runStream(
             command: string,
             onOutput: (chunk: string) => void,
+            runOptions?: RunOptions,
           ): Promise<CommandOutcome> {
             state.streamed.push(command)
+            state.streamedShells.push(runOptions?.shell)
             const text = streamText(command)
             if (text !== '') {
               onOutput(text)
@@ -99,7 +107,7 @@ describe('ENGINE_SOURCES', () => {
     // The NInfer Windows vcpkg route writes the Release binary into the Windows
     // build tree, not the shared Linux build directory, and the binary is the
     // .exe. A Linux host reads the shared build directory and the plain name.
-    expect(engineBuildDir('ninfer', 'windows')).toBe('build-windows\\apps\\Release')
+    expect(engineBuildDir('ninfer', 'windows')).toBe('build-windows/apps/Release')
     expect(engineBuildDir('ninfer')).toBe('build')
     expect(engineBinary('ninfer', 'windows')).toBe('ninfer-serve.exe')
     expect(engineBinary('ninfer')).toBe('ninfer-serve')
@@ -368,6 +376,36 @@ describe('buildEngineRepo', () => {
     expect(state.logged).not.toContain('cmake -S /src/ninfer -B /src/ninfer/build')
   })
 
+  it('runs the Windows build steps in the profile shell (powershell.exe)', async () => {
+    const { host, state } = stubHost()
+    const result = await buildEngineRepo(
+      host,
+      'ninfer',
+      '/src/ninfer',
+      (chunk) => {
+        state.logged += chunk
+      },
+      undefined,
+      'windows',
+    )
+    expect(result.ok).toBe(true)
+    // The Windows vcpkg route runs in the profile's powershell.exe shell, so
+    // its $env: steps resolve; the git-free build step is the only command.
+    expect(state.logged).toContain('vcpkg install')
+    expect(state.streamedShells).toEqual(['powershell.exe'])
+  })
+
+  it('runs the Linux build steps in the host default shell (no profile shell)', async () => {
+    const { host, state } = stubHost()
+    const result = await buildEngineRepo(host, 'ninfer', '/src/ninfer', (chunk) => {
+      state.logged += chunk
+    })
+    expect(result.ok).toBe(true)
+    // The Linux profile names no shell, so the host default runs the steps.
+    expect(state.logged).toContain('cmake -S /src/ninfer -B /src/ninfer/build')
+    expect(state.streamedShells).toEqual([undefined])
+  })
+
   it('passes through an engine with no local build steps', async () => {
     const { host, state } = stubHost()
     const result = await buildEngineRepo(host, 'hyperqwen', '/src/vllm', (chunk) => {
@@ -392,7 +430,7 @@ describe('syncAndRebuildEngine', () => {
     const { host, state } = stubHost({ exists: false })
     const result = await syncAndRebuildEngine(
       host,
-      { engineId: 'ninfer', directory: '/src/ninfer', binary: 'ninfer-serve' },
+      { engineId: 'ninfer', directory: '/src/ninfer' },
       (chunk) => {
         state.logged += chunk
       },
@@ -408,7 +446,7 @@ describe('syncAndRebuildEngine', () => {
     const { host, state } = stubHost({ stream: { 'rev-list': '3' } })
     const result = await syncAndRebuildEngine(
       host,
-      { engineId: 'ninfer', directory: '/src/ninfer', binary: 'ninfer-serve' },
+      { engineId: 'ninfer', directory: '/src/ninfer' },
       (chunk) => {
         state.logged += chunk
       },
@@ -425,7 +463,7 @@ describe('syncAndRebuildEngine', () => {
     const { host, state } = stubHost({ stream: { 'rev-list': '0' } })
     const result = await syncAndRebuildEngine(
       host,
-      { engineId: 'ninfer', directory: '/src/ninfer', binary: 'ninfer-serve' },
+      { engineId: 'ninfer', directory: '/src/ninfer' },
       (chunk) => {
         state.logged += chunk
       },
@@ -440,7 +478,7 @@ describe('syncAndRebuildEngine', () => {
     const { host, state } = stubHost({ stream: { 'status --short': ' M src/engine.c' } })
     const result = await syncAndRebuildEngine(
       host,
-      { engineId: 'ninfer', directory: '/src/ninfer', binary: 'ninfer-serve' },
+      { engineId: 'ninfer', directory: '/src/ninfer' },
       (chunk) => {
         state.logged += chunk
       },
@@ -459,7 +497,6 @@ describe('syncAndRebuildEngine', () => {
         engineId: 'infernix',
         directory: '/src/infernix',
         fork: 'https://github.com/me/infernix',
-        binary: 'infernix-serve',
       },
       (chunk) => {
         state.logged += chunk
@@ -482,7 +519,6 @@ describe('syncAndRebuildEngine', () => {
       {
         engineId: 'ninfer',
         directory: '/src/ninfer',
-        binary: 'ninfer-serve',
         allowRunDeps: true,
       },
       (chunk) => {
@@ -503,7 +539,6 @@ describe('syncAndRebuildEngine', () => {
       {
         engineId: 'ninfer',
         directory: '/src/ninfer',
-        binary: 'ninfer-serve',
         allowRunDeps: false,
       },
       (chunk) => {
@@ -524,7 +559,7 @@ describe('syncAndRebuildEngine', () => {
     const { host, state } = stubHost({ stream: { 'rev-list': '3' }, fail: ['cmake'] })
     const result = await syncAndRebuildEngine(
       host,
-      { engineId: 'ninfer', directory: '/src/ninfer', binary: 'ninfer-serve' },
+      { engineId: 'ninfer', directory: '/src/ninfer' },
       (chunk) => {
         state.logged += chunk
       },
@@ -542,7 +577,6 @@ describe('syncAndRebuildEngine', () => {
       {
         engineId: 'ninfer',
         directory: '/src/ninfer',
-        binary: 'ninfer-serve',
         onBuildStart: () => {
           buildStartCalled = true
         },
@@ -566,7 +600,6 @@ describe('syncAndRebuildEngine', () => {
       {
         engineId: 'ninfer',
         directory: '/src/ninfer',
-        binary: 'ninfer-serve',
         onBuildStart: () => {
           buildStartCalled = true
         },
@@ -587,7 +620,6 @@ describe('syncAndRebuildEngine', () => {
       {
         engineId: 'ninfer',
         directory: '/src/ninfer',
-        binary: 'ninfer-serve',
         buildCommands: 'cmake -S . -B build && cmake --build build',
       },
       (chunk) => {
@@ -608,7 +640,7 @@ describe('syncAndRebuildEngine', () => {
     const { host, state } = stubHost({ exists: false })
     const result = await syncAndRebuildEngine(
       host,
-      { engineId: 'ninfer', directory: '/src/ninfer', binary: 'ninfer-serve' },
+      { engineId: 'ninfer', directory: '/src/ninfer' },
       (chunk) => {
         state.logged += chunk
       },
@@ -616,6 +648,27 @@ describe('syncAndRebuildEngine', () => {
     expect(result.ok).toBe(true)
     expect(result.rebuilt).toBe(true)
     expect(state.logged).toContain('cmake -S /src/ninfer -B /src/ninfer/build')
+  })
+
+  it('runs the Windows build steps in the profile shell when the host OS is Windows', async () => {
+    const { host, state } = stubHost({ exists: false })
+    const result = await syncAndRebuildEngine(
+      host,
+      { engineId: 'ninfer', directory: '/src/ninfer', os: 'windows' },
+      (chunk) => {
+        state.logged += chunk
+      },
+    )
+    expect(result.ok).toBe(true)
+    expect(result.rebuilt).toBe(true)
+    // The clone runs in the host's default shell; the vcpkg build step runs in
+    // the profile's powershell.exe shell.
+    const cloneIndex = state.streamed.findIndex((command) => command.startsWith('git clone'))
+    expect(cloneIndex).toBeGreaterThan(-1)
+    expect(state.streamedShells[cloneIndex]).toBeUndefined()
+    const vcpkgIndex = state.streamed.findIndex((command) => command.includes('vcpkg install'))
+    expect(vcpkgIndex).toBeGreaterThan(-1)
+    expect(state.streamedShells[vcpkgIndex]).toBe('powershell.exe')
   })
 })
 

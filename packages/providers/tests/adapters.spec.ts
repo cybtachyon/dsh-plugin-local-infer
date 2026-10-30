@@ -31,6 +31,7 @@ import type {
   LifecycleHost,
   ProcessExitInfo,
   ProcessHandle,
+  RunOptions,
 } from '../../core/lib/index.js'
 
 const HW: HardwareProfile = { dockerAvailable: true, wsl2: false, os: 'linux', cpuThreads: 8 }
@@ -44,6 +45,10 @@ const HW: HardwareProfile = { dockerAvailable: true, wsl2: false, os: 'linux', c
 function stubHost() {
   const state = {
     run: [] as string[],
+    // The shell option each run/runStream call carried (the engine OS
+    // profile's shell, e.g. powershell.exe for the Windows vcpkg route);
+    // undefined when the call kept the host's default shell.
+    runShells: [] as (string | undefined)[],
     spawn: [] as { argv: string[]; env: Record<string, string>; cwd?: string }[],
     fetch: [] as string[],
     killed: [] as number[],
@@ -57,15 +62,18 @@ function stubHost() {
     runOutput: {} as Record<string, string>,
   }
   const host: LifecycleHost = {
-    async run(command: string): Promise<CommandOutcome> {
+    async run(command: string, options?: RunOptions): Promise<CommandOutcome> {
       state.run.push(command)
+      state.runShells.push(options?.shell)
       return state.runOk ? { ok: true } : { ok: false, detail: 'run failed' }
     },
     async runStream(
       command: string,
       onOutput: (chunk: string) => void,
+      options?: RunOptions,
     ): Promise<CommandOutcome> {
       state.run.push(command)
+      state.runShells.push(options?.shell)
       const output =
         Object.entries(state.runOutput).find(([key]) => command.includes(key))?.[1] ?? ''
       if (output !== '') onOutput(output)
@@ -278,7 +286,7 @@ describe('NInferAdapter.deploy', () => {
     // The conditional rebuild prices the checkout against the fork (added as
     // the named fork remote), rebases it because it is behind, cleans the tree,
     // and runs the build steps before the model download and the spawn.
-    expect(state.run[0]).toContain('[ -d /src/ninfer/.git ]')
+    expect(state.run[0]).toContain('git -C /src/ninfer rev-parse --is-inside-work-tree')
     expect(state.run).toContain('git -C /src/ninfer remote add dsh-fork https://github.com/iamwavecut/ninfer-all')
     expect(state.run).toContain('git -C /src/ninfer fetch dsh-fork || true')
     expect(state.run.some((c) => c.includes('git -C /src/ninfer rebase dsh-fork/master'))).toBe(true)
@@ -292,6 +300,88 @@ describe('NInferAdapter.deploy', () => {
     // logs the service threads to the card's Logs section.
     expect(result.logs).toContain('is behind dsh-fork/master')
     expect(result.logs).toContain('cmake -S /src/ninfer -B /src/ninfer/build')
+  })
+
+  it('resolves a relative launch path against the engine directory', async () => {
+    const { host, state } = stubHost()
+    state.runOutput['rev-list'] = '0'
+    const adapter = new NInferAdapter(host)
+    // A relative launch path (the NInfer Windows build tree) is joined against
+    // the engine directory, so the spawn resolves an absolute path.
+    const relativeBinary = join('build-windows', 'apps', 'Release', 'ninfer-serve.exe')
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      argv: [relativeBinary, '/models/x.ninfer'],
+      env: {},
+      modelId: 'qwen3-27b',
+      modelDirectory: '/models',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    const result = await adapter.deploy(plan, {
+      engineId: 'ninfer',
+      engineDirectory: '/src/ninfer',
+    })
+    expect(result.ok).toBe(true)
+    expect(state.spawn).toHaveLength(1)
+    expect(state.spawn[0]?.argv[0]).toBe(join('/src/ninfer', relativeBinary))
+    expect(state.spawn[0]?.cwd).toBe('/src/ninfer')
+  })
+
+  it('leaves a bare launch name for the path', async () => {
+    const { host, state } = stubHost()
+    state.runOutput['rev-list'] = '0'
+    const adapter = new NInferAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      argv: ['ninfer-serve', '/models/x.ninfer'],
+      env: {},
+      modelId: 'qwen3-27b',
+      modelDirectory: '/models',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    const result = await adapter.deploy(plan, {
+      engineId: 'ninfer',
+      engineDirectory: '/src/ninfer',
+    })
+    expect(result.ok).toBe(true)
+    expect(state.spawn).toHaveLength(1)
+    // A bare name (no path separator) resolves against the path, not the
+    // engine directory, so it is left as-is.
+    expect(state.spawn[0]?.argv[0]).toBe('ninfer-serve')
+  })
+
+  it('runs the Windows build steps in the profile shell when the plan names a Windows host', async () => {
+    const { host, state } = stubHost()
+    // The checkout is behind, so the conditional rebuild runs the build steps.
+    state.runOutput['rev-list'] = '3'
+    const adapter = new NInferAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      argv: [join('build-windows', 'apps', 'Release', 'ninfer-serve.exe'), '/models/x.ninfer'],
+      env: {},
+      modelId: 'qwen3-27b',
+      modelDirectory: '/models',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+      os: 'windows',
+    }
+    const result = await adapter.deploy(plan, {
+      engineId: 'ninfer',
+      engineDirectory: '/src/ninfer',
+    })
+    expect(result.ok).toBe(true)
+    // The vcpkg build step runs in the profile's powershell.exe shell; the git
+    // sync commands keep the host's default shell.
+    const vcpkgIndex = state.run.findIndex((command) => command.includes('vcpkg install'))
+    expect(vcpkgIndex).toBeGreaterThan(-1)
+    expect(state.runShells[vcpkgIndex]).toBe('powershell.exe')
+    const gitIndex = state.run.findIndex((command) => command.includes('rev-parse'))
+    expect(state.runShells[gitIndex]).toBeUndefined()
   })
 
   it('skips the rebuild when the checkout is up to date with the remote', async () => {
@@ -377,7 +467,7 @@ describe('NInferAdapter.deploy', () => {
     expect(result.ok).toBe(true)
     // No git sync commands ran: no checkout probe, no fetch, no rebase, no
     // clean, and no build.
-    expect(state.run.some((c) => c.includes('[ -d /src/ninfer/.git ]'))).toBe(false)
+    expect(state.run.some((c) => c.includes('git -C /src/ninfer rev-parse --is-inside-work-tree'))).toBe(false)
     expect(state.run.some((c) => c.includes('git -C /src/ninfer'))).toBe(false)
     expect(state.run.some((c) => c.includes('cmake -S /src/ninfer'))).toBe(false)
     // The model download still runs, and the engine spawns from the checkout.
@@ -654,8 +744,8 @@ describe('NInferAdapter.deploy', () => {
     // The deploy step probes for the local template (the default stub reads it
     // as present, so the download is skipped) and rewrites the flag to the
     // local path the engine reads.
-    expect(state.run).toContain('[ -f /models/chat_template.jinja ]')
-    expect(state.spawn[0]?.argv).toContain('/models/chat_template.jinja')
+    expect(state.run).toContain(`[ -f ${join('/models', 'chat_template.jinja')} ]`)
+    expect(state.spawn[0]?.argv).toContain(join('/models', 'chat_template.jinja'))
     expect(state.spawn[0]?.argv).not.toContain('froggeric/Qwen-Fixed-Chat-Templates')
   })
 
@@ -695,7 +785,7 @@ describe('NInferAdapter.deploy', () => {
     }
     const result = await adapter.deploy(plan)
     expect(result.ok).toBe(true)
-    expect(runLog).toContain('[ -f /models/chat_template.jinja ]')
+    expect(runLog).toContain(`[ -f ${join('/models', 'chat_template.jinja')} ]`)
     expect(runLog).toContain(
       'hf download froggeric/Qwen-Fixed-Chat-Templates chat_template.jinja --local-dir /models',
     )
@@ -1175,7 +1265,7 @@ describe('LlamaCppAdapter', () => {
     // The conditional rebuild prices the checkout against the fork, rebases it
     // because it is behind, cleans the tree, and runs the build steps before
     // the model download and the spawn.
-    expect(state.run[0]).toContain('[ -d /src/llama.cpp/.git ]')
+    expect(state.run[0]).toContain('git -C /src/llama.cpp rev-parse --is-inside-work-tree')
     expect(state.run).toContain('git -C /src/llama.cpp remote add dsh-fork https://github.com/ggml-org/llama.cpp')
     expect(state.run).toContain('git -C /src/llama.cpp fetch dsh-fork || true')
     expect(state.run.some((c) => c.includes('git -C /src/llama.cpp rebase dsh-fork/master'))).toBe(true)
@@ -1333,7 +1423,7 @@ describe('LlamaCppAdapter', () => {
     expect(result.ok).toBe(true)
     // No git sync commands ran: no checkout probe, no fetch, no rebase, no
     // clean, and no build.
-    expect(state.run.some((c) => c.includes('[ -d /src/llama.cpp/.git ]'))).toBe(false)
+    expect(state.run.some((c) => c.includes('git -C /src/llama.cpp rev-parse --is-inside-work-tree'))).toBe(false)
     expect(state.run.some((c) => c.includes('git -C /src/llama.cpp'))).toBe(false)
     expect(state.run.some((c) => c.includes('cmake -S /src/llama.cpp'))).toBe(false)
     // The model download still runs, and the engine spawns from the checkout.
@@ -1769,6 +1859,33 @@ describe('nodeLifecycleHost (the live host the service wires in)', () => {
     const { nodeLifecycleHost } = await import('../src/adapters.ts')
     const ok = await nodeLifecycleHost.run('echo local-infer-probe')
     expect(ok.ok).toBe(true)
+  })
+
+  it('runs a command in the shell named by the options', async () => {
+    const { nodeLifecycleHost } = await import('../src/adapters.ts')
+    // The probe is shell-specific: Write-Output is a PowerShell cmdlet that
+    // fails in cmd (the Windows default shell), so a clean exit proves the
+    // named shell ran the command. POSIX names sh, the default there.
+    const shell = process.platform === 'win32' ? 'powershell.exe' : 'sh'
+    const command =
+      process.platform === 'win32'
+        ? 'Write-Output local-infer-shell-probe'
+        : 'echo local-infer-shell-probe'
+    const ok = await nodeLifecycleHost.run(command, { shell })
+    expect(ok.ok).toBe(true)
+  })
+
+  it('streams a command run in the shell named by the options', async () => {
+    const host = createNodeLifecycleHost()
+    const shell = process.platform === 'win32' ? 'powershell.exe' : 'sh'
+    const command =
+      process.platform === 'win32'
+        ? 'Write-Output local-infer-stream-shell-probe'
+        : 'echo local-infer-stream-shell-probe'
+    const chunks: string[] = []
+    const result = await host.runStream(command, (chunk) => chunks.push(chunk), { shell })
+    expect(result?.ok).toBe(true)
+    expect(chunks.join('')).toContain('local-infer-stream-shell-probe')
   })
 
   it('reads a non-zero exit as not-ok with the captured detail', async () => {
@@ -2292,7 +2409,7 @@ describe('InfernixAdapter', () => {
     expect(result.ok).toBe(true)
     // No git sync commands ran: no checkout probe, no fetch, no rebase, no
     // clean, and no build.
-    expect(state.run.some((c) => c.includes('[ -d /engines/infernix/.git ]'))).toBe(false)
+    expect(state.run.some((c) => c.includes('git -C /engines/infernix rev-parse --is-inside-work-tree'))).toBe(false)
     expect(state.run.some((c) => c.includes('git -C /engines/infernix'))).toBe(false)
     expect(state.run.some((c) => c.includes('cmake --preset release'))).toBe(false)
     // The model download still runs, and the engine spawns from the checkout.

@@ -11,7 +11,7 @@
  * process and stops the named container.
  * @module dsh-plugin-local-infer/providers/engines/ninferAdapter
  */
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, isAbsolute, join } from 'node:path';
 import { EngineAdapter } from '../../../core/lib/index.js';
 import { customArgFlags, flagsFromSpecs, nodeLifecycleHost, pollHealth, trackChild, } from "../adapters.js";
 import { syncAndRebuildEngine } from "../acquire.js";
@@ -212,7 +212,6 @@ export class NInferAdapter extends EngineAdapter {
                     engineId: this.id,
                     directory: engineDir,
                     ...(platform?.engineFork !== undefined ? { fork: platform.engineFork } : {}),
-                    ...(plan.argv?.[0] !== undefined ? { binary: plan.argv[0] } : {}),
                     ...(options?.allowRunDeps !== undefined ? { allowRunDeps: options.allowRunDeps } : {}),
                     ...(platform?.buildCommands !== undefined
                         ? { buildCommands: platform.buildCommands }
@@ -249,7 +248,20 @@ export class NInferAdapter extends EngineAdapter {
             const templateResult = await this.resolveChatTemplate(plan);
             if (!templateResult.ok)
                 return withLogs(templateResult);
-            const handle = this.host.spawn(plan.argv ?? [], plan.env ?? {}, engineDir);
+            // A relative launch path (the NInfer Windows build tree,
+            // build-windows\apps\Release\ninfer-serve.exe) is joined against the
+            // engine directory the spawn runs in, so the spawn resolves an absolute
+            // path. A bare name (the Linux and macOS binaries, resolved against the
+            // path) is left as-is.
+            const argv = plan.argv ?? [];
+            const first = argv[0];
+            const resolvedArgv = engineDir !== undefined &&
+                first !== undefined &&
+                !isAbsolute(first) &&
+                (first.includes('\\') || first.includes('/'))
+                ? [join(engineDir, first), ...argv.slice(1)]
+                : argv;
+            const handle = this.host.spawn(resolvedArgv, plan.env ?? {}, engineDir);
             trackChild(this.children, this.planKey(plan), handle);
             return withLogs({ ok: true, handle });
         }
@@ -325,9 +337,11 @@ export class NInferAdapter extends EngineAdapter {
         if (value.startsWith('/') || !value.includes('/'))
             return { ok: true };
         // An HF repo reference: download the template file into the model
-        // directory and point the flag at the local copy.
+        // directory and point the flag at the local copy. join keeps the path
+        // cross-platform (the host's path module normalizes the separators), so
+        // the flag the engine reads resolves on Windows, Linux, and macOS alike.
         const target = plan.modelDirectory ?? '.';
-        const localPath = `${target.endsWith('/') ? '' : `${target}/`}chat_template.jinja`;
+        const localPath = join(target, 'chat_template.jinja');
         // A template already on disk skips the re-fetch; the hf CLI is optional,
         // so a download failure is reported but does not abort the launch.
         const probe = await this.host.run(`[ -f ${localPath} ]`);

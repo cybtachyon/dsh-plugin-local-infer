@@ -95,6 +95,15 @@ export interface FetchResult {
     ok: boolean;
 }
 /**
+ * RunOptions tunes a host command run: `shell` names the shell the command
+ * line runs in, read from the engine OS profile (the Windows vcpkg build route
+ * names powershell.exe, because its steps set $env: variables). Absent runs
+ * the host's default shell.
+ */
+export interface RunOptions {
+    shell?: string;
+}
+/**
  * LifecycleHost is the injectable execution surface an adapter drives its
  * deploy, health-check, and stop steps through. The providers ship a node
  * implementation (child_process plus fetch); the tests stub it, so no real
@@ -103,7 +112,7 @@ export interface FetchResult {
  * DSH debug mode captures the full build-to-launch sequence the plugin runs.
  */
 export interface LifecycleHost {
-    run(command: string): Promise<CommandOutcome>;
+    run(command: string, options?: RunOptions): Promise<CommandOutcome>;
     /**
      * Optional: run a command line and stream each stdout/stderr chunk to
      * onOutput while it runs, so the Get step can append build output to the
@@ -112,7 +121,7 @@ export interface LifecycleHost {
      * build legitimately runs past any fixed cap, and the card prices a
      * stalled step with its own output-idle watchdog.
      */
-    runStream?(command: string, onOutput: (chunk: string) => void): Promise<CommandOutcome>;
+    runStream?(command: string, onOutput: (chunk: string) => void, options?: RunOptions): Promise<CommandOutcome>;
     spawn(argv: readonly string[], env: Record<string, string>, cwd?: string): ProcessHandle;
     fetch(url: string): Promise<FetchResult>;
     debug?: DebugLogger;

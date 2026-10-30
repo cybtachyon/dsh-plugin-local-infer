@@ -102,6 +102,7 @@ export type {
   LifecycleHost,
   ProcessExitInfo,
   ProcessHandle,
+  RunOptions,
 } from './adapter.ts'
 export {
   NOOP_DEBUG_LOGGER,

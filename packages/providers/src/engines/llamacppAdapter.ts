@@ -214,7 +214,6 @@ export class LlamaCppAdapter extends EngineAdapter {
             engineId: this.id,
             directory: engineDir,
             ...(platform?.engineFork !== undefined ? { fork: platform.engineFork } : {}),
-            ...(plan.argv?.[0] !== undefined ? { binary: plan.argv[0] } : {}),
             ...(options?.allowRunDeps !== undefined ? { allowRunDeps: options.allowRunDeps } : {}),
             ...(platform?.buildCommands !== undefined
               ? { buildCommands: platform.buildCommands }

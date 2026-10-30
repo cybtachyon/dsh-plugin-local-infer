@@ -105,16 +105,16 @@ export declare function syncEngineRepo(host: LifecycleHost, request: {
 }, log: AcquireLog): Promise<EngineStepResult>;
 /**
  * SyncRebuildRequest names the checkout the conditional rebuild prices: the
- * engine, its directory, the optional fork remote, the engine binary the
- * symlink step links when a rebuild leaves it out of the path, and the
- * Play/Run trust gate that decides whether that symlink runs (on) or is
- * written to the logs (off).
+ * engine, its directory, the optional fork remote, and the Play/Run trust gate
+ * that decides whether the binary symlink (added when a rebuild leaves the
+ * binary out of the path) runs (on) or is written to the logs (off). The
+ * symlink step reads the bare binary name from the engine profile, so the
+ * request carries no binary of its own.
  */
 export interface SyncRebuildRequest {
     engineId: string;
     directory: string;
     fork?: string;
-    binary?: string;
     allowRunDeps?: boolean;
     buildCommands?: string;
     onBuildStart?: () => void;

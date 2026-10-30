@@ -4,6 +4,7 @@
  * from the fixed file-name template below. ${HOME} is the host home directory,
  * not a shell expansion the plugin performs.
  */
+import { join } from 'node:path';
 export const DEFAULT_LOG_PATH_TEMPLATE = '${HOME}/.dsh/local-infer/logs';
 /**
  * LOG_FILE_NAME_TEMPLATE is the fixed file name a launch's log file carries,
@@ -64,8 +65,8 @@ export function resolveLogPath(directory, engineId, modelId, date, home) {
         .replace(LOG_TEMPLATE_ENGINE, engineId)
         .replace(LOG_TEMPLATE_MODEL, slugifyModelName(modelId))
         .replace(LOG_TEMPLATE_TIMESTAMP, formatLogTimestamp(date));
-    // A directory that already ends in a separator does not double it.
-    const dir = resolvedDir.endsWith('/') ? resolvedDir : `${resolvedDir}/`;
-    return `${dir}${fileName}`;
+    // join normalizes the separators and does not double a trailing one, so the
+    // result is a clean path on every platform.
+    return join(resolvedDir, fileName);
 }
 //# sourceMappingURL=logs.js.map

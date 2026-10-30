@@ -95,6 +95,16 @@ export async function launchEngine(localInfer, request, onProgress) {
     if (request.platform !== undefined) {
         setPlatformConfig(localInfer, engineId, request.platform);
     }
+    // A launch with no Engine Directory override falls back to the per-engine
+    // folder inside the model directory, so the deploy step resolves a relative
+    // launch path (the NInfer Windows build tree) against a real checkout. The
+    // override is registered so the service's launch reads it; a stored entry
+    // that already names a directory is left as-is.
+    const platform = request.platform ?? stored.platform[engineId];
+    if (platform?.engineDirectory === undefined || platform.engineDirectory.trim() === '') {
+        const engineDirectory = resolveEngineDirectory(localInfer, config, engineId, platform);
+        setPlatformConfig(localInfer, engineId, { ...platform, engineDirectory });
+    }
     const plan = adapter.renderLaunch(config, hardware);
     applyComposeArgs(plan, localInfer, engineId);
     const commandNote = launchCommandNote(plan);
@@ -414,8 +424,9 @@ export async function getEngine(localInfer, request, log, host = nodeLifecycleHo
     }
     // The user's local build command (the card's Build commands field) overrides
     // the engine's default build steps; absent runs the engine's acquisition
-    // steps.
-    const build = await buildEngineRepo(host, engineId, directory, log, platform?.buildCommands);
+    // steps. The host OS picks the engine's OS profile (the Windows vcpkg route
+    // and its powershell.exe shell on a Windows host, the cmake route elsewhere).
+    const build = await buildEngineRepo(host, engineId, directory, log, platform?.buildCommands, hardware.os);
     if (!build.ok) {
         if (build.detail !== undefined) {
             log(`!! ${build.detail}\n`);

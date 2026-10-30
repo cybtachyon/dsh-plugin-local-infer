@@ -201,13 +201,15 @@ export function engineBuildSteps(
  * runLogged runs one shell command through the host's streaming surface when
  * it has one (echoing the command and streaming its output through log), and
  * through plain run otherwise. The streamed copy is also collected, so a
- * caller can price the command's stdout (the dirty-check, for one).
+ * caller can price the command's stdout (the dirty-check, for one). A
+ * `shell` option (the engine OS profile's shell) runs the command in that
+ * shell instead of the host's default.
  */
 async function runLogged(
   host: LifecycleHost,
   command: string,
   log: AcquireLog,
-  options?: { echo?: boolean },
+  options?: { echo?: boolean; shell?: string },
 ): Promise<CommandOutcome & { output: string }> {
   let output = ''
   const collect = (chunk: string): void => {
@@ -217,11 +219,14 @@ async function runLogged(
   if (options?.echo !== false) {
     log(`$ ${command}\n`)
   }
+  // exactOptionalPropertyTypes: build the options object only when a shell is
+  // named, so an absent shell never passes `{ shell: undefined }` through.
+  const runOptions = options?.shell !== undefined ? { shell: options.shell } : undefined
   if (host.runStream !== undefined) {
-    const outcome = await host.runStream(command, collect)
+    const outcome = await host.runStream(command, collect, runOptions)
     return { ...outcome, output }
   }
-  const outcome = await host.run(command)
+  const outcome = await host.run(command, runOptions)
   return { ...outcome, output }
 }
 
@@ -247,7 +252,12 @@ export async function syncEngineRepo(
   }
   const directory = request.directory
   const fork = request.fork !== undefined && request.fork.trim() !== '' ? request.fork : undefined
-  const present = await host.run(`[ -d ${directory}/.git ]`)
+  // The presence probe is a git query, not a POSIX [ -d ] test: the shell the
+  // host runs is cmd on Windows, where [ is not a command and the test reads
+  // as a missing checkout every time. rev-parse exits 0 only inside a work
+  // tree, so a real checkout reads as present and an absent or non-git
+  // directory reads as missing, on every platform.
+  const present = await host.run(`git -C ${directory} rev-parse --is-inside-work-tree`)
   if (present.ok) {
     const status = await runLogged(host, `git -C ${directory} status --short`, log)
     if (!status.ok) {
@@ -297,16 +307,16 @@ export async function syncEngineRepo(
 
 /**
  * SyncRebuildRequest names the checkout the conditional rebuild prices: the
- * engine, its directory, the optional fork remote, the engine binary the
- * symlink step links when a rebuild leaves it out of the path, and the
- * Play/Run trust gate that decides whether that symlink runs (on) or is
- * written to the logs (off).
+ * engine, its directory, the optional fork remote, and the Play/Run trust gate
+ * that decides whether the binary symlink (added when a rebuild leaves the
+ * binary out of the path) runs (on) or is written to the logs (off). The
+ * symlink step reads the bare binary name from the engine profile, so the
+ * request carries no binary of its own.
  */
 export interface SyncRebuildRequest {
   engineId: string
   directory: string
   fork?: string
-  binary?: string
   allowRunDeps?: boolean
   // The user's local build command (the card's Build commands field) that
   // overrides the engine's default build steps. When set, it runs in the
@@ -372,7 +382,12 @@ export async function syncAndRebuildEngine(
     chunks.push(chunk)
     log(chunk)
   }
-  const present = await host.run(`[ -d ${directory}/.git ]`)
+  // The presence probe is a git query, not a POSIX [ -d ] test: the shell the
+  // host runs is cmd on Windows, where [ is not a command and the test reads
+  // as a missing checkout every time. rev-parse exits 0 only inside a work
+  // tree, so a real checkout reads as present and an absent or non-git
+  // directory reads as missing, on every platform.
+  const present = await host.run(`git -C ${directory} rev-parse --is-inside-work-tree`)
   let rebuilt = false
   if (!present.ok) {
     // A missing checkout is a fresh clone of the fork (or the upstream repo),
@@ -489,12 +504,16 @@ export async function syncAndRebuildEngine(
       buildCommands !== undefined
         ? [`cd ${directory} && ${buildCommands}`]
         : engineBuildSteps(request.engineId, request.os ?? 'linux')
+    // The engine OS profile's shell (the Windows vcpkg route's powershell.exe)
+    // runs the build steps; absent keeps the host's default shell.
+    const shell = engineOsProfile(request.engineId, request.os ?? 'linux')?.shell
+    const stepOptions = shell !== undefined ? { shell } : undefined
     // Report the build phase before the first step runs, so the card's button
     // reads "Building..." while the build is in flight, not after it completes.
     request.onBuildStart?.()
     for (const step of steps) {
       const command = step.replaceAll('{dir}', directory)
-      const outcome = await runLogged(host, command, emit)
+      const outcome = await runLogged(host, command, emit, stepOptions)
       if (!outcome.ok) {
         return {
           ok: false,
@@ -506,7 +525,11 @@ export async function syncAndRebuildEngine(
     }
     // A rebuild that did not install the binary (no make install) leaves it
     // out of the path. Check, and add a symlink when the trust gate allows.
-    const binary = request.binary
+    // The symlink name is the profile's bare binary (the .exe on Windows), not
+    // the launch path: a Windows launch path carries its build tree
+    // (build-windows\apps\Release\ninfer-serve.exe), so linking it under
+    // buildDir would double the tree.
+    const binary = engineBinary(request.engineId, request.os ?? 'linux')
     if (binary !== undefined) {
       const which = await host.run(`command -v ${binary}`)
       if (!which.ok) {
@@ -562,9 +585,13 @@ export async function buildEngineRepo(
     log(`no local build steps for ${engineId}\n`)
     return { ok: true }
   }
+  // The engine OS profile's shell (the Windows vcpkg route's powershell.exe)
+  // runs the build steps; absent keeps the host's default shell.
+  const shell = engineOsProfile(engineId, os)?.shell
+  const stepOptions = shell !== undefined ? { shell } : undefined
   for (const step of steps) {
     const command = step.replaceAll('{dir}', directory)
-    const outcome = await runLogged(host, command, log)
+    const outcome = await runLogged(host, command, log, stepOptions)
     if (!outcome.ok) {
       return { ok: false, detail: `build failed: ${outcome.detail ?? 'unknown'}` }
     }

@@ -910,15 +910,24 @@ describe('platform config (§3.10) round trip and launch pass-through', () => {
     })
   })
 
-  it('keeps the stored entry when the launch request carries no platform', async () => {
-    let registered = false
+  it('registers the fallback engine directory when the launch request carries no platform', async () => {
+    // Reset the stored platform map so the test reads a clean entry, not the
+    // build commands and docker tag a sibling test wrote.
+    writeConfig('ninfer', { port: 18020 }, false, {})
+    let seen: EnginePlatformConfig | undefined
     const service = stubService([], {
-      onPlatform: () => {
-        registered = true
+      onPlatform: (config: EnginePlatformConfig) => {
+        seen = config
       },
     })
+    // A launch with no Engine Directory override falls back to the per-engine
+    // folder inside the model directory, so the deploy step resolves a
+    // relative launch path against a real checkout.
     await launchEngine(service, { engine: 'ninfer', config: { port: 18020 } })
-    expect(registered).toBe(false)
+    expect(seen).toEqual({
+      engineId: 'ninfer',
+      engineDirectory: join(MODEL_DIR, 'ninfer'),
+    })
   })
 })
 
@@ -2415,8 +2424,9 @@ describe('get route (git sync, deps, build)', () => {
 
   /**
    * A stub LifecycleHost for the Get steps: `exists` decides whether the
-   * `[ -d <dir>/.git ]` probe finds a checkout, `stream` feeds the streamed
-   * stdout, and `fail` lists command substrings whose run fails.
+   * `git -C <dir> rev-parse --is-inside-work-tree` probe finds a checkout,
+   * `stream` feeds the streamed stdout, and `fail` lists command substrings
+   * whose run fails.
    */
   function stubGetHost(options?: { exists?: boolean; stream?: Record<string, string> }) {
     const state = { run: [] as string[], streamed: [] as string[], logged: '' }
@@ -2428,7 +2438,7 @@ describe('get route (git sync, deps, build)', () => {
     const host: LifecycleHost = {
       async run(command: string) {
         state.run.push(command)
-        if (command.startsWith('[ -d')) {
+        if (command.includes('rev-parse --is-inside-work-tree')) {
           return options?.exists === false ? { ok: false } : { ok: true }
         }
         return { ok: true }

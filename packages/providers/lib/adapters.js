@@ -104,17 +104,22 @@ export function envFromSpecs(specs, config) {
  * URL. A fetch that throws (no route, connection refused) reads as status 0,
  * which the poll treats as not-ready. When `debug` is provided, the host logs
  * every command it issues (each `run` line and each `spawn` argv) through it,
- * so a DSH debug-mode host captures the full build-to-launch sequence.
+ * so a DSH debug-mode host captures the full build-to-launch sequence. A
+ * `RunOptions.shell` (the engine OS profile's shell, e.g. powershell.exe for
+ * the Windows vcpkg route) runs the command line in that shell instead of the
+ * system default.
  */
 export function createNodeLifecycleHost(debug) {
     // The debug logger is a no-op outside debug mode, so the guard reads as
     // "log when a real sink is wired" and the command path stays quiet otherwise.
     const log = debug ?? undefined;
     return {
-        async run(command) {
+        async run(command, options) {
             log?.(`run: ${command}`);
             return new Promise(resolve => {
-                exec(command, { timeout: 600_000 }, (error, stdout, stderr) => {
+                // A profile shell (the Windows vcpkg route's powershell.exe) runs the
+                // command line in that shell; absent keeps the system default.
+                exec(command, { timeout: 600_000, shell: options?.shell }, (error, stdout, stderr) => {
                     if (error === null) {
                         resolve({ ok: true });
                         return;
@@ -124,12 +129,17 @@ export function createNodeLifecycleHost(debug) {
                 });
             });
         },
-        async runStream(command, onOutput) {
+        async runStream(command, onOutput, options) {
             log?.(`run: ${command}`);
             return new Promise(resolve => {
                 // No overall timeout: a full CUDA build legitimately runs long, and
                 // the card prices a stalled step with its own output-idle watchdog.
-                const child = nodeSpawn(command, { shell: true, stdio: ['ignore', 'pipe', 'pipe'] });
+                // A profile shell (the Windows vcpkg route's powershell.exe) runs the
+                // command line in that shell; absent keeps the system default.
+                const child = nodeSpawn(command, {
+                    shell: options?.shell ?? true,
+                    stdio: ['ignore', 'pipe', 'pipe'],
+                });
                 let output = '';
                 const append = (chunk) => {
                     const text = chunk.toString('utf8');
