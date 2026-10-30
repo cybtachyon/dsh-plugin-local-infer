@@ -3,8 +3,9 @@ import type { BuildMode, LaunchPlan } from './adapter.ts'
 /**
  * DshModelEntry is the shape of the model row the registrar writes into the
  * dsh-llm-pi-ai provider: the provider id, the model id and display name, the
- * context window, the engine's base URL, and the env-var name the provider
- * reads its optional API key from.
+ * context window, the engine's base URL, the env-var name the provider reads
+ * its optional API key from, and the placeholder API key value the engine
+ * ships with so a model the user has not keyed still activates.
  */
 export interface DshModelEntry {
   providerId: string
@@ -13,6 +14,11 @@ export interface DshModelEntry {
   contextWindow: number
   baseURL: string
   apiKeyEnv: string
+  // The placeholder API key value the local engine ships with. The pi-ai
+  // OpenAI route requires an API key or an Authorization header, so a keyless
+  // local server needs a credential; the placeholder makes it obvious the
+  // value is not a real key. A user-added key replaces it in a future turn.
+  apiKey: string
   // The request modalities the model accepts. A vision engine publishes
   // ['text', 'image']; a text-only engine publishes ['text']. Absent reads as
   // the DSH default (text).
@@ -129,6 +135,18 @@ export function apiKeyEnvFor(engineId: string): string {
 }
 
 /**
+ * defaultApiKeyFor derives the placeholder API key value a local engine ships
+ * with: the engine id, uppercased and non-alphanumerics mapped to underscores,
+ * wrapped in double braces plus _LOCAL_API_KEY. The double braces mark the
+ * value as a placeholder, not a real key, so a model the user has not keyed
+ * still activates the pi-ai OpenAI route. A user-added key replaces it in a
+ * future turn.
+ */
+export function defaultApiKeyFor(engineId: string): string {
+  return `{{${engineId.toUpperCase().replace(/[^A-Z0-9]/g, '_')}}}_LOCAL_API_KEY`
+}
+
+/**
  * engineDisplayName capitalizes the first letter of an engine id for the
  * display name: `ninfer` reads as `Ninfer`, `hyperqwen` as `Hyperqwen`.
  */
@@ -141,8 +159,8 @@ function engineDisplayName(engineId: string): string {
  * the registrar writes. The provider id is the engine, build mode, and model
  * slug; the display name is the engine, the build mode in parentheses, and
  * the model name (falling back to the slug when the row carries none). The
- * API-key env name derives from the engine id, and the base URL is the
- * engine's OpenAI endpoint on its port.
+ * API-key env name and the placeholder API key value derive from the engine
+ * id, and the base URL is the engine's OpenAI endpoint on its port.
  */
 export function buildModelEntry(plan: LaunchPlan, model: ModelRow): DshModelEntry {
   const buildMode: 'local' | 'docker' = plan.kind === 'docker' ? 'docker' : 'local'
@@ -155,6 +173,7 @@ export function buildModelEntry(plan: LaunchPlan, model: ModelRow): DshModelEntr
     contextWindow: model.contextWindow,
     baseURL: `http://127.0.0.1:${plan.port}/v1`,
     apiKeyEnv: apiKeyEnvFor(plan.engineId),
+    apiKey: defaultApiKeyFor(plan.engineId),
   }
   // exactOptionalPropertyTypes: carry the input modalities only when the row
   // names them, so a text-only registration never writes an empty list.
@@ -191,10 +210,10 @@ export function removeModelRow(rows: readonly ModelRow[], modelId: string): Mode
 
 /**
  * providerRegistrationOps computes the settings ops that upsert a provider
- * entry: the API-key env name, the openai-completions api, the base URL, and
- * the models list with the entry's row upserted. The ops write the provider
- * fields by path, so a provider the user edited by hand keeps every field
- * the registrar does not own.
+ * entry: the API-key env name, the openai-completions api, the base URL, the
+ * placeholder Authorization header, and the models list with the entry's row
+ * upserted. The ops write the provider fields by path, so a provider the user
+ * edited by hand keeps every field the registrar does not own.
  */
 export function providerRegistrationOps(
   entry: DshModelEntry,
@@ -212,10 +231,18 @@ export function providerRegistrationOps(
   if (entry.input !== undefined) {
     row.input = entry.input
   }
+  // The pi-ai OpenAI route requires an API key or an Authorization header, so
+  // a keyless local server ships the placeholder key as a Bearer header. The
+  // profile schema has no literal apiKey field; headers carry the value.
   return [
     { op: 'set', path: [...providerPath, 'apiKeyEnv'], value: entry.apiKeyEnv },
     { op: 'set', path: [...providerPath, 'api'], value: 'openai-completions' },
     { op: 'set', path: [...providerPath, 'baseURL'], value: entry.baseURL },
+    {
+      op: 'set',
+      path: [...providerPath, 'headers', 'Authorization'],
+      value: `Bearer ${entry.apiKey}`,
+    },
     { op: 'set', path: [...providerPath, 'models'], value: upsertModelRow(rows, row) },
   ]
 }

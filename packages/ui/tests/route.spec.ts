@@ -211,6 +211,7 @@ function stubService(
             contextWindow: model.contextWindow,
             baseURL: `http://127.0.0.1:${plan.port}/v1`,
             apiKeyEnv: 'NINFER_LOCAL_API_KEY',
+            apiKey: '{{NINFER}}_LOCAL_API_KEY',
           },
         }
       )

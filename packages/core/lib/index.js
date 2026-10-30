@@ -16,7 +16,7 @@ export { EngineAdapter } from "./adapter.js";
 export { NOOP_DEBUG_LOGGER, createCommandDebugLogger, isHarnessLogDebug, } from "./debug.js";
 export { constraintId, evaluateGuidelines, modelGuidelines } from "./guideline.js";
 export { hardwareClass, presetFromFetch, resolveDefaults, WILDCARD_HARDWARE_CLASS, } from "./defaults.js";
-export { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, apiKeyEnvFor, buildModelEntry, LLM_PI_AI_NAMESPACE, modelRowsFrom, modelSlug, providerIdFor, providerRegistrationOps, providerRemovalOps, removeModelRow, upsertModelRow, } from "./registrar.js";
+export { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, apiKeyEnvFor, buildModelEntry, defaultApiKeyFor, LLM_PI_AI_NAMESPACE, modelRowsFrom, modelSlug, providerIdFor, providerRegistrationOps, providerRemovalOps, removeModelRow, upsertModelRow, } from "./registrar.js";
 export { checkDeps, detectPackageManager, osLabel, planDeps, planDepsForOs, renderInstallString, runInstall, } from "./deps.js";
 export { CHAT_TEMPLATE_FILE, hfChatTemplateCommand, hfDownloadCommand, modelArtifactPath, modelEntriesForEngine, repoIdFromUrl, repoNameFromUrl, } from "./models.js";
 //# sourceMappingURL=index.js.map

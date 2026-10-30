@@ -831,6 +831,7 @@ describe('ctx.localInfer model registration (Phase 6)', () => {
       contextWindow: 262144,
       baseURL: 'http://127.0.0.1:18020/v1',
       apiKeyEnv: 'NINFER_LOCAL_API_KEY',
+      apiKey: '{{NINFER}}_LOCAL_API_KEY',
     })
     const llm = fake.sections['llm-pi-ai']
     expect(llm?.value.providers).toEqual(
@@ -839,6 +840,7 @@ describe('ctx.localInfer model registration (Phase 6)', () => {
           api: 'openai-completions',
           baseURL: 'http://127.0.0.1:18020/v1',
           apiKeyEnv: 'NINFER_LOCAL_API_KEY',
+          headers: { Authorization: 'Bearer {{NINFER}}_LOCAL_API_KEY' },
           models: [MODEL_ROW],
         }),
       }),

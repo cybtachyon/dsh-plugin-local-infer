@@ -135,6 +135,7 @@ export {
   agentDefaultUnsetOps,
   apiKeyEnvFor,
   buildModelEntry,
+  defaultApiKeyFor,
   LLM_PI_AI_NAMESPACE,
   modelRowsFrom,
   modelSlug,

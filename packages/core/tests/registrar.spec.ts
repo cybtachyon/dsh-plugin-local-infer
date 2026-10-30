@@ -6,6 +6,7 @@ import {
   agentDefaultUnsetOps,
   apiKeyEnvFor,
   buildModelEntry,
+  defaultApiKeyFor,
   LLM_PI_AI_NAMESPACE,
   modelRowsFrom,
   providerIdFor,
@@ -41,6 +42,12 @@ describe('registrar entry derivation', () => {
     expect(providerIdFor('ninfer', 'Qwen3.8-27B', 'docker')).toBe('ninfer-docker-qwen38-27b')
     expect(apiKeyEnvFor('ninfer')).toBe('NINFER_LOCAL_API_KEY')
     expect(apiKeyEnvFor('hyper-qwen')).toBe('HYPER_QWEN_LOCAL_API_KEY')
+    // The placeholder key wraps the engine id in double braces, so a value the
+    // user has not replaced reads as a placeholder, not a real key.
+    expect(defaultApiKeyFor('ninfer')).toBe('{{NINFER}}_LOCAL_API_KEY')
+    expect(defaultApiKeyFor('hyper-qwen')).toBe('{{HYPER_QWEN}}_LOCAL_API_KEY')
+    expect(defaultApiKeyFor('llamacpp')).toBe('{{LLAMACPP}}_LOCAL_API_KEY')
+    expect(defaultApiKeyFor('strata')).toBe('{{STRATA}}_LOCAL_API_KEY')
 
     const entry = buildModelEntry(PLAN, { id: 'Qwen3.8-27B', name: 'Qwen3.8-27B', contextWindow: 262144 })
     expect(entry).toEqual({
@@ -50,6 +57,7 @@ describe('registrar entry derivation', () => {
       contextWindow: 262144,
       baseURL: 'http://127.0.0.1:18020/v1',
       apiKeyEnv: 'NINFER_LOCAL_API_KEY',
+      apiKey: '{{NINFER}}_LOCAL_API_KEY',
     })
   })
 
@@ -97,6 +105,11 @@ describe('registrar settings ops', () => {
       { op: 'set', path: ['providers', 'ninfer-local-qwen38-27b', 'apiKeyEnv'], value: 'NINFER_LOCAL_API_KEY' },
       { op: 'set', path: ['providers', 'ninfer-local-qwen38-27b', 'api'], value: 'openai-completions' },
       { op: 'set', path: ['providers', 'ninfer-local-qwen38-27b', 'baseURL'], value: 'http://127.0.0.1:18020/v1' },
+      {
+        op: 'set',
+        path: ['providers', 'ninfer-local-qwen38-27b', 'headers', 'Authorization'],
+        value: 'Bearer {{NINFER}}_LOCAL_API_KEY',
+      },
       {
         op: 'set',
         path: ['providers', 'ninfer-local-qwen38-27b', 'models'],
@@ -201,6 +214,6 @@ describe('registrar ops pass through the seam', () => {
       [],
     )
     const seamOps: SeamOp[] = ops
-    expect(seamOps).toHaveLength(4)
+    expect(seamOps).toHaveLength(5)
   })
 })

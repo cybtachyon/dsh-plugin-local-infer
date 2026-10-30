@@ -27,7 +27,7 @@ export { constraintId, evaluateGuidelines, modelGuidelines } from './guideline.t
 export type { Guideline, GuidelineLevel, GuidelineResult } from './guideline.ts';
 export { hardwareClass, presetFromFetch, resolveDefaults, WILDCARD_HARDWARE_CLASS, } from './defaults.ts';
 export type { DefaultProvenance, DefaultsResolver, HardwareClass, Preset, PresetSource, ResolvedDefaults, } from './defaults.ts';
-export { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, apiKeyEnvFor, buildModelEntry, LLM_PI_AI_NAMESPACE, modelRowsFrom, modelSlug, providerIdFor, providerRegistrationOps, providerRemovalOps, removeModelRow, upsertModelRow, } from './registrar.ts';
+export { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, apiKeyEnvFor, buildModelEntry, defaultApiKeyFor, LLM_PI_AI_NAMESPACE, modelRowsFrom, modelSlug, providerIdFor, providerRegistrationOps, providerRemovalOps, removeModelRow, upsertModelRow, } from './registrar.ts';
 export type { DshModelEntry, DshModelRegistrar, ModelRow, RegisterResult, SettingsOp, } from './registrar.ts';
 export { checkDeps, detectPackageManager, osLabel, planDeps, planDepsForOs, renderInstallString, runInstall, } from './deps.ts';
 export { CHAT_TEMPLATE_FILE, hfChatTemplateCommand, hfDownloadCommand, modelArtifactPath, modelEntriesForEngine, repoIdFromUrl, repoNameFromUrl, } from './models.ts';

@@ -2,8 +2,9 @@ import type { BuildMode, LaunchPlan } from './adapter.ts';
 /**
  * DshModelEntry is the shape of the model row the registrar writes into the
  * dsh-llm-pi-ai provider: the provider id, the model id and display name, the
- * context window, the engine's base URL, and the env-var name the provider
- * reads its optional API key from.
+ * context window, the engine's base URL, the env-var name the provider reads
+ * its optional API key from, and the placeholder API key value the engine
+ * ships with so a model the user has not keyed still activates.
  */
 export interface DshModelEntry {
     providerId: string;
@@ -12,6 +13,7 @@ export interface DshModelEntry {
     contextWindow: number;
     baseURL: string;
     apiKeyEnv: string;
+    apiKey: string;
     input?: string[];
 }
 /**
@@ -95,12 +97,21 @@ export declare function providerIdFor(engineId: string, modelId: string, buildMo
  */
 export declare function apiKeyEnvFor(engineId: string): string;
 /**
+ * defaultApiKeyFor derives the placeholder API key value a local engine ships
+ * with: the engine id, uppercased and non-alphanumerics mapped to underscores,
+ * wrapped in double braces plus _LOCAL_API_KEY. The double braces mark the
+ * value as a placeholder, not a real key, so a model the user has not keyed
+ * still activates the pi-ai OpenAI route. A user-added key replaces it in a
+ * future turn.
+ */
+export declare function defaultApiKeyFor(engineId: string): string;
+/**
  * buildModelEntry turns a launch plan and a model row into the DshModelEntry
  * the registrar writes. The provider id is the engine, build mode, and model
  * slug; the display name is the engine, the build mode in parentheses, and
  * the model name (falling back to the slug when the row carries none). The
- * API-key env name derives from the engine id, and the base URL is the
- * engine's OpenAI endpoint on its port.
+ * API-key env name and the placeholder API key value derive from the engine
+ * id, and the base URL is the engine's OpenAI endpoint on its port.
  */
 export declare function buildModelEntry(plan: LaunchPlan, model: ModelRow): DshModelEntry;
 /**
@@ -118,10 +129,10 @@ export declare function upsertModelRow(rows: readonly ModelRow[], row: ModelRow)
 export declare function removeModelRow(rows: readonly ModelRow[], modelId: string): ModelRow[];
 /**
  * providerRegistrationOps computes the settings ops that upsert a provider
- * entry: the API-key env name, the openai-completions api, the base URL, and
- * the models list with the entry's row upserted. The ops write the provider
- * fields by path, so a provider the user edited by hand keeps every field
- * the registrar does not own.
+ * entry: the API-key env name, the openai-completions api, the base URL, the
+ * placeholder Authorization header, and the models list with the entry's row
+ * upserted. The ops write the provider fields by path, so a provider the user
+ * edited by hand keeps every field the registrar does not own.
  */
 export declare function providerRegistrationOps(entry: DshModelEntry, rows: readonly ModelRow[]): SettingsOp[];
 /**
