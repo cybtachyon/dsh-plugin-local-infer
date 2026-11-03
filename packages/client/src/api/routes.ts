@@ -84,7 +84,9 @@ export interface LaunchRequest {
 export interface GetRequest {
   engine?: string
   config?: Config
-  platform?: Record<string, StoredPlatformConfig>
+  // The card's unsaved platform edit for the engine (a single per-engine
+  // config, not the record the save route takes).
+  platform?: StoredPlatformConfig
 }
 
 /** The body the download route takes. */

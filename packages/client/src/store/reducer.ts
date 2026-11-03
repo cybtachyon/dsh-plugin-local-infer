@@ -48,6 +48,8 @@ export function cardReducer(state: CardState, action: CardAction): CardState {
       return { ...state, deps: action.deps, notes: { ...state.notes, deps: '' } }
     case 'deps/fail':
       return { ...state, notes: { ...state.notes, deps: action.note } }
+    case 'deps/clear':
+      return { ...state, deps: null, notes: { ...state.notes, deps: '' } }
     case 'draft/edit':
       return draftEdit(state, action.draft)
     case 'draft/discard':

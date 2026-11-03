@@ -158,6 +158,8 @@ export type CardAction = {
     type: 'deps/fail';
     note: string;
 } | {
+    type: 'deps/clear';
+} | {
     type: 'draft/edit';
     draft: CardDraft;
 } | {

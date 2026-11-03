@@ -180,6 +180,7 @@ export type CardAction =
   | { type: 'summary/fail'; note: string }
   | { type: 'deps/ack'; deps: DepsModel }
   | { type: 'deps/fail'; note: string }
+  | { type: 'deps/clear' }
   | { type: 'draft/edit'; draft: CardDraft }
   | { type: 'draft/discard' }
   | { type: 'action/start'; key: ActionKey }

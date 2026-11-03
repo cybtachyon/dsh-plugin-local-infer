@@ -200,6 +200,15 @@ describe('client store reducer (store/reducer.ts)', () => {
       expect(next.notes.deps).toBe('deps failed')
       expect(next.deps).toBeNull()
     })
+
+    it('clears the deps model and the deps note on clear', () => {
+      const deps = { runAllowed: true, items: [] }
+      const state = madeState({ deps, notes: { deps: 'stale', copy: 'kept' } })
+      const next = cardReducer(state, { type: 'deps/clear' })
+      expect(next.deps).toBeNull()
+      expect(next.notes.deps).toBe('')
+      expect(next.notes.copy).toBe('kept')
+    })
   })
 
   describe('draft/discard', () => {

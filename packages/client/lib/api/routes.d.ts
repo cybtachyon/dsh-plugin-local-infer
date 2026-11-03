@@ -60,7 +60,7 @@ export interface LaunchRequest {
 export interface GetRequest {
     engine?: string;
     config?: Config;
-    platform?: Record<string, StoredPlatformConfig>;
+    platform?: StoredPlatformConfig;
 }
 /** The body the download route takes. */
 export interface DownloadRequest {
