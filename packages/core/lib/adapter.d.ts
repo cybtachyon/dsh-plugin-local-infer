@@ -35,6 +35,10 @@ export interface LaunchPlan {
     port: number;
     healthUrl: string;
     os?: 'linux' | 'windows' | 'macos';
+    configFile?: {
+        path: string;
+        content: string;
+    };
 }
 /**
  * EnginePlatformConfig is the per-engine platform config the user adds for a

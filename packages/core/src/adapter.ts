@@ -45,6 +45,11 @@ export interface LaunchPlan {
   // the OS-appropriate engine build steps (the Windows vcpkg route versus the
   // Linux cmake route) when the user carries no build-command override.
   os?: 'linux' | 'windows' | 'macos'
+  // The rendered config file the deploy step writes before spawn: the path it
+  // lands at and the content the writeFile step writes. The engine's config
+  // flag points at the path. Absent for engines that carry every setting in
+  // argv or env.
+  configFile?: { path: string; content: string }
 }
 
 /**

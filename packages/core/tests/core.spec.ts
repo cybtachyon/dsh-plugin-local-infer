@@ -70,6 +70,19 @@ describe('core domain model', () => {
     expect(forms.map(form => form.kind)).toEqual(['boolean', 'enum', 'number', 'text', 'path', 'combo'])
   })
 
+  it('accepts a plan with a configFile and a plan without one', () => {
+    const withFile: LaunchPlan = {
+      kind: 'process',
+      argv: ['basalt-serve'],
+      port: 8080,
+      healthUrl: PLAN.healthUrl,
+      configFile: { path: '/tmp/basalt_config.json', content: '{"server":{}}' },
+    }
+    const without: LaunchPlan = { kind: 'process', port: 8080, healthUrl: PLAN.healthUrl }
+    expect(withFile.configFile).toEqual({ path: '/tmp/basalt_config.json', content: '{"server":{}}' })
+    expect(without.configFile).toBeUndefined()
+  })
+
   it('accepts a behavior-first spec with a vram contribution and a constraint', () => {
     const spec: ParameterSpec = {
       key: 'kvDtype',
