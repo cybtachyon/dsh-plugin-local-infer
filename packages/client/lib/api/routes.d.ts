@@ -85,9 +85,8 @@ export type LaunchStreamEvent = {
     step?: undefined;
     result: LaunchResult;
 };
-export type LaunchResultEvent = LaunchResult | {
-    healthy: false;
-    detail: string;
+export type LaunchResultEvent = Omit<LaunchResult, 'plan'> & {
+    plan?: LaunchResult['plan'];
 };
 /**
  * readNdjsonLines reads an NDJSON stream and hands each parsed line to

@@ -284,7 +284,7 @@ export function performEntryLaunch(
         move(store, provider.id, { type: 'failed' })
       } else if (result.healthy === true) {
         move(store, provider.id, { type: 'healthy' })
-      } else if ('state' in result && result.state === 'downloading') {
+      } else if (result.state === 'downloading') {
         move(store, provider.id, { type: 'downloading' })
       } else {
         move(store, provider.id, { type: 'failed' })

@@ -117,10 +117,16 @@ export type LaunchStreamEvent =
   | { step: string; result?: undefined }
   | { step?: undefined; result: LaunchResult }
 
-// The answer a launch settles to: the route's result event, or null when the
-// stream ended without one (a host that cannot stream, a route that broke
-// mid-stream).
-export type LaunchResultEvent = LaunchResult | { healthy: false; detail: string }
+// The answer a launch settles to: the route's result event. The plan is
+// optional, so a full result (with the launch plan) and a broken-launch
+// fallback (a result that names the failure without a plan) share one shape.
+// A caller reads result.healthy, result.state, and result.detail directly,
+// with no union narrowing. readLaunchStream returns this or null when the
+// stream ended without a result event (a host that cannot stream, a route
+// that broke mid-stream).
+export type LaunchResultEvent = Omit<LaunchResult, 'plan'> & {
+  plan?: LaunchResult['plan']
+}
 
 /**
  * readNdjsonLines reads an NDJSON stream and hands each parsed line to
