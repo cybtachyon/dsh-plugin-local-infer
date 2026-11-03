@@ -3,6 +3,10 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "lib",
+    // The card is browser-only: the locale selector reads document and the
+    // T3.x components will need the DOM event and element types. @types/node
+    // web globals are written to coexist with lib.dom.
+    "lib": ["es2024", "dom"],
     // The card renders with the classic JSX transform: react and the
     // primitives resolve at runtime through the shell's frozen platform
     // module table, so the automatic runtime (react/jsx-runtime) is not
