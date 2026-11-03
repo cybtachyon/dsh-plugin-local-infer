@@ -3,18 +3,21 @@ import { fileURLToPath } from 'node:url'
 import { afterAll, describe, expect, it } from 'vitest'
 
 /**
- * dsh/client.js is now a generated artifact (scripts/build-client.mjs bundles
+ * dsh/client.js is a generated artifact (scripts/build-client.mjs bundles
  * packages/client/src into the lazy-CJS carrier), so this suite loads it under
  * a fake window.__ModuleLoader__ and pins the contract the dsh client-module
  * scan and the card's routes rely on. The loader captures the spec instead of
  * running the factory, so the test drives the factory with a stub require and a
  * stub plugin context.
  *
- * Skipped while the card is a stub (T0.3): the behavior assertions drive
- * apply/inject, which the T0.1 stub leaves empty, and the source-pinning
- * assertions read strings out of the old hand-written carrier that the modular
- * port (T0.4 onward) restructures. Re-activate once the bootstrap is ported and
- * the pins are reworked into packages/client/tests/.
+ * The carrier-level behavior tests pin the loader contract (apply/inject, the
+ * locale and slots seams, the mount probe, the primitives seed). The
+ * source-pinning tests read strings out of the generated artifact and pin the
+ * store-driven contracts the card relies on: the single lifecycle derivation
+ * (deriveLifecycleControl), the per-provider launch machine, the draft as the
+ * only form-value source, and the performAction server-mutation path. The
+ * behavior these pins describe is unit-tested in packages/client/tests/; the
+ * pins here are the integration-level contract on the bundled artifact.
  */
 
 // The carrier lives at the repo root, three levels above this test file.
@@ -34,15 +37,16 @@ afterAll(() => {
   } else {
     (globalThis as { window?: unknown }).window = previousWindow
   }
+  delete (globalThis as Record<string, unknown>).fetch
 })
 
 // The card probes /local-infer/summary on mount. A 404 reads as "the route is
 // absent", so the mount is skipped and require('react') never runs.
 function stubFetch(status: number): void {
-  globalThis.fetch = (async () => ({
+  ;(globalThis as Record<string, unknown>).fetch = (async () => ({
     status,
     json: async () => ({ engineId: 'ninfer' }),
-  })) as unknown as typeof fetch
+  })) as unknown
 }
 
 // The hooks the card component calls. mountCard only constructs the component
@@ -119,7 +123,7 @@ function mountScope() {
   }
 }
 
-describe.skip('dsh/client.js browser carrier', () => {
+describe('dsh/client.js browser carrier', () => {
   it('loads as the lazy-CJS plugin the dsh client-module scan expects', async () => {
     previousWindow = (globalThis as { window?: unknown }).window
     globalThis.window = {
@@ -209,11 +213,11 @@ describe.skip('dsh/client.js browser carrier', () => {
 
   it('pins the help toggle contract the card persists', () => {
     const source = readFileSync(fileURLToPath(clientPath), 'utf8')
-    // The circular "?" button flips the local state and persists the
-    // preference through the save route, so the descriptions-visible
-    // default survives a reload.
+    // The circular "?" button flips the ui.help state and persists the
+    // preference through the save route (showHelp in the body), so the
+    // descriptions-visible default survives a reload.
     expect(source).toContain('showHelp')
-    expect(source).toContain('onToggleHelp')
+    expect(source).toContain('state.ui.help')
     expect(source).toContain('renderHelpRow')
     expect(source).toContain('HELP_BUTTON_STYLE')
   })
@@ -222,32 +226,34 @@ describe.skip('dsh/client.js browser carrier', () => {
     const source = readFileSync(fileURLToPath(clientPath), 'utf8')
     // The help and allow-run toggles persist the global fields through the
     // save route with settingsOnly set, so the route keeps the provider list
-    // intact and a toggle never mints a duplicate entry. The main Save omits
-    // the flag and keeps the upsert contract.
+    // intact and a toggle never mints a duplicate entry. The allow-run trust
+    // gate persists through performAllowRun; the main Save omits the flag and
+    // keeps the upsert contract.
     expect(source).toContain('settingsOnly')
-    expect(source).toContain('onAllowRun')
+    expect(source).toContain('performAllowRun')
   })
 
   it('pins the refresh button contract the card re-fetches through', () => {
     const source = readFileSync(fileURLToPath(clientPath), 'utf8')
-    // The circular refresh button sits next to the "?" help button in the
-    // card header. It re-fetches the summary and deps from the host, so the
-    // card re-prices after the harness pauses and re-activates the plugin's
-    // routes. The glyph is the primitives seed's refresh icon; a host
-    // without the seed keeps the native arrow character.
-    expect(source).toContain('IconRefreshOutlineRegular')
+    // The circular refresh button sits next to the "?" help button in the card
+    // header. It re-fetches the summary and deps from the host, so the card
+    // re-prices after the harness pauses and re-activates the plugin's routes.
+    // The glyph is a native arrow character (the seed's refresh icon is not
+    // required for the mount).
     expect(source).toContain('t.refresh')
+    expect(source).toContain('repriceSummary')
   })
 
   it('pins the provider list contract the card renders', () => {
     const source = readFileSync(fileURLToPath(clientPath), 'utf8')
     // The card lists the saved providers as collapsed cards, each with a
     // status dot and Edit/Delete controls, and talks to the provider-delete
-    // route to remove one.
+    // route to remove one. The list is the ProviderList component; the row
+    // actions are the editProvider / deleteProvider / cancelProvider drivers.
     expect(source).toContain('/local-infer/provider-delete')
-    expect(source).toContain('renderProviderList')
-    expect(source).toContain('onEditProvider')
-    expect(source).toContain('onDeleteProvider')
+    expect(source).toContain('ProviderList')
+    expect(source).toContain('editProvider')
+    expect(source).toContain('deleteProvider')
     expect(source).toContain('editingProviderId')
   })
 
@@ -258,8 +264,8 @@ describe.skip('dsh/client.js browser carrier', () => {
     // fork is set. The short name is parsed from the fork reference (a
     // protocol URL, an scp-style git@host:owner/repo, or a short form).
     expect(source).toContain('repoShortName')
-    expect(source).toContain('repoShortName(provider.platform.engineFork)')
-    expect(source).toContain('var titleLabel = forkName !== undefined ? forkName : engineLabel')
+    expect(source).toContain('repoShortName(provider.platform?.engineFork)')
+    expect(source).toContain('titleLabel = forkName !== void 0 ? forkName : engineLabel')
   })
 
   it('pins the collapsible provider form and the New provider control', () => {
@@ -267,21 +273,22 @@ describe.skip('dsh/client.js browser carrier', () => {
     // The Engine/Model form collapses by default while entries exist, and the
     // "New provider" control sits after the form: a button while a new
     // provider can be started, plain text while in new mode or with no
-    // entries. Edit caches the current draft so a later New click restores it.
-    expect(source).toContain('renderNewProviderControl')
+    // entries. The effective mode is derived (deriveProviderFormMode), and
+    // Edit caches the current draft so a later New click restores it.
+    expect(source).toContain('NewProviderControl')
     expect(source).toContain('providerFormMode')
-    expect(source).toContain('effectiveProviderFormMode')
+    expect(source).toContain('deriveProviderFormMode')
     expect(source).toContain('cachedDraft')
-    expect(source).toContain("effectiveProviderFormMode !== 'collapsed'")
+    expect(source).toContain('deriveProviderFormMode(state) !== "new"')
   })
 
   it('pins the register gate the card enforces while unsaved', () => {
     const source = readFileSync(fileURLToPath(clientPath), 'utf8')
-    // The Register button stays disabled while the config is unsaved (dirty),
-    // and the help line explains the gate.
+    // The Register button stays disabled while the register cell is pending or
+    // the draft is dirty, and the help line explains the gate.
     expect(source).toContain('registerNeedsSave')
-    expect(source).toContain('dirty && help')
-    expect(source).toContain('registering || dirty')
+    expect(source).toContain('state.dirty && state.ui.help')
+    expect(source).toContain('registerCell.status === "pending" || state.dirty')
   })
 
   it('pins the Logs section and the per-entry Launch control', () => {
@@ -289,25 +296,22 @@ describe.skip('dsh/client.js browser carrier', () => {
     // The card shows the last run's logs in a fixed-height text area plus a
     // log-location field, and each provider entry carries its own Launch
     // control: a Throbber while launching, Stop when healthy, a red Logs that
-    // opens the entry for editing when the launch times out.
+    // opens the entry for editing when the launch times out. The lifecycle
+    // state lives in the per-provider launch map (state.launch), driven by the
+    // performEntryLaunch / performEntryStop drivers. The main Launch is
+    // performDraftLaunch, and the Auto Rebuild checkbox (checked by default)
+    // rides the launch body: unchecked, the route skips the git sync and
+    // launches the checkout as-is.
     expect(source).toContain('lastLogs')
     expect(source).toContain('logPath')
-    expect(source).toContain('renderEntryLaunchButton')
+    expect(source).toContain('EntryLaunchButton')
     expect(source).toContain('renderThrobber')
-    expect(source).toContain('onLaunchEntry')
-    expect(source).toContain('onStopEntry')
-    expect(source).toContain('entryLaunchState')
-    // The main Launch hands the Logs section the finished run: its handler
-    // re-reads the summary, so the stored launch command line and the
-    // engine's output replace the previous run in the text area. The Auto
-    // Rebuild checkbox (checked by default) rides the launch body: unchecked,
-    // the route skips the git sync (fetch, rebase, rebuild) and launches the
-    // checkout as-is.
-    expect(source).toContain(
-      '[draft, launching, editingProviderId, autoRebuild, t, fetchSummary, startProcessLog]',
-    )
-    expect(source).toContain('autoRebuildState')
-    expect(source).toContain('autoRebuild: autoRebuild')
+    expect(source).toContain('performEntryLaunch')
+    expect(source).toContain('performEntryStop')
+    expect(source).toContain('state.launch')
+    expect(source).toContain('performDraftLaunch')
+    expect(source).toContain('autoRebuild')
+    expect(source).toContain('autoRebuild: state.ui.autoRebuild')
   })
 
   it('pins the Logs auto-scroll and the vertical resize handle', () => {
@@ -316,17 +320,18 @@ describe.skip('dsh/client.js browser carrier', () => {
     // 'fresh' (the pane just opened) or 'scrolling'; a manual scroll up parks
     // the mode at 'manual' so content updates stop moving the view, and a
     // scroll back to the bottom re-arms 'scrolling'. The mode and the shared
-    // displayed value drive the effect and the textarea.
-    expect(source).toContain('logsScrollModeState')
-    expect(source).toContain("logsScrollMode === 'fresh'")
-    expect(source).toContain("atBottom ? 'scrolling' : 'manual'")
+    // displayed value live in the store's ui.logs, and drive the effect and
+    // the textarea.
+    expect(source).toContain('ui.logs.scrollMode')
+    expect(source).toContain('scrollMode: "fresh"')
+    expect(source).toContain('atBottom ? "scrolling" : "manual"')
     expect(source).toContain('onLogsScroll')
     expect(source).toContain('displayedLogs')
     // The diagonal chevron in the section's bottom-right corner drags the
     // height vertically only, through a pointer drag that clamps the height.
-    // The glyph is the primitives seed's chevron rotated 45 degrees; a host
-    // without the seed keeps the native corner glyph.
-    expect(source).toContain('logsHeightState')
+    // The glyph is the primitives seed's chevron; a host without the seed
+    // keeps the native corner glyph.
+    expect(source).toContain('logs.height')
     expect(source).toContain('onLogsResizeStart')
     expect(source).toContain('IconChevronDownOutlineRegular')
     expect(source).toContain('ns-resize')
@@ -334,13 +339,13 @@ describe.skip('dsh/client.js browser carrier', () => {
 
   it('pins the title-bar Launch control mirroring the edited provider entry state', () => {
     const source = readFileSync(fileURLToPath(clientPath), 'utf8')
-    // While a provider is being edited, the title-bar Launch/Stop control reads
-    // that entry's per-entry launch state (a phase throbber, a Stop when
-    // healthy, a red Logs on a failed launch), so clicking the entry's Launch
-    // button drives both controls through the same lifecycle.
-    expect(source).toContain('mirroredPhaseLabel')
-    expect(source).toContain('mirroredStatus')
+    // While a provider is being edited, the title-bar Launch/Stop control
+    // renders from the single lifecycle derivation (deriveLifecycleControl),
+    // which reads that entry's per-provider launch machine, so clicking the
+    // entry's Launch button drives both controls through the same lifecycle.
+    expect(source).toContain('deriveLifecycleControl')
     expect(source).toContain('editedProvider')
+    expect(source).toContain('performEntryStop')
   })
 
   it('pins the reusable process button and the Logs process separator', () => {
@@ -351,12 +356,13 @@ describe.skip('dsh/client.js browser carrier', () => {
     // process is in flight, the idle action button when it settles.
     expect(source).toContain('renderProcessButton')
     // The provider process buttons write a "--- {{label}}" separator to the
-    // Logs buffer when clicked, so a new process reads as a fresh section that
-    // will append its commands and output to the buffer and the log file.
-    expect(source).toContain('startProcessLog')
-    expect(source).toContain("'--- ' + label")
-    // The Get button reads the title-cased "Getting..." in-progress label.
-    expect(source).toContain("getting: 'Getting...'")
+    // Logs buffer when clicked (appendProcessLog), so a new process reads as a
+    // fresh section that appends its commands and output to the buffer and the
+    // log file. The Get button reads the title-cased "Getting..." in-progress
+    // label.
+    expect(source).toContain('appendProcessLog')
+    expect(source).toContain('"--- " + label')
+    expect(source).toContain('"Getting..."')
   })
 
   it('pins the per-entry launch state machine and its phase labels', () => {
@@ -381,7 +387,7 @@ describe.skip('dsh/client.js browser carrier', () => {
     // The health-poll deadline arms only for the launch (health-poll) step; the
     // rebuild steps (prereqs, download, build) run without a timeout.
     expect(source).toContain('LAUNCH_HEALTH_DEADLINE_MS')
-    expect(source).toContain("event.step === 'launch'")
+    expect(source).toContain('step === "launch"')
   })
 
   it('pins the downloading state the engine model fetch reports', () => {
@@ -389,13 +395,14 @@ describe.skip('dsh/client.js browser carrier', () => {
     // A launch that is still fetching its model files (the Strata download)
     // reads as a downloading throbber, not a failure: the result event's
     // downloading state drives the machine to the downloading state, and the
-    // button renders a busy throbber the card re-polls. The title bar mirrors
-    // the entry's Launch button, so its phase-label map carries the downloading
-    // state too (a missing key desyncs the title bar from the entry control).
-    expect(source).toContain("type === 'downloading'")
-    expect(source).toContain("status === 'downloading'")
-    expect(source).toContain("event.result.state === 'downloading'")
-    expect(source).toContain('downloading: t.entryDownloading')
+    // button renders a busy throbber the card re-polls. The phase label is
+    // resolved through phaseLabelFor, so the title bar and the entry control
+    // read the same downloading label.
+    expect(source).toContain('type: "downloading"')
+    expect(source).toContain('status === "downloading"')
+    expect(source).toContain('result.state === "downloading"')
+    expect(source).toContain('phaseLabelFor')
+    expect(source).toContain('t.entryDownloading')
   })
 
   it('pins the provider stop lifecycle the state machine drives', () => {
@@ -405,33 +412,35 @@ describe.skip('dsh/client.js browser carrier', () => {
     // a fast cadence so the provider's status dot repaints the moment the
     // engine is down, instead of waiting out the host's 5-second cycle.
     expect(source).toContain('STOP_POLL_MS')
-    expect(source).toContain("status === 'stopping'")
-    expect(source).toContain("type === 'stopped'")
-    expect(source).toContain('stoppingLabel')
+    expect(source).toContain('status === "stopping"')
+    expect(source).toContain('type: "stopped"')
+    expect(source).toContain('stopping: "stopping..."')
     // A provider still running at the 10-second deadline settles to the red
     // Logs state (the same path a failed launch takes), marked with the cause
     // 'stop' so the Logs control's reset reads as Stop, not Launch.
     expect(source).toContain('STOP_HEALTH_DEADLINE_MS')
-    expect(source).toContain("type === 'stopFailed'")
-    expect(source).toContain("cause === 'stop' ? 'running' : 'idle'")
+    expect(source).toContain('type: "stopFailed"')
+    expect(source).toContain('cause === "stop" ? "running" : "idle"')
   })
 
   it('pins the launch record contract the restart re-link prices', () => {
     const source = readFileSync(fileURLToPath(clientPath), 'utf8')
     // The card's launch and stop bodies carry the provider entry's id, so the
     // route persists (or clears) the launch record on that entry and a DSH
-    // restart re-links a surviving engine to its config.
+    // restart re-links a surviving engine to its config. The draft's launch
+    // hands the editing provider id from the store's ui state.
     expect(source).toContain('providerId: provider.id')
-    expect(source).toContain('body.providerId = editingProviderId')
+    expect(source).toContain('body.providerId = state.ui.editingProviderId')
   })
 
   it('pins the provider Edit to Cancel swap while a provider is being edited', () => {
     const source = readFileSync(fileURLToPath(clientPath), 'utf8')
     // The provider the editing form is open for shows a Cancel button (which
-    // collapses the form back to Edit and discards its changes); every other
-    // provider shows the Edit button that opens it.
-    expect(source).toContain('onCancelProvider')
-    expect(source).toContain('cancelLabel')
+    // collapses the form back to Edit and discards its changes, the
+    // cancelProvider driver); every other provider shows the Edit button that
+    // opens it.
+    expect(source).toContain('cancelProvider')
+    expect(source).toContain('cancel: "Cancel"')
     expect(source).toContain('editingId === provider.id')
   })
 
@@ -450,12 +459,13 @@ describe.skip('dsh/client.js browser carrier', () => {
     // The chat template is split into a preset dropdown (shipped presets plus a
     // Custom entry) and a "Custom Chat template" text field that shows while the
     // preset is Custom. The auto-download pulls an absent template through the
-    // /local-infer/chat-template route, and the System dependencies box carries
-    // the download command when the CLI is unavailable.
+    // /local-infer/chat-template route (downloadTemplate), and the System
+    // dependencies box carries the download command when the CLI is
+    // unavailable.
     expect(source).toContain('ChatTemplateField')
     expect(source).toContain('chatTemplatePreset')
     expect(source).toContain('customChatTemplate')
-    expect(source).toContain('onDownloadTemplate')
+    expect(source).toContain('downloadTemplate')
     expect(source).toContain('chatTemplateStatus')
     expect(source).toContain('templateAbsent')
     expect(source).toContain('templateInstructions')
@@ -466,7 +476,7 @@ describe.skip('dsh/client.js browser carrier', () => {
     // A successful Save collapses the form and clears the editing provider id,
     // so the provider entry's button reverts from Cancel back to Edit, the
     // same rule the Discard handler applies.
-    expect(source).toContain('editingProviderIdState[1](null)')
+    expect(source).toContain('editingProviderId: null')
   })
 
   it('pins the Remove handler keying off the same config as Register', () => {
@@ -483,16 +493,16 @@ describe.skip('dsh/client.js browser carrier', () => {
     // A "New provider" then "Discard" sequence must not leave the form open in
     // 'new' mode. The Discard handler collapses the form back to the provider
     // entry list, the same rule the Save handler applies.
-    expect(source).toContain('providerFormModeState[1](\'collapsed\')')
+    expect(source).toContain('providerFormMode: "collapsed"')
   })
 
   it('pins the unsure banner with kill commands at the top of the card', () => {
     const source = readFileSync(fileURLToPath(clientPath), 'utf8')
     // The "unsure" banner renders at the top of the card (before the section
-    // title) when data.unsureBanner is present: the message and a read-only
-    // text area with the bash kill commands for the engine processes the
-    // detector saw holding VRAM.
-    expect(source).toContain('data.unsureBanner')
+    // title) when the summary's unsureBanner is present: the message and a
+    // read-only text area with the bash kill commands for the engine processes
+    // the detector saw holding VRAM.
+    expect(source).toContain('summary.unsureBanner')
     expect(source).toContain('unsureBanner')
     expect(source).toContain('killCommands')
   })
@@ -502,18 +512,19 @@ describe.skip('dsh/client.js browser carrier', () => {
     // The section is a key/value table (parameter, value, the + / - controls)
     // the user fills with extra launch flags. The rows live in the draft
     // config's customArgs field, so a Save persists them and the next engine
-    // launch appends them to the command line.
-    expect(source).toContain('renderCustomArgsPanel')
-    expect(source).toContain('onCustomArgs')
+    // launch appends them to the command line. The row logic is the pure
+    // nextCustomArgs function.
+    expect(source).toContain('CustomArgsPanel')
+    expect(source).toContain('nextCustomArgs')
     expect(source).toContain('customArgs')
     expect(source).toContain('customArgsTitle')
     expect(source).toContain('customArgKeyHeader')
     expect(source).toContain('customArgValueHeader')
     // The first row is cleared, not removed; a lower row is removed; + adds a
     // row. The action verbs pin that behavior.
-    expect(source).toContain("'clear'")
-    expect(source).toContain("'remove'")
-    expect(source).toContain("'add'")
+    expect(source).toContain('"clear"')
+    expect(source).toContain('"remove"')
+    expect(source).toContain('"add"')
   })
 
   it('pins the build-method-dependent platform fields in the Engine platform section', () => {
@@ -521,13 +532,13 @@ describe.skip('dsh/client.js browser carrier', () => {
     // The Engine platform section shows the Build commands override in local
     // build mode and the Docker tag override in docker build mode, one at a
     // time, each seeded with the engine's own default as the placeholder. The
-    // values ride the platform map (onPlatform), not the config.
+    // values ride the platform map, not the config.
     expect(source).toContain('t.buildCommands')
     expect(source).toContain('t.dockerTag')
-    expect(source).toContain("buildMode === 'local'")
-    expect(source).toContain("buildMode === 'docker'")
-    expect(source).toContain("'buildCommands'")
-    expect(source).toContain("'dockerTag'")
+    expect(source).toContain('buildMode === "local"')
+    expect(source).toContain('buildMode === "docker"')
+    expect(source).toContain('"buildCommands"')
+    expect(source).toContain('"dockerTag"')
     expect(source).toContain('engineEntry.defaultBuildCommand')
     expect(source).toContain('engineEntry.defaultDockerTag')
   })
@@ -538,11 +549,11 @@ describe.skip('dsh/client.js browser carrier', () => {
     // of the VRAM Est. meter and the deps panel. The draft update is pure; the
     // re-price runs only after typing pauses (the 300ms timeout), so a fast
     // keystroke stream is one round trip, not one per letter. The timeout is
-    // reset on every field change, and the fetch reads the latest committed
-    // draft from a ref, not a stale closure.
+    // reset on every field change (repriceTimerRef), and the fetch reads the
+    // latest committed draft from a ref, not a stale closure.
     expect(source).toContain('scheduleReprice')
     expect(source).toContain('draftRef')
-    expect(source).toContain('timerRef')
+    expect(source).toContain('repriceTimerRef')
     // The field edit and the engine switch both schedule the debounced
     // re-price, and the draft update stays pure (no timer side effect inside
     // the state updater).
@@ -559,7 +570,7 @@ describe.skip('dsh/client.js browser carrier', () => {
     // free-text fields (the API key, the chat template, the path pickers)
     // from lagging a keystroke behind the server round trip.
     expect(source).toContain('effectiveField')
-    expect(source).toContain('draft.config[field.key]')
-    expect(source).toContain('Object.assign({}, field, { value: draftValue })')
+    expect(source).toContain('currentDraft.config[field.key]')
+    expect(source).toContain('{ ...field, value: draftValue }')
   })
 })
