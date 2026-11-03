@@ -28,8 +28,79 @@ __export(index_exports, {
   inject: () => inject
 });
 module.exports = __toCommonJS(index_exports);
-var apply = () => {
-};
+
+// packages/client/src/plugin.ts
+var PACKAGE_NAME = "dsh-plugin-local-infer";
+function placeholderCard(react, _localeRef, _primitives) {
+  return () => react.createElement(
+    "div",
+    { "data-local-infer": "placeholder" },
+    "Local Infer (card under construction)"
+  );
+}
+function registerCard(ctx) {
+  if (typeof ctx.inject !== "function") {
+    return;
+  }
+  const localeRef = { current: null };
+  ctx.inject(["locale"], (scope) => {
+    localeRef.current = scope.locale ?? null;
+    if (typeof scope.effect === "function") {
+      scope.effect(
+        () => () => {
+          localeRef.current = null;
+        },
+        "local-infer: locale handle"
+      );
+    }
+  });
+  ctx.inject(["slots"], (scope) => {
+    fetch("/local-infer/summary").then((response) => {
+      if (response.status === 404) {
+        return;
+      }
+      try {
+        mountCard(scope, localeRef);
+      } catch (error) {
+        console.error(`[local-infer] settings card skipped: ${error}`);
+      }
+    }).catch(() => {
+    });
+  });
+}
+function mountCard(ctx, localeRef) {
+  let react;
+  try {
+    react = require("react");
+  } catch (error) {
+    console.error(`[local-infer] settings card skipped: ${error}`);
+    return;
+  }
+  let primitives;
+  try {
+    primitives = require("@deepseek-ai/dsh-client-ui-primitives");
+  } catch {
+    primitives = null;
+  }
+  if (primitives && typeof primitives.Menu !== "function") {
+    primitives = null;
+  }
+  const Card = placeholderCard(react, localeRef, primitives);
+  ctx.slots.inject("plugins.bundle.config", function* () {
+    yield ctx.slots.register({ name: "plugins.bundle.config", key: PACKAGE_NAME }, Card);
+  });
+  ctx.slots.inject("settings.plugin.item", function* () {
+    yield ctx.slots.register(
+      { name: "settings.plugin.item", id: "local-infer", key: "local-infer", order: 41 },
+      Card
+    );
+  });
+}
+function apply(ctx) {
+  registerCard(ctx);
+}
+
+// packages/client/src/index.ts
 var inject = [];
 
     return module.exports;

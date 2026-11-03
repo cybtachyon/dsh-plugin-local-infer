@@ -160,8 +160,8 @@ its own `docs/PLAN-TASK-*.md` file, linked from the title below.
 
 - [x] [**T0.1 Create the `packages/client` skeleton.**](docs/PLAN-TASK-T0.1-create-client-skeleton.md)
 - [x] [**T0.2 Add build devDependencies.**](docs/PLAN-TASK-T0.2-add-build-devdeps.md)
-- [ ] [**T0.3 Write `scripts/build-client.mjs` and wire it into `pnpm build`.**](docs/PLAN-TASK-T0.3-build-client-script.md)
-- [ ] [**T0.4 Port the bootstrap (`plugin.ts` + `index.ts`).**](docs/PLAN-TASK-T0.4-port-bootstrap.md)
+- [x] [**T0.3 Write `scripts/build-client.mjs` and wire it into `pnpm build`.**](docs/PLAN-TASK-T0.3-build-client-script.md)
+- [x] [**T0.4 Port the bootstrap (`plugin.ts` + `index.ts`).**](docs/PLAN-TASK-T0.4-port-bootstrap.md)
 
 ### Phase 1: pure core extraction (no behavior change)
 
