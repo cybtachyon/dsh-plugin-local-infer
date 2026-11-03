@@ -2856,10 +2856,20 @@ function renderField(props) {
   return /* @__PURE__ */ react.createElement("div", { style: { marginTop: 6 } }, body, help ? renderHelpRow(field.description) : null, inlineWarnings.map((warning) => /* @__PURE__ */ react.createElement("div", { key: warning.id, style: INLINE_WARNING_STYLE(warning.tone) }, warning.message)));
 }
 function card(_react, localeRef, _primitives) {
+  const subscribeLocale = (onChange) => {
+    const locale = localeRef.current;
+    return locale ? locale.subscribe(onChange) : () => {
+    };
+  };
+  const readLocale = () => {
+    const locale = localeRef.current;
+    return locale ? locale.getSnapshot().active : "";
+  };
   return function Card() {
     const store = useCardStore();
     const state = store.getSnapshot();
-    const t = labels(localeRef.current);
+    const active = react.useSyncExternalStore(subscribeLocale, readLocale, readLocale);
+    const t = labels(active);
     const draftRef = react.useRef(null);
     const repriceTimerRef = react.useRef(null);
     const draft = state.draft;

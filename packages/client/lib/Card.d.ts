@@ -18,12 +18,24 @@
 import type { ReactNode } from 'react';
 import { type PrimitivesModule } from './render/primitives.tsx';
 /**
+ * LocaleService is the host locale seam the card reads the active locale
+ * from. The dsh-client-locale plugin provides a LocaleRuntime under the
+ * `locale` seam: getSnapshot().active is the active locale id, and subscribe
+ * notifies on a locale switch so the card re-renders its label table.
+ */
+export interface LocaleService {
+    getSnapshot(): {
+        active: string;
+    };
+    subscribe(listener: () => void): () => void;
+}
+/**
  * LocaleRef is the locale handle the card reads the active locale from. The
  * bootstrap (plugin.ts) keeps it current through the locale seam and hands it
  * to the card, so the card draws the label table for the active locale.
  */
 export interface LocaleRef {
-    current: string | null;
+    current: LocaleService | null;
 }
 /**
  * card builds the browser card component factory. It has the same

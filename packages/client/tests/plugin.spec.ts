@@ -13,8 +13,15 @@ import { apply, inject } from 'dsh-plugin-local-infer/client'
  * stubbed.
  */
 
+// The host locale seam hands the card a LocaleRuntime (getSnapshot().active
+// plus subscribe), not a bare string. The scope models that service shape.
 interface Scope {
-  locale: string | undefined
+  locale:
+    | {
+        getSnapshot: () => { active: string }
+        subscribe: (listener: () => void) => () => void
+      }
+    | undefined
   effect?: (disposer: () => void, label?: string) => void
   slots: {
     inject: (name: string, body: () => void) => void
@@ -30,7 +37,10 @@ type ApplyCtx = Parameters<typeof apply>[0]
 // A slots scope that runs each injected body so register is captured.
 function makeScope(registrations: unknown[], withEffect = true): Scope {
   return {
-    locale: 'en',
+    locale: {
+      getSnapshot: () => ({ active: 'en' }),
+      subscribe: () => () => {},
+    },
     ...(withEffect
       ? { effect: (disposer: () => void) => { disposer() } }
       : {}),

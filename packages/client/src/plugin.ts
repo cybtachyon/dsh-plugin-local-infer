@@ -20,7 +20,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { card, type LocaleRef } from './Card.tsx'
+import { card, type LocaleRef, type LocaleService } from './Card.tsx'
 import { routeExists } from './api/routes.ts'
 import { setPrimitivesModule, type PrimitivesModule } from './render/primitives.tsx'
 import { setReactModule, type ReactLike as StoreReactLike } from './store/useCardStore.ts'
@@ -66,8 +66,10 @@ export interface SlotSpec {
   order?: number
 }
 
-// The locale scope hands the card the active locale string (or undefined).
-type LocaleScope = Context & { locale: string | undefined }
+// The locale scope hands the card the host locale service (or undefined). The
+// service is a LocaleRuntime, not a string: the card reads its active locale
+// through getSnapshot().active and subscribes to it for live switches.
+type LocaleScope = Context & { locale: LocaleService | undefined }
 // The slots scope hands the card the slots service.
 type SlotsScope = Context & { slots: SlotsService }
 

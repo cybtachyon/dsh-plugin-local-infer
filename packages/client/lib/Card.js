@@ -174,10 +174,23 @@ function renderField(props) {
  * snapshot, and wires every server mutation through a performAction driver.
  */
 export function card(_react, localeRef, _primitives) {
+    // The locale service the host seam hands the card (null before the seam
+    // fires). The card reads the active locale string through it and subscribes,
+    // so a language switch re-renders the label table. Both closures are created
+    // once per mount, so useSyncExternalStore does not re-subscribe each render.
+    const subscribeLocale = (onChange) => {
+        const locale = localeRef.current;
+        return locale ? locale.subscribe(onChange) : () => { };
+    };
+    const readLocale = () => {
+        const locale = localeRef.current;
+        return locale ? locale.getSnapshot().active : '';
+    };
     return function Card() {
         const store = useCardStore();
         const state = store.getSnapshot();
-        const t = labels(localeRef.current);
+        const active = react.useSyncExternalStore(subscribeLocale, readLocale, readLocale);
+        const t = labels(active);
         // The latest committed draft, mirrored into a ref so the debounced
         // re-price reads the value the user last typed, not a stale closure.
         const draftRef = react.useRef(null);

@@ -76,12 +76,23 @@ import {
 import { downloadTemplate } from './store/template.ts'
 
 /**
+ * LocaleService is the host locale seam the card reads the active locale
+ * from. The dsh-client-locale plugin provides a LocaleRuntime under the
+ * `locale` seam: getSnapshot().active is the active locale id, and subscribe
+ * notifies on a locale switch so the card re-renders its label table.
+ */
+export interface LocaleService {
+  getSnapshot(): { active: string }
+  subscribe(listener: () => void): () => void
+}
+
+/**
  * LocaleRef is the locale handle the card reads the active locale from. The
  * bootstrap (plugin.ts) keeps it current through the locale seam and hands it
  * to the card, so the card draws the label table for the active locale.
  */
 export interface LocaleRef {
-  current: string | null
+  current: LocaleService | null
 }
 
 /** The field-edit callback the form fields run: one config key to a value. */
@@ -301,10 +312,24 @@ export function card(
   localeRef: LocaleRef,
   _primitives: PrimitivesModule | null,
 ): () => ReactNode {
+  // The locale service the host seam hands the card (null before the seam
+  // fires). The card reads the active locale string through it and subscribes,
+  // so a language switch re-renders the label table. Both closures are created
+  // once per mount, so useSyncExternalStore does not re-subscribe each render.
+  const subscribeLocale = (onChange: () => void): (() => void) => {
+    const locale = localeRef.current
+    return locale ? locale.subscribe(onChange) : () => {}
+  }
+  const readLocale = (): string => {
+    const locale = localeRef.current
+    return locale ? locale.getSnapshot().active : ''
+  }
+
   return function Card(): ReactNode {
     const store = useCardStore()
     const state = store.getSnapshot()
-    const t = labels(localeRef.current)
+    const active = react.useSyncExternalStore(subscribeLocale, readLocale, readLocale)
+    const t = labels(active)
 
     // The latest committed draft, mirrored into a ref so the debounced
     // re-price reads the value the user last typed, not a stale closure.

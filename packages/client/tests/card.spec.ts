@@ -1,7 +1,7 @@
 import * as reactModule from 'react'
 import type { LocalInferSummary } from 'dsh-plugin-local-infer/ui'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
-import { card } from '../src/Card.tsx'
+import { card, type LocaleRef } from '../src/Card.tsx'
 import {
   setReactModule,
   type CardStoreInstance,
@@ -11,6 +11,18 @@ import type { CardDraft } from '../src/store/types.ts'
 import { TEXT } from '../src/text.ts'
 
 const t = TEXT.en
+
+// A locale service the card reads through useSyncExternalStore: getSnapshot
+// hands back the active locale id and subscribe is a no-op (the card tests do
+// not switch locales mid-render).
+function localeRef(active: string): LocaleRef {
+  return {
+    current: {
+      getSnapshot: () => ({ active }),
+      subscribe: () => () => {},
+    },
+  }
+}
 
 // A renderer returns a React element (a plain object). The tests drive the
 // element tree without a renderer, so no react-dom is needed.
@@ -280,7 +292,7 @@ function renderCard(opts: {
   draft?: CardDraft
   ui?: Record<string, unknown>
 }) {
-  const Component = card(null, { current: 'en' }, null)
+  const Component = card(null, localeRef('en'), null)
   const { dispatcher, getRef, runEffects, runCleanups, resetForRerender } = makeDispatcher()
   withDispatcher(dispatcher, () => {
     Component()
@@ -348,7 +360,7 @@ beforeAll(() => {
 
 describe('the card composer (src/Card.tsx)', () => {
   it('the card factory returns a component', () => {
-    const Component = card(null, { current: 'en' }, null)
+    const Component = card(null, localeRef('en'), null)
     expect(typeof Component).toBe('function')
   })
 
@@ -612,7 +624,7 @@ describe('the card composer (src/Card.tsx)', () => {
       })
       vi.stubGlobal('fetch', fetchMock)
       // No summary and no draft: the mount effect fetches on the first render.
-      const Component = card(null, { current: 'en' }, null)
+      const Component = card(null, localeRef('en'), null)
       const { dispatcher, runEffects } = makeDispatcher()
       withDispatcher(dispatcher, () => {
         Component()
