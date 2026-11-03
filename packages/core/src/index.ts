@@ -21,6 +21,7 @@ export type {
   ComboOption,
   ConstraintResult,
   EnumOption,
+  ParameterDeploy,
   ParameterForm,
   ParameterSpec,
 } from './parameter.ts'

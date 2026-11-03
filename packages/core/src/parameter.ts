@@ -63,6 +63,23 @@ export type ParameterForm =
   | { kind: 'combo'; options: ComboOption[] }
 
 /**
+ * ParameterDeploy declares where a parameter's value lands at deploy time:
+ * on the command line, in the process environment, or in a config file the
+ * deploy step writes. A `config` target names the file format and the
+ * nesting path: `block` is the top-level key, `key` the leaf. The config-file
+ * renderer nests `toConfig(value)` (or the raw value) under that path.
+ */
+export type ParameterDeploy =
+  | { target: 'cli' }
+  | { target: 'env' }
+  | {
+      target: 'config'
+      format: 'json' | 'yaml' | 'env'
+      block?: string
+      key?: string
+    }
+
+/**
  * ParameterSpec is the unit of parameter management: a declarative description
  * of one engine parameter. It is the object that makes the parameter-to-
  * hardware relationship first-class. A parameter declares its VRAM
@@ -71,8 +88,9 @@ export type ParameterForm =
  * of adding these specs, never rewiring the core.
  *
  * `description` is behavior-first: it says what the parameter does to the run,
- * not what it is. `toArgv` and `toEnv` are the engine-specific spellings that
- * turn a value into a CLI flag or an environment variable.
+ * not what it is. `toArgv`, `toEnv`, and `toConfig` are the engine-specific
+ * spellings that turn a value into a CLI flag, an environment variable, or a
+ * config-file entry. `deploy` declares which spelling the deploy step uses.
  */
 export interface ParameterSpec {
   key: string
@@ -86,4 +104,6 @@ export interface ParameterSpec {
   requires?: (config: Config) => string | null
   toArgv?: (value: unknown) => string[]
   toEnv?: (value: unknown) => [string, string]
+  toConfig?: (value: unknown) => unknown
+  deploy?: ParameterDeploy
 }
