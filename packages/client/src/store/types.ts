@@ -26,6 +26,17 @@ import type {
 import type { LaunchEntry, LaunchEvent } from '../machine/launch.ts'
 
 /**
+ * LaunchStoreEntry is the store's per-provider launch machine entry: the
+ * machine's LaunchEntry (status + cause) plus the startTime the deadline
+ * timers price. The machine stays pure (no clock read), so the reducer stamps
+ * startTime on every launch/move; the stop-poll and the launch health-poll
+ * arm off it.
+ */
+export interface LaunchStoreEntry extends LaunchEntry {
+  startTime: number
+}
+
+/**
  * CardDraft is the card's local edit of one engine's config: the engine id,
  * the form field values, and the unsaved per-engine platform edits (the
  * Engine Directory and Engine Fork fields) a Save persists. The draft is
@@ -149,7 +160,7 @@ export interface CardState {
   summaryNote: string
   draft: CardDraft | null
   dirty: boolean
-  launch: Record<string, LaunchEntry>
+  launch: Record<string, LaunchStoreEntry>
   actions: Record<ActionKey, ActionState>
   templateActions: Record<TemplateActionKey, ActionState>
   deps: DepsModel | null
