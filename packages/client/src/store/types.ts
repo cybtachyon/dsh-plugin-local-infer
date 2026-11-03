@@ -11,9 +11,8 @@
  * (platform entries merge per-engine, preserving local edits). Second, the
  * per-provider launch machine is the only source for lifecycle state: the
  * title-bar control and the provider entries' Launch buttons both read it
- * through one derivation, so the four mirrored copies the hand-written card
- * kept (draftRunningState, entryLaunchState, providerStatusRef,
- * mirroredStatus, mirroredPhaseLabel) have no home here.
+ * through one derivation, so the mirrored "is the engine running" copies the
+ * hand-written card kept in separate state variables have no home here.
  * @module dsh-plugin-local-infer/client/store/types
  */
 

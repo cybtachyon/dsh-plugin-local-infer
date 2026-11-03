@@ -155,7 +155,7 @@ const en = {
 }
 
 // The label table shape: every en key with a string value.
-type TextTable = Record<keyof typeof en, string>
+export type TextTable = Record<keyof typeof en, string>
 
 // The Chinese label table.
 const zh: TextTable = {

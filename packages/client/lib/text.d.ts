@@ -142,7 +142,7 @@ declare const en: {
     customArgClear: string;
     customArgHelp: string;
 };
-type TextTable = Record<keyof typeof en, string>;
+export type TextTable = Record<keyof typeof en, string>;
 /** The card's copy tables, keyed by language. */
 export declare const TEXT: {
     en: TextTable;
