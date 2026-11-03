@@ -34,6 +34,24 @@ export function repriceDeps(store, query) {
     });
 }
 /**
+ * repriceSummary re-fetches the card's read model (the GET
+ * /local-infer/summary route). The ack stores the summary and merges its
+ * persisted fields into the draft field-level (the reducer's rule), so a
+ * provider edit, cancel, or new-provider load re-prices the meter and the
+ * provider list from the host's stored config. A fetch failure stores the
+ * route's message as the summary note, so the card's load line names it.
+ */
+export function repriceSummary(store, query) {
+    return fetchSummary(query)
+        .then((summary) => {
+        store.dispatch({ type: 'summary/ack', summary });
+    })
+        .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        store.dispatch({ type: 'summary/fail', note: message });
+    });
+}
+/**
  * copyInstallString hands the install block to the clipboard (client-side
  * only, so it rides the copy note, not an action cell). The note shows the
  * localized copied / copy-failed label for two seconds, then clears. A host

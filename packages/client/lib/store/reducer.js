@@ -38,6 +38,8 @@ export function cardReducer(state, action) {
             return { ...state, deps: null, notes: { ...state.notes, deps: '' } };
         case 'draft/edit':
             return draftEdit(state, action.draft);
+        case 'draft/load':
+            return draftLoad(state, action.draft);
         case 'draft/discard':
             return draftDiscard(state);
         case 'action/start':
@@ -115,6 +117,20 @@ function draftEdit(state, draft) {
         ...state,
         draft,
         dirty: true,
+        actions: { ...state.actions, save: { ...state.actions.save, detail: '' } },
+        notes: { ...state.notes, deps: '' },
+    };
+}
+// draftLoad stores a named draft (a stored provider's values, the cached
+// in-progress values) and clears dirty: a freshly-loaded draft reads as saved,
+// so the Register gate opens and the entry's button reverts from Cancel back
+// to Edit. Unlike draftEdit (a field the user typed), it carries no unsaved
+// change, so it keeps the save cell's status and clears only the stale detail.
+function draftLoad(state, draft) {
+    return {
+        ...state,
+        draft,
+        dirty: false,
         actions: { ...state.actions, save: { ...state.actions.save, detail: '' } },
         notes: { ...state.notes, deps: '' },
     };

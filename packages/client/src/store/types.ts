@@ -173,7 +173,9 @@ export interface CardState {
  * action/timeout, and the template download runs the same cycle under the
  * template/* types. Reads (the summary and deps re-price) and the local
  * draft and ui updates ride the same union, so the reducer is the only
- * mutator of CardState.
+ * mutator of CardState. draft/edit marks a typed field dirty; draft/load
+ * stores a named draft (a stored provider, the cached values) without
+ * marking it dirty; draft/discard reverts to the summary.
  */
 export type CardAction =
   | { type: 'summary/ack'; summary: LocalInferSummary }
@@ -182,6 +184,7 @@ export type CardAction =
   | { type: 'deps/fail'; note: string }
   | { type: 'deps/clear' }
   | { type: 'draft/edit'; draft: CardDraft }
+  | { type: 'draft/load'; draft: CardDraft }
   | { type: 'draft/discard' }
   | { type: 'action/start'; key: ActionKey }
   | { type: 'action/ack'; key: ActionKey; detail: string }

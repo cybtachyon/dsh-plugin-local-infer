@@ -27,6 +27,15 @@ export declare const GET_IDLE_MS = 120000;
  */
 export declare function repriceDeps(store: CardStore, query?: PriceQuery): Promise<void>;
 /**
+ * repriceSummary re-fetches the card's read model (the GET
+ * /local-infer/summary route). The ack stores the summary and merges its
+ * persisted fields into the draft field-level (the reducer's rule), so a
+ * provider edit, cancel, or new-provider load re-prices the meter and the
+ * provider list from the host's stored config. A fetch failure stores the
+ * route's message as the summary note, so the card's load line names it.
+ */
+export declare function repriceSummary(store: CardStore, query?: PriceQuery): Promise<void>;
+/**
  * copyInstallString hands the install block to the clipboard (client-side
  * only, so it rides the copy note, not an action cell). The note shows the
  * localized copied / copy-failed label for two seconds, then clears. A host
