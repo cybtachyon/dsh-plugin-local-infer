@@ -20,6 +20,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { card, type LocaleRef } from './Card.tsx'
 import { routeExists } from './api/routes.ts'
 import { setPrimitivesModule, type PrimitivesModule } from './render/primitives.tsx'
 import { setReactModule, type ReactLike as StoreReactLike } from './store/useCardStore.ts'
@@ -61,35 +62,10 @@ export interface SlotSpec {
   order?: number
 }
 
-// The locale handle the card reads the active locale from. The bootstrap keeps
-// it current through the locale seam and hands it to the card.
-export interface LocaleRef {
-  current: string | null
-}
-
 // The locale scope hands the card the active locale string (or undefined).
 type LocaleScope = Context & { locale: string | undefined }
 // The slots scope hands the card the slots service.
 type SlotsScope = Context & { slots: SlotsService }
-
-/**
- * The placeholder card component factory. It has the same (react, localeRef,
- * primitives) shape as the real Card so T3.8 replaces it 1:1. It renders a
- * marker element and ignores localeRef and primitives, so a missing
- * primitives seed (null) still renders.
- */
-function placeholderCard(
-  react: ReactLike,
-  _localeRef: LocaleRef,
-  _primitives: PrimitivesModule | null,
-): () => unknown {
-  return () =>
-    react.createElement(
-      'div',
-      { 'data-local-infer': 'placeholder' },
-      'Local Infer (card under construction)',
-    )
-}
 
 /**
  * registerCard wires the card into the host through the two optional seams,
@@ -169,7 +145,7 @@ function mountCard(ctx: SlotsScope, localeRef: LocaleRef): void {
   // The renderers draw the seed when present and the native controls when it
   // is absent, so the resolved value (or null) is handed to them here.
   setPrimitivesModule(primitives)
-  const Card = placeholderCard(react as ReactLike, localeRef, primitives)
+  const Card = card(react as ReactLike, localeRef, primitives)
   // slots.inject waits until a slot is declared, so each host fills the one
   // it has and the other wait never fires: from dsh 0.1.6-alpha.2 on hosts
   // declare the Plugins page's, older ones only the Settings one.

@@ -29,17 +29,92 @@ __export(index_exports, {
 });
 module.exports = __toCommonJS(index_exports);
 
-// packages/client/src/api/routes.ts
-async function routeExists() {
-  try {
-    const response = await fetch("/local-infer/summary");
-    return response.status !== 404;
-  } catch {
-    return false;
-  }
-}
-
 // packages/client/src/styles.ts
+var SEGMENT_COLORS = {
+  weights: "#4f8ff7",
+  kv: "#34c38f",
+  // Teal, not the orange it used to be: the orange read as a warning next
+  // to the workspace purple and the free gray, so the sequence-state
+  // segment now sits in the cool end of the palette.
+  overhead: "#14b8a6",
+  workspace: "#b07ff7",
+  free: "#d9d9d9",
+  reserve: "#1c1c1c"
+};
+var CARD_STYLE = {
+  border: "0.5px solid var(--dsw-alias-settings-card-stroke, var(--dsw-alias-border-secondary, rgba(128,128,128,0.24)))",
+  borderRadius: "var(--dsw-radius-xl, 12px)",
+  background: "var(--dsw-alias-settings-card-fill, var(--dsw-alias-background-secondary, rgba(128,128,128,0.06)))",
+  padding: 16,
+  display: "flex",
+  flexDirection: "column",
+  gap: 12,
+  fontSize: 13,
+  color: "var(--dsw-alias-label-primary, rgba(0,0,0,0.85))"
+};
+var ROW_STYLE = {
+  display: "flex",
+  alignItems: "center",
+  gap: 8
+};
+var LABEL_STYLE = {
+  width: 120,
+  flex: "none",
+  color: "var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))"
+};
+var INPUT_STYLE = {
+  flex: 1,
+  minWidth: 0,
+  height: 32,
+  padding: "0 8px",
+  borderRadius: "var(--dsw-radius-md, 8px)",
+  border: "0.5px solid var(--dsw-alias-border-l4, var(--dsw-alias-border-secondary, rgba(128,128,128,0.24)))",
+  background: "var(--dsw-alias-bg-layer-1, var(--dsw-alias-background-tertiary, rgba(128,128,128,0.12)))",
+  color: "var(--dsw-alias-label-primary, inherit)",
+  font: "inherit",
+  fontSize: 14,
+  colorScheme: "light dark"
+};
+var SECTION_STYLE = {
+  marginTop: 8,
+  fontWeight: 600,
+  fontSize: 12,
+  textTransform: "uppercase",
+  letterSpacing: "0.04em",
+  color: "var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))"
+};
+function BANNER_STYLE(status) {
+  return {
+    padding: "8px 12px",
+    borderRadius: 8,
+    fontSize: 12,
+    background: status === "over" ? "var(--dsw-alias-fill-error, rgba(255,59,48,0.12))" : "var(--dsw-alias-fill-warning, rgba(255,159,10,0.12))",
+    color: status === "over" ? "var(--dsw-alias-label-error, #ff3b30)" : "var(--dsw-alias-label-warning, #ff9f0a)"
+  };
+}
+function WARNING_BANNER_STYLE(tone) {
+  return {
+    padding: "8px 12px",
+    borderRadius: 8,
+    fontSize: 12,
+    lineHeight: 1.5,
+    background: tone === "red" ? "var(--dsw-alias-fill-error, rgba(255,59,48,0.12))" : tone === "amber" ? "var(--dsw-alias-fill-warning, rgba(255,159,10,0.12))" : "var(--dsw-alias-fill-quaternary, rgba(128,128,128,0.08))",
+    color: tone === "red" ? "var(--dsw-alias-label-error, #ff3b30)" : tone === "amber" ? "var(--dsw-alias-label-warning, #ff9f0a)" : "inherit"
+  };
+}
+function INLINE_WARNING_STYLE(tone) {
+  return {
+    fontSize: 11,
+    marginTop: 2,
+    color: tone === "red" ? "var(--dsw-alias-label-error, #ff3b30)" : tone === "amber" ? "var(--dsw-alias-label-warning, #ff9f0a)" : "var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))"
+  };
+}
+var FOOTER_STYLE = {
+  display: "flex",
+  justifyContent: "flex-end",
+  gap: 8,
+  marginTop: 4
+};
 var BUTTON_BASE = {
   padding: "5px 14px",
   borderRadius: 6,
@@ -58,11 +133,738 @@ var PRIMARY_BUTTON = {
   color: "#fff",
   border: "none"
 };
+var DEPS_ROW_STYLE = {
+  display: "flex",
+  alignItems: "baseline",
+  gap: 6,
+  fontSize: 12,
+  marginTop: 2
+};
+var INSTALL_BLOCK_STYLE = {
+  margin: "8px 0",
+  padding: 8,
+  borderRadius: 6,
+  background: "var(--dsw-alias-background-tertiary, rgba(128,128,128,0.08))",
+  border: "1px solid var(--dsw-alias-border-secondary, rgba(128,128,128,0.24))",
+  fontSize: 11,
+  lineHeight: 1.5,
+  whiteSpace: "pre-wrap",
+  wordBreak: "break-all",
+  fontFamily: "var(--dsw-alias-font-mono, ui-monospace, monospace)"
+};
+var CUSTOM_ARGS_GRID_STYLE = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr auto",
+  gap: 6,
+  alignItems: "center",
+  marginTop: 4
+};
+var CUSTOM_ARGS_HEADER_STYLE = {
+  fontSize: 11,
+  fontWeight: 600,
+  color: "var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))"
+};
+var CUSTOM_ARGS_BUTTONS_STYLE = {
+  display: "flex",
+  gap: 4,
+  justifyContent: "flex-end"
+};
+function HELP_BUTTON_STYLE(active) {
+  return {
+    width: 20,
+    height: 20,
+    flex: "none",
+    borderRadius: "50%",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 0,
+    fontSize: 12,
+    lineHeight: 1,
+    cursor: "pointer",
+    border: "1px solid " + (active ? "var(--dsw-alias-accent, #0a84ff)" : "var(--dsw-alias-border-secondary, rgba(128,128,128,0.24))"),
+    background: active ? "var(--dsw-alias-accent, #0a84ff)" : "transparent",
+    color: active ? "#fff" : "var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))"
+  };
+}
+var HELP_ROW_STYLE = {
+  fontSize: 11,
+  lineHeight: 1.4,
+  marginTop: 2,
+  marginLeft: 128,
+  color: "var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))"
+};
+
+// packages/client/src/text.ts
+var en = {
+  section: "Engine settings",
+  subtitle: "Local inference engine configuration.",
+  engine: "Engine",
+  model: "Model",
+  modelAuto: "engine default",
+  loading: "loading...",
+  save: "Save",
+  saving: "saving...",
+  saved: "saved",
+  discard: "Discard",
+  loadFailed: "load failed",
+  saveFailed: "save failed",
+  retry: "Retry",
+  noParameters: "This engine has no tunable parameters yet.",
+  meterTitle: "VRAM Est.",
+  meterSourceMeasured: "measured",
+  meterSourceEstimated: "estimated",
+  meterSourceNotMeasured: "not measured",
+  largestContext: "Largest fitting context",
+  tokens: "tokens",
+  cardTotal: "card",
+  reserveReadout: "Reserved for the OS",
+  reserveDefault: "(default)",
+  reserveExplicit: "(config)",
+  reserveForeign: "(foreign engine)",
+  reserveGpuBusy: "(GPU busy)",
+  unknownEnginesTitle: "Unknown Engine(s)",
+  unknownEnginesBody: "held by engine program(s) the detector could not tie to a provider. Stop them to free this VRAM.",
+  over: "Over budget",
+  tight: "Fits tightly",
+  guidelineOne: "hardware guideline",
+  guidelineMany: "hardware guidelines",
+  fired: "fired",
+  measureHint: "Pick a model to measure the VRAM budget.",
+  build: "Build",
+  buildLocal: "local",
+  buildDocker: "docker",
+  depsTitle: "System dependencies",
+  depsNone: "No system dependencies required.",
+  pmUnknown: "package manager not detected",
+  copy: "Copy",
+  copied: "copied",
+  copyFailed: "copy failed",
+  run: "Run",
+  running: "running...",
+  get: "Get",
+  getting: "Getting...",
+  getFailed: "get failed",
+  allowRun: "Allow one-click install (sudo)",
+  depsSatisfied: "All dependencies satisfied.",
+  installRejected: "one-click install is not allowed; copy the install string instead",
+  register: "Register",
+  registerDefault: "Set as default model",
+  unregister: "Remove",
+  registered: "registered",
+  registerFailed: "register failed",
+  unregistered: "removed",
+  unregisterFailed: "remove failed",
+  launch: "Launch",
+  autoRebuild: "Auto Rebuild",
+  launching: "Launching...",
+  launchFailed: "launch failed",
+  runningOn: "running on port",
+  notHealthy: "not healthy",
+  stop: "Stop",
+  stopping: "stopping...",
+  stopped: "stopped",
+  stopFailed: "stop failed",
+  modelDirectory: "Model Directory",
+  enginePlatform: "Engine platform",
+  engineDirectory: "Engine Directory",
+  engineFork: "Engine Fork (Git Repo)",
+  buildCommands: "Build commands",
+  dockerTag: "Docker tag",
+  dirPlaceholder: "directory path",
+  forkPlaceholder: "git repo url",
+  hfCliDetected: "HF CLI detected:",
+  noHfCli: "No HF CLI detected, url:",
+  download: "Download",
+  downloading: "downloading...",
+  downloaded: "download complete",
+  downloadFailed: "download failed",
+  helpToggle: "Show or hide field help",
+  refresh: "Re-fetch the card data from the host",
+  engineHelp: "Inference engines have different strengths and weaknesses for specific models and hardware.",
+  modelHelp: "The model the engine serves. The engine default models and the model files already in the model directory are the offered choices.",
+  buildHelp: "How the engine is deployed. local builds it from source on the host; docker pulls a prebuilt image. The dependency plan and hardware guidelines price the selected mode.",
+  modelDirHelp: "Where model files are downloaded and served from.",
+  engineDirHelp: "Local directory of the engine source. Get clones or updates the git repo and builds the engine here; with no override it lands in the model directory under the engine name.",
+  engineForkHelp: "Git repo that overrides the engine default upstream for the clone step.",
+  buildCommandsHelp: "Local build command that overrides the engine default for the checkout build. Shown only in local build mode.",
+  dockerTagHelp: "Docker image tag the docker deploy pulls. Shown only in docker build mode.",
+  providers: "Providers",
+  newProvider: "New provider",
+  edit: "Edit",
+  cancel: "Cancel",
+  delete: "Delete",
+  deleteProvider: "Delete provider",
+  statusRunning: "running",
+  statusStopped: "stopped",
+  statusUnsure: "status unknown",
+  unsureBanner: "Unable to link to a provider (it may have been launched in another session). \n To stop, run:",
+  registerNeedsSave: "Save the Provider configuration before registering with DSH.",
+  logs: "Logs",
+  logLocation: "Log location",
+  resize: "resize",
+  entryLaunch: "Launch",
+  entryStop: "Stop",
+  entryLogs: "Logs",
+  entryPrereqs: "Prereqs...",
+  entryDownloading: "Downloading...",
+  entryBuilding: "Building...",
+  entryLaunching: "Launching...",
+  chatTemplatePreset: "Chat template preset",
+  customChatTemplate: "Custom Chat template",
+  custom: "Custom",
+  templateAbsent: "Chat template not in the model directory",
+  templateInstructions: "Download the chat template with the hf CLI:",
+  templateDownload: "Download template",
+  templateDownloading: "downloading template...",
+  templateDownloaded: "template download complete",
+  templateDownloadFailed: "template download failed",
+  customArgsTitle: "Custom arguments",
+  customArgKeyHeader: "Parameter / Flag",
+  customArgValueHeader: "Value (optional)",
+  customArgAddRemoveHeader: " + / - ",
+  customArgKeyPlaceholder: "--kv-dtype",
+  customArgValuePlaceholder: "int8",
+  customArgAdd: "Add a row",
+  customArgRemove: "Remove this row",
+  customArgClear: "Clear this row",
+  customArgHelp: "Extra flags appended to the engine launch command after saving."
+};
+var zh = {
+  section: "\u5F15\u64CE\u8BBE\u7F6E",
+  subtitle: "\u672C\u5730\u63A8\u7406\u5F15\u64CE\u914D\u7F6E\u3002",
+  engine: "\u5F15\u64CE",
+  model: "\u6A21\u578B",
+  modelAuto: "\u5F15\u64CE\u9ED8\u8BA4",
+  loading: "\u52A0\u8F7D\u4E2D\u2026",
+  save: "\u4FDD\u5B58",
+  saving: "\u4FDD\u5B58\u4E2D\u2026",
+  saved: "\u5DF2\u4FDD\u5B58",
+  discard: "\u653E\u5F03\u4FEE\u6539",
+  loadFailed: "\u52A0\u8F7D\u5931\u8D25",
+  saveFailed: "\u4FDD\u5B58\u5931\u8D25",
+  retry: "\u91CD\u8BD5",
+  noParameters: "\u8BE5\u5F15\u64CE\u6682\u65E0\u53EF\u8C03\u53C2\u6570\u3002",
+  meterTitle: "\u663E\u5B58\u4F30\u7B97",
+  meterSourceMeasured: "\u5B9E\u6D4B",
+  meterSourceEstimated: "\u4F30\u7B97",
+  meterSourceNotMeasured: "\u672A\u6D4B\u91CF",
+  largestContext: "\u6700\u5927\u53EF\u7528\u4E0A\u4E0B\u6587",
+  tokens: "token",
+  cardTotal: "\u663E\u5B58",
+  reserveReadout: "\u7CFB\u7EDF\u4FDD\u7559",
+  reserveDefault: "(\u9ED8\u8BA4)",
+  reserveExplicit: "(\u914D\u7F6E)",
+  reserveForeign: "(\u5916\u90E8\u5F15\u64CE)",
+  reserveGpuBusy: "(GPU \u7E41\u5FD9)",
+  unknownEnginesTitle: "\u672A\u77E5\u5F15\u64CE",
+  unknownEnginesBody: "\u88AB\u68C0\u6D4B\u5668\u65E0\u6CD5\u5173\u8054\u5230\u63D0\u4F9B\u65B9\u7684\u5F15\u64CE\u7A0B\u5E8F\u5360\u7528\u3002\u505C\u6B62\u5B83\u4EEC\u4EE5\u91CA\u653E\u6B64 VRAM\u3002",
+  over: "\u8D85\u51FA\u9884\u7B97",
+  tight: "\u52C9\u5F3A\u53EF\u5BB9\u7EB3",
+  guidelineOne: "\u786C\u4EF6\u51C6\u5219",
+  guidelineMany: "\u786C\u4EF6\u51C6\u5219",
+  fired: "\u89E6\u53D1",
+  measureHint: "\u9009\u62E9\u6A21\u578B\u4EE5\u6D4B\u91CF\u663E\u5B58\u9884\u7B97\u3002",
+  build: "\u6784\u5EFA",
+  buildLocal: "\u672C\u5730",
+  buildDocker: "\u5BB9\u5668",
+  depsTitle: "\u7CFB\u7EDF\u4F9D\u8D56",
+  depsNone: "\u65E0\u9700\u7CFB\u7EDF\u4F9D\u8D56\u3002",
+  pmUnknown: "\u672A\u68C0\u6D4B\u5230\u5305\u7BA1\u7406\u5668",
+  copy: "\u590D\u5236",
+  copied: "\u5DF2\u590D\u5236",
+  copyFailed: "\u590D\u5236\u5931\u8D25",
+  run: "\u8FD0\u884C",
+  running: "\u8FD0\u884C\u4E2D\u2026",
+  get: "\u83B7\u53D6",
+  getting: "\u83B7\u53D6\u4E2D\u2026",
+  getFailed: "\u83B7\u53D6\u5931\u8D25",
+  allowRun: "\u5141\u8BB8\u4E00\u952E\u5B89\u88C5 (sudo)",
+  depsSatisfied: "\u6240\u6709\u4F9D\u8D56\u5DF2\u6EE1\u8DB3\u3002",
+  installRejected: "\u672A\u5141\u8BB8\u4E00\u952E\u5B89\u88C5\uFF1B\u8BF7\u590D\u5236\u5B89\u88C5\u547D\u4EE4\u3002",
+  register: "\u6CE8\u518C",
+  registerDefault: "\u8BBE\u4E3A\u9ED8\u8BA4\u6A21\u578B",
+  unregister: "\u79FB\u9664",
+  registered: "\u5DF2\u6CE8\u518C",
+  registerFailed: "\u6CE8\u518C\u5931\u8D25",
+  unregistered: "\u5DF2\u79FB\u9664",
+  unregisterFailed: "\u79FB\u9664\u5931\u8D25",
+  launch: "\u542F\u52A8",
+  autoRebuild: "\u81EA\u52A8\u91CD\u5EFA",
+  launching: "\u542F\u52A8\u4E2D\u2026",
+  launchFailed: "\u542F\u52A8\u5931\u8D25",
+  runningOn: "\u8FD0\u884C\u4E8E\u7AEF\u53E3",
+  notHealthy: "\u4E0D\u5065\u5EB7",
+  stop: "\u505C\u6B62",
+  stopping: "\u505C\u6B62\u4E2D\u2026",
+  stopped: "\u5DF2\u505C\u6B62",
+  stopFailed: "\u505C\u6B62\u5931\u8D25",
+  modelDirectory: "\u6A21\u578B\u76EE\u5F55",
+  enginePlatform: "\u5F15\u64CE\u5E73\u53F0",
+  engineDirectory: "\u5F15\u64CE\u76EE\u5F55",
+  engineFork: "\u5F15\u64CE Fork (Git \u4ED3\u5E93)",
+  buildCommands: "\u6784\u5EFA\u547D\u4EE4",
+  dockerTag: "Docker \u6807\u7B7E",
+  dirPlaceholder: "\u76EE\u5F55\u8DEF\u5F84",
+  forkPlaceholder: "git \u4ED3\u5E93\u5730\u5740",
+  hfCliDetected: "\u68C0\u6D4B\u5230 HF CLI:",
+  noHfCli: "\u672A\u68C0\u6D4B\u5230 HF CLI,url:",
+  download: "\u4E0B\u8F7D",
+  downloading: "\u4E0B\u8F7D\u4E2D\u2026",
+  downloaded: "\u4E0B\u8F7D\u5B8C\u6210",
+  downloadFailed: "\u4E0B\u8F7D\u5931\u8D25",
+  helpToggle: "\u663E\u793A\u6216\u9690\u85CF\u5B57\u6BB5\u5E2E\u52A9",
+  refresh: "\u4ECE\u4E3B\u673A\u91CD\u65B0\u52A0\u8F7D\u5361\u7247\u6570\u636E",
+  engineHelp: "\u63A8\u7406\u5F15\u64CE\u9488\u5BF9\u7279\u5B9A\u6A21\u578B\u548C\u786C\u4EF6\u5404\u6709\u4F18\u52A3\u3002",
+  modelHelp: "\u5F15\u64CE\u670D\u52A1\u7684\u6A21\u578B\u3002\u53EF\u9009\u9879\u5305\u62EC\u5F15\u64CE\u9ED8\u8BA4\u6A21\u578B\u548C\u6A21\u578B\u76EE\u5F55\u4E2D\u5DF2\u6709\u7684\u6A21\u578B\u6587\u4EF6\u3002",
+  buildHelp: "\u5F15\u64CE\u7684\u90E8\u7F72\u65B9\u5F0F\u3002local \u5728\u4E3B\u673A\u4E0A\u4ECE\u6E90\u7801\u6784\u5EFA\uFF1Bdocker \u62C9\u53D6\u9884\u6784\u5EFA\u955C\u50CF\u3002\u4F9D\u8D56\u8BA1\u5212\u548C\u786C\u4EF6\u51C6\u5219\u6309\u6240\u9009\u6A21\u5F0F\u8BA1\u4EF7\u3002",
+  modelDirHelp: "\u6A21\u578B\u6587\u4EF6\u7684\u4E0B\u8F7D\u548C\u670D\u52A1\u76EE\u5F55\u3002",
+  engineDirHelp: "\u5F15\u64CE\u6E90\u7801\u7684\u672C\u5730\u76EE\u5F55\u3002\u201C\u83B7\u53D6\u201D\u4F1A\u5728\u6B64\u514B\u9686\u6216\u66F4\u65B0 git \u4ED3\u5E93\u5E76\u6784\u5EFA\u5F15\u64CE\uFF1B\u672A\u8986\u76D6\u65F6\uFF0C\u4ED3\u5E93\u843D\u5728\u6A21\u578B\u76EE\u5F55\u4E0B\u4EE5\u5F15\u64CE\u547D\u540D\u7684\u5B50\u76EE\u5F55\u4E2D\u3002",
+  engineForkHelp: "\u7528\u4E8E\u514B\u9686\u6B65\u9AA4\u3001\u8986\u76D6\u5F15\u64CE\u9ED8\u8BA4\u4E0A\u6E38\u7684 git \u4ED3\u5E93\u3002",
+  buildCommandsHelp: "\u672C\u5730\u6784\u5EFA\u547D\u4EE4\uFF0C\u8986\u76D6\u5F15\u64CE\u9ED8\u8BA4\u7684\u68C0\u67E5\u6784\u5EFA\u3002\u4EC5\u5728\u672C\u5730\u6784\u5EFA\u6A21\u5F0F\u4E0B\u663E\u793A\u3002",
+  dockerTagHelp: "docker \u90E8\u7F72\u62C9\u53D6\u7684\u955C\u50CF\u6807\u7B7E\u3002\u4EC5\u5728 docker \u6784\u5EFA\u6A21\u5F0F\u4E0B\u663E\u793A\u3002",
+  providers: "\u63D0\u4F9B\u65B9",
+  newProvider: "\u65B0\u589E\u63D0\u4F9B\u65B9",
+  edit: "\u7F16\u8F91",
+  cancel: "\u53D6\u6D88",
+  delete: "\u5220\u9664",
+  deleteProvider: "\u5220\u9664\u63D0\u4F9B\u65B9",
+  statusRunning: "\u8FD0\u884C\u4E2D",
+  statusStopped: "\u5DF2\u505C\u6B62",
+  statusUnsure: "\u72B6\u6001\u672A\u77E5",
+  unsureBanner: "\u65E0\u6CD5\u5173\u8054\u5230\u63D0\u4F9B\u65B9\uFF08\u5B83\u53EF\u80FD\u5728\u53E6\u4E00\u4E2A\u4F1A\u8BDD\u4E2D\u542F\u52A8\uFF09\u3002\n\u5982\u9700\u505C\u6B62\uFF0C\u8BF7\u8FD0\u884C\uFF1A",
+  registerNeedsSave: "\u6CE8\u518C\u5230 DSH \u4E4B\u524D\u8BF7\u5148\u4FDD\u5B58\u8BE5\u63D0\u4F9B\u65B9\u914D\u7F6E\u3002",
+  logs: "\u65E5\u5FD7",
+  logLocation: "\u65E5\u5FD7\u4F4D\u7F6E",
+  resize: "\u8C03\u6574\u5927\u5C0F",
+  entryLaunch: "\u542F\u52A8",
+  entryStop: "\u505C\u6B62",
+  entryLogs: "\u65E5\u5FD7",
+  entryPrereqs: "\u524D\u7F6E\u6761\u4EF6\u2026",
+  entryDownloading: "\u4E0B\u8F7D\u4E2D\u2026",
+  entryBuilding: "\u6784\u5EFA\u4E2D\u2026",
+  entryLaunching: "\u542F\u52A8\u4E2D\u2026",
+  chatTemplatePreset: "\u804A\u5929\u6A21\u677F\u9884\u8BBE",
+  customChatTemplate: "\u81EA\u5B9A\u4E49\u804A\u5929\u6A21\u677F",
+  custom: "\u81EA\u5B9A\u4E49",
+  templateAbsent: "\u804A\u5929\u6A21\u677F\u4E0D\u5728\u6A21\u578B\u76EE\u5F55\u4E2D",
+  templateInstructions: "\u4F7F\u7528 hf CLI \u4E0B\u8F7D\u804A\u5929\u6A21\u677F:",
+  templateDownload: "\u4E0B\u8F7D\u6A21\u677F",
+  templateDownloading: "\u6A21\u677F\u4E0B\u8F7D\u4E2D\u2026",
+  templateDownloaded: "\u6A21\u677F\u4E0B\u8F7D\u5B8C\u6210",
+  templateDownloadFailed: "\u6A21\u677F\u4E0B\u8F7D\u5931\u8D25",
+  customArgsTitle: "\u81EA\u5B9A\u4E49\u53C2\u6570",
+  customArgKeyHeader: "\u53C2\u6570 / \u6807\u5FD7",
+  customArgValueHeader: "\u503C (\u53EF\u9009)",
+  customArgAddRemoveHeader: " + / - ",
+  customArgKeyPlaceholder: "\u4F8B\u5982 --kv-dtype",
+  customArgValuePlaceholder: "\u4F8B\u5982 int8",
+  customArgAdd: "\u6DFB\u52A0\u4E00\u884C",
+  customArgRemove: "\u5220\u9664\u6B64\u884C",
+  customArgClear: "\u6E05\u7A7A\u6B64\u884C",
+  customArgHelp: "\u4FDD\u5B58\u540E\u8FFD\u52A0\u5230\u5F15\u64CE\u542F\u52A8\u547D\u4EE4\u7684\u989D\u5916\u6807\u5FD7\u3002\u9996\u884C\u53EA\u6E05\u7A7A\u4E0D\u5220\u9664\uFF1B+ \u6DFB\u52A0\u4E00\u884C\uFF0C\u4E0B\u65B9\u884C\u7684 - \u5220\u9664\u8BE5\u884C\u3002"
+};
+var TEXT = { en, zh };
+function labels(active) {
+  const lang = (active || document.documentElement.lang || navigator.language || "en").toLowerCase();
+  return lang.startsWith("zh") ? TEXT.zh : TEXT.en;
+}
+
+// packages/client/src/machine/launch.ts
+var LAUNCH_STEP_ORDER = {
+  prereqs: 0,
+  download: 1,
+  build: 2,
+  launch: 3
+};
+var LAUNCH_PHASE_STATES = [
+  "prereqs",
+  "download",
+  "build",
+  "launch"
+];
+var LAUNCH_HEALTH_DEADLINE_MS = 15e4;
+var STOP_POLL_MS = 1e3;
+var STOP_HEALTH_DEADLINE_MS = 1e4;
+function launchIsPhase(state) {
+  return LAUNCH_PHASE_STATES.includes(state);
+}
+function isLaunchStep(step) {
+  return step in LAUNCH_STEP_ORDER;
+}
+function launchNextState(entry, event) {
+  const current = entry?.status ?? "idle";
+  const cause = entry?.cause;
+  let next = current;
+  let nextCause = cause;
+  switch (event.type) {
+    case "start": {
+      next = current === "idle" || current === "failed" || current === "downloading" ? "prereqs" : current;
+      nextCause = void 0;
+      break;
+    }
+    case "step": {
+      const target = event.step;
+      if (!isLaunchStep(target)) {
+        next = current;
+        nextCause = cause;
+      } else if (current === "idle" || current === "failed") {
+        next = target;
+        nextCause = void 0;
+      } else if (current === "running" || current === "stopping") {
+        next = current;
+        nextCause = cause;
+      } else if (!isLaunchStep(current)) {
+        next = current;
+        nextCause = cause;
+      } else {
+        next = LAUNCH_STEP_ORDER[target] >= LAUNCH_STEP_ORDER[current] ? target : current;
+        nextCause = void 0;
+      }
+      break;
+    }
+    case "healthy": {
+      next = launchIsPhase(current) ? "running" : current;
+      nextCause = void 0;
+      break;
+    }
+    case "failed": {
+      next = launchIsPhase(current) ? "failed" : current;
+      nextCause = void 0;
+      break;
+    }
+    case "downloading": {
+      next = launchIsPhase(current) ? "downloading" : current;
+      nextCause = void 0;
+      break;
+    }
+    case "stop": {
+      next = current === "running" || current === "stopping" || current === "idle" || launchIsPhase(current) ? "stopping" : current;
+      nextCause = void 0;
+      break;
+    }
+    case "stopped": {
+      next = current === "stopping" ? "idle" : current;
+      nextCause = void 0;
+      break;
+    }
+    case "stopFailed": {
+      next = current === "stopping" ? "failed" : current;
+      nextCause = current === "stopping" ? "stop" : cause;
+      break;
+    }
+    case "reset": {
+      next = current === "failed" ? cause === "stop" ? "running" : "idle" : "idle";
+      nextCause = void 0;
+      break;
+    }
+  }
+  return { status: next, cause: nextCause };
+}
+
+// packages/client/src/store/reducer.ts
+var ACTION_TIMEOUT_DETAIL = "timeout";
+function cardReducer(state, action) {
+  switch (action.type) {
+    case "summary/ack":
+      return summaryAck(state, action.summary);
+    case "summary/fail":
+      return { ...state, summaryNote: action.note };
+    case "deps/ack":
+      return { ...state, deps: action.deps, notes: { ...state.notes, deps: "" } };
+    case "deps/fail":
+      return { ...state, notes: { ...state.notes, deps: action.note } };
+    case "deps/clear":
+      return { ...state, deps: null, notes: { ...state.notes, deps: "" } };
+    case "draft/edit":
+      return draftEdit(state, action.draft);
+    case "draft/load":
+      return draftLoad(state, action.draft);
+    case "draft/discard":
+      return draftDiscard(state);
+    case "action/start":
+      return actionEnter(state, action.key);
+    case "action/ack":
+      return actionSettle(state, action.key, "ok", action.detail);
+    case "action/fail":
+      return actionSettle(state, action.key, "error", action.detail);
+    case "action/timeout":
+      return actionSettle(state, action.key, "error", ACTION_TIMEOUT_DETAIL);
+    case "template/start":
+      return templateEnter(state);
+    case "template/ack":
+      return templateSettle(state, "ok", action.detail);
+    case "template/fail":
+      return templateSettle(state, "error", action.detail);
+    case "template/timeout":
+      return templateSettle(state, "error", ACTION_TIMEOUT_DETAIL);
+    case "launch/move":
+      return launchMove(state, action.providerId, action.event);
+    case "note/set":
+      return { ...state, notes: { ...state.notes, [action.key]: action.note } };
+    case "note/clear":
+      return { ...state, notes: { ...state.notes, [action.key]: "" } };
+    case "ui/patch":
+      return { ...state, ui: { ...state.ui, ...action.patch } };
+    default:
+      return state;
+  }
+}
+function summaryAck(state, summary) {
+  const persisted = summary.platformConfigs ?? {};
+  const mergedPlatform = { ...persisted };
+  if (state.draft !== null && state.draft.platform) {
+    for (const engineId of Object.keys(state.draft.platform)) {
+      mergedPlatform[engineId] = {
+        ...persisted[engineId],
+        ...state.draft.platform[engineId]
+      };
+    }
+  }
+  const draft = state.draft !== null ? {
+    engine: state.draft.engine,
+    config: state.draft.config,
+    platform: mergedPlatform
+  } : {
+    engine: summary.engineId,
+    config: summary.config,
+    platform: mergedPlatform
+  };
+  const ui = {
+    ...state.ui,
+    help: summary.showHelp !== false,
+    logPath: typeof summary.logPath === "string" && summary.logPath !== "" ? summary.logPath : state.ui.logPath,
+    logs: { ...state.ui.logs, getLogs: null }
+  };
+  return { ...state, summary, summaryNote: "", draft, ui };
+}
+function draftEdit(state, draft) {
+  return {
+    ...state,
+    draft,
+    dirty: true,
+    actions: { ...state.actions, save: { ...state.actions.save, detail: "" } },
+    notes: { ...state.notes, deps: "" }
+  };
+}
+function draftLoad(state, draft) {
+  return {
+    ...state,
+    draft,
+    dirty: false,
+    actions: { ...state.actions, save: { ...state.actions.save, detail: "" } },
+    notes: { ...state.notes, deps: "" }
+  };
+}
+function draftDiscard(state) {
+  if (state.summary === null) {
+    return { ...state, draft: null, dirty: false };
+  }
+  const draft = {
+    engine: state.summary.engineId,
+    config: state.summary.config,
+    platform: state.summary.platformConfigs
+  };
+  return { ...state, draft, dirty: false };
+}
+function actionEnter(state, key) {
+  return {
+    ...state,
+    actions: { ...state.actions, [key]: { status: "pending", detail: "" } }
+  };
+}
+function actionSettle(state, key, status, detail) {
+  if (state.actions[key].status !== "pending") {
+    return state;
+  }
+  return {
+    ...state,
+    actions: { ...state.actions, [key]: { status, detail } }
+  };
+}
+function templateEnter(state) {
+  return {
+    ...state,
+    templateActions: { download: { status: "pending", detail: "" } }
+  };
+}
+function templateSettle(state, status, detail) {
+  if (state.templateActions.download.status !== "pending") {
+    return state;
+  }
+  return {
+    ...state,
+    templateActions: { download: { status, detail } }
+  };
+}
+function launchMove(state, providerId, event) {
+  const entry = state.launch[providerId] ?? null;
+  const next = launchNextState(entry, event);
+  return {
+    ...state,
+    launch: {
+      ...state.launch,
+      [providerId]: { ...next, startTime: Date.now() }
+    }
+  };
+}
+
+// packages/client/src/store/types.ts
+function idleActionState() {
+  return { status: "idle", detail: "" };
+}
+function initialCardState() {
+  return {
+    summary: null,
+    summaryNote: "",
+    draft: null,
+    dirty: false,
+    launch: {},
+    actions: {
+      save: idleActionState(),
+      install: idleActionState(),
+      register: idleActionState(),
+      unregister: idleActionState(),
+      launch: idleActionState(),
+      stop: idleActionState(),
+      get: idleActionState(),
+      download: idleActionState()
+    },
+    templateActions: { download: idleActionState() },
+    deps: null,
+    notes: { deps: "", copy: "" },
+    ui: {
+      help: true,
+      autoRebuild: true,
+      agentDefault: false,
+      providerFormMode: "collapsed",
+      editingProviderId: null,
+      deletingProviderId: null,
+      cachedDraft: null,
+      logPath: "",
+      logs: { getLogs: null, height: 96, scrollMode: "fresh" }
+    }
+  };
+}
 
 // packages/client/src/store/useCardStore.ts
 var reactModuleRef = null;
 function setReactModule(react2) {
   reactModuleRef = react2;
+}
+function getReactModule() {
+  if (reactModuleRef === null) {
+    throw new Error("react module not wired; call setReactModule first");
+  }
+  return reactModuleRef;
+}
+function createCardStore() {
+  let state = initialCardState();
+  const listeners = /* @__PURE__ */ new Set();
+  return {
+    get state() {
+      return state;
+    },
+    dispatch(action) {
+      const next = cardReducer(state, action);
+      if (next === state) {
+        return;
+      }
+      state = next;
+      for (const listener of Array.from(listeners)) {
+        listener();
+      }
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    getSnapshot() {
+      return state;
+    }
+  };
+}
+function useCardStore() {
+  const react2 = getReactModule();
+  const storeRef = react2.useRef(null);
+  let store = storeRef.current;
+  if (store === null) {
+    store = createCardStore();
+    storeRef.current = store;
+  }
+  react2.useSyncExternalStore(store.subscribe, store.getSnapshot);
+  return store;
+}
+
+// packages/client/src/render/react.ts
+var react = {
+  createElement: (type, props, ...children) => getReactModule().createElement(type, props, ...children),
+  get Fragment() {
+    return getReactModule().Fragment;
+  },
+  useState: (initial) => getReactModule().useState(initial),
+  useRef: (initialValue) => getReactModule().useRef(initialValue),
+  useEffect: (effect, deps) => getReactModule().useEffect(effect, deps),
+  useSyncExternalStore: (subscribe, getSnapshot) => getReactModule().useSyncExternalStore(subscribe, getSnapshot)
+};
+
+// packages/client/src/render/SelectPill.tsx
+var STYLE_ELEMENT_ID = "dsh-local-infer-styles";
+function injectStyles() {
+  if (typeof document === "undefined" || document.getElementById(STYLE_ELEMENT_ID)) {
+    return;
+  }
+  const style = document.createElement("style");
+  style.id = STYLE_ELEMENT_ID;
+  style.textContent = [
+    ".dsh-li-selector{display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border:none;border-radius:var(--dsw-radius-md,8px);background:var(--dsw-alias-bg-module-platform,var(--dsw-alias-background-tertiary,rgba(128,128,128,0.12)));font:inherit;font-size:14px;line-height:22px;color:var(--dsw-alias-label-primary,rgba(0,0,0,0.85));cursor:pointer}",
+    ".dsh-li-selector:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover,rgba(128,128,128,0.16))}",
+    ".dsh-li-selector:focus-visible{outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary,#0a84ff));outline-offset:2px}",
+    ".dsh-li-selector:disabled{opacity:0.5;cursor:default}",
+    ".dsh-li-selector-chevron{flex:none;color:var(--dsw-alias-label-tertiary,rgba(127,127,127,0.8))}"
+  ].join("\n");
+  document.head.appendChild(style);
+}
+function SelectPill(props) {
+  const [open, setOpen] = react.useState(false);
+  const pill = /* @__PURE__ */ react.createElement(
+    "button",
+    {
+      type: "button",
+      className: "dsh-li-selector",
+      disabled: props.disabled,
+      "aria-haspopup": "menu",
+      "aria-expanded": open,
+      ...props.id !== void 0 ? { id: props.id } : {},
+      onClick: () => {
+        if (!props.disabled) {
+          setOpen(!open);
+        }
+      }
+    },
+    props.label,
+    props.Chevron ? /* @__PURE__ */ react.createElement(props.Chevron, { className: "dsh-li-selector-chevron" }) : null
+  );
+  return /* @__PURE__ */ react.createElement(
+    props.Menu,
+    {
+      open,
+      onClose: () => {
+        setOpen(false);
+      },
+      items: props.items,
+      selectedId: props.selectedId,
+      onSelect: (id) => {
+        props.onSelect(id);
+        setOpen(false);
+      },
+      align: "end",
+      portal: true,
+      anchor: pill
+    }
+  );
 }
 
 // packages/client/src/render/primitives.tsx
@@ -70,16 +872,2451 @@ var primitivesRef = null;
 function setPrimitivesModule(primitives) {
   primitivesRef = primitives;
 }
+function getPrimitivesModule() {
+  return primitivesRef;
+}
+function renderHelpRow(text) {
+  if (text === null || text === void 0 || text === "") {
+    return null;
+  }
+  return /* @__PURE__ */ react.createElement("div", { style: HELP_ROW_STYLE }, text);
+}
+function renderButton(variant, buttonProps, children) {
+  const primitives = getPrimitivesModule();
+  if (primitives && typeof primitives.Button === "function") {
+    return react.createElement(
+      primitives.Button,
+      { variant, size: "sm", type: "button", ...buttonProps },
+      children
+    );
+  }
+  return react.createElement(
+    "button",
+    { type: "button", style: variant === "primary" ? PRIMARY_BUTTON : GHOST_BUTTON, ...buttonProps },
+    children
+  );
+}
+function renderCheckbox(checkboxProps) {
+  const primitives = getPrimitivesModule();
+  if (primitives && typeof primitives.Checkbox === "function") {
+    return react.createElement(primitives.Checkbox, checkboxProps);
+  }
+  return /* @__PURE__ */ react.createElement(
+    "label",
+    {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        fontSize: 12,
+        cursor: "pointer"
+      }
+    },
+    /* @__PURE__ */ react.createElement(
+      "input",
+      {
+        type: "checkbox",
+        checked: checkboxProps.checked,
+        disabled: checkboxProps.disabled,
+        onChange: (event) => checkboxProps.onChange(event.target.checked)
+      }
+    ),
+    checkboxProps.label
+  );
+}
+function renderStateDot(state) {
+  const primitives = getPrimitivesModule();
+  if (primitives && typeof primitives.StateDot === "function") {
+    return react.createElement(primitives.StateDot, { state });
+  }
+  const glyph = {
+    done: "\u2713",
+    warning: "\u25CB",
+    error: "\u2717",
+    ongoing: "\u2026",
+    idle: "\u25CB"
+  };
+  const color = {
+    done: "#34c38f",
+    warning: "var(--dsw-alias-label-warning, #ff9f0a)",
+    error: "var(--dsw-alias-label-error, #ff3b30)",
+    ongoing: "var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))",
+    idle: "var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))"
+  };
+  return /* @__PURE__ */ react.createElement("span", { style: { color: color[state] || "inherit", width: 12, flex: "none" }, "aria-hidden": "true" }, glyph[state] || "\u25CB");
+}
+function renderThrobber() {
+  const primitives = getPrimitivesModule();
+  if (primitives && typeof primitives.StateDot === "function") {
+    return react.createElement(primitives.StateDot, { state: "ongoing", size: 12 });
+  }
+  return /* @__PURE__ */ react.createElement(
+    "span",
+    {
+      style: {
+        display: "inline-block",
+        width: 12,
+        height: 12,
+        border: "2px solid rgba(127,127,127,0.3)",
+        borderTopColor: "var(--dsw-alias-label-primary, #1d1d1f)",
+        borderRadius: "50%",
+        animation: "dsh-local-infer-spin 0.8s linear infinite"
+      },
+      "aria-hidden": "true"
+    }
+  );
+}
+function renderProcessButton(opts) {
+  if (opts.busy === true) {
+    return /* @__PURE__ */ react.createElement(
+      "button",
+      {
+        type: "button",
+        disabled: true,
+        style: { display: "inline-flex", alignItems: "center", gap: 4, opacity: 0.7, ...GHOST_BUTTON },
+        "aria-label": opts.busyLabel
+      },
+      renderThrobber(),
+      /* @__PURE__ */ react.createElement("span", null, opts.busyLabel)
+    );
+  }
+  return renderButton(
+    opts.variant,
+    { onClick: opts.onClick, disabled: opts.disabled === true },
+    opts.label
+  );
+}
+function renderSelect(opts) {
+  const primitives = getPrimitivesModule();
+  if (primitives && typeof primitives.Menu === "function") {
+    injectStyles();
+    return react.createElement(SelectPill, {
+      Menu: primitives.Menu,
+      Chevron: primitives.IconChevronDownOutlineRegular,
+      label: opts.label,
+      items: opts.items,
+      selectedId: opts.value,
+      onSelect: opts.onSelect,
+      disabled: opts.disabled === true,
+      id: opts.id
+    });
+  }
+  return react.createElement(
+    "select",
+    {
+      style: INPUT_STYLE,
+      value: opts.value,
+      disabled: opts.disabled === true,
+      onChange: (event) => opts.onSelect(event.target.value),
+      ...opts.disabled === true ? { opacity: 0.5 } : {},
+      ...opts.id !== void 0 ? { id: opts.id } : {}
+    },
+    ...opts.items.map(
+      (item) => react.createElement("option", { key: item.id, value: item.id }, item.label)
+    )
+  );
+}
+
+// packages/client/src/render/NumberField.tsx
+function NumberField(props) {
+  const { field, control, onValue } = props;
+  const numeric = typeof field.value === "number" ? field.value : null;
+  const [text, setText] = react.useState(numeric !== null ? String(numeric) : "");
+  const lastNumeric = react.useRef(numeric);
+  if (numeric !== lastNumeric.current) {
+    lastNumeric.current = numeric;
+    setText(numeric !== null ? String(numeric) : "");
+  }
+  const snap = (value) => {
+    if (!control.step || control.step <= 0) {
+      return value;
+    }
+    const base = control.min !== void 0 ? control.min : 0;
+    const steps = Math.round((value - base) / control.step);
+    return Math.round((base + steps * control.step) * 1e6) / 1e6;
+  };
+  const commit = () => {
+    if (text === "") {
+      return;
+    }
+    const parsed = Number(text);
+    if (Number.isNaN(parsed)) {
+      setText(numeric !== null ? String(numeric) : "");
+      return;
+    }
+    let clamped = parsed;
+    if (control.min !== void 0 && clamped < control.min) {
+      clamped = control.min;
+    }
+    if (control.max !== void 0 && clamped > control.max) {
+      clamped = control.max;
+    }
+    clamped = snap(clamped);
+    setText(String(clamped));
+    if (clamped !== numeric) {
+      onValue(field.key, clamped);
+    }
+  };
+  return /* @__PURE__ */ react.createElement(
+    "input",
+    {
+      type: "number",
+      min: control.min,
+      max: control.max,
+      step: control.step,
+      value: text,
+      disabled: field.disabled,
+      ...props.id !== void 0 ? { id: props.id } : {},
+      style: {
+        width: 88,
+        flex: "none",
+        height: 32,
+        padding: "0 8px",
+        borderRadius: "var(--dsw-radius-md, 8px)",
+        border: "0.5px solid var(--dsw-alias-border-l4, var(--dsw-alias-border-secondary, rgba(128,128,128,0.24)))",
+        background: "var(--dsw-alias-bg-layer-1, var(--dsw-alias-background-tertiary, rgba(128,128,128,0.12)))",
+        color: "var(--dsw-alias-label-primary, inherit)",
+        font: "inherit",
+        fontSize: 14,
+        colorScheme: "light dark",
+        opacity: field.disabled ? 0.5 : 1
+      },
+      onChange: (event) => {
+        const raw = event.target.value;
+        setText(raw);
+        if (raw === "") {
+          onValue(field.key, void 0);
+          return;
+        }
+        const parsed = Number(raw);
+        if (Number.isNaN(parsed)) {
+          return;
+        }
+        if (control.min !== void 0 && parsed < control.min) {
+          return;
+        }
+        if (control.max !== void 0 && parsed > control.max) {
+          return;
+        }
+        const snapped = snap(parsed);
+        setText(String(snapped));
+        onValue(field.key, snapped);
+      },
+      onBlur: commit,
+      onKeyDown: (event) => {
+        if (event.key === "Enter") {
+          commit();
+        }
+      }
+    }
+  );
+}
+
+// packages/client/src/api/routes.ts
+async function readNdjsonLines(body, onEvent) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const handleLine = (line) => {
+    if (line === "") {
+      return;
+    }
+    try {
+      onEvent(JSON.parse(line));
+    } catch {
+    }
+  };
+  for (; ; ) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      handleLine(line);
+    }
+  }
+  handleLine(buffer);
+}
+async function readLaunchStream(response, onStep) {
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || "HTTP " + response.status);
+  }
+  if (response.body === null || typeof response.body.getReader !== "function") {
+    return await response.json();
+  }
+  let result = null;
+  await readNdjsonLines(response.body, (event) => {
+    if (event.step !== void 0) {
+      onStep?.(event.step);
+    } else if (event.result !== void 0) {
+      result = event.result;
+    }
+  });
+  return result;
+}
+async function readTextStream(response, onChunk) {
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || "HTTP " + response.status);
+  }
+  if (response.body === null || typeof response.body.getReader !== "function") {
+    onChunk(await response.text());
+    return;
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  for (; ; ) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    onChunk(decoder.decode(value, { stream: true }));
+  }
+}
+function withQuery(path, query) {
+  const params = new URLSearchParams();
+  if (query?.engine) {
+    params.set("engine", query.engine);
+  }
+  if (query?.config) {
+    params.set("config", JSON.stringify(query.config));
+  }
+  const suffix = params.toString();
+  return suffix ? path + "?" + suffix : path;
+}
+async function getJson(path, query) {
+  const response = await fetch(withQuery(path, query));
+  const json = await response.json();
+  if (!response.ok) {
+    throw new Error(json.error ?? "HTTP " + response.status);
+  }
+  return json;
+}
+async function post(path, body) {
+  return fetch(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body)
+  });
+}
+async function postJson(path, body) {
+  const response = await post(path, body);
+  const json = await response.json();
+  if (!response.ok) {
+    throw new Error(json.error ?? "HTTP " + response.status);
+  }
+  return json;
+}
+async function routeExists() {
+  try {
+    const response = await fetch("/local-infer/summary");
+    return response.status !== 404;
+  } catch {
+    return false;
+  }
+}
+function fetchSummary(query) {
+  return getJson("/local-infer/summary", query);
+}
+function fetchDeps(query) {
+  return getJson("/local-infer/deps", query);
+}
+function postSave(request) {
+  return postJson("/local-infer/save", request);
+}
+function postInstall(request) {
+  return postJson("/local-infer/install", request);
+}
+function postRegister(request) {
+  return postJson("/local-infer/register", request);
+}
+function postUnregister(request) {
+  return postJson("/local-infer/unregister", request);
+}
+async function postLaunch(request, onStep) {
+  const response = await post("/local-infer/launch", request);
+  return readLaunchStream(response, onStep);
+}
+function postStop(request) {
+  return postJson("/local-infer/stop", request);
+}
+async function postGet(request, onChunk) {
+  const response = await post("/local-infer/get", request);
+  await readTextStream(response, onChunk);
+}
+function postDownload(request) {
+  return postJson("/local-infer/download", request);
+}
+function postChatTemplate(request) {
+  return postJson("/local-infer/chat-template", request);
+}
+function postProviderDelete(request) {
+  return postJson("/local-infer/provider-delete", request);
+}
+
+// packages/client/src/store/sync.ts
+var ACTION_TIMEOUTS = {
+  save: 3e4,
+  install: 12e4,
+  register: 3e4,
+  unregister: 3e4,
+  launch: 15e4,
+  stop: 1e4,
+  get: 12e4,
+  download: 12e4
+};
+function performAction(store, key, run, timeoutMs) {
+  if (store.getSnapshot().actions[key].status === "pending") {
+    return Promise.resolve();
+  }
+  store.dispatch({ type: "action/start", key });
+  let settled = false;
+  const timer = setTimeout(() => {
+    settled = true;
+    store.dispatch({ type: "action/timeout", key });
+  }, timeoutMs);
+  return run().then((detail) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    clearTimeout(timer);
+    store.dispatch({ type: "action/ack", key, detail });
+  }).catch((error) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    clearTimeout(timer);
+    store.dispatch({ type: "action/fail", key, detail: actionFailDetail(error) });
+  });
+}
+var TEMPLATE_DOWNLOAD_TIMEOUT = 12e4;
+function performTemplateAction(store, run, timeoutMs) {
+  if (store.getSnapshot().templateActions.download.status === "pending") {
+    return Promise.resolve();
+  }
+  store.dispatch({ type: "template/start" });
+  let settled = false;
+  const timer = setTimeout(() => {
+    settled = true;
+    store.dispatch({ type: "template/timeout" });
+  }, timeoutMs);
+  return run().then((detail) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    clearTimeout(timer);
+    store.dispatch({ type: "template/ack", detail });
+  }).catch((error) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    clearTimeout(timer);
+    store.dispatch({ type: "template/fail", detail: actionFailDetail(error) });
+  });
+}
+function actionFailDetail(error) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+// packages/client/src/store/template.ts
+function downloadTemplate(store, repo) {
+  const state = store.getSnapshot();
+  if (state.draft === null || repo === "") {
+    return Promise.resolve();
+  }
+  if (state.templateActions.download.status === "pending") {
+    return Promise.resolve();
+  }
+  const draft = state.draft;
+  const directory = typeof draft.config.modelDirectory === "string" ? draft.config.modelDirectory : void 0;
+  return performTemplateAction(
+    store,
+    () => postChatTemplate({
+      engine: draft.engine,
+      template: repo,
+      ...directory !== void 0 ? { directory } : {}
+    }).then(
+      () => "ok",
+      (error) => {
+        throw new Error(error instanceof Error ? error.message : String(error));
+      }
+    ),
+    TEMPLATE_DOWNLOAD_TIMEOUT
+  );
+}
+
+// packages/client/src/render/ChatTemplateField.tsx
+function ChatTemplateField(props) {
+  const { field, control, onValue, t } = props;
+  const value = field.value;
+  const options = control.options ?? [];
+  const isPreset = options.some((option) => String(option.value) === String(value));
+  const valueIsEmpty = value === void 0 || value === null || value === "";
+  const [customMode, setCustomMode] = react.useState(!valueIsEmpty && !isPreset);
+  const presetItems = [
+    { id: "", label: t.modelAuto },
+    ...options.map((option) => ({
+      id: String(option.value),
+      label: option.note ? option.label + " \xB7 " + option.note : option.label
+    })),
+    { id: "custom", label: t.custom }
+  ];
+  const presetValue = isPreset && !valueIsEmpty ? String(value) : customMode ? "custom" : "";
+  const presetLabel = presetItems.find((item) => item.id === presetValue)?.label ?? t.modelAuto;
+  const customValue = valueIsEmpty ? "" : String(value);
+  const selectId = "dsh-li-" + field.key;
+  const customId = "dsh-li-" + field.key + "-custom";
+  const presetSelect = renderSelect({
+    value: presetValue,
+    label: presetLabel,
+    items: presetItems,
+    id: selectId,
+    onSelect: (id) => {
+      if (id === "custom") {
+        setCustomMode(true);
+        if (valueIsEmpty || isPreset) {
+          onValue(field.key, "");
+        }
+      } else if (id === "") {
+        setCustomMode(false);
+        onValue(field.key, void 0);
+      } else {
+        setCustomMode(false);
+        onValue(field.key, id);
+      }
+    },
+    ...field.disabled ? { disabled: true } : {}
+  });
+  return /* @__PURE__ */ react.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6, flex: 1, minWidth: 0 } }, /* @__PURE__ */ react.createElement("div", { style: ROW_STYLE }, /* @__PURE__ */ react.createElement("label", { style: LABEL_STYLE, htmlFor: selectId }, t.chatTemplatePreset), presetSelect), customMode ? /* @__PURE__ */ react.createElement("div", { style: ROW_STYLE }, /* @__PURE__ */ react.createElement("label", { style: LABEL_STYLE, htmlFor: customId }, t.customChatTemplate), /* @__PURE__ */ react.createElement(
+    "input",
+    {
+      style: { ...INPUT_STYLE, ...field.disabled ? { opacity: 0.5 } : {} },
+      id: customId,
+      type: "text",
+      value: customValue,
+      placeholder: "local path or HF repo reference",
+      disabled: field.disabled,
+      onChange: (event) => onValue(field.key, event.target.value)
+    }
+  )) : null);
+}
+function ChatTemplateStatusRow(props) {
+  const { status, cell, onDownload, t } = props;
+  if (status.present) {
+    return null;
+  }
+  const busy = cell.status === "pending";
+  const note = cell.status === "ok" ? t.templateDownloaded : cell.status === "error" ? t.templateDownloadFailed + (cell.detail !== "" ? ": " + cell.detail : "") : "";
+  return /* @__PURE__ */ react.createElement("div", null, /* @__PURE__ */ react.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 4 } }, /* @__PURE__ */ react.createElement(
+    "span",
+    {
+      style: {
+        flex: 1,
+        minWidth: 0,
+        fontSize: 12,
+        wordBreak: "break-all",
+        fontFamily: "var(--dsw-alias-font-mono, ui-monospace, monospace)"
+      }
+    },
+    (status.hfCli ? t.hfCliDetected : t.noHfCli) + " " + status.downloadCommand
+  ), status.hfCli ? renderProcessButton({
+    busy,
+    label: t.templateDownload,
+    busyLabel: t.templateDownloading,
+    variant: "ghost",
+    onClick: onDownload
+  }) : null), note !== "" ? /* @__PURE__ */ react.createElement("div", { style: { fontSize: 12 } }, note) : null);
+}
+function useChatTemplateAutoDownload(store) {
+  const status = store.getSnapshot().summary?.chatTemplateStatus ?? null;
+  const repo = status?.repo ?? "";
+  react.useEffect(() => {
+    if (status === null || status.present || !status.hfCli || status.repo === "") {
+      return;
+    }
+    void downloadTemplate(store, status.repo);
+  }, [repo]);
+}
+
+// packages/client/src/render/Meter.tsx
+function Meter(props) {
+  const { meter, t } = props;
+  if (meter === null) {
+    return null;
+  }
+  const bar = /* @__PURE__ */ react.createElement(
+    "div",
+    {
+      style: {
+        display: "flex",
+        height: 14,
+        borderRadius: 6,
+        overflow: "hidden",
+        border: "1px solid var(--dsw-alias-border-secondary, rgba(128,128,128,0.24))"
+      }
+    },
+    meter.segments.map((segment) => /* @__PURE__ */ react.createElement(
+      "div",
+      {
+        key: segment.key,
+        title: segment.label + ": " + (segment.bytes / 1024 / 1024 / 1024).toFixed(2) + " GiB",
+        style: {
+          width: segment.percent + "%",
+          background: segment.key === "reserve" ? "repeating-linear-gradient(45deg, " + SEGMENT_COLORS.reserve + ", " + SEGMENT_COLORS.reserve + " 4px, #4d4d4d 4px, #4d4d4d 8px)" : SEGMENT_COLORS[segment.key] || "#ccc"
+        }
+      }
+    ))
+  );
+  const legend = /* @__PURE__ */ react.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: "4px 12px", marginTop: 8, fontSize: 11 } }, meter.segments.map((segment) => /* @__PURE__ */ react.createElement("span", { key: segment.key, style: { display: "inline-flex", alignItems: "center", gap: 4 } }, /* @__PURE__ */ react.createElement(
+    "span",
+    {
+      style: {
+        width: 8,
+        height: 8,
+        borderRadius: 2,
+        background: SEGMENT_COLORS[segment.key] || "#ccc",
+        display: "inline-block"
+      }
+    }
+  ), segment.label)));
+  const sourceLabel = meter.source === "measured" ? t.meterSourceMeasured : meter.source === "estimated" ? t.meterSourceEstimated : t.meterSourceNotMeasured;
+  const reserveSegment = meter.segments.find((segment) => segment.key === "reserve") ?? null;
+  const reserveSourceLabel = meter.reserveSource === "foreign-process" ? t.reserveForeign : meter.reserveSource === "gpu-usage" ? t.reserveGpuBusy : meter.reserveSource === "explicit" ? t.reserveExplicit : t.reserveDefault;
+  const readout = /* @__PURE__ */ react.createElement("div", { style: { marginTop: 8, fontSize: 12, color: "var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))" } }, /* @__PURE__ */ react.createElement("span", null, t.largestContext + ": "), meter.largestFittingContext !== null ? /* @__PURE__ */ react.createElement("strong", null, String(meter.largestFittingContext) + " " + t.tokens) : /* @__PURE__ */ react.createElement("span", null, "\u2014"), /* @__PURE__ */ react.createElement("span", null, "  \xB7  " + sourceLabel), /* @__PURE__ */ react.createElement("div", { style: { marginTop: 2 } }, /* @__PURE__ */ react.createElement("span", null, t.reserveReadout + ": "), /* @__PURE__ */ react.createElement("span", null, (reserveSegment ? (reserveSegment.bytes / 1024 / 1024 / 1024).toFixed(2) : "0.00") + " GiB " + reserveSourceLabel)));
+  const unknownEngines = meter.unknownEngines !== null ? /* @__PURE__ */ react.createElement(
+    "div",
+    {
+      style: {
+        marginTop: 8,
+        padding: "6px 8px",
+        borderRadius: 6,
+        fontSize: 12,
+        background: "var(--dsw-alias-fill-warning, rgba(255,199,0,0.12))",
+        border: "1px solid var(--dsw-alias-border-warning, rgba(255,199,0,0.4))",
+        color: "var(--dsw-alias-label-warning, #b45309)"
+      }
+    },
+    /* @__PURE__ */ react.createElement("div", { style: { fontWeight: 600, marginBottom: 2 } }, t.unknownEnginesTitle),
+    /* @__PURE__ */ react.createElement("span", null, (meter.unknownEngines.bytes / 1024 / 1024 / 1024).toFixed(2) + " GiB " + t.unknownEnginesBody)
+  ) : null;
+  return /* @__PURE__ */ react.createElement("div", { style: { marginTop: 8 } }, /* @__PURE__ */ react.createElement("div", { style: { fontWeight: 600, fontSize: 12, marginBottom: 6 } }, t.meterTitle), bar, legend, readout, unknownEngines);
+}
+
+// packages/client/src/render/CustomArgsPanel.tsx
+function normalizeCustomArgs(raw) {
+  if (!Array.isArray(raw)) {
+    return [{ key: "", value: "" }];
+  }
+  const rows = raw.map((entry) => {
+    const fields = entry !== null && typeof entry === "object" ? entry : {};
+    return {
+      key: typeof fields.key === "string" ? fields.key : "",
+      value: typeof fields.value === "string" ? fields.value : ""
+    };
+  });
+  return rows.length > 0 ? rows : [{ key: "", value: "" }];
+}
+function nextCustomArgs(raw, action, index, value = "") {
+  let args = normalizeCustomArgs(raw);
+  switch (action) {
+    case "key":
+      args = args.map((entry, i) => i === index ? { ...entry, key: value } : entry);
+      break;
+    case "value":
+      args = args.map((entry, i) => i === index ? { ...entry, value } : entry);
+      break;
+    case "add":
+      args = [...args, { key: "", value: "" }];
+      break;
+    case "clear":
+      args = [{ key: "", value: "" }, ...args.slice(1)];
+      break;
+    case "remove":
+      args = args.filter((_entry, i) => i !== index);
+      if (args.length === 0) {
+        args = [{ key: "", value: "" }];
+      }
+      break;
+  }
+  return args;
+}
+function CustomArgsPanel(props) {
+  const { store, t } = props;
+  const state = store.getSnapshot();
+  const draft = state.draft;
+  const rows = normalizeCustomArgs(draft !== null ? draft.config.customArgs : void 0);
+  const edit = (action, index, value = "") => {
+    const current = store.getSnapshot().draft;
+    if (current === null) {
+      return;
+    }
+    const config = {
+      ...current.config,
+      customArgs: nextCustomArgs(current.config.customArgs, action, index, value)
+    };
+    store.dispatch({
+      type: "draft/edit",
+      draft: {
+        engine: current.engine,
+        config,
+        ...current.platform !== void 0 ? { platform: current.platform } : {}
+      }
+    });
+  };
+  const body = rows.map((arg, index) => {
+    const isFirst = index === 0;
+    return /* @__PURE__ */ react.createElement("div", { key: "arg-row-" + index, style: { display: "contents" } }, /* @__PURE__ */ react.createElement(
+      "input",
+      {
+        type: "text",
+        style: INPUT_STYLE,
+        value: arg.key,
+        placeholder: t.customArgKeyPlaceholder,
+        "aria-label": t.customArgKeyHeader,
+        onChange: (event) => edit("key", index, event.target.value)
+      }
+    ), /* @__PURE__ */ react.createElement(
+      "input",
+      {
+        type: "text",
+        style: INPUT_STYLE,
+        value: arg.value,
+        placeholder: t.customArgValuePlaceholder,
+        "aria-label": t.customArgValueHeader,
+        onChange: (event) => edit("value", index, event.target.value)
+      }
+    ), /* @__PURE__ */ react.createElement("div", { style: CUSTOM_ARGS_BUTTONS_STYLE }, renderButton(
+      "ghost",
+      {
+        type: "button",
+        onClick: () => edit("add", index),
+        "aria-label": t.customArgAdd
+      },
+      "+"
+    ), renderButton(
+      "ghost",
+      {
+        type: "button",
+        onClick: () => edit(isFirst ? "clear" : "remove", index),
+        "aria-label": isFirst ? t.customArgClear : t.customArgRemove
+      },
+      "-"
+    )));
+  });
+  return /* @__PURE__ */ react.createElement("div", { style: { marginTop: 8 } }, /* @__PURE__ */ react.createElement("div", { style: SECTION_STYLE }, t.customArgsTitle), state.ui.help ? renderHelpRow(t.customArgHelp) : null, /* @__PURE__ */ react.createElement("div", { style: { ...CUSTOM_ARGS_GRID_STYLE, gridTemplateRows: "auto" } }, /* @__PURE__ */ react.createElement("div", { style: CUSTOM_ARGS_HEADER_STYLE }, t.customArgKeyHeader), /* @__PURE__ */ react.createElement("div", { style: CUSTOM_ARGS_HEADER_STYLE }, t.customArgValueHeader), /* @__PURE__ */ react.createElement("div", { style: { ...CUSTOM_ARGS_HEADER_STYLE, textAlign: "right" } }, t.customArgAddRemoveHeader), body));
+}
+
+// packages/client/src/store/deps.ts
+var GET_IDLE_MS = 12e4;
+function repriceDeps(store, query) {
+  return fetchDeps(query).then((deps) => {
+    store.dispatch({ type: "deps/ack", deps });
+  }).catch(() => {
+    store.dispatch({ type: "deps/clear" });
+  });
+}
+function repriceSummary(store, query) {
+  return fetchSummary(query).then((summary) => {
+    store.dispatch({ type: "summary/ack", summary });
+  }).catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    store.dispatch({ type: "summary/fail", note: message });
+  });
+}
+function copyInstallString(store, t) {
+  const deps = store.getSnapshot().deps;
+  if (deps === null || deps.installString === "") {
+    return;
+  }
+  const text = deps.installString;
+  const done = (ok) => {
+    store.dispatch({ type: "note/set", key: "copy", note: ok ? t.copied : t.copyFailed });
+    setTimeout(() => {
+      store.dispatch({ type: "note/clear", key: "copy" });
+    }, 2e3);
+  };
+  if (typeof navigator !== "undefined" && navigator.clipboard !== void 0) {
+    navigator.clipboard.writeText(text).then(() => done(true)).catch(() => done(false));
+  } else {
+    done(false);
+  }
+}
+function performAllowRun(store, checked) {
+  const state = store.getSnapshot();
+  const draft = state.draft;
+  if (draft === null) {
+    return Promise.resolve();
+  }
+  return performAction(
+    store,
+    "save",
+    () => postSave({
+      engine: draft.engine,
+      config: draft.config,
+      allowRunDeps: checked,
+      platform: draft.platform ?? {},
+      showHelp: state.ui.help,
+      settingsOnly: true
+    }).then((summary) => {
+      store.dispatch({ type: "summary/ack", summary });
+      return "ok";
+    }),
+    ACTION_TIMEOUTS.save
+  ).then(() => {
+    if (store.getSnapshot().actions.save.status === "ok") {
+      return repriceDeps(store);
+    }
+  });
+}
+function performInstall(store, t) {
+  const state = store.getSnapshot();
+  const draft = state.draft;
+  if (state.deps === null || draft === null) {
+    return Promise.resolve();
+  }
+  return performAction(
+    store,
+    "install",
+    () => postInstall({ engine: draft.engine, config: draft.config }).then((body) => {
+      store.dispatch({ type: "deps/ack", deps: body.deps });
+      if (body.result.ok) {
+        store.dispatch({ type: "note/set", key: "deps", note: t.depsSatisfied });
+        return "ok";
+      }
+      const failed = (body.result.results ?? []).filter(
+        (entry) => entry.status !== "satisfied"
+      );
+      store.dispatch({
+        type: "note/set",
+        key: "deps",
+        note: failed.map((entry) => entry.id + (entry.detail ? ": " + entry.detail : "")).join("; ")
+      });
+      return "ok";
+    }),
+    ACTION_TIMEOUTS.install
+  );
+}
+function performGet(store, t) {
+  const state = store.getSnapshot();
+  const draft = state.draft;
+  if (state.deps === null || draft === null) {
+    return Promise.resolve();
+  }
+  const platform = (draft.platform ?? {})[draft.engine];
+  const base = state.ui.logs.getLogs ?? state.summary?.lastLogs ?? "";
+  store.dispatch({
+    type: "ui/patch",
+    patch: {
+      logs: {
+        ...state.ui.logs,
+        getLogs: base + (base === "" ? "" : "\n") + "--- " + t.getting + "\n"
+      }
+    }
+  });
+  const append = (chunk) => {
+    const logs = store.getSnapshot().ui.logs;
+    store.dispatch({
+      type: "ui/patch",
+      patch: { logs: { ...logs, getLogs: (logs.getLogs ?? "") + chunk } }
+    });
+  };
+  let idleTimer = null;
+  let finished = false;
+  let resolveDetail = () => {
+  };
+  const finish = (reprice) => {
+    if (finished) {
+      return;
+    }
+    finished = true;
+    if (idleTimer !== null) {
+      clearTimeout(idleTimer);
+      idleTimer = null;
+    }
+    if (reprice) {
+      fetchSummary({ engine: draft.engine, config: draft.config }).then((summary) => store.dispatch({ type: "summary/ack", summary })).catch(() => store.dispatch({ type: "summary/fail", note: "" }));
+    }
+  };
+  const armIdle = () => {
+    if (finished) {
+      return;
+    }
+    if (idleTimer !== null) {
+      clearTimeout(idleTimer);
+    }
+    idleTimer = setTimeout(() => {
+      finish(false);
+      resolveDetail("idle");
+    }, GET_IDLE_MS);
+  };
+  armIdle();
+  return performAction(
+    store,
+    "get",
+    () => new Promise((resolve, reject) => {
+      resolveDetail = resolve;
+      postGet(
+        {
+          engine: draft.engine,
+          config: draft.config,
+          ...platform !== void 0 ? { platform } : {}
+        },
+        (chunk) => {
+          append(chunk);
+          armIdle();
+        }
+      ).then(() => {
+        finish(true);
+        resolve("ok");
+      }).catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        append("\n" + t.getFailed + ": " + message + "\n");
+        finish(true);
+        reject(new Error(message));
+      });
+    }),
+    ACTION_TIMEOUTS.get
+  );
+}
+
+// packages/client/src/render/DepsPanel.tsx
+var STATE_FOR_STATUS = {
+  satisfied: "done",
+  missing: "warning",
+  failed: "error",
+  installing: "ongoing"
+};
+function DepsPanel(props) {
+  const { store, t } = props;
+  const state = store.getSnapshot();
+  const deps = state.deps;
+  if (deps === null) {
+    return null;
+  }
+  const installCell = state.actions.install;
+  const getCell = state.actions.get;
+  const note = installCell.status === "error" ? installCell.detail : state.notes.deps;
+  const rows = deps.deps.map((dep) => /* @__PURE__ */ react.createElement("div", { key: dep.id, style: DEPS_ROW_STYLE }, renderStateDot(STATE_FOR_STATUS[dep.status] ?? "idle"), /* @__PURE__ */ react.createElement("span", { style: { fontWeight: 600 } }, dep.id), /* @__PURE__ */ react.createElement(
+    "span",
+    {
+      style: {
+        color: "var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))"
+      }
+    },
+    "// The sudo hint is a Linux/macOS concept; a winget (Windows) host // installs without elevation, so the hint is suppressed there.",
+    dep.purpose + (dep.requiresSudo && deps.packageManager !== "winget" ? " (sudo)" : "")
+  )));
+  return /* @__PURE__ */ react.createElement("div", { style: { marginTop: 8 } }, /* @__PURE__ */ react.createElement("div", { style: { display: "flex", alignItems: "baseline", gap: 8 } }, /* @__PURE__ */ react.createElement("div", { style: SECTION_STYLE }, t.depsTitle), deps.packageManager === null ? /* @__PURE__ */ react.createElement(
+    "span",
+    {
+      style: {
+        fontSize: 11,
+        color: "var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))"
+      }
+    },
+    t.pmUnknown
+  ) : null), deps.deps.length > 0 ? /* @__PURE__ */ react.createElement("div", null, rows) : /* @__PURE__ */ react.createElement("div", { style: { fontSize: 12, opacity: 0.7, marginTop: 4 } }, t.depsNone), deps.installString !== "" ? /* @__PURE__ */ react.createElement("div", null, /* @__PURE__ */ react.createElement("pre", { style: INSTALL_BLOCK_STYLE }, deps.installString), renderButton(
+    "ghost",
+    {
+      onClick: () => copyInstallString(store, t)
+    },
+    state.notes.copy !== "" ? state.notes.copy : t.copy
+  )) : null, deps.chatTemplate !== void 0 ? /* @__PURE__ */ react.createElement("div", { style: { marginTop: 8 } }, /* @__PURE__ */ react.createElement(
+    "div",
+    {
+      style: {
+        fontSize: 12,
+        fontWeight: 600,
+        color: "var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))"
+      }
+    },
+    t.templateAbsent
+  ), /* @__PURE__ */ react.createElement("div", { style: { fontSize: 12, marginTop: 4 } }, t.templateInstructions), /* @__PURE__ */ react.createElement("pre", { style: INSTALL_BLOCK_STYLE }, deps.chatTemplate.downloadCommand)) : null, /* @__PURE__ */ react.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 8 } }, renderCheckbox({
+    checked: deps.runAllowed === true,
+    onChange: (checked) => {
+      void performAllowRun(store, checked);
+    },
+    label: t.allowRun
+  }), deps.runAllowed && !deps.allSatisfied ? renderProcessButton({
+    busy: installCell.status === "pending",
+    label: "\u25B6 " + t.run,
+    busyLabel: t.running,
+    variant: "ghost",
+    onClick: () => {
+      void performInstall(store, t);
+    }
+  }) : null, renderProcessButton({
+    busy: getCell.status === "pending",
+    label: t.get,
+    busyLabel: t.getting,
+    variant: "primary",
+    onClick: () => {
+      void performGet(store, t);
+    },
+    disabled: !deps.allSatisfied
+  })), note !== "" ? /* @__PURE__ */ react.createElement(
+    "div",
+    {
+      style: {
+        fontSize: 12,
+        marginTop: 4,
+        color: "var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))"
+      }
+    },
+    note
+  ) : null);
+}
+
+// packages/client/src/store/derive.ts
+function editingProvider(state) {
+  if (state.ui.editingProviderId === null) {
+    return void 0;
+  }
+  const providers = state.summary?.providers ?? [];
+  return providers.find((provider) => provider.id === state.ui.editingProviderId);
+}
+function phaseLabelFor(status, t) {
+  if (status === void 0) {
+    return void 0;
+  }
+  switch (status) {
+    case "prereqs":
+      return t.entryPrereqs;
+    case "download":
+    case "downloading":
+      return t.entryDownloading;
+    case "build":
+      return t.entryBuilding;
+    case "launch":
+      return t.entryLaunching;
+    case "stopping":
+      return t.stopping;
+    default:
+      return void 0;
+  }
+}
+function deriveLaunchDisabled(state) {
+  const getting = state.actions.get.status === "pending";
+  const depsUnsatisfied = state.deps !== null && state.deps.allSatisfied !== true;
+  return getting || depsUnsatisfied;
+}
+function deriveLifecycleControl(state, t) {
+  const provider = editingProvider(state);
+  const status = provider !== void 0 ? state.launch[provider.id]?.status : void 0;
+  const phaseLabel = phaseLabelFor(status, t);
+  if (phaseLabel !== void 0) {
+    return {
+      kind: "phase",
+      label: phaseLabel,
+      variant: "ghost",
+      busy: true,
+      busyLabel: phaseLabel,
+      disabled: false,
+      target: "entry",
+      action: "none"
+    };
+  }
+  if (status === "running") {
+    return {
+      kind: "stop",
+      label: t.stop,
+      variant: "ghost",
+      busy: false,
+      busyLabel: "",
+      disabled: false,
+      target: "entry",
+      action: "stop"
+    };
+  }
+  if (status === "failed") {
+    return {
+      kind: "logs",
+      label: t.entryLogs,
+      variant: "ghost",
+      busy: false,
+      busyLabel: "",
+      disabled: false,
+      target: "entry",
+      action: "logs"
+    };
+  }
+  const isFresh = provider === void 0;
+  const launchPending = state.actions.launch.status === "pending";
+  const stopPending = state.actions.stop.status === "pending";
+  const draftRunning = state.actions.launch.status === "ok" && state.actions.stop.status !== "ok";
+  const running = isFresh ? draftRunning : false;
+  return {
+    kind: "launchStop",
+    label: running ? t.stop : t.launch,
+    variant: running ? "ghost" : "primary",
+    busy: isFresh && (launchPending || stopPending),
+    busyLabel: isFresh && (launchPending || stopPending) ? launchPending ? t.launching : t.stopping : "",
+    disabled: !running && deriveLaunchDisabled(state),
+    target: isFresh ? "draft" : "entry",
+    action: running ? "stop" : "launch"
+  };
+}
+function deriveDisplayedLogs(state) {
+  if (state.ui.logs.getLogs !== null) {
+    return state.ui.logs.getLogs;
+  }
+  const lastLogs = state.summary?.lastLogs;
+  return lastLogs !== void 0 && lastLogs !== "" ? lastLogs : "";
+}
+function deriveProviderFormMode(state) {
+  if (state.summary !== null && state.summary.providers.length === 0) {
+    return "new";
+  }
+  return state.ui.providerFormMode;
+}
+
+// packages/client/src/store/providers.ts
+var noHandle = { cancel() {
+} };
+function move(store, providerId, event) {
+  store.dispatch({ type: "launch/move", providerId, event });
+}
+function seedProcessLog(store, label) {
+  const state = store.getSnapshot();
+  const base = state.ui.logs.getLogs ?? state.summary?.lastLogs ?? "";
+  store.dispatch({
+    type: "ui/patch",
+    patch: {
+      logs: {
+        ...state.ui.logs,
+        getLogs: base + (base === "" ? "" : "\n") + "--- " + label + "\n"
+      }
+    }
+  });
+}
+function appendProcessLog(store, line) {
+  const logs = store.getSnapshot().ui.logs;
+  const base = logs.getLogs ?? "";
+  store.dispatch({
+    type: "ui/patch",
+    patch: { logs: { ...logs, getLogs: base + (base === "" ? "" : "\n") + line } }
+  });
+}
+function editProvider(store, provider) {
+  const state = store.getSnapshot();
+  store.dispatch({
+    type: "ui/patch",
+    patch: {
+      cachedDraft: state.draft,
+      editingProviderId: provider.id,
+      providerFormMode: "editing"
+    }
+  });
+  store.dispatch({
+    type: "draft/load",
+    draft: {
+      engine: provider.engine,
+      config: provider.config,
+      platform: { [provider.engine]: provider.platform }
+    }
+  });
+  void repriceSummary(store, { engine: provider.engine, config: provider.config });
+  void repriceDeps(store, { engine: provider.engine, config: provider.config });
+}
+function cancelProvider(store) {
+  const state = store.getSnapshot();
+  const hasProviders = (state.summary?.providers.length ?? 0) > 0;
+  store.dispatch({
+    type: "ui/patch",
+    patch: {
+      editingProviderId: null,
+      providerFormMode: hasProviders ? "collapsed" : "new"
+    }
+  });
+  store.dispatch({ type: "draft/discard" });
+  void repriceSummary(store);
+  void repriceDeps(store);
+}
+function newProvider(store) {
+  const state = store.getSnapshot();
+  const next = state.ui.cachedDraft !== null ? state.ui.cachedDraft : {
+    engine: state.draft?.engine ?? "ninfer",
+    config: {},
+    platform: state.draft?.platform ?? {}
+  };
+  store.dispatch({
+    type: "ui/patch",
+    patch: { editingProviderId: null, providerFormMode: "new" }
+  });
+  store.dispatch({ type: "draft/load", draft: next });
+  void repriceSummary(store, { engine: next.engine, config: next.config });
+  void repriceDeps(store, { engine: next.engine, config: next.config });
+}
+function deleteProvider(store, providerId) {
+  if (store.getSnapshot().ui.deletingProviderId !== null) {
+    return Promise.resolve();
+  }
+  store.dispatch({ type: "ui/patch", patch: { deletingProviderId: providerId } });
+  return postProviderDelete({ id: providerId }).then((summary) => {
+    store.dispatch({ type: "summary/ack", summary });
+    const ui = store.getSnapshot().ui;
+    if (ui.editingProviderId === providerId) {
+      store.dispatch({
+        type: "ui/patch",
+        patch: {
+          editingProviderId: null,
+          providerFormMode: summary.providers.length > 0 ? "collapsed" : "new"
+        }
+      });
+    }
+    store.dispatch({ type: "ui/patch", patch: { deletingProviderId: null } });
+  }).catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    store.dispatch({ type: "summary/fail", note: message });
+    store.dispatch({ type: "ui/patch", patch: { deletingProviderId: null } });
+  });
+}
+function openEntryLogs(store, provider) {
+  editProvider(store, provider);
+  move(store, provider.id, { type: "reset" });
+}
+function performEntryLaunch(store, provider, t) {
+  const prior = store.getSnapshot().launch[provider.id];
+  const status = prior?.status ?? "idle";
+  if (status !== "idle" && status !== "failed") {
+    return noHandle;
+  }
+  seedProcessLog(store, t.entryLaunching);
+  move(store, provider.id, { type: "start" });
+  let settled = false;
+  let deadline = null;
+  const clearDeadline = () => {
+    if (deadline !== null) {
+      clearTimeout(deadline);
+      deadline = null;
+    }
+  };
+  const handle = {
+    cancel() {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearDeadline();
+    }
+  };
+  const armDeadline = () => {
+    if (deadline !== null || settled) {
+      return;
+    }
+    deadline = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      move(store, provider.id, { type: "failed" });
+    }, LAUNCH_HEALTH_DEADLINE_MS);
+  };
+  const onStep = (step) => {
+    move(store, provider.id, { type: "step", step });
+    if (step === "build") {
+      appendProcessLog(store, "--- " + t.entryBuilding + "\n");
+    }
+    if (step === "launch") {
+      armDeadline();
+    }
+  };
+  postLaunch(
+    {
+      engine: provider.engine,
+      config: provider.config,
+      platform: { [provider.engine]: provider.platform },
+      providerId: provider.id
+    },
+    onStep
+  ).then((result) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    clearDeadline();
+    if (result === null) {
+      move(store, provider.id, { type: "failed" });
+    } else if (result.healthy === true) {
+      move(store, provider.id, { type: "healthy" });
+    } else if (result.state === "downloading") {
+      move(store, provider.id, { type: "downloading" });
+    } else {
+      move(store, provider.id, { type: "failed" });
+    }
+    void repriceSummary(store, { engine: provider.engine, config: provider.config });
+  }).catch(() => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    clearDeadline();
+    move(store, provider.id, { type: "failed" });
+  });
+  return handle;
+}
+function performEntryStop(store, provider) {
+  const prior = store.getSnapshot().launch[provider.id];
+  const priorStatus = prior?.status ?? "idle";
+  if (priorStatus === "failed") {
+    return noHandle;
+  }
+  move(store, provider.id, { type: "stop" });
+  let poll = null;
+  let deadline = null;
+  let settled = false;
+  const clearTimers = () => {
+    if (poll !== null) {
+      clearTimeout(poll);
+      poll = null;
+    }
+    if (deadline !== null) {
+      clearTimeout(deadline);
+      deadline = null;
+    }
+  };
+  const handle = {
+    cancel() {
+      settled = true;
+      clearTimers();
+    }
+  };
+  const pollFn = () => {
+    if (settled) {
+      return;
+    }
+    const entry = (store.getSnapshot().summary?.providers ?? []).find(
+      (p) => p.id === provider.id
+    );
+    if (entry !== void 0 && entry.status !== "running") {
+      move(store, provider.id, { type: "stopped" });
+      settled = true;
+      clearTimers();
+      return;
+    }
+    void repriceSummary(store);
+    poll = setTimeout(pollFn, STOP_POLL_MS);
+  };
+  poll = setTimeout(pollFn, STOP_POLL_MS);
+  deadline = setTimeout(() => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    clearTimers();
+    move(store, provider.id, { type: "stopFailed" });
+  }, STOP_HEALTH_DEADLINE_MS);
+  void postStop({
+    engine: provider.engine,
+    config: provider.config,
+    platform: { [provider.engine]: provider.platform },
+    providerId: provider.id
+  }).catch(() => {
+  });
+  return handle;
+}
+function draftLaunchBody(store) {
+  const state = store.getSnapshot();
+  const draft = state.draft;
+  const platform = draft !== null ? (draft.platform ?? {})[draft.engine] : void 0;
+  const body = {
+    autoRebuild: state.ui.autoRebuild
+  };
+  if (draft !== null) {
+    body.engine = draft.engine;
+    body.config = draft.config;
+  }
+  if (platform !== void 0 && draft !== null) {
+    body.platform = { [draft.engine]: platform };
+  }
+  if (state.ui.editingProviderId !== null) {
+    body.providerId = state.ui.editingProviderId;
+  }
+  return body;
+}
+function performDraftLaunch(store, t) {
+  const state = store.getSnapshot();
+  if (state.draft === null) {
+    return Promise.resolve();
+  }
+  const draft = state.draft;
+  return performAction(
+    store,
+    "launch",
+    () => postLaunch(draftLaunchBody(store)).then((result) => {
+      if (result !== null && result.healthy === true) {
+        void repriceSummary(store, { engine: draft.engine, config: draft.config });
+        return t.runningOn + " " + (result.plan !== void 0 ? String(result.plan.port) : "");
+      }
+      if (result !== null) {
+        throw new Error(t.notHealthy + (result.detail ? ": " + result.detail : ""));
+      }
+      throw new Error(t.launchFailed);
+    }),
+    ACTION_TIMEOUTS.launch
+  );
+}
+function performDraftStop(store, t) {
+  const state = store.getSnapshot();
+  if (state.draft === null) {
+    return Promise.resolve();
+  }
+  const draft = state.draft;
+  return performAction(
+    store,
+    "stop",
+    () => postStop(draftLaunchBody(store)).then(() => {
+      void repriceSummary(store, { engine: draft.engine, config: draft.config });
+      return t.stopped;
+    }),
+    ACTION_TIMEOUTS.stop
+  );
+}
+
+// packages/client/src/render/ProviderList.tsx
+var STATUS_TO_DOT = {
+  running: "done",
+  stopped: "error",
+  unsure: "warning"
+};
+function repoShortName(ref) {
+  if (typeof ref !== "string" || ref.trim() === "") {
+    return void 0;
+  }
+  const value = ref.trim();
+  const isUrl = /^[a-z][a-z0-9+.-]*:\/\//i.test(value);
+  let normalized = value;
+  if (isUrl) {
+    normalized = normalized.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").replace(/^[^/]+\//, "");
+  } else {
+    const colon = value.indexOf(":");
+    const slash = value.indexOf("/");
+    if (colon !== -1 && (slash === -1 || colon < slash)) {
+      normalized = value.slice(colon + 1);
+    }
+  }
+  const segments = normalized.split("/").filter((part) => part !== "");
+  if (segments.length === 0) {
+    return void 0;
+  }
+  const last = segments[segments.length - 1];
+  if (last === void 0) {
+    return void 0;
+  }
+  const repo = last.replace(/\.git$/, "");
+  if (repo === "") {
+    return void 0;
+  }
+  const owner = segments.length > 1 ? segments[segments.length - 2] : void 0;
+  return owner !== void 0 ? owner + "/" + repo : repo;
+}
+function ProviderList(props) {
+  const { store, t } = props;
+  const state = store.getSnapshot();
+  const providers = state.summary?.providers ?? [];
+  if (providers.length === 0) {
+    return null;
+  }
+  const engines = state.summary?.engines ?? [];
+  const editingId = state.ui.editingProviderId;
+  const deletingId = state.ui.deletingProviderId;
+  return /* @__PURE__ */ react.createElement("div", { style: { marginTop: 8, display: "flex", flexDirection: "column", gap: 6 } }, providers.map((provider) => /* @__PURE__ */ react.createElement(
+    ProviderRow,
+    {
+      key: provider.id,
+      store,
+      provider,
+      t,
+      engines,
+      editingId,
+      deletingId
+    }
+  )), /* @__PURE__ */ react.createElement(NewProviderControl, { store, t }));
+}
+function NewProviderControl(props) {
+  const { store, t } = props;
+  const state = store.getSnapshot();
+  const clickable = (state.summary?.providers.length ?? 0) > 0 && deriveProviderFormMode(state) !== "new";
+  if (clickable) {
+    return renderButton("ghost", { onClick: () => newProvider(store) }, t.newProvider);
+  }
+  return /* @__PURE__ */ react.createElement(
+    "span",
+    {
+      style: {
+        fontSize: 12,
+        color: "var(--dsw-alias-label-secondary, rgba(127,127,127,0.8))"
+      }
+    },
+    t.newProvider
+  );
+}
+function ProviderRow(props) {
+  const { store, provider, t, engines, editingId, deletingId } = props;
+  const handleRef = react.useRef(null);
+  react.useEffect(
+    () => () => {
+      handleRef.current?.cancel();
+    },
+    []
+  );
+  const engineLabel = engines.find((engine) => engine.id === provider.engine)?.label ?? provider.engine;
+  const forkName = repoShortName(provider.platform?.engineFork);
+  const titleLabel = forkName !== void 0 ? forkName : engineLabel;
+  const modelLabel = provider.model !== "" ? provider.model : t.modelAuto;
+  const statusLabel = {
+    running: t.statusRunning,
+    stopped: t.statusStopped,
+    unsure: t.statusUnsure
+  }[provider.status] ?? provider.status;
+  const title = titleLabel + ": " + modelLabel + " (" + statusLabel + ")";
+  return /* @__PURE__ */ react.createElement(
+    "div",
+    {
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "6px 8px",
+        border: "1px solid rgba(127,127,127,0.25)",
+        borderRadius: 6
+      }
+    },
+    renderStateDot(STATUS_TO_DOT[provider.status] ?? "idle"),
+    /* @__PURE__ */ react.createElement(
+      "span",
+      {
+        style: {
+          flex: 1,
+          minWidth: 0,
+          fontSize: 12,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap"
+        },
+        title,
+        "aria-label": title
+      },
+      title
+    ),
+    editingId === provider.id ? renderButton("ghost", { onClick: () => cancelProvider(store) }, t.cancel) : renderButton("ghost", { onClick: () => editProvider(store, provider) }, t.edit),
+    renderButton(
+      "ghost",
+      {
+        onClick: () => {
+          void deleteProvider(store, provider.id);
+        },
+        disabled: deletingId === provider.id
+      },
+      t.delete
+    ),
+    /* @__PURE__ */ react.createElement(EntryLaunchButton, { store, provider, t, handleRef })
+  );
+}
+function EntryLaunchButton(props) {
+  const { store, provider, t, handleRef } = props;
+  const state = store.getSnapshot();
+  const status = state.launch[provider.id]?.status ?? "idle";
+  const phaseLabels = {
+    prereqs: t.entryPrereqs,
+    download: t.entryDownloading,
+    build: t.entryBuilding,
+    launch: t.entryLaunching
+  };
+  const phaseLabel = phaseLabels[status];
+  if (phaseLabel !== void 0) {
+    return renderProcessButton({
+      busy: true,
+      label: phaseLabel,
+      busyLabel: phaseLabel,
+      variant: "ghost",
+      onClick: () => {
+      }
+    });
+  }
+  if (status === "stopping") {
+    return renderProcessButton({
+      busy: true,
+      label: t.stopping,
+      busyLabel: t.stopping,
+      variant: "ghost",
+      onClick: () => {
+      }
+    });
+  }
+  if (status === "downloading") {
+    return renderProcessButton({
+      busy: true,
+      label: t.entryDownloading,
+      busyLabel: t.entryDownloading,
+      variant: "ghost",
+      onClick: () => {
+      }
+    });
+  }
+  if (status === "running" || provider.status === "running") {
+    return renderButton(
+      "ghost",
+      {
+        onClick: () => {
+          handleRef.current = performEntryStop(store, provider);
+        }
+      },
+      t.entryStop
+    );
+  }
+  if (status === "failed") {
+    return /* @__PURE__ */ react.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () => {
+          openEntryLogs(store, provider);
+        },
+        style: { color: "var(--dsw-alias-label-error, #ff3b30)", ...GHOST_BUTTON },
+        "aria-label": t.entryLogs
+      },
+      t.entryLogs
+    );
+  }
+  return renderButton(
+    "ghost",
+    {
+      onClick: () => {
+        handleRef.current = performEntryLaunch(store, provider, t);
+      }
+    },
+    t.entryLaunch
+  );
+}
+
+// packages/client/src/render/LogsPanel.tsx
+var LOGS_MIN_HEIGHT = 96;
+var LOGS_MAX_HEIGHT = 480;
+var LOGS_BOTTOM_TOLERANCE = 4;
+function LogsPanel(props) {
+  const { store, t } = props;
+  const state = store.getSnapshot();
+  const logs = state.ui.logs;
+  const displayedLogs = deriveDisplayedLogs(state);
+  const textareaRef = react.useRef(null);
+  const dragRef = react.useRef(null);
+  const patchLogs = (patch) => {
+    const current = store.getSnapshot().ui.logs;
+    store.dispatch({ type: "ui/patch", patch: { logs: { ...current, ...patch } } });
+  };
+  react.useEffect(() => {
+    const el = textareaRef.current;
+    if (el === null) {
+      return;
+    }
+    const mode = store.getSnapshot().ui.logs.scrollMode;
+    if (mode === "fresh" || mode === "scrolling") {
+      el.scrollTop = el.scrollHeight;
+      if (mode === "fresh") {
+        patchLogs({ scrollMode: "scrolling" });
+      }
+    }
+  }, [displayedLogs, logs.scrollMode]);
+  const onLogsScroll = () => {
+    const el = textareaRef.current;
+    if (el === null) {
+      return;
+    }
+    const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - LOGS_BOTTOM_TOLERANCE;
+    patchLogs({ scrollMode: atBottom ? "scrolling" : "manual" });
+  };
+  const onLogsResizeStart = (event) => {
+    event.preventDefault();
+    dragRef.current = { startClientY: event.clientY, startHeight: logs.height };
+    const onMove = (moveEvent) => {
+      const drag = dragRef.current;
+      if (drag === null) {
+        return;
+      }
+      moveEvent.preventDefault();
+      const delta = moveEvent.clientY - drag.startClientY;
+      patchLogs({
+        height: Math.max(LOGS_MIN_HEIGHT, Math.min(LOGS_MAX_HEIGHT, drag.startHeight + delta))
+      });
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+  const chevron = getPrimitivesModule()?.IconChevronDownOutlineRegular;
+  const chevronGlyph = typeof chevron === "function" ? /* @__PURE__ */ react.createElement("span", { style: { display: "inline-flex", transform: "rotate(-45deg)" } }, react.createElement(chevron, { size: 12 })) : "\u231F";
+  return /* @__PURE__ */ react.createElement("div", { style: { marginTop: 8 } }, /* @__PURE__ */ react.createElement("div", { style: LABEL_STYLE }, t.logs), /* @__PURE__ */ react.createElement("div", { style: { position: "relative" } }, /* @__PURE__ */ react.createElement(
+    "textarea",
+    {
+      ref: textareaRef,
+      style: {
+        width: "100%",
+        height: logs.height,
+        boxSizing: "border-box",
+        resize: "none",
+        fontFamily: "monospace",
+        fontSize: 11,
+        padding: 6,
+        border: "1px solid rgba(127,127,127,0.25)",
+        borderRadius: 6,
+        color: "inherit",
+        background: "transparent"
+      },
+      value: displayedLogs,
+      readOnly: true,
+      onScroll: onLogsScroll,
+      "aria-label": t.logs
+    }
+  ), /* @__PURE__ */ react.createElement(
+    "div",
+    {
+      style: {
+        position: "absolute",
+        bottom: 0,
+        right: 0,
+        width: 16,
+        height: 16,
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "flex-end",
+        cursor: "ns-resize",
+        color: "var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))",
+        userSelect: "none",
+        touchAction: "none"
+      },
+      onPointerDown: onLogsResizeStart,
+      role: "button",
+      "aria-label": t.logs + " " + t.resize
+    },
+    chevronGlyph
+  )), /* @__PURE__ */ react.createElement("div", { style: ROW_STYLE }, /* @__PURE__ */ react.createElement("label", { style: LABEL_STYLE }, t.logLocation), /* @__PURE__ */ react.createElement(
+    "input",
+    {
+      style: INPUT_STYLE,
+      value: state.ui.logPath,
+      onChange: (event) => {
+        store.dispatch({ type: "ui/patch", patch: { logPath: event.target.value } });
+      }
+    }
+  )));
+}
+
+// packages/client/src/store/actions.ts
+function performSave(store, t) {
+  const state = store.getSnapshot();
+  const draft = state.draft;
+  if (draft === null) {
+    return Promise.resolve();
+  }
+  const editingId = state.ui.editingProviderId;
+  return performAction(
+    store,
+    "save",
+    () => postSave({
+      ...editingId !== null ? { id: editingId } : {},
+      engine: draft.engine,
+      config: draft.config,
+      allowRunDeps: state.deps !== null && state.deps.runAllowed === true,
+      platform: draft.platform ?? {},
+      showHelp: state.ui.help,
+      logPath: state.ui.logPath
+    }).then((summary) => {
+      store.dispatch({ type: "summary/ack", summary });
+      store.dispatch({
+        type: "ui/patch",
+        patch: { editingProviderId: null, providerFormMode: "collapsed" }
+      });
+      return t.saved;
+    }),
+    ACTION_TIMEOUTS.save
+  );
+}
+function performDiscard(store) {
+  store.dispatch({ type: "draft/discard" });
+  store.dispatch({
+    type: "ui/patch",
+    patch: { editingProviderId: null, providerFormMode: "collapsed" }
+  });
+  void repriceSummary(store);
+  void repriceDeps(store);
+}
+function performRegister(store, t) {
+  const state = store.getSnapshot();
+  const draft = state.draft;
+  if (draft === null) {
+    return Promise.resolve();
+  }
+  return performAction(
+    store,
+    "register",
+    () => postRegister({
+      engine: draft.engine,
+      config: draft.config,
+      agentDefault: state.ui.agentDefault
+    }).then((result) => {
+      if (result.ok && result.entry !== void 0) {
+        void repriceSummary(store, { engine: draft.engine, config: draft.config });
+        return t.registered + " " + result.entry.modelId + " as " + result.entry.providerId;
+      }
+      throw new Error(t.registerFailed + (result.detail ? ": " + result.detail : ""));
+    }),
+    ACTION_TIMEOUTS.register
+  );
+}
+function performUnregister(store, t) {
+  const state = store.getSnapshot();
+  const draft = state.draft;
+  if (draft === null) {
+    return Promise.resolve();
+  }
+  return performAction(
+    store,
+    "unregister",
+    () => postUnregister({ engine: draft.engine, config: draft.config }).then((result) => {
+      if (result.removed) {
+        void repriceSummary(store, { engine: draft.engine, config: draft.config });
+        return t.unregistered;
+      }
+      throw new Error(t.unregisterFailed);
+    }),
+    ACTION_TIMEOUTS.unregister
+  );
+}
+function performDownload(store, t) {
+  const state = store.getSnapshot();
+  const draft = state.draft;
+  if (draft === null) {
+    return Promise.resolve();
+  }
+  const model = typeof draft.config.model === "string" ? draft.config.model : void 0;
+  const directory = typeof draft.config.modelDirectory === "string" ? draft.config.modelDirectory : void 0;
+  return performAction(
+    store,
+    "download",
+    () => postDownload({
+      engine: draft.engine,
+      ...model !== void 0 ? { model } : {},
+      ...directory !== void 0 ? { directory } : {}
+    }).then((result) => {
+      if (result.ok) {
+        void repriceSummary(store, { engine: draft.engine, config: draft.config });
+        return t.downloaded;
+      }
+      throw new Error(t.downloadFailed + (result.detail ? ": " + result.detail : ""));
+    }),
+    ACTION_TIMEOUTS.download
+  );
+}
+
+// packages/client/src/Card.tsx
+function renderField(props) {
+  const { field, onValue, inlineWarnings, help, t } = props;
+  const value = field.value;
+  const control = field.control;
+  let input;
+  let comboField = false;
+  if (control.kind === "checkbox") {
+    input = /* @__PURE__ */ react.createElement(
+      "input",
+      {
+        type: "checkbox",
+        checked: value === true,
+        disabled: field.disabled,
+        style: {
+          accentColor: "var(--dsw-alias-accent, #0a84ff)",
+          colorScheme: "light dark",
+          opacity: field.disabled ? 0.5 : 1
+        },
+        onChange: (event) => onValue(field.key, event.target.checked)
+      }
+    );
+  } else if (control.kind === "dropdown") {
+    const dropdownItems = [
+      { id: "", label: "\u2014" },
+      ...control.options.map((option) => ({
+        id: String(option.value),
+        label: option.note !== void 0 ? option.label + " \xB7 " + option.note : option.label
+      }))
+    ];
+    const dropdownValue = value === void 0 || value === null ? "" : String(value);
+    const dropdownLabel = dropdownItems.find((item) => item.id === dropdownValue)?.label ?? "\u2014";
+    input = renderSelect({
+      value: dropdownValue,
+      label: dropdownLabel,
+      items: dropdownItems,
+      onSelect: (id) => onValue(field.key, id === "" ? void 0 : id),
+      disabled: field.disabled
+    });
+  } else if (control.kind === "slider") {
+    const numeric = typeof value === "number" ? value : void 0;
+    const sliderCap = control.sliderMax !== void 0 ? control.sliderMax : control.max !== void 0 ? control.max : 100;
+    const unitLabel = control.unit ? /* @__PURE__ */ react.createElement(
+      "span",
+      {
+        style: {
+          width: 48,
+          flex: "none",
+          fontSize: 11,
+          color: "var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))"
+        }
+      },
+      control.unit
+    ) : null;
+    const numberControl = {};
+    if (control.min !== void 0) {
+      numberControl.min = control.min;
+    }
+    if (control.max !== void 0) {
+      numberControl.max = control.max;
+    }
+    if (control.step !== void 0) {
+      numberControl.step = control.step;
+    }
+    const numberEntry = NumberField({
+      field: { key: field.key, value: numeric, disabled: field.disabled },
+      control: numberControl,
+      onValue
+    });
+    if (control.slider === false) {
+      input = /* @__PURE__ */ react.createElement("span", { style: { display: "flex", alignItems: "center", gap: 8, flex: 1 } }, numberEntry, unitLabel);
+    } else {
+      input = /* @__PURE__ */ react.createElement("span", { style: { display: "flex", alignItems: "center", gap: 8, flex: 1 } }, /* @__PURE__ */ react.createElement(
+        "input",
+        {
+          type: "range",
+          style: {
+            flex: 1,
+            accentColor: "var(--dsw-alias-accent, #0a84ff)",
+            colorScheme: "light dark"
+          },
+          disabled: field.disabled,
+          min: control.min !== void 0 ? control.min : 0,
+          max: sliderCap,
+          step: control.step !== void 0 ? control.step : 1,
+          value: numeric !== void 0 ? numeric : control.min !== void 0 ? control.min : 0,
+          onChange: (event) => onValue(field.key, Number(event.target.value))
+        }
+      ), numberEntry, unitLabel);
+    }
+  } else if (control.kind === "combo") {
+    comboField = true;
+    input = ChatTemplateField({
+      field: {
+        key: field.key,
+        value: value === void 0 || value === null ? "" : String(value),
+        disabled: field.disabled
+      },
+      control: {
+        options: control.options.map((option) => ({
+          value: String(option.value),
+          label: option.label,
+          ...option.note !== void 0 ? { note: option.note } : {}
+        }))
+      },
+      onValue,
+      t
+    });
+  } else {
+    const placeholder = control.kind === "text" ? control.placeholder : void 0;
+    input = /* @__PURE__ */ react.createElement(
+      "input",
+      {
+        type: "text",
+        style: { ...INPUT_STYLE, ...field.disabled ? { opacity: 0.5 } : {} },
+        disabled: field.disabled,
+        value: value === void 0 || value === null ? "" : String(value),
+        placeholder: placeholder ?? "",
+        onChange: (event) => onValue(field.key, event.target.value)
+      }
+    );
+  }
+  const body = comboField ? input : /* @__PURE__ */ react.createElement("div", { style: ROW_STYLE }, /* @__PURE__ */ react.createElement("label", { style: LABEL_STYLE }, field.label), input, field.disabled && field.disabledReason ? /* @__PURE__ */ react.createElement(
+    "span",
+    {
+      style: {
+        fontSize: 11,
+        color: "var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))"
+      }
+    },
+    field.disabledReason
+  ) : null);
+  return /* @__PURE__ */ react.createElement("div", { style: { marginTop: 6 } }, body, help ? renderHelpRow(field.description) : null, inlineWarnings.map((warning) => /* @__PURE__ */ react.createElement("div", { key: warning.id, style: INLINE_WARNING_STYLE(warning.tone) }, warning.message)));
+}
+function card(_react, localeRef, _primitives) {
+  return function Card() {
+    const store = useCardStore();
+    const state = store.getSnapshot();
+    const t = labels(localeRef.current);
+    const draftRef = react.useRef(null);
+    const repriceTimerRef = react.useRef(null);
+    const draft = state.draft;
+    react.useEffect(() => {
+      draftRef.current = draft;
+    }, [draft]);
+    const scheduleReprice = () => {
+      if (repriceTimerRef.current !== null) {
+        clearTimeout(repriceTimerRef.current);
+      }
+      repriceTimerRef.current = setTimeout(() => {
+        const latest = draftRef.current;
+        if (latest === null) {
+          return;
+        }
+        void repriceSummary(store, { engine: latest.engine, config: latest.config });
+        void repriceDeps(store, { engine: latest.engine, config: latest.config });
+      }, 300);
+    };
+    react.useEffect(() => {
+      const current = store.getSnapshot();
+      if (current.summary === null && current.draft === null) {
+        void repriceSummary(store);
+        void repriceDeps(store);
+      }
+      return () => {
+        if (repriceTimerRef.current !== null) {
+          clearTimeout(repriceTimerRef.current);
+        }
+      };
+    }, []);
+    useChatTemplateAutoDownload(store);
+    const onValue = (key, value) => {
+      const current = store.getSnapshot();
+      const currentDraft2 = current.draft;
+      if (currentDraft2 === null) {
+        return;
+      }
+      store.dispatch({
+        type: "draft/edit",
+        draft: {
+          engine: currentDraft2.engine,
+          config: { ...currentDraft2.config, [key]: value },
+          ...currentDraft2.platform !== void 0 ? { platform: currentDraft2.platform } : {}
+        }
+      });
+      scheduleReprice();
+    };
+    const onEngine = (engine) => {
+      const current = store.getSnapshot();
+      const currentDraft2 = current.draft;
+      if (currentDraft2 === null) {
+        return;
+      }
+      store.dispatch({
+        type: "draft/edit",
+        draft: {
+          engine,
+          config: {},
+          ...currentDraft2.platform !== void 0 ? { platform: currentDraft2.platform } : {}
+        }
+      });
+      scheduleReprice();
+    };
+    const onModelDirectory = (value) => {
+      const trimmed = value === void 0 || value === null ? "" : String(value).trim();
+      onValue("modelDirectory", trimmed === "" ? void 0 : trimmed);
+      const current = store.getSnapshot();
+      const currentModel = current.draft !== null && typeof current.draft.config.model === "string" ? current.draft.config.model : "";
+      const firstDefault = (current.summary?.modelDefaults ?? [])[0];
+      if (trimmed !== "" && !/\s/.test(trimmed) && currentModel === "" && firstDefault !== void 0) {
+        onValue("model", firstDefault.id);
+      }
+    };
+    const onPlatform = (field, value) => {
+      const current = store.getSnapshot();
+      const currentDraft2 = current.draft;
+      if (currentDraft2 === null) {
+        return;
+      }
+      const enginePlatform2 = {
+        ...currentDraft2.platform?.[currentDraft2.engine] ?? {},
+        [field]: value
+      };
+      const platform = { ...currentDraft2.platform ?? {}, [currentDraft2.engine]: enginePlatform2 };
+      store.dispatch({
+        type: "draft/edit",
+        draft: {
+          engine: currentDraft2.engine,
+          config: currentDraft2.config,
+          platform
+        }
+      });
+    };
+    const editingId = state.ui.editingProviderId;
+    const editedProvider = editingId !== null ? (state.summary?.providers ?? []).find((provider) => provider.id === editingId) : void 0;
+    const control = deriveLifecycleControl(state, t);
+    const onControlClick = () => {
+      if (control.target === "entry" && editedProvider !== void 0) {
+        if (control.action === "stop") {
+          performEntryStop(store, editedProvider);
+        } else if (control.action === "logs") {
+          openEntryLogs(store, editedProvider);
+        } else if (control.action === "launch") {
+          performEntryLaunch(store, editedProvider, t);
+        }
+      } else if (control.target === "draft") {
+        if (control.action === "launch") {
+          void performDraftLaunch(store, t);
+        } else if (control.action === "stop") {
+          void performDraftStop(store, t);
+        }
+      }
+    };
+    if (state.summary === null && state.draft === null) {
+      return /* @__PURE__ */ react.createElement("div", { style: CARD_STYLE }, /* @__PURE__ */ react.createElement("div", null, state.summaryNote !== "" ? state.summaryNote + " " + t.retry : t.loading));
+    }
+    const summary = state.summary;
+    const currentDraft = state.draft;
+    if (summary === null || currentDraft === null) {
+      return /* @__PURE__ */ react.createElement("div", { style: CARD_STYLE }, /* @__PURE__ */ react.createElement("div", null, state.summaryNote !== "" ? state.summaryNote + " " + t.retry : t.loading));
+    }
+    const formModel = summary.formModel;
+    const hasFields = formModel.sections.some((section) => section.fields.length > 0);
+    const inlineWarnings = summary.warningsModel?.inline ?? {};
+    const banner = summary.warningsModel?.banner;
+    const providerFormMode = deriveProviderFormMode(state);
+    const engineEntry = (summary.engines ?? []).find((entry) => entry.id === currentDraft.engine);
+    const buildModes = [];
+    if (engineEntry?.supports.local) {
+      buildModes.push("local");
+    }
+    if (engineEntry?.supports.docker) {
+      buildModes.push("docker");
+    }
+    const buildMode = typeof currentDraft.config.buildMode === "string" ? currentDraft.config.buildMode : buildModes[0] ?? "local";
+    const enginePlatform = (currentDraft.platform ?? {})[currentDraft.engine] ?? {};
+    const modelValue = typeof currentDraft.config.model === "string" ? currentDraft.config.model : "";
+    const modelItems = [
+      { id: "", label: t.modelAuto },
+      ...(summary.modelDefaults ?? []).map((model) => ({ id: model.id, label: model.label })),
+      ...(summary.modelFiles ?? []).map((file) => ({ id: file, label: file }))
+    ];
+    const downloadCell = state.actions.download;
+    const registerCell = state.actions.register;
+    const unregisterCell = state.actions.unregister;
+    const launchCell = state.actions.launch;
+    const stopCell = state.actions.stop;
+    return /* @__PURE__ */ react.createElement("div", { style: CARD_STYLE }, /* @__PURE__ */ react.createElement("style", null, "@keyframes dsh-local-infer-spin { to { transform: rotate(360deg); } }"), summary.unsureBanner !== null && summary.unsureBanner !== void 0 ? /* @__PURE__ */ react.createElement(
+      "div",
+      {
+        style: {
+          marginBottom: 12,
+          padding: 12,
+          borderRadius: 8,
+          backgroundColor: "var(--dsw-alias-surface-secondary, rgba(0,0,0,0.04))",
+          border: "1px solid var(--dsw-alias-stroke-secondary, rgba(0,0,0,0.08))"
+        }
+      },
+      /* @__PURE__ */ react.createElement(
+        "div",
+        {
+          style: {
+            fontSize: 12,
+            lineHeight: 1.5,
+            color: "var(--dsw-alias-label-primary, rgba(0,0,0,0.8))",
+            whiteSpace: "pre-line"
+          }
+        },
+        summary.unsureBanner.message
+      ),
+      summary.unsureBanner.killCommands.length > 0 ? /* @__PURE__ */ react.createElement(
+        "textarea",
+        {
+          readOnly: true,
+          value: summary.unsureBanner.killCommands.join("\n"),
+          style: {
+            marginTop: 8,
+            width: "100%",
+            minHeight: 48,
+            fontSize: 11,
+            fontFamily: "var(--dsw-alias-font-mono, monospace)",
+            colorScheme: "light dark",
+            resize: "vertical"
+          }
+        }
+      ) : null
+    ) : null, /* @__PURE__ */ react.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8
+        }
+      },
+      /* @__PURE__ */ react.createElement("div", { style: { fontWeight: 600, fontSize: 14 } }, t.section),
+      /* @__PURE__ */ react.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } }, /* @__PURE__ */ react.createElement(
+        "button",
+        {
+          type: "button",
+          style: HELP_BUTTON_STYLE(false),
+          title: t.refresh,
+          "aria-label": t.refresh,
+          onClick: () => {
+            void repriceSummary(store);
+            void repriceDeps(store);
+          }
+        },
+        "\u21BB"
+      ), /* @__PURE__ */ react.createElement(
+        "button",
+        {
+          type: "button",
+          style: HELP_BUTTON_STYLE(state.ui.help),
+          title: t.helpToggle,
+          "aria-label": t.helpToggle,
+          "aria-pressed": state.ui.help,
+          onClick: () => {
+            store.dispatch({
+              type: "ui/patch",
+              patch: { help: !state.ui.help }
+            });
+            void performSave(store, t);
+          }
+        },
+        "?"
+      ))
+    ), /* @__PURE__ */ react.createElement(ProviderList, { store, t }), providerFormMode !== "collapsed" ? /* @__PURE__ */ react.createElement("div", { style: { display: "flex", flexDirection: "column" } }, /* @__PURE__ */ react.createElement("div", { style: ROW_STYLE }, /* @__PURE__ */ react.createElement("label", { style: LABEL_STYLE }, t.engine), renderSelect({
+      value: currentDraft.engine,
+      label: (summary.engines ?? []).find((entry) => entry.id === currentDraft.engine)?.label ?? currentDraft.engine,
+      items: (summary.engines ?? []).map((engine) => ({
+        id: engine.id,
+        label: engine.label
+      })),
+      onSelect: (id) => onEngine(id)
+    })), state.ui.help ? renderHelpRow(t.engineHelp) : null, (summary.modelDefaults ?? []).length > 0 || (summary.modelFiles ?? []).length > 0 ? /* @__PURE__ */ react.createElement("div", null, /* @__PURE__ */ react.createElement("div", { style: ROW_STYLE }, /* @__PURE__ */ react.createElement("label", { style: LABEL_STYLE }, t.model), renderSelect({
+      value: modelValue,
+      label: modelItems.find((item) => item.id === modelValue)?.label ?? t.modelAuto,
+      items: modelItems,
+      onSelect: (id) => onValue("model", id === "" ? void 0 : id)
+    })), state.ui.help ? renderHelpRow(t.modelHelp) : null) : null, buildModes.length > 0 ? /* @__PURE__ */ react.createElement("div", null, /* @__PURE__ */ react.createElement("div", { style: ROW_STYLE }, /* @__PURE__ */ react.createElement("label", { style: LABEL_STYLE }, t.build), renderSelect({
+      value: buildMode,
+      label: buildModes.find((mode) => mode === buildMode) === "local" ? t.buildLocal : t.buildDocker,
+      items: buildModes.map((mode) => ({
+        id: mode,
+        label: mode === "local" ? t.buildLocal : t.buildDocker
+      })),
+      onSelect: (id) => onValue("buildMode", id)
+    })), state.ui.help ? renderHelpRow(t.buildHelp) : null) : null, /* @__PURE__ */ react.createElement("div", null, /* @__PURE__ */ react.createElement("div", { style: ROW_STYLE }, /* @__PURE__ */ react.createElement("label", { style: LABEL_STYLE }, t.modelDirectory), /* @__PURE__ */ react.createElement(
+      "input",
+      {
+        style: INPUT_STYLE,
+        type: "text",
+        value: typeof currentDraft.config.modelDirectory === "string" ? currentDraft.config.modelDirectory : "",
+        placeholder: t.dirPlaceholder,
+        onChange: (event) => onModelDirectory(event.target.value)
+      }
+    )), state.ui.help ? renderHelpRow(t.modelDirHelp) : null), summary.modelStatus !== null && summary.modelStatus !== void 0 && !summary.modelStatus.present ? summary.modelStatus.hfCli ? /* @__PURE__ */ react.createElement(
+      "div",
+      {
+        style: { display: "flex", alignItems: "center", gap: 8, marginTop: 4 }
+      },
+      /* @__PURE__ */ react.createElement(
+        "span",
+        {
+          style: {
+            flex: 1,
+            minWidth: 0,
+            fontSize: 12,
+            wordBreak: "break-all",
+            fontFamily: "var(--dsw-alias-font-mono, ui-monospace, monospace)"
+          }
+        },
+        t.hfCliDetected + " " + summary.modelStatus.downloadCommand
+      ),
+      renderProcessButton({
+        busy: downloadCell.status === "pending",
+        label: t.download,
+        busyLabel: t.downloading,
+        variant: "ghost",
+        onClick: () => {
+          void performDownload(store, t);
+        }
+      })
+    ) : /* @__PURE__ */ react.createElement("div", { style: { fontSize: 12, marginTop: 4 } }, t.noHfCli + " ", /* @__PURE__ */ react.createElement(
+      "a",
+      {
+        href: summary.modelStatus.url,
+        target: "_blank",
+        rel: "noreferrer",
+        style: { color: "var(--dsw-alias-accent, #0a84ff)" }
+      },
+      summary.modelStatus.url
+    )) : null, downloadCell.status !== "idle" && downloadCell.detail !== "" ? /* @__PURE__ */ react.createElement("div", { style: { fontSize: 12 } }, downloadCell.status === "ok" ? t.downloaded : t.downloadFailed, downloadCell.detail !== t.downloaded && downloadCell.detail !== "" ? ": " + downloadCell.detail : "") : null, summary.chatTemplateStatus !== null && summary.chatTemplateStatus !== void 0 && !summary.chatTemplateStatus.present ? ChatTemplateStatusRow({
+      status: summary.chatTemplateStatus,
+      cell: state.templateActions.download,
+      onDownload: () => {
+        const status = store.getSnapshot().summary?.chatTemplateStatus;
+        if (status !== null && status !== void 0) {
+          void downloadTemplate(store, status.repo);
+        }
+      },
+      t
+    }) : null, /* @__PURE__ */ react.createElement("div", null, /* @__PURE__ */ react.createElement("div", { style: SECTION_STYLE }, t.enginePlatform), /* @__PURE__ */ react.createElement("div", { style: ROW_STYLE }, /* @__PURE__ */ react.createElement("label", { style: LABEL_STYLE }, t.engineDirectory), /* @__PURE__ */ react.createElement(
+      "input",
+      {
+        style: INPUT_STYLE,
+        type: "text",
+        value: typeof enginePlatform.engineDirectory === "string" ? enginePlatform.engineDirectory : "",
+        placeholder: t.dirPlaceholder,
+        onChange: (event) => onPlatform(
+          "engineDirectory",
+          event.target.value === "" ? void 0 : event.target.value
+        )
+      }
+    )), state.ui.help ? renderHelpRow(t.engineDirHelp) : null, /* @__PURE__ */ react.createElement("div", { style: ROW_STYLE }, /* @__PURE__ */ react.createElement("label", { style: LABEL_STYLE }, t.engineFork), /* @__PURE__ */ react.createElement(
+      "input",
+      {
+        style: INPUT_STYLE,
+        type: "text",
+        value: typeof enginePlatform.engineFork === "string" ? enginePlatform.engineFork : "",
+        placeholder: t.forkPlaceholder,
+        onChange: (event) => onPlatform(
+          "engineFork",
+          event.target.value === "" ? void 0 : event.target.value
+        )
+      }
+    )), state.ui.help ? renderHelpRow(t.engineForkHelp) : null, buildMode === "local" ? /* @__PURE__ */ react.createElement("div", null, /* @__PURE__ */ react.createElement("div", { style: ROW_STYLE }, /* @__PURE__ */ react.createElement("label", { style: LABEL_STYLE }, t.buildCommands), /* @__PURE__ */ react.createElement(
+      "input",
+      {
+        style: INPUT_STYLE,
+        type: "text",
+        value: typeof enginePlatform.buildCommands === "string" ? enginePlatform.buildCommands : "",
+        placeholder: engineEntry?.defaultBuildCommand !== void 0 ? engineEntry.defaultBuildCommand : "",
+        onChange: (event) => onPlatform(
+          "buildCommands",
+          event.target.value === "" ? void 0 : event.target.value
+        )
+      }
+    )), state.ui.help ? renderHelpRow(t.buildCommandsHelp) : null) : null, buildMode === "docker" ? /* @__PURE__ */ react.createElement("div", null, /* @__PURE__ */ react.createElement("div", { style: ROW_STYLE }, /* @__PURE__ */ react.createElement("label", { style: LABEL_STYLE }, t.dockerTag), /* @__PURE__ */ react.createElement(
+      "input",
+      {
+        style: INPUT_STYLE,
+        type: "text",
+        value: typeof enginePlatform.dockerTag === "string" ? enginePlatform.dockerTag : "",
+        placeholder: engineEntry?.defaultDockerTag !== void 0 ? engineEntry.defaultDockerTag : "",
+        onChange: (event) => onPlatform(
+          "dockerTag",
+          event.target.value === "" ? void 0 : event.target.value
+        )
+      }
+    )), state.ui.help ? renderHelpRow(t.dockerTagHelp) : null) : null), hasFields ? formModel.sections.map((section) => /* @__PURE__ */ react.createElement("div", { key: section.group }, /* @__PURE__ */ react.createElement("div", { style: SECTION_STYLE }, section.group), section.fields.map((field) => {
+      const draftValue = currentDraft.config[field.key];
+      const effectiveField = draftValue !== void 0 ? { ...field, value: draftValue } : field;
+      return /* @__PURE__ */ react.createElement("div", { key: field.key }, renderField({
+        field: effectiveField,
+        onValue,
+        inlineWarnings: inlineWarnings[field.key] ?? [],
+        help: state.ui.help,
+        t
+      }));
+    }))) : /* @__PURE__ */ react.createElement("div", { style: { fontSize: 12, opacity: 0.7 } }, t.noParameters), banner?.visible ? /* @__PURE__ */ react.createElement(
+      "div",
+      {
+        style: WARNING_BANNER_STYLE(
+          banner.level === "error" ? "red" : banner.level === "warn" ? "amber" : "neutral"
+        )
+      },
+      /* @__PURE__ */ react.createElement("div", { style: { fontWeight: 600, marginBottom: 4 } }, banner.count + " " + (banner.count === 1 ? t.guidelineOne : t.guidelineMany) + " " + t.fired),
+      banner.warnings.map((warning) => /* @__PURE__ */ react.createElement("div", { key: warning.id }, warning.message))
+    ) : null, Meter({ meter: summary.meterModel, t }), summary.meterModel.source === "not-measured" && (summary.models ?? []).length > 0 && !currentDraft.config.model ? /* @__PURE__ */ react.createElement(
+      "div",
+      {
+        style: {
+          fontSize: 12,
+          color: "var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))"
+        }
+      },
+      t.measureHint
+    ) : null, summary.verdict && (summary.verdict.status === "over" || summary.verdict.status === "tight") ? /* @__PURE__ */ react.createElement("div", { style: BANNER_STYLE(summary.verdict.status) }, (summary.verdict.status === "over" ? t.over : t.tight) + ": " + summary.verdict.detail) : null, CustomArgsPanel({ store, t }), DepsPanel({ store, t }), /* @__PURE__ */ react.createElement(LogsPanel, { store, t }), /* @__PURE__ */ react.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 8 } }, control.kind === "phase" ? renderProcessButton({
+      busy: true,
+      label: control.label,
+      busyLabel: control.busyLabel,
+      variant: control.variant,
+      onClick: () => {
+      }
+    }) : control.kind === "stop" ? renderButton("ghost", { onClick: onControlClick }, control.label) : control.kind === "logs" ? /* @__PURE__ */ react.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: onControlClick,
+        style: { color: "var(--dsw-alias-label-error, #ff3b30)", ...GHOST_BUTTON },
+        "aria-label": control.label
+      },
+      control.label
+    ) : renderProcessButton({
+      busy: control.busy,
+      label: control.label,
+      busyLabel: control.busyLabel,
+      variant: control.variant,
+      onClick: onControlClick,
+      disabled: control.disabled
+    }), renderCheckbox({
+      checked: state.ui.autoRebuild,
+      onChange: (next) => {
+        store.dispatch({ type: "ui/patch", patch: { autoRebuild: next } });
+      },
+      label: t.autoRebuild
+    })), launchCell.status === "error" && launchCell.detail !== "" ? /* @__PURE__ */ react.createElement("div", { style: { fontSize: 12 } }, launchCell.detail === "timeout" ? t.launchFailed : launchCell.detail) : null, stopCell.status === "error" && stopCell.detail !== "" ? /* @__PURE__ */ react.createElement("div", { style: { fontSize: 12 } }, stopCell.detail === "timeout" ? t.stopFailed : stopCell.detail) : null, /* @__PURE__ */ react.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 8 } }, renderButton(
+      "ghost",
+      {
+        onClick: () => {
+          void performRegister(store, t);
+        },
+        disabled: registerCell.status === "pending" || state.dirty
+      },
+      t.register
+    ), renderCheckbox({
+      checked: state.ui.agentDefault,
+      onChange: (next) => {
+        store.dispatch({ type: "ui/patch", patch: { agentDefault: next } });
+      },
+      label: t.registerDefault
+    }), summary.registered === true ? renderButton(
+      "ghost",
+      {
+        onClick: () => {
+          void performUnregister(store, t);
+        },
+        disabled: unregisterCell.status === "pending"
+      },
+      t.unregister
+    ) : null), state.dirty && state.ui.help ? renderHelpRow(t.registerNeedsSave) : null, registerCell.status !== "idle" && registerCell.detail !== "" ? /* @__PURE__ */ react.createElement("div", { style: { fontSize: 12 } }, registerCell.status === "ok" ? registerCell.detail : t.registerFailed + (registerCell.detail !== "timeout" ? ": " + registerCell.detail : "")) : null) : null, /* @__PURE__ */ react.createElement("div", { style: FOOTER_STYLE }, renderButton(
+      "ghost",
+      {
+        onClick: () => {
+          performDiscard(store);
+        }
+      },
+      t.discard
+    ), renderButton(
+      "primary",
+      {
+        onClick: () => {
+          void performSave(store, t);
+        },
+        disabled: state.actions.save.status === "pending"
+      },
+      state.actions.save.status === "pending" ? t.saving : t.save
+    )), state.summaryNote !== "" ? /* @__PURE__ */ react.createElement("div", { style: { fontSize: 12 } }, state.summaryNote) : null);
+  };
+}
 
 // packages/client/src/plugin.ts
 var PACKAGE_NAME = "dsh-plugin-local-infer";
-function placeholderCard(react2, _localeRef, _primitives) {
-  return () => react2.createElement(
-    "div",
-    { "data-local-infer": "placeholder" },
-    "Local Infer (card under construction)"
-  );
-}
 function registerCard(ctx) {
   if (typeof ctx.inject !== "function") {
     return;
@@ -128,7 +3365,7 @@ function mountCard(ctx, localeRef) {
     primitives = null;
   }
   setPrimitivesModule(primitives);
-  const Card = placeholderCard(react2, localeRef, primitives);
+  const Card = card(react2, localeRef, primitives);
   ctx.slots.inject("plugins.bundle.config", function* () {
     yield ctx.slots.register({ name: "plugins.bundle.config", key: PACKAGE_NAME }, Card);
   });

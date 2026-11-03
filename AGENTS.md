@@ -144,3 +144,4 @@ Fetch these docs to answer questions about their covered topic.
   act --env-file .env --secret-file .secrets -s GUESTWISE_SSH_PRIVATE_KEY="${GUESTWISE_SSH_PRIVATE_KEY}" --pull=false -W .github/workflows/{{my-push-workflow}}.yml push
   act --env-file .env -W .github/workflows/{{my-schedule-workflow}}.yml schedule
   ```
+- Run `prek` to verify pre-commit hooks are successful.

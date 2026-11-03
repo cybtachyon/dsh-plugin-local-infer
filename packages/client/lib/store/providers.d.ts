@@ -17,7 +17,7 @@
  */
 import type { ProviderSummaryEntry } from 'dsh-plugin-local-infer/ui';
 import type { TextTable } from '../text.ts';
-import type { CardStore } from './sync.ts';
+import { type CardStore } from './sync.ts';
 /**
  * EntryTimerHandle is the panel's ownership of a per-entry timer: cancel
  * clears the pending poll and deadline timers and marks the run settled, so
@@ -91,4 +91,21 @@ export declare function performEntryLaunch(store: CardStore, provider: ProviderS
  * settle it.
  */
 export declare function performEntryStop(store: CardStore, provider: ProviderSummaryEntry): EntryTimerHandle;
+/**
+ * performDraftLaunch runs the form's own Launch control (the title-bar
+ * control's draft target): it reads the launch stream (keeping only the result
+ * event, the form's control shows no phase labels) and settles the draft's
+ * launch cell. A healthy result reads as running (the control becomes Stop),
+ * a not-healthy or missing result reads as the launch-failed note. The
+ * summary re-fetches so the provider's status dot repaints.
+ */
+export declare function performDraftLaunch(store: CardStore, t: TextTable): Promise<void>;
+/**
+ * performDraftStop runs the form's own Stop control (the title-bar control's
+ * draft target): it signals the tracked process through the stop route and
+ * settles the draft's stop cell. A successful stop reads as stopped (the
+ * control becomes Launch). The summary re-fetches so the provider's status
+ * dot repaints.
+ */
+export declare function performDraftStop(store: CardStore, t: TextTable): Promise<void>;
 //# sourceMappingURL=providers.d.ts.map

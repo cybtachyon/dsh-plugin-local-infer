@@ -191,8 +191,8 @@ rendered DOM and behavior identical, and verify in the GUI.
 - [x] [**T3.5 `DepsPanel`.**](docs/PLAN-TASK-T3.5-deps-panel.md)
 - [x] [**T3.6 `ProviderList` + per-entry Launch button.**](docs/PLAN-TASK-T3.6-provider-list.md)
 - [x] [**T3.7 `LogsPanel`.**](docs/PLAN-TASK-T3.7-logs-panel.md)
-- [ ] [**T3.8 `src/Card.tsx`.**](docs/PLAN-TASK-T3.8-card-tsx.md)
-- [ ] [**T3.9 Replace the hand-written artifact.**](docs/PLAN-TASK-T3.9-replace-artifact.md)
+- [x] [**T3.8 `src/Card.tsx`.**](docs/PLAN-TASK-T3.8-card-tsx.md)
+- [x] [**T3.9 Replace the hand-written artifact.**](docs/PLAN-TASK-T3.9-replace-artifact.md)
 
 ### GUI walkthrough checklist
 

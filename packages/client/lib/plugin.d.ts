@@ -36,9 +36,6 @@ export interface SlotSpec {
     id?: string;
     order?: number;
 }
-export interface LocaleRef {
-    current: string | null;
-}
 /**
  * apply is the plugin entry point: it wires the card into the host. `slots`
  * and `locale` are both optional, so neither is required here; registerCard

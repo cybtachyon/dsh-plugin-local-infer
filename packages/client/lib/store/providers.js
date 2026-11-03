@@ -15,9 +15,10 @@
  * moves the machine.
  * @module dsh-plugin-local-infer/client/store/providers
  */
-import { postLaunch, postProviderDelete, postStop } from "../api/routes.js";
+import { postLaunch, postProviderDelete, postStop, } from "../api/routes.js";
 import { LAUNCH_HEALTH_DEADLINE_MS, STOP_HEALTH_DEADLINE_MS, STOP_POLL_MS, } from "../machine/launch.js";
 import { repriceDeps, repriceSummary } from "./deps.js";
+import { ACTION_TIMEOUTS, performAction } from "./sync.js";
 // noHandle is the handle a guarded-out action returns: nothing to cancel.
 const noHandle = { cancel() { } };
 // move dispatches one launch/move event for the provider, the single path the
@@ -346,5 +347,71 @@ export function performEntryStop(store, provider) {
         // the deadline settle it.
     });
     return handle;
+}
+// draftLaunchBody builds the launch/stop body the draft-based control sends:
+// the draft's engine, config, and the per-engine platform entry (the unsaved
+// Engine Directory / Fork edits), the Auto Rebuild flag, and the provider id
+// the form is editing (the route persists the launch record on that entry).
+function draftLaunchBody(store) {
+    const state = store.getSnapshot();
+    const draft = state.draft;
+    const platform = draft !== null ? (draft.platform ?? {})[draft.engine] : undefined;
+    const body = {
+        autoRebuild: state.ui.autoRebuild,
+    };
+    if (draft !== null) {
+        body.engine = draft.engine;
+        body.config = draft.config;
+    }
+    if (platform !== undefined && draft !== null) {
+        body.platform = { [draft.engine]: platform };
+    }
+    if (state.ui.editingProviderId !== null) {
+        body.providerId = state.ui.editingProviderId;
+    }
+    return body;
+}
+/**
+ * performDraftLaunch runs the form's own Launch control (the title-bar
+ * control's draft target): it reads the launch stream (keeping only the result
+ * event, the form's control shows no phase labels) and settles the draft's
+ * launch cell. A healthy result reads as running (the control becomes Stop),
+ * a not-healthy or missing result reads as the launch-failed note. The
+ * summary re-fetches so the provider's status dot repaints.
+ */
+export function performDraftLaunch(store, t) {
+    const state = store.getSnapshot();
+    if (state.draft === null) {
+        return Promise.resolve();
+    }
+    const draft = state.draft;
+    return performAction(store, 'launch', () => postLaunch(draftLaunchBody(store)).then((result) => {
+        if (result !== null && result.healthy === true) {
+            void repriceSummary(store, { engine: draft.engine, config: draft.config });
+            return t.runningOn + ' ' + (result.plan !== undefined ? String(result.plan.port) : '');
+        }
+        if (result !== null) {
+            throw new Error(t.notHealthy + (result.detail ? ': ' + result.detail : ''));
+        }
+        throw new Error(t.launchFailed);
+    }), ACTION_TIMEOUTS.launch);
+}
+/**
+ * performDraftStop runs the form's own Stop control (the title-bar control's
+ * draft target): it signals the tracked process through the stop route and
+ * settles the draft's stop cell. A successful stop reads as stopped (the
+ * control becomes Launch). The summary re-fetches so the provider's status
+ * dot repaints.
+ */
+export function performDraftStop(store, t) {
+    const state = store.getSnapshot();
+    if (state.draft === null) {
+        return Promise.resolve();
+    }
+    const draft = state.draft;
+    return performAction(store, 'stop', () => postStop(draftLaunchBody(store)).then(() => {
+        void repriceSummary(store, { engine: draft.engine, config: draft.config });
+        return t.stopped;
+    }), ACTION_TIMEOUTS.stop);
 }
 //# sourceMappingURL=providers.js.map

@@ -245,10 +245,11 @@ describe('the provider list drivers (store/providers.ts)', () => {
         config: { model: 'in-progress' },
       })
       expect(state().dirty).toBe(false)
-      // The re-price resets the draft to the summary's stored config, the same
-      // clobber the hand-written card's fetchSummary applied.
+      // The re-price keeps the draft's config (the cached in-progress values),
+      // the improved config value display the T3.8 note requires: the freshly
+      // loaded draft is not clobbered by the re-price it triggers.
       await flush()
-      expect(state().draft?.config).toEqual({ model: 'a-model' })
+      expect(state().draft?.config).toEqual({ model: 'in-progress' })
     })
 
     it('starts from the current engine and a blank config with no cache', async () => {
@@ -271,9 +272,10 @@ describe('the provider list drivers (store/providers.ts)', () => {
         config: {},
         platform: {},
       })
-      // The re-price resets the draft to the summary's stored config.
+      // The re-price keeps the draft's config (the fresh provider's blank
+      // config), the improved config value display the T3.8 note requires.
       await flush()
-      expect(state().draft?.config).toEqual({ model: 'a-model' })
+      expect(state().draft?.config).toEqual({})
     })
   })
 

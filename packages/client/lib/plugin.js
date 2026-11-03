@@ -18,6 +18,7 @@
  * the require fallback in mountCard.
  * @module dsh-plugin-local-infer/client/plugin
  */
+import { card } from "./Card.js";
 import { routeExists } from "./api/routes.js";
 import { setPrimitivesModule } from "./render/primitives.js";
 import { setReactModule } from "./store/useCardStore.js";
@@ -26,15 +27,6 @@ import { setReactModule } from "./store/useCardStore.js";
 // installs), which is the key the package inventory uses for the
 // plugins.bundle.config slot.
 const PACKAGE_NAME = 'dsh-plugin-local-infer';
-/**
- * The placeholder card component factory. It has the same (react, localeRef,
- * primitives) shape as the real Card so T3.8 replaces it 1:1. It renders a
- * marker element and ignores localeRef and primitives, so a missing
- * primitives seed (null) still renders.
- */
-function placeholderCard(react, _localeRef, _primitives) {
-    return () => react.createElement('div', { 'data-local-infer': 'placeholder' }, 'Local Infer (card under construction)');
-}
 /**
  * registerCard wires the card into the host through the two optional seams,
  * each on its own scoped inject so a closure only runs where its service
@@ -110,7 +102,7 @@ function mountCard(ctx, localeRef) {
     // The renderers draw the seed when present and the native controls when it
     // is absent, so the resolved value (or null) is handed to them here.
     setPrimitivesModule(primitives);
-    const Card = placeholderCard(react, localeRef, primitives);
+    const Card = card(react, localeRef, primitives);
     // slots.inject waits until a slot is declared, so each host fills the one
     // it has and the other wait never fires: from dsh 0.1.6-alpha.2 on hosts
     // declare the Plugins page's, older ones only the Settings one.

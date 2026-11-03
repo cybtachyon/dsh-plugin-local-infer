@@ -87,11 +87,13 @@ export function cardReducer(state: CardState, action: CardAction): CardState {
 
 // summaryAck stores the summary (the read model), clears the summary note and
 // the streamed Get buffer (the Logs pane yields to the persisted last-run logs
-// the summary now carries), and merges the summary's persisted fields into the
-// draft field-level. The draft always carries a form to draw: the summary's
-// engine and config, with the platform entries merged per-engine so the
-// persisted platformConfigs surface and the draft's unsaved local platform
-// edits survive the re-price refetch a spec field change fires.
+// the summary now carries), and merges the summary's persisted platform fields
+// into the draft field-level. The draft is the only source for form field
+// values, so a re-price (a read) updates the summary (the meter, the warnings,
+// the provider list) but does not clobber the draft's config: the
+// freshly-loaded provider's values (or the cached in-progress ones) stay in
+// the form. Only an initial load (a null draft) seeds the draft from the
+// summary's engine and config.
 function summaryAck(state: CardState, summary: LocalInferSummary): CardState {
   const persisted = summary.platformConfigs ?? {}
   const mergedPlatform: Record<string, StoredPlatformConfig> = { ...persisted }
@@ -103,11 +105,18 @@ function summaryAck(state: CardState, summary: LocalInferSummary): CardState {
       }
     }
   }
-  const draft: CardDraft = {
-    engine: summary.engineId,
-    config: summary.config,
-    platform: mergedPlatform,
-  }
+  const draft: CardDraft =
+    state.draft !== null
+      ? {
+          engine: state.draft.engine,
+          config: state.draft.config,
+          platform: mergedPlatform,
+        }
+      : {
+          engine: summary.engineId,
+          config: summary.config,
+          platform: mergedPlatform,
+        }
   // The stored preference wins over the default; a summary that predates the
   // key keeps the descriptions visible. The log-location field seeds from the
   // stored template only when it is a non-blank string.
