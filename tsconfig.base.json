@@ -35,7 +35,8 @@
       "dsh-plugin-local-infer/service": ["./packages/service/src"],
       "dsh-plugin-local-infer/providers": ["./packages/providers/src"],
       "dsh-plugin-local-infer/tool": ["./packages/tool/src"],
-      "dsh-plugin-local-infer/ui": ["./packages/ui/src"]
+      "dsh-plugin-local-infer/ui": ["./packages/ui/src"],
+      "dsh-plugin-local-infer/client": ["./packages/client/src"]
     }
   }
 }

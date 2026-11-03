@@ -6,6 +6,7 @@
     { "path": "./packages/service" },
     { "path": "./packages/providers" },
     { "path": "./packages/tool" },
-    { "path": "./packages/ui" }
+    { "path": "./packages/ui" },
+    { "path": "./packages/client" }
   ]
 }

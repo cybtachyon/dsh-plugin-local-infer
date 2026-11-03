@@ -1,0 +1,18 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib",
+    // The card renders with the classic JSX transform: react and the
+    // primitives resolve at runtime through the shell's frozen platform
+    // module table, so the automatic runtime (react/jsx-runtime) is not
+    // available and must not be emitted.
+    "jsx": "react",
+    "jsxFactory": "react.createElement",
+    "jsxFragmentFactory": "react.Fragment"
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../ui" }
+  ]
+}

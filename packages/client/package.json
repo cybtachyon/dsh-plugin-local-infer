@@ -1,0 +1,25 @@
+{
+  "name": "dsh-plugin-local-infer-client",
+  "version": "0.1.3",
+  "description": "Browser card for the dsh local-inference plugin: the lazy-CJS module that renders the Local Infer card in the DSH Web GUI",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "local-inference",
+    "web-ui",
+    "vram"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  }
+}
