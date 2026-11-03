@@ -23,6 +23,7 @@ export interface NumberFieldProps {
     field: NumberFieldField;
     control: NumberFieldControl;
     onValue: (key: string, value: number | undefined) => void;
+    id?: string;
 }
 /**
  * NumberField renders the number input for a slider field. Typing commits

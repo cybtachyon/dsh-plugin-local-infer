@@ -29,6 +29,9 @@ export interface SelectPillProps {
   selectedId: string
   onSelect: (id: string) => void
   disabled?: boolean
+  // The pill button's element id: the row's label associates through it with
+  // htmlFor, the way the native select fallback does.
+  id?: string
 }
 
 const STYLE_ELEMENT_ID = 'dsh-local-infer-styles'
@@ -67,6 +70,7 @@ export function SelectPill(props: SelectPillProps): unknown {
       disabled={props.disabled}
       aria-haspopup="menu"
       aria-expanded={open}
+      {...(props.id !== undefined ? { id: props.id } : {})}
       onClick={() => {
         if (!props.disabled) {
           setOpen(!open)

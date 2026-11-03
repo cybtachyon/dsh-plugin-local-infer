@@ -1,7 +1,9 @@
 /**
  * The card's action sync layer: performAction drives one server mutation
- * as a pending -> ack | timeout transition over the store, and
- * ACTION_TIMEOUTS prices the per-action deadline.
+ * as a pending -> ack | timeout transition over the store,
+ * performTemplateAction drives the chat-template download over the
+ * template cell the same way, and ACTION_TIMEOUTS (plus
+ * TEMPLATE_DOWNLOAD_TIMEOUT) price the per-action deadlines.
  *
  * performAction is the only path a card server mutation takes. It
  * dispatches action/start, runs the caller's round trip, and settles the
@@ -70,6 +72,51 @@ export function performAction(store, key, run, timeoutMs) {
         settled = true;
         clearTimeout(timer);
         store.dispatch({ type: 'action/fail', key, detail: actionFailDetail(error) });
+    });
+}
+/**
+ * TEMPLATE_DOWNLOAD_TIMEOUT is the chat-template download deadline in ms:
+ * the hf CLI pull runs the long host-side work, the same cap the model
+ * download arms.
+ */
+export const TEMPLATE_DOWNLOAD_TIMEOUT = 120_000;
+/**
+ * performTemplateAction runs the chat-template download as a pending ->
+ * ack | timeout transition over the template cell, the same TCP-style
+ * lifecycle performAction gives the action cells. It dispatches
+ * template/start, awaits run(), and settles the cell with template/ack
+ * (the resolved detail) or template/fail (the rejection message); the
+ * deadline timer dispatches template/timeout and clears on settle. A
+ * second call while the first is pending returns without dispatching:
+ * the in-flight round trip owns the cell. The returned promise resolves
+ * when the cell settles and never rejects.
+ */
+export function performTemplateAction(store, run, timeoutMs) {
+    if (store.getSnapshot().templateActions.download.status === 'pending') {
+        return Promise.resolve();
+    }
+    store.dispatch({ type: 'template/start' });
+    let settled = false;
+    const timer = setTimeout(() => {
+        settled = true;
+        store.dispatch({ type: 'template/timeout' });
+    }, timeoutMs);
+    return run()
+        .then((detail) => {
+        if (settled) {
+            return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        store.dispatch({ type: 'template/ack', detail });
+    })
+        .catch((error) => {
+        if (settled) {
+            return;
+        }
+        settled = true;
+        clearTimeout(timer);
+        store.dispatch({ type: 'template/fail', detail: actionFailDetail(error) });
     });
 }
 // actionFailDetail maps a rejection to the cell's detail: an Error

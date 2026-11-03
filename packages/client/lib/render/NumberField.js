@@ -58,7 +58,7 @@ export function NumberField(props) {
             onValue(field.key, clamped);
         }
     };
-    return (react.createElement("input", { type: "number", min: control.min, max: control.max, step: control.step, value: text, disabled: field.disabled, style: {
+    return (react.createElement("input", { type: "number", min: control.min, max: control.max, step: control.step, value: text, disabled: field.disabled, ...(props.id !== undefined ? { id: props.id } : {}), style: {
             width: 88,
             flex: 'none',
             height: 32,

@@ -1,7 +1,9 @@
 /**
  * The card's action sync layer: performAction drives one server mutation
- * as a pending -> ack | timeout transition over the store, and
- * ACTION_TIMEOUTS prices the per-action deadline.
+ * as a pending -> ack | timeout transition over the store,
+ * performTemplateAction drives the chat-template download over the
+ * template cell the same way, and ACTION_TIMEOUTS (plus
+ * TEMPLATE_DOWNLOAD_TIMEOUT) price the per-action deadlines.
  *
  * performAction is the only path a card server mutation takes. It
  * dispatches action/start, runs the caller's round trip, and settles the
@@ -45,4 +47,22 @@ export declare const ACTION_TIMEOUTS: Record<ActionKey, number>;
  * truth for the result.
  */
 export declare function performAction(store: CardStore, key: ActionKey, run: () => Promise<string>, timeoutMs: number): Promise<void>;
+/**
+ * TEMPLATE_DOWNLOAD_TIMEOUT is the chat-template download deadline in ms:
+ * the hf CLI pull runs the long host-side work, the same cap the model
+ * download arms.
+ */
+export declare const TEMPLATE_DOWNLOAD_TIMEOUT = 120000;
+/**
+ * performTemplateAction runs the chat-template download as a pending ->
+ * ack | timeout transition over the template cell, the same TCP-style
+ * lifecycle performAction gives the action cells. It dispatches
+ * template/start, awaits run(), and settles the cell with template/ack
+ * (the resolved detail) or template/fail (the rejection message); the
+ * deadline timer dispatches template/timeout and clears on settle. A
+ * second call while the first is pending returns without dispatching:
+ * the in-flight round trip owns the cell. The returned promise resolves
+ * when the cell settles and never rejects.
+ */
+export declare function performTemplateAction(store: CardStore, run: () => Promise<string>, timeoutMs: number): Promise<void>;
 //# sourceMappingURL=sync.d.ts.map

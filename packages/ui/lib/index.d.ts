@@ -27,7 +27,7 @@ export { renderWarnings, toneFor } from './warnings.ts';
 export type { WarningBannerModel, WarningModel, WarningsModel, WarningTone, } from './warnings.ts';
 export type { StoredPlatformConfig } from './config.ts';
 export type { InstallResponse } from './viewmodels/depsHelpers.ts';
-export type { LocalInferSummary, ProviderSummaryEntry } from './viewmodels/summary.ts';
+export type { ChatTemplateStatusModel, LocalInferSummary, ProviderSummaryEntry, } from './viewmodels/summary.ts';
 export type { Config, RegisterResult } from 'dsh-plugin-local-infer/core';
 export type { DownloadResult, LaunchResult } from 'dsh-plugin-local-infer/service';
 /**

@@ -115,6 +115,20 @@ describe('the number input (render/NumberField.tsx)', () => {
     expect((e.props.style as Record<string, unknown>).opacity).toBe(0.5)
   })
 
+  it('applies the id so the row label can associate through htmlFor', () => {
+    const { dispatcher } = makeDispatcher()
+    const e = withDispatcher(dispatcher, () =>
+      el(NumberField({ field: { key: 'port', value: 8080 }, control: {}, onValue: () => {}, id: 'dsh-li-port' })),
+    )
+    expect(e.props.id).toBe('dsh-li-port')
+  })
+
+  it('omits the id attribute when no id is given', () => {
+    const { dispatcher } = makeDispatcher()
+    const e = render(dispatcher, { key: 'port', value: 8080 }, {}, () => {})
+    expect('id' in e.props).toBe(false)
+  })
+
   it('commits an in-range typed value snapped to the step', () => {
     const { dispatcher } = makeDispatcher()
     const spy = spyOnValue()

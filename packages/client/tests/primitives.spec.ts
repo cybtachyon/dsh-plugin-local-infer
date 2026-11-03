@@ -167,11 +167,14 @@ describe('client primitive renderers (render/primitives.tsx)', () => {
         items: [{ id: 'ninfer', label: 'NInfer' }],
         value: 'ninfer',
         onSelect: () => {},
+        id: 'engine-select',
       }),
     )
     expect(e.type).toBe(SelectPill)
     expect(e.props.Menu).toBe(MenuMarker)
     expect(e.props.selectedId).toBe('ninfer')
+    // The id flows to the pill button, so the row's label can associate.
+    expect(e.props.id).toBe('engine-select')
   })
 
   it('renderSelect falls back to a native select when the seed is absent', () => {
@@ -185,12 +188,28 @@ describe('client primitive renderers (render/primitives.tsx)', () => {
         ],
         value: 'ninfer',
         onSelect: () => {},
+        id: 'engine-select',
       }),
     )
     expect(e.type).toBe('select')
     expect(e.props.value).toBe('ninfer')
+    expect(e.props.id).toBe('engine-select')
     expect(Array.isArray(e.props.children)).toBe(true)
     expect((e.props.children as unknown[]).length).toBe(2)
+  })
+
+  it('renderSelect omits the id attribute when no id is given', () => {
+    setPrimitivesModule(null)
+    const e = el(
+      renderSelect({
+        label: 'Engine',
+        items: [{ id: 'ninfer', label: 'NInfer' }],
+        value: 'ninfer',
+        onSelect: () => {},
+      }),
+    )
+    expect(e.type).toBe('select')
+    expect('id' in e.props).toBe(false)
   })
 
   it('getPrimitivesModule reflects setPrimitivesModule', () => {

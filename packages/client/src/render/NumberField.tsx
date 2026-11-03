@@ -31,6 +31,9 @@ export interface NumberFieldProps {
   field: NumberFieldField
   control: NumberFieldControl
   onValue: (key: string, value: number | undefined) => void
+  // The input's element id: the row's label (drawn by the card) associates
+  // through it with htmlFor, so a screen reader names the control.
+  id?: string
 }
 
 /**
@@ -89,6 +92,7 @@ export function NumberField(props: NumberFieldProps): unknown {
       step={control.step}
       value={text}
       disabled={field.disabled}
+      {...(props.id !== undefined ? { id: props.id } : {})}
       style={{
         width: 88,
         flex: 'none',

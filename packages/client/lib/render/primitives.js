@@ -123,6 +123,7 @@ export function renderSelect(opts) {
             selectedId: opts.value,
             onSelect: opts.onSelect,
             disabled: opts.disabled === true,
+            id: opts.id,
         });
     }
     return react.createElement('select', {
@@ -131,6 +132,7 @@ export function renderSelect(opts) {
         disabled: opts.disabled === true,
         onChange: (event) => opts.onSelect(event.target.value),
         ...(opts.disabled === true ? { opacity: 0.5 } : {}),
+        ...(opts.id !== undefined ? { id: opts.id } : {}),
     }, ...opts.items.map((item) => react.createElement('option', { key: item.id, value: item.id }, item.label)));
 }
 //# sourceMappingURL=primitives.js.map

@@ -212,13 +212,16 @@ export function renderProcessButton(opts: ProcessButtonOpts): ReactNode {
 // One dropdown field. The DSH Menu pill when the host seeds the primitives,
 // the native select it replaces otherwise. `items` are {id, label} rows;
 // `value` is the selected id; `onSelect` receives the chosen id (an empty id
-// clears the value, the native fallback's '' option behavior).
+// clears the value, the native fallback's '' option behavior). `id` is the
+// control's element id: the row's label associates through it with htmlFor,
+// so a screen reader names the control from the label.
 export interface SelectOpts {
   label: string
   items: SelectItem[]
   value: string
   onSelect: (id: string) => void
   disabled?: boolean
+  id?: string
 }
 
 export function renderSelect(opts: SelectOpts): ReactNode {
@@ -233,6 +236,7 @@ export function renderSelect(opts: SelectOpts): ReactNode {
       selectedId: opts.value,
       onSelect: opts.onSelect,
       disabled: opts.disabled === true,
+      id: opts.id,
     }) as ReactNode
   }
   return react.createElement(
@@ -243,6 +247,7 @@ export function renderSelect(opts: SelectOpts): ReactNode {
       disabled: opts.disabled === true,
       onChange: (event: { target: { value: string } }) => opts.onSelect(event.target.value),
       ...(opts.disabled === true ? { opacity: 0.5 } : {}),
+      ...(opts.id !== undefined ? { id: opts.id } : {}),
     },
     ...opts.items.map((item) =>
       react.createElement('option', { key: item.id, value: item.id }, item.label),

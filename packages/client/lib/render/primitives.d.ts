@@ -57,6 +57,7 @@ export interface SelectOpts {
     value: string;
     onSelect: (id: string) => void;
     disabled?: boolean;
+    id?: string;
 }
 export declare function renderSelect(opts: SelectOpts): ReactNode;
 //# sourceMappingURL=primitives.d.ts.map

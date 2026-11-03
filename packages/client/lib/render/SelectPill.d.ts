@@ -23,6 +23,7 @@ export interface SelectPillProps {
     selectedId: string;
     onSelect: (id: string) => void;
     disabled?: boolean;
+    id?: string;
 }
 /**
  * injectStyles writes the selector pill's CSS once per document. A host

@@ -37,7 +37,7 @@ export function injectStyles() {
  */
 export function SelectPill(props) {
     const [open, setOpen] = react.useState(false);
-    const pill = (react.createElement("button", { type: "button", className: "dsh-li-selector", disabled: props.disabled, "aria-haspopup": "menu", "aria-expanded": open, onClick: () => {
+    const pill = (react.createElement("button", { type: "button", className: "dsh-li-selector", disabled: props.disabled, "aria-haspopup": "menu", "aria-expanded": open, ...(props.id !== undefined ? { id: props.id } : {}), onClick: () => {
             if (!props.disabled) {
                 setOpen(!open);
             }
