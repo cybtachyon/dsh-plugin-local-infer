@@ -79,6 +79,10 @@ export default defineConfig([
                 { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
             ],
             'local-infer/behavior-first-description': 'error',
+            // Every file ends with a newline. This front-loads the same check
+            // the end-of-file-fixer pre-commit hook applies, so `pnpm lint`
+            // reports a missing final newline before the commit barrier does.
+            'eol-last': ['error', 'always'],
         },
     },
 ]);
