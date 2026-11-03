@@ -5,7 +5,7 @@
 > For those who want more performance out of their specific hardware than what Unsloth gives out of the box.
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/cybtachyon/dsh-plugin-local-infer/blob/main/LICENSE)
-[![DSH 0.2.1-alpha.3](https://img.shields.io/badge/DSH-0.2.1--alpha.3-blue)](https://www.npmjs.com/package/@deepseek-ai/dsh)
+[![DSH 0.2.2-alpha.3](https://img.shields.io/badge/DSH-0.2.2--alpha.3-blue)](https://www.npmjs.com/package/@deepseek-ai/dsh)
 [![Type: DSH Plugin](https://img.shields.io/badge/Type-DSH%20Plugin-8A2BE2)](https://github.com/topics/dsh-plugin)
 
 A DeepSeek Harness plugin that manages local inference engines:
@@ -81,7 +81,7 @@ All values persist to `~/.dsh/local-infer/config.json`; the browser never sees a
 | Infernix          | No            | Yes (cmake + CUDA) | C++/CUDA fork of NInfer tuned for Qwen models on a single RTX 50-series GPU. Local build only. |
 | Strata            | Yes           | No                 | Placeholder engine; its parameter surface is empty until the flag set lands. |
 
-Runtime requirements: Node `^22.19.0 || >=24.0.0`, pnpm 12.11.2 (pinned by `mise.toml`), and the `@deepseek-ai/cordis >= 4.0.1` peer dependency.
+Runtime requirements: Node `^22.19.0 || >=24.0.0`, pnpm 12.11.2 (pinned by `mise.toml`), and the `@deepseek-ai/cordis >= 4.0.6-alpha.2` peer dependency.
 
 ## Hardware guide
 

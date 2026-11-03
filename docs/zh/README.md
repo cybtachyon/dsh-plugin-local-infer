@@ -5,7 +5,7 @@
 > 面向那些希望从特定硬件中获得比 Unsloth 开箱即用更高性能的用户。
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/cybtachyon/dsh-plugin-local-infer/blob/main/LICENSE)
-[![DSH 0.2.1-alpha.2](https://img.shields.io/badge/DSH-0.2.1--alpha.2-blue)](https://www.npmjs.com/package/@deepseek-ai/dsh)
+[![DSH 0.2.2-alpha.3](https://img.shields.io/badge/DSH-0.2.2--alpha.3-blue)](https://www.npmjs.com/package/@deepseek-ai/dsh)
 [![Type: DSH Plugin](https://img.shields.io/badge/Type-DSH%20Plugin-8A2BE2)](https://github.com/topics/dsh-plugin)
 
 一个 DeepSeek Harness 插件，用于管理本地推理引擎：
@@ -77,7 +77,7 @@ Web UI：点击 **插件** → **添加插件** → 粘贴 `dsh-plugin-local-inf
 | Infernix          | 否           | 是 (cmake + CUDA)  | NInfer 的 C++/CUDA 分支，针对单张 RTX 50 系 GPU 的 Qwen 模型调优；仅本地构建。 |
 | Strata            | 是           | 否                | 占位符引擎；在其标志集落地之前，其参数表面为空。   |
 
-运行时要求：Node `^22.19.0 || >=24.0.0`、pnpm 12.11.2（由 `mise.toml` 固定），以及 `@deepseek-ai/cordis >= 4.0.1` 同级依赖。
+运行时要求：Node `^22.19.0 || >=24.0.0`、pnpm 12.11.2（由 `mise.toml` 固定），以及 `@deepseek-ai/cordis >= 4.0.6-alpha.2` 同级依赖。
 
 ## 硬件指南
 
