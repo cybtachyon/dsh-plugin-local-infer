@@ -190,6 +190,23 @@ describe('the number input (render/NumberField.tsx)', () => {
     expect(getText()).toBe('100')
   })
 
+  it('clamps a below-min text to the minimum on blur', () => {
+    const { dispatcher, getText } = makeDispatcher()
+    const spy = spyOnValue()
+    const field = { key: 'kv', value: 5 }
+    const control = { min: 10, max: 100 }
+    const first = render(dispatcher, field, control, spy.onValue)
+    // A value below the min is held while typing, then clamped on blur.
+    ;(first.props.onChange as (ev: { target: { value: string } }) => void)({
+      target: { value: '5' },
+    })
+    expect(spy.calls).toEqual([])
+    const second = render(dispatcher, field, control, spy.onValue)
+    ;(second.props.onBlur as () => void)()
+    expect(spy.calls).toEqual([['kv', 10]])
+    expect(getText()).toBe('10')
+  })
+
   it('resets a non-numeric text to the last value on blur without committing', () => {
     const { dispatcher, getText } = makeDispatcher()
     const spy = spyOnValue()

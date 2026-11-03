@@ -1,6 +1,6 @@
 import * as reactModule from 'react'
 import type { DepsModel } from 'dsh-plugin-local-infer/ui'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { DepsPanel } from '../src/render/DepsPanel.tsx'
 import { cardReducer } from '../src/store/reducer.ts'
 import type { CardStore } from '../src/store/sync.ts'
@@ -209,5 +209,195 @@ describe('the System dependencies panel (render/DepsPanel.tsx)', () => {
     expect(el(run).props.disabled).toBe(true)
     expect(text(get)).toBe(t.getting)
     expect(el(get).props.disabled).toBe(true)
+  })
+})
+
+// The panel's control handlers: the copy button, the allow-run checkbox, and
+// the Run and Get process buttons ride the store drivers. These tests invoke
+// the rendered handlers and read the store cells they settle.
+describe('the deps panel control handlers (render/DepsPanel.tsx)', () => {
+  const t = TEXT.en
+
+  // routeFetch stubs the global fetch with a per-route answer table.
+  function routeFetch(routes: Record<string, () => Response>) {
+    const fetchMock = vi.fn(async (url: string) => {
+      const path = url.split('?')[0]
+      const factory = routes[path]
+      if (factory === undefined) {
+        return new Response(JSON.stringify({ error: 'no such route' }), { status: 404 })
+      }
+      return factory()
+    })
+    return fetchMock
+  }
+
+  function jsonAnswer(body: unknown, status = 200): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    })
+  }
+
+  // getStream builds a /local-infer/get answer whose body streams text chunks.
+  function getStream() {
+    let controller: ReadableStreamDefaultController<Uint8Array>
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        controller = c
+      },
+    })
+    const encoder = new TextEncoder()
+    return {
+      response: (): Response =>
+        new Response(stream, {
+          status: 200,
+          headers: { 'content-type': 'text/plain' },
+        }),
+      enqueue: (chunk: string) => controller.enqueue(encoder.encode(chunk)),
+      close: () => controller.close(),
+    }
+  }
+
+  async function flush(times = 30): Promise<void> {
+    for (let i = 0; i < times; i++) {
+      await Promise.resolve()
+    }
+  }
+
+  // seedDepsAndDraft builds a store with the deps model and a draft (the
+  // allow-run, install, and Get drivers read the draft's engine and config).
+  function seedDepsAndDraft(patch: Partial<DepsModel> = {}) {
+    const { store, state } = makeStore()
+    store.dispatch({ type: 'deps/ack', deps: depsWith(patch) })
+    store.dispatch({
+      type: 'draft/load',
+      draft: { engine: 'ninfer', config: { model: 'a-model' }, platform: {} },
+    })
+    return { store, state }
+  }
+
+  it('the copy button hands the install string to the clipboard and sets the note', async () => {
+    vi.useFakeTimers()
+    try {
+      const { store, state } = seedDepsAndDraft()
+      const writeText = vi.fn(() => Promise.resolve())
+      vi.stubGlobal('navigator', { clipboard: { writeText } })
+      const root = el(DepsPanel({ store, t }))
+      // The copy button is the install block's only button.
+      const installBlock = children(root)[2]
+      const copyButton = buttons(installBlock)[0]
+      ;(copyButton.props.onClick as () => void)()
+      expect(writeText).toHaveBeenCalledWith('apt install -y cuda-toolkit')
+      // The clipboard write is async; let it settle before reading the note.
+      await flush()
+      // The copied note lands over the copy label.
+      expect(state().notes.copy).toBe(t.copied)
+      // The note clears after two seconds.
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(state().notes.copy).toBe('')
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('the copy button reads as a failure on a host without a clipboard', () => {
+    const { store, state } = seedDepsAndDraft()
+    // A navigator without a clipboard (a host that predates the API) reads as
+    // a copy failure.
+    vi.stubGlobal('navigator', {})
+    try {
+      const root = el(DepsPanel({ store, t }))
+      const installBlock = children(root)[2]
+      const copyButton = buttons(installBlock)[0]
+      ;(copyButton.props.onClick as () => void)()
+      expect(state().notes.copy).toBe(t.copyFailed)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('the allow-run checkbox persists the trust gate through a settings save', async () => {
+    vi.useFakeTimers()
+    try {
+      const { store, state } = seedDepsAndDraft()
+      const fetchMock = routeFetch({
+        '/local-infer/save': () => jsonAnswer({ engineId: 'ninfer' }),
+        '/local-infer/deps': () => jsonAnswer(depsWith()),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const root = el(DepsPanel({ store, t }))
+      const controlRow = children(root)[3]
+      // The allow-run checkbox is the control row's first control: a native
+      // label wrapping the input, so the input is the label's first child.
+      const label = children(controlRow)[0]
+      const checkbox = children(label)[0]
+      ;(checkbox.props.onChange as (ev: { target: { checked: boolean } }) => void)({
+        target: { checked: false },
+      })
+      vi.advanceTimersByTime(0)
+      await flush()
+      expect(state().actions.save.status).toBe('ok')
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('the Run button runs the install route and lands the re-checked deps', async () => {
+    vi.useFakeTimers()
+    try {
+      const { store, state } = seedDepsAndDraft()
+      const fetchMock = routeFetch({
+        '/local-infer/install': () =>
+          jsonAnswer({
+            deps: depsWith({ allSatisfied: true }),
+            result: { ok: true },
+          }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const root = el(DepsPanel({ store, t }))
+      const controlRow = children(root)[3]
+      // The Run button is the control row's second control (after the checkbox).
+      const runButton = children(controlRow)[1]
+      ;(runButton.props.onClick as () => void)()
+      vi.advanceTimersByTime(0)
+      await flush()
+      expect(state().actions.install.status).toBe('ok')
+      // The re-checked deps model landed (all satisfied).
+      expect(state().deps?.allSatisfied).toBe(true)
+      expect(state().notes.deps).toBe(t.depsSatisfied)
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('the Get button streams the build and appends to the Logs buffer', async () => {
+    vi.useFakeTimers()
+    try {
+      const { store, state } = seedDepsAndDraft()
+      const stream = getStream()
+      const fetchMock = routeFetch({
+        '/local-infer/get': () => stream.response(),
+        '/local-infer/summary': () => jsonAnswer({ engineId: 'ninfer' }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const root = el(DepsPanel({ store, t }))
+      const controlRow = children(root)[3]
+      // The Get button is the control row's last control.
+      const getButton = children(controlRow)[2]
+      ;(getButton.props.onClick as () => void)()
+      vi.advanceTimersByTime(0)
+      stream.enqueue('building...\n')
+      await flush()
+      expect(state().ui.logs.getLogs).toContain('building...')
+      stream.close()
+      await flush(50)
+      expect(state().actions.get.status).toBe('ok')
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
   })
 })

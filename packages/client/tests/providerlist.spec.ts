@@ -11,7 +11,10 @@ import {
   ProviderList,
   ProviderRow,
 } from '../src/render/ProviderList.tsx'
-import { performEntryLaunch } from '../src/store/providers.ts'
+import {
+  performEntryLaunch,
+  type EntryTimerHandle,
+} from '../src/store/providers.ts'
 import { cardReducer } from '../src/store/reducer.ts'
 import type { CardStore } from '../src/store/sync.ts'
 import { initialCardState, type CardState } from '../src/store/types.ts'
@@ -378,6 +381,293 @@ describe('the per-entry Launch control (render/ProviderList.tsx EntryLaunchButto
     const throbber = renderEntry(store)
     expect(el(throbber).props.disabled).toBe(true)
     expect(el(throbber).props['aria-label']).toBe(t.entryDownloading)
+  })
+})
+
+describe('the provider list control handlers (render/ProviderList.tsx)', () => {
+  function routeFetch(routes: Record<string, () => Response>) {
+    const calls: Array<{ url: string; init?: RequestInit }> = []
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, init: init ?? {} })
+      const path = url.split('?')[0]
+      const factory = routes[path]
+      if (factory === undefined) {
+        return new Response(JSON.stringify({ error: 'no such route' }), { status: 404 })
+      }
+      return factory()
+    })
+    return { calls, fetchMock }
+  }
+
+  function jsonAnswer(body: unknown, status = 200): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'content-type': 'application/json' },
+    })
+  }
+
+  async function flush(times = 30): Promise<void> {
+    for (let i = 0; i < times; i++) {
+      await Promise.resolve()
+    }
+  }
+
+  it('the Edit button loads the provider into the form', async () => {
+    vi.useFakeTimers()
+    try {
+      const { store, state } = makeStore()
+      const provider = providerWith()
+      store.dispatch({ type: 'summary/ack', summary: summaryWith([provider]) })
+      const fetchMock = routeFetch({
+        '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
+        '/local-infer/deps': () => jsonAnswer({ engineId: 'ninfer' }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const { dispatcher } = makeDispatcher()
+      const row = withDispatcher(dispatcher, () =>
+        el(
+          ProviderRow({
+            store,
+            provider,
+            t,
+            engines: [{ id: 'ninfer', label: 'NInfer', supports: { docker: true, local: true } }],
+            editingId: null,
+            deletingId: null,
+          }),
+        ),
+      )
+      const [editButton] = buttons(row)
+      ;(editButton.props.onClick as () => void)()
+      await flush()
+      expect(state().ui.editingProviderId).toBe('p1')
+      expect(state().ui.providerFormMode).toBe('editing')
+      expect(state().draft?.config).toEqual({ model: 'a-model' })
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('the Cancel button collapses the editing form and reverts the draft', async () => {
+    vi.useFakeTimers()
+    try {
+      const { store, state } = makeStore()
+      const provider = providerWith()
+      store.dispatch({ type: 'summary/ack', summary: summaryWith([provider]) })
+      store.dispatch({
+        type: 'ui/patch',
+        patch: { editingProviderId: 'p1', providerFormMode: 'editing' },
+      })
+      store.dispatch({
+        type: 'draft/edit',
+        draft: { engine: 'ninfer', config: { model: 'staged' } },
+      })
+      const fetchMock = routeFetch({
+        '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
+        '/local-infer/deps': () => jsonAnswer({ engineId: 'ninfer' }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const { dispatcher } = makeDispatcher()
+      const row = withDispatcher(dispatcher, () =>
+        el(
+          ProviderRow({
+            store,
+            provider,
+            t,
+            engines: [{ id: 'ninfer', label: 'NInfer', supports: { docker: true, local: true } }],
+            editingId: 'p1',
+            deletingId: null,
+          }),
+        ),
+      )
+      const [cancelButton] = buttons(row)
+      expect(text(cancelButton)).toBe(t.cancel)
+      ;(cancelButton.props.onClick as () => void)()
+      await flush()
+      expect(state().ui.editingProviderId).toBeNull()
+      expect(state().dirty).toBe(false)
+      expect(state().draft?.config).toEqual({ model: 'a-model' })
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('the Delete button removes the entry through the provider-delete route', async () => {
+    vi.useFakeTimers()
+    try {
+      const { store, state } = makeStore()
+      const provider = providerWith()
+      store.dispatch({ type: 'summary/ack', summary: summaryWith([provider]) })
+      const { calls, fetchMock } = routeFetch({
+        '/local-infer/provider-delete': () => jsonAnswer(summaryWith([])),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const { dispatcher } = makeDispatcher()
+      const row = withDispatcher(dispatcher, () =>
+        el(
+          ProviderRow({
+            store,
+            provider,
+            t,
+            engines: [{ id: 'ninfer', label: 'NInfer', supports: { docker: true, local: true } }],
+            editingId: null,
+            deletingId: null,
+          }),
+        ),
+      )
+      const [, deleteButton] = buttons(row)
+      ;(deleteButton.props.onClick as () => void)()
+      await flush()
+      expect(calls.some((c) => c.url === '/local-infer/provider-delete')).toBe(true)
+      expect(state().summary?.providers).toEqual([])
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('the new-provider control starts a fresh provider', async () => {
+    vi.useFakeTimers()
+    try {
+      const { store, state } = makeStore()
+      const provider = providerWith()
+      store.dispatch({ type: 'summary/ack', summary: summaryWith([provider]) })
+      const fetchMock = routeFetch({
+        '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
+        '/local-infer/deps': () => jsonAnswer({ engineId: 'ninfer' }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const control = el(NewProviderControl({ store, t }))
+      ;(control.props.onClick as () => void)()
+      await flush()
+      expect(state().ui.providerFormMode).toBe('new')
+      expect(state().draft?.config).toEqual({})
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('the entry Launch button starts the entry launch machine', async () => {
+    vi.useFakeTimers()
+    try {
+      const { store, state } = makeStore()
+      const provider = providerWith()
+      store.dispatch({ type: 'summary/ack', summary: summaryWith([provider]) })
+      const stream = launchStream()
+      const fetchMock = routeFetch({
+        '/local-infer/launch': () => stream.response(),
+        '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const handleRef: { current: EntryTimerHandle | null } = { current: null }
+      const launch = el(
+        EntryLaunchButton({ store, provider, t, handleRef }),
+      )
+      ;(launch.props.onClick as () => void)()
+      // The click armed the entry's timer handle and started the machine at
+      // the prereqs phase (the start event).
+      expect(handleRef.current).not.toBe(null)
+      expect(state().launch['p1']?.status).toBe('prereqs')
+      handleRef.current?.cancel()
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('the entry Stop button moves the machine to stopping', async () => {
+    vi.useFakeTimers()
+    try {
+      const { store, state } = makeStore()
+      const provider = providerWith({ status: 'running' })
+      store.dispatch({ type: 'summary/ack', summary: summaryWith([provider]) })
+      // The launch machine stays idle (no phase), so the running provider
+      // status reads as the Stop control, not a rebuild throbber.
+      const fetchMock = routeFetch({
+        '/local-infer/stop': () => jsonAnswer({ stopped: true }),
+        '/local-infer/summary': () => jsonAnswer(summaryWith([providerWith({ status: 'stopped' })])),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const handleRef: { current: EntryTimerHandle | null } = { current: null }
+      const stop = el(EntryLaunchButton({ store, provider, t, handleRef }))
+      ;(stop.props.onClick as () => void)()
+      expect(state().launch['p1']?.status).toBe('stopping')
+      handleRef.current?.cancel()
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('the entry Logs button opens the entry for editing and resets the machine', async () => {
+    vi.useFakeTimers()
+    try {
+      const { store, state } = makeStore()
+      const provider = providerWith()
+      store.dispatch({ type: 'summary/ack', summary: summaryWith([provider]) })
+      store.dispatch({ type: 'launch/move', providerId: 'p1', event: { type: 'start' } })
+      store.dispatch({ type: 'launch/move', providerId: 'p1', event: { type: 'failed' } })
+      const fetchMock = routeFetch({
+        '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
+        '/local-infer/deps': () => jsonAnswer({ engineId: 'ninfer' }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const handleRef: { current: EntryTimerHandle | null } = { current: null }
+      const logs = el(EntryLaunchButton({ store, provider, t, handleRef }))
+      ;(logs.props.onClick as () => void)()
+      await flush()
+      expect(state().ui.editingProviderId).toBe('p1')
+      expect(state().launch['p1']?.status).toBe('idle')
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
+  })
+})
+
+describe('the fork title short name (render/ProviderList.tsx repoShortName)', () => {
+  function titleFor(fork: unknown): string {
+    const { store } = makeStore()
+    const provider = providerWith({ platform: { engineFork: fork } as never })
+    store.dispatch({ type: 'summary/ack', summary: summaryWith([provider]) })
+    const { dispatcher } = makeDispatcher()
+    const row = withDispatcher(dispatcher, () =>
+      el(
+        ProviderRow({
+          store,
+          provider,
+          t,
+          engines: [{ id: 'ninfer', label: 'NInfer', supports: { docker: true, local: true } }],
+          editingId: null,
+          deletingId: null,
+        }),
+      ),
+    )
+    const title = children(row).find((c) => c.type === 'span' && c.props['aria-label'])
+    return String(title?.props['aria-label'] ?? '')
+  }
+
+  it('reads a protocol URL as its owner/repo', () => {
+    expect(titleFor('https://github.com/Ninfer/ninfer-all')).toContain('Ninfer/ninfer-all')
+  })
+
+  it('reads an scp-style reference as its owner/repo', () => {
+    expect(titleFor('git@github.com:Ninfer/ninfer-all')).toContain('Ninfer/ninfer-all')
+  })
+
+  it('strips a trailing .git from the repo name', () => {
+    expect(titleFor('https://github.com/Ninfer/ninfer-all.git')).toContain('Ninfer/ninfer-all')
+  })
+
+  it('reads a bare string as its repo name (no owner)', () => {
+    // A bare string with no slash reads as the repo name alone.
+    expect(titleFor('ninfer')).toBe('ninfer: a-model (' + t.statusStopped + ')')
+  })
+
+  it('falls back to the engine label for a non-string fork', () => {
+    expect(titleFor(undefined)).toBe('NInfer: a-model (' + t.statusStopped + ')')
   })
 })
 

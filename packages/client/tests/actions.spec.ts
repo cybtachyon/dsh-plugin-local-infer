@@ -228,6 +228,152 @@ describe('the form server-mutation drivers (store/actions.ts)', () => {
   })
 })
 
+describe('the form driver error paths and guards (store/actions.ts)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  it('a driver with no draft resolves without a round trip', async () => {
+    const { store, state } = makeStore()
+    // No draft loaded: the save, register, unregister, and download drivers
+    // all resolve without touching the network.
+    const { calls, fetchMock } = routeFetch({
+      '/local-infer/save': () => jsonAnswer({}),
+      '/local-infer/register': () => jsonAnswer({ ok: true }),
+      '/local-infer/unregister': () => jsonAnswer({ removed: true }),
+      '/local-infer/download': () => jsonAnswer({ ok: true }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    await Promise.all([
+      performSave(store, t),
+      performRegister(store, t),
+      performUnregister(store, t),
+      performDownload(store, t),
+    ])
+    expect(calls).toHaveLength(0)
+    expect(state().actions.save.status).toBe('idle')
+  })
+
+  it('performRegister settles to error when the route refuses the write', async () => {
+    const { store, state } = makeStore()
+    seedDraft(store)
+    const { fetchMock } = routeFetch({
+      '/local-infer/register': () => jsonAnswer({ ok: false, detail: 'model exists' }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const promise = performRegister(store, t)
+    vi.advanceTimersByTime(0)
+    await flush()
+    await promise
+    expect(state().actions.register.status).toBe('error')
+    expect(state().actions.register.detail).toBe(t.registerFailed + ': model exists')
+  })
+
+  it('performUnregister settles to error when nothing was removed', async () => {
+    const { store, state } = makeStore()
+    seedDraft(store)
+    const { fetchMock } = routeFetch({
+      '/local-infer/unregister': () => jsonAnswer({ removed: false }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const promise = performUnregister(store, t)
+    vi.advanceTimersByTime(0)
+    await flush()
+    await promise
+    expect(state().actions.unregister.status).toBe('error')
+    expect(state().actions.unregister.detail).toBe(t.unregisterFailed)
+  })
+
+  it('performDownload settles to error when the pull fails', async () => {
+    const { store, state } = makeStore()
+    seedDraft(store)
+    const { fetchMock } = routeFetch({
+      '/local-infer/download': () => jsonAnswer({ ok: false, detail: 'no such model' }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const promise = performDownload(store, t)
+    vi.advanceTimersByTime(0)
+    await flush()
+    await promise
+    expect(state().actions.download.status).toBe('error')
+    expect(state().actions.download.detail).toBe(t.downloadFailed + ': no such model')
+  })
+})
+
+describe('the draft-based launch/stop guards (store/providers.ts)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  it('performDraftLaunch resolves without a round trip when there is no draft', async () => {
+    const { store, state } = makeStore()
+    const { calls, fetchMock } = routeFetch({
+      '/local-infer/launch': () => jsonAnswer({ healthy: true }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    await performDraftLaunch(store, t)
+    expect(calls).toHaveLength(0)
+    expect(state().actions.launch.status).toBe('idle')
+  })
+
+  it('performDraftLaunch settles to error when the result is not healthy', async () => {
+    const { store, state } = makeStore()
+    seedDraft(store)
+    const stream = launchStream()
+    const { fetchMock } = routeFetch({
+      '/local-infer/launch': () => stream.response(),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const promise = performDraftLaunch(store, t)
+    vi.advanceTimersByTime(0)
+    stream.enqueue('{"result":{"healthy":false,"detail":"no gpu"}}')
+    stream.close()
+    await flush(50)
+    await promise
+    expect(state().actions.launch.status).toBe('error')
+    expect(state().actions.launch.detail).toBe(t.notHealthy + ': no gpu')
+  })
+
+  it('performDraftLaunch settles to error when the stream ends without a result', async () => {
+    const { store, state } = makeStore()
+    seedDraft(store)
+    const stream = launchStream()
+    const { fetchMock } = routeFetch({
+      '/local-infer/launch': () => stream.response(),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const promise = performDraftLaunch(store, t)
+    vi.advanceTimersByTime(0)
+    // The stream ends with no result event: the launch reads as failed.
+    stream.close()
+    await flush(50)
+    await promise
+    expect(state().actions.launch.status).toBe('error')
+    expect(state().actions.launch.detail).toBe(t.launchFailed)
+  })
+
+  it('performDraftStop resolves without a round trip when there is no draft', async () => {
+    const { store, state } = makeStore()
+    const { calls, fetchMock } = routeFetch({
+      '/local-infer/stop': () => jsonAnswer({ ok: true }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    await performDraftStop(store, t)
+    expect(calls).toHaveLength(0)
+    expect(state().actions.stop.status).toBe('idle')
+  })
+})
+
 describe('the draft-based launch/stop drivers (store/providers.ts)', () => {
   beforeEach(() => {
     vi.useFakeTimers()

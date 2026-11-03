@@ -1,5 +1,5 @@
 import * as reactModule from 'react'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import {
   getPrimitivesModule,
   renderButton,
@@ -96,6 +96,20 @@ describe('client primitive renderers (render/primitives.tsx)', () => {
     setPrimitivesModule(null)
     const e = el(renderCheckbox({ checked: false, label: 'Auto', onChange: () => {} }))
     expect(e.type).toBe('label')
+  })
+
+  it('the native checkbox fallback reports the checked state through onChange', () => {
+    setPrimitivesModule(null)
+    const onChange = vi.fn()
+    const e = el(renderCheckbox({ checked: false, label: 'Auto', onChange }))
+    // The input is the label's first child.
+    const input = (e.props.children as unknown[]).find(
+      (x) => typeof x === 'object' && x !== null && (x as El).type === 'input',
+    ) as El
+    ;(input.props.onChange as (ev: { target: { checked: boolean } }) => void)({
+      target: { checked: true },
+    })
+    expect(onChange).toHaveBeenCalledWith(true)
   })
 
   it('renderStateDot draws the seed StateDot when present', () => {

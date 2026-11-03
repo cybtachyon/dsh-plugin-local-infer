@@ -1,7 +1,13 @@
 import * as reactModule from 'react'
-import { beforeAll, describe, expect, it } from 'vitest'
+import type { LocalInferSummary } from 'dsh-plugin-local-infer/ui'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { card } from '../src/Card.tsx'
-import { setReactModule, type ReactLike } from '../src/store/useCardStore.ts'
+import {
+  setReactModule,
+  type CardStoreInstance,
+  type ReactLike,
+} from '../src/store/useCardStore.ts'
+import type { CardDraft } from '../src/store/types.ts'
 import { TEXT } from '../src/text.ts'
 
 const t = TEXT.en
@@ -10,10 +16,16 @@ const t = TEXT.en
 // element tree without a renderer, so no react-dom is needed.
 type El = { type: unknown; props?: Record<string, unknown> }
 // text reads the element tree's text content, flattening strings, numbers,
-// and nested element arrays.
+// and nested element arrays (a JSX map array carries the rows).
 function text(node: unknown): string {
-  if (node === null || node === undefined || typeof node !== 'object') {
-    return String(node ?? '')
+  if (node === null || node === undefined) {
+    return ''
+  }
+  if (typeof node !== 'object') {
+    return String(node)
+  }
+  if (Array.isArray(node)) {
+    return node.map((x) => text(x)).join('')
   }
   const e = node as El
   const c = e.props?.children
@@ -22,6 +34,32 @@ function text(node: unknown): string {
   }
   const list = Array.isArray(c) ? c : [c]
   return list.map((x) => text(x)).join('')
+}
+// children flattens the element's children (a single child, an array, or a
+// nested JSX map array), dropping the null entries a conditional emits.
+function children(e: El): El[] {
+  const c = e.props?.children
+  if (c === undefined || c === null) {
+    return []
+  }
+  const list = Array.isArray(c) ? c : [c]
+  return list
+    .flatMap((x): unknown => (x === null || x === undefined ? [] : Array.isArray(x) ? x : [x]))
+    .filter((x): x is unknown => x !== null && x !== undefined)
+    .map((x) => x as El)
+}
+// findAll walks the element tree and collects every element matching the
+// predicate, in render order.
+function findAll(node: unknown, pred: (e: El) => boolean): El[] {
+  if (node === null || node === undefined || typeof node !== 'object') {
+    return []
+  }
+  const e = node as El
+  const own = pred(e) ? [e] : []
+  return [...own, ...children(e).flatMap((c) => findAll(c, pred))]
+}
+function find(node: unknown, pred: (e: El) => boolean): El | undefined {
+  return findAll(node, pred)[0]
 }
 
 // The react internals the hook dispatcher stub plugs into. React 18's hooks
@@ -47,7 +85,7 @@ function withDispatcher<T>(dispatcher: unknown, fn: () => T): T {
 
 // The dispatcher the card tests drive: it records the refs (the store ref,
 // the draft ref, the re-price timer) and the effects, so a test reads the
-// store and fires the unmount cleanup.
+// store and fires the effects and the unmount cleanup.
 function makeDispatcher() {
   const refs: Array<{ current: unknown }> = []
   const effects: Array<() => void | (() => void)> = []
@@ -75,11 +113,232 @@ function makeDispatcher() {
         effect()
       }
     },
+    // Run each effect's cleanup (the unmount path), the way React does.
+    runCleanups: () => {
+      for (const effect of effects) {
+        const cleanup = effect()
+        if (typeof cleanup === 'function') {
+          cleanup()
+        }
+      }
+    },
     // Reset the ref call index between renders (the hooks run in the same
     // order, so the same index maps to the same ref).
     resetForRerender: () => {
       refCallIndex = 0
     },
+  }
+}
+
+// fullSummary builds a summary that exercises the card's branches: the form
+// fields (every control kind), the model rows, the meter, and the optional
+// banner / status / verdict cells the tests toggle.
+function fullSummary(patch: Partial<LocalInferSummary> = {}): LocalInferSummary {
+  const base: LocalInferSummary = {
+    engineId: 'ninfer',
+    config: { model: 'a-model' },
+    providers: [],
+    lastLogs: '',
+    engines: [
+      {
+        id: 'ninfer',
+        label: 'NInfer',
+        supports: { docker: true, local: true },
+        defaultBuildCommand: 'make ninfer',
+        defaultDockerTag: 'ninfer:latest',
+      },
+    ],
+    models: [{ id: 'a-model', source: 'local' }],
+    formModel: {
+      sections: [
+        {
+          group: 'General',
+          fields: [
+            {
+              key: 'flag',
+              label: 'Flag',
+              description: 'a flag',
+              group: 'General',
+              control: { kind: 'checkbox' },
+              value: true,
+              disabled: false,
+              disabledReason: null,
+            },
+            {
+              key: 'enum',
+              label: 'Enum',
+              description: 'an enum',
+              group: 'General',
+              control: {
+                kind: 'dropdown',
+                options: [
+                  { value: 'a', label: 'A' },
+                  { value: 'b', label: 'B', note: 'the b note' },
+                ],
+              },
+              value: 'a',
+              disabled: false,
+              disabledReason: null,
+            },
+            {
+              key: 'num',
+              label: 'Num',
+              description: 'a number',
+              group: 'General',
+              control: { kind: 'slider', min: 0, max: 10, step: 1, unit: 'GB' },
+              value: 5,
+              disabled: false,
+              disabledReason: null,
+            },
+            {
+              key: 'port',
+              label: 'Port',
+              description: 'a port',
+              group: 'General',
+              control: { kind: 'slider', min: 1, max: 65535, slider: false },
+              value: 8080,
+              disabled: false,
+              disabledReason: null,
+            },
+            {
+              key: 'template',
+              label: 'Template',
+              description: 'a template',
+              group: 'General',
+              control: {
+                kind: 'combo',
+                options: [
+                  { value: 'preset1', label: 'Preset 1' },
+                  { value: 'custom', label: 'Custom' },
+                ],
+              },
+              value: 'preset1',
+              disabled: false,
+              disabledReason: null,
+            },
+            {
+              key: 'path',
+              label: 'Path',
+              description: 'a path',
+              group: 'General',
+              control: { kind: 'text', placeholder: 'type a path' },
+              value: '/tmp',
+              disabled: false,
+              disabledReason: null,
+            },
+            {
+              key: 'dir',
+              label: 'Dir',
+              description: 'a dir',
+              group: 'General',
+              control: { kind: 'picker' },
+              value: '/models',
+              disabled: false,
+              disabledReason: null,
+            },
+          ],
+        },
+      ],
+    },
+    meterModel: { source: 'not-measured', segments: [], unknownEngines: null },
+    verdict: null,
+    warningsModel: {
+      banner: { visible: false, level: null, count: 0, warnings: [] },
+      inline: {},
+    },
+    ...patch,
+  } as unknown as LocalInferSummary
+  return base
+}
+
+// The draft the full-card tests bind the fields to.
+function fullDraft(): CardDraft {
+  return {
+    engine: 'ninfer',
+    config: {
+      flag: true,
+      enum: 'a',
+      num: 5,
+      port: 8080,
+      template: 'preset1',
+      path: '/tmp',
+      dir: '/models',
+      modelDirectory: '/mdl',
+      model: 'a-model',
+      buildMode: 'local',
+    },
+    platform: { ninfer: { engineDirectory: '/eng' } },
+  }
+}
+
+// renderCard renders the card over a seeded store: the first render creates
+// the per-mount store, the seed lands before the effects run (so the mount
+// effect reads the seeded state and skips the initial fetch), and the
+// re-render draws the full card.
+function renderCard(opts: {
+  summary?: LocalInferSummary
+  draft?: CardDraft
+  ui?: Record<string, unknown>
+}) {
+  const Component = card(null, { current: 'en' }, null)
+  const { dispatcher, getRef, runEffects, runCleanups, resetForRerender } = makeDispatcher()
+  withDispatcher(dispatcher, () => {
+    Component()
+  })
+  const store = (getRef(0) as { current: CardStoreInstance | null }).current
+  expect(store).not.toBe(null)
+  if (opts.summary !== undefined) {
+    store.dispatch({ type: 'summary/ack', summary: opts.summary })
+  }
+  if (opts.ui !== undefined) {
+    store.dispatch({ type: 'ui/patch', patch: opts.ui })
+  }
+  if (opts.draft !== undefined) {
+    store.dispatch({ type: 'draft/load', draft: opts.draft })
+  }
+  runEffects()
+  resetForRerender()
+  const tree = withDispatcher(dispatcher, () => Component())
+  // Re-run the effects so the draft-mirror effect (which closes over the
+  // re-render's draft, not the first render's null) updates its ref. The
+  // debounced re-price reads that ref, so it must see the seeded draft.
+  runEffects()
+  return {
+    tree,
+    store,
+    rerender: () => {
+      resetForRerender()
+      return withDispatcher(dispatcher, () => Component())
+    },
+    runCleanups,
+  }
+}
+
+// routeFetch stubs the global fetch with a per-route answer table.
+function routeFetch(routes: Record<string, () => Response>) {
+  const calls: Array<{ url: string }> = []
+  const fetchMock = vi.fn(async (url: string) => {
+    calls.push({ url })
+    const path = url.split('?')[0]
+    const factory = routes[path]
+    if (factory === undefined) {
+      return new Response(JSON.stringify({ error: 'no such route' }), { status: 404 })
+    }
+    return factory()
+  })
+  return { calls, fetchMock }
+}
+
+function jsonAnswer(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+async function flush(times = 20): Promise<void> {
+  for (let i = 0; i < times; i++) {
+    await Promise.resolve()
   }
 }
 
@@ -89,54 +348,308 @@ beforeAll(() => {
 
 describe('the card composer (src/Card.tsx)', () => {
   it('the card factory returns a component', () => {
-    const Component = card(null, { current: "en" }, null)
+    const Component = card(null, { current: 'en' }, null)
     expect(typeof Component).toBe('function')
   })
 
   it('renders the loading state while there is no summary and no draft', () => {
-    const Component = card(null, { current: "en" }, null)
-    const { dispatcher, runEffects } = makeDispatcher()
-    const rendered = withDispatcher(dispatcher, () => Component())
-    runEffects()
-    expect(typeof rendered).toBe('object')
-    expect(text(rendered)).toBe(t.loading)
+    const { tree, store } = renderCard({})
+    expect(text(tree)).toBe(t.loading)
+    expect(store.getSnapshot().summary).toBe(null)
   })
 
   it('renders the card frame with a summary and a draft', () => {
-    const Component = card(null, { current: "en" }, null)
-    const { dispatcher, getRef, runEffects, resetForRerender } = makeDispatcher()
-    withDispatcher(dispatcher, () => {
-      Component()
+    const { tree } = renderCard({ summary: fullSummary(), draft: fullDraft() })
+    expect(text(tree)).toContain(t.section)
+  })
+
+  it('renders the full form: every control kind, the platform rows, and the control row', () => {
+    const { tree } = renderCard({ summary: fullSummary(), draft: fullDraft() })
+    // The checkbox field (the first checkbox in the tree).
+    const checkboxes = findAll(tree, (e) => e.type === 'input' && e.props?.type === 'checkbox')
+    expect(checkboxes.length).toBeGreaterThanOrEqual(1)
+    // The dropdown field (a native select bound to the draft value 'a').
+    const enumSelect = find(tree, (e) => e.type === 'select' && e.props?.value === 'a')
+    expect(enumSelect).toBeDefined()
+    // The slider field (a range input bound to 5).
+    const range = find(tree, (e) => e.type === 'input' && e.props?.type === 'range')
+    expect(range).toBeDefined()
+    // The slider:false field (a number input, no range strip).
+    const number = find(tree, (e) => e.type === 'input' && e.props?.type === 'number')
+    expect(number).toBeDefined()
+    // The combo field (the preset select bound to 'preset1').
+    const comboSelect = find(tree, (e) => e.type === 'select' && e.props?.value === 'preset1')
+    expect(comboSelect).toBeDefined()
+    // The text and picker fields (free-text inputs bound to their values).
+    expect(find(tree, (e) => e.type === 'input' && e.props?.value === '/tmp')).toBeDefined()
+    expect(find(tree, (e) => e.type === 'input' && e.props?.value === '/models')).toBeDefined()
+    // The model directory and the platform engine directory rows.
+    expect(find(tree, (e) => e.type === 'input' && e.props?.value === '/mdl')).toBeDefined()
+    expect(find(tree, (e) => e.type === 'input' && e.props?.value === '/eng')).toBeDefined()
+    // The control row carries the auto-rebuild checkbox and the register row.
+    expect(text(tree)).toContain(t.autoRebuild)
+    expect(text(tree)).toContain(t.register)
+  })
+
+  it('edits a field through onValue, dispatching a draft edit', () => {
+    const { tree, store } = renderCard({ summary: fullSummary(), draft: fullDraft() })
+    const checkbox = findAll(tree, (e) => e.type === 'input' && e.props?.type === 'checkbox')[0]
+    ;(checkbox.props?.onChange as (ev: { target: { checked: boolean } }) => void)({
+      target: { checked: false },
     })
-    runEffects()
-    // The store ref is the first useRef the card (and useCardStore) records.
-    // Seed it with a summary and a draft, then re-render.
-    const storeRef = getRef(0)
-    const store = storeRef.current as {
-      dispatch: (action: unknown) => void
+    expect(store.getSnapshot().draft?.config.flag).toBe(false)
+    expect(store.getSnapshot().dirty).toBe(true)
+  })
+
+  it('switches the engine through onEngine, resetting the config', () => {
+    const { tree, store } = renderCard({ summary: fullSummary(), draft: fullDraft() })
+    const engineSelect = find(tree, (e) => e.type === 'select' && e.props?.value === 'ninfer')
+    ;(engineSelect?.props?.onChange as (ev: { target: { value: string } }) => void)({
+      target: { value: 'strata' },
+    })
+    const draft = store.getSnapshot().draft
+    expect(draft?.engine).toBe('strata')
+    // The config resets to blank for the new engine.
+    expect(draft?.config).toEqual({})
+  })
+
+  it('auto-fills the model from the first default when a directory is typed', () => {
+    const summary = fullSummary({
+      modelDefaults: [{ id: 'default-model', label: 'Default Model' }],
+    })
+    const draft = fullDraft()
+    delete (draft.config as Record<string, unknown>).model
+    const { tree, store } = renderCard({ summary, draft })
+    const dirInput = find(tree, (e) => e.type === 'input' && e.props?.value === '/mdl')
+    ;(dirInput?.props?.onChange as (ev: { target: { value: string } }) => void)({
+      target: { value: '/new-dir' },
+    })
+    // The directory landed, and the blank model auto-filled from the default.
+    expect(store.getSnapshot().draft?.config.modelDirectory).toBe('/new-dir')
+    expect(store.getSnapshot().draft?.config.model).toBe('default-model')
+  })
+
+  it('edits a platform field through onPlatform, keeping the per-engine entry', () => {
+    const { tree, store } = renderCard({ summary: fullSummary(), draft: fullDraft() })
+    const engDir = find(tree, (e) => e.type === 'input' && e.props?.value === '/eng')
+    ;(engDir?.props?.onChange as (ev: { target: { value: string } }) => void)({
+      target: { value: '/eng2' },
+    })
+    expect(store.getSnapshot().draft?.platform?.ninfer?.engineDirectory).toBe('/eng2')
+  })
+
+  it('routes the title-bar control to the draft launch and stop actions', () => {
+    vi.useFakeTimers()
+    try {
+      const { tree, store } = renderCard({ summary: fullSummary(), draft: fullDraft() })
+      // The control reads as a Launch (the draft is idle). Click it.
+      const launchBtn = find(
+        tree,
+        (e) => e.type === 'button' && text(e) === t.launch,
+      )
+      expect(launchBtn).toBeDefined()
+      ;(launchBtn?.props?.onClick as () => void)()
+      expect(store.getSnapshot().actions.launch.status).toBe('pending')
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
     }
-    expect(store).not.toBe(null)
-    store.dispatch({
-      type: 'summary/ack',
-      summary: {
-        engineId: 'ninfer',
-        config: { model: 'a-model' },
-        providers: [],
-        engines: [{ id: 'ninfer', label: 'NInfer', supports: { docker: true, local: true } }],
-        formModel: { sections: [] },
-        meterModel: { source: 'not-measured', segments: [], unknownEngines: null },
-        verdict: null,
-        warningsModel: { banner: { visible: false, level: null, count: 0, warnings: [] }, inline: {} },
+  })
+
+  it('renders the unsure banner with the kill commands', () => {
+    const summary = fullSummary({
+      unsureBanner: {
+        message: 'an engine may be running',
+        killCommands: ['pkill ninfer'],
       },
+    } as unknown as LocalInferSummary)
+    const { tree } = renderCard({ summary, draft: fullDraft() })
+    expect(text(tree)).toContain('an engine may be running')
+    // The kill commands read as the textarea's value, not its text content.
+    const textarea = find(tree, (e) => e.type === 'textarea')
+    expect(textarea?.props?.value).toBe('pkill ninfer')
+  })
+
+  it('renders the model download button when the hf CLI is detected', () => {
+    const summary = fullSummary({
+      modelStatus: {
+        present: false,
+        hfCli: true,
+        downloadCommand: 'hf download a-model',
+        url: 'https://hf.co/a-model',
+      },
+    } as unknown as LocalInferSummary)
+    const { tree } = renderCard({ summary, draft: fullDraft() })
+    expect(text(tree)).toContain(t.hfCliDetected)
+    expect(text(tree)).toContain('hf download a-model')
+    expect(find(tree, (e) => e.type === 'button' && text(e) === t.download)).toBeDefined()
+  })
+
+  it('renders the model download link without the hf CLI', () => {
+    const summary = fullSummary({
+      modelStatus: {
+        present: false,
+        hfCli: false,
+        downloadCommand: 'hf download a-model',
+        url: 'https://hf.co/a-model',
+      },
+    } as unknown as LocalInferSummary)
+    const { tree } = renderCard({ summary, draft: fullDraft() })
+    expect(text(tree)).toContain(t.noHfCli)
+    expect(find(tree, (e) => e.type === 'a' && e.props?.href === 'https://hf.co/a-model')).toBeDefined()
+  })
+
+  it('renders the chat-template status row while a template is missing', () => {
+    const summary = fullSummary({
+      chatTemplateStatus: {
+        repo: 'a-repo',
+        present: false,
+        hfCli: true,
+        downloadCommand: 'hf download a-repo --include chat_template.jinja',
+      },
+    } as unknown as LocalInferSummary)
+    const { tree } = renderCard({ summary, draft: fullDraft() })
+    // The row reads the hf-CLI-detected line with the command and the
+    // download button (the auto-download effect fires it first).
+    expect(text(tree)).toContain(t.hfCliDetected)
+    expect(text(tree)).toContain('hf download a-repo')
+    expect(find(tree, (e) => e.type === 'button' && text(e) === t.templateDownload)).toBeDefined()
+  })
+
+  it('renders the warning banner and the over verdict', () => {
+    const summary = fullSummary({
+      warningsModel: {
+        banner: {
+          visible: true,
+          level: 'error',
+          count: 2,
+          warnings: [
+            { id: 'w1', message: 'over budget' },
+            { id: 'w2', message: 'tight fit' },
+          ],
+        },
+        inline: {},
+      },
+      verdict: { status: 'over', detail: 'needs 16GB, has 8GB' },
+    } as unknown as LocalInferSummary)
+    const { tree } = renderCard({ summary, draft: fullDraft() })
+    expect(text(tree)).toContain(t.over)
+    expect(text(tree)).toContain('needs 16GB, has 8GB')
+    expect(text(tree)).toContain('over budget')
+  })
+
+  it('renders the launch and stop error notes', () => {
+    const { store, rerender } = renderCard({ summary: fullSummary(), draft: fullDraft() })
+    store.dispatch({ type: 'action/start', key: 'launch' })
+    store.dispatch({ type: 'action/timeout', key: 'launch' })
+    store.dispatch({ type: 'action/start', key: 'stop' })
+    store.dispatch({ type: 'action/fail', key: 'stop', detail: 'no process' })
+    const tree = rerender()
+    // The launch timeout reads as the launch-failed note; the stop failure
+    // reads as the route's own message.
+    expect(text(tree)).toContain(t.launchFailed)
+    expect(text(tree)).toContain('no process')
+  })
+
+  it('renders the unregister button when the model is registered', () => {
+    const summary = fullSummary({ registered: true } as unknown as LocalInferSummary)
+    const { tree } = renderCard({ summary, draft: fullDraft() })
+    expect(find(tree, (e) => e.type === 'button' && text(e) === t.unregister)).toBeDefined()
+  })
+
+  it('renders the no-parameters line when there are no fields', () => {
+    const summary = fullSummary({ formModel: { sections: [] } })
+    const { tree } = renderCard({ summary, draft: fullDraft() })
+    expect(text(tree)).toContain(t.noParameters)
+  })
+
+  it('shows the help rows when help is on', () => {
+    const { tree } = renderCard({
+      summary: fullSummary(),
+      draft: fullDraft(),
+      ui: { help: true },
     })
-    store.dispatch({
-      type: 'draft/load',
-      draft: { engine: 'ninfer', config: { model: 'a-model' }, platform: {} },
-    })
-    resetForRerender()
-    const rendered = withDispatcher(dispatcher, () => Component())
-    expect(typeof rendered).toBe('object')
-    // The card frame renders the section title.
-    expect(text(rendered)).toContain(t.section)
+    // The engine help row reads the engine description.
+    expect(text(tree)).toContain(t.engineHelp)
+  })
+
+  it('the debounced re-price fires after a field edit pauses', async () => {
+    vi.useFakeTimers()
+    try {
+      const summary = fullSummary()
+      const { calls, fetchMock } = routeFetch({
+        '/local-infer/summary': () => jsonAnswer(summary),
+        '/local-infer/deps': () => jsonAnswer({ engineId: 'ninfer' }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const { tree, store } = renderCard({ summary, draft: fullDraft() })
+      // A field edit schedules the 300 ms re-price.
+      const checkbox = findAll(tree, (e) => e.type === 'input' && e.props?.type === 'checkbox')[0]
+      ;(checkbox.props?.onChange as (ev: { target: { checked: boolean } }) => void)({
+        target: { checked: false },
+      })
+      // Before the debounce window, no re-price fetch has fired.
+      expect(calls.filter((c) => c.url.startsWith('/local-infer/summary'))).toHaveLength(0)
+      await vi.advanceTimersByTimeAsync(300)
+      await flush()
+      // The re-price re-fetched the summary and the deps.
+      expect(calls.some((c) => c.url.startsWith('/local-infer/summary'))).toBe(true)
+      expect(calls.some((c) => c.url.startsWith('/local-infer/deps'))).toBe(true)
+      void store
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('the mount effect fetches the read model on an empty card', async () => {
+    vi.useFakeTimers()
+    try {
+      const summary = fullSummary()
+      const { calls, fetchMock } = routeFetch({
+        '/local-infer/summary': () => jsonAnswer(summary),
+        '/local-infer/deps': () => jsonAnswer({ engineId: 'ninfer' }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      // No summary and no draft: the mount effect fetches on the first render.
+      const Component = card(null, { current: 'en' }, null)
+      const { dispatcher, runEffects } = makeDispatcher()
+      withDispatcher(dispatcher, () => {
+        Component()
+      })
+      runEffects()
+      await flush()
+      expect(calls.some((c) => c.url.startsWith('/local-infer/summary'))).toBe(true)
+      expect(calls.some((c) => c.url.startsWith('/local-infer/deps'))).toBe(true)
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('unmount clears the pending re-price timer', async () => {
+    vi.useFakeTimers()
+    try {
+      const summary = fullSummary()
+      const { calls, fetchMock } = routeFetch({
+        '/local-infer/summary': () => jsonAnswer(summary),
+        '/local-infer/deps': () => jsonAnswer({ engineId: 'ninfer' }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const { tree, runCleanups } = renderCard({ summary, draft: fullDraft() })
+      // A field edit schedules the re-price, then the card unmounts.
+      const checkbox = findAll(tree, (e) => e.type === 'input' && e.props?.type === 'checkbox')[0]
+      ;(checkbox.props?.onChange as (ev: { target: { checked: boolean } }) => void)({
+        target: { checked: false },
+      })
+      runCleanups()
+      await vi.advanceTimersByTimeAsync(300)
+      await flush()
+      // The timer was cleared on unmount, so no re-price fetch fired.
+      expect(calls.filter((c) => c.url.startsWith('/local-infer/summary'))).toHaveLength(0)
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
   })
 })

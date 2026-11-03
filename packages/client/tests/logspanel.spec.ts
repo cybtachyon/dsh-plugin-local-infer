@@ -296,6 +296,33 @@ describe('the Logs section (render/LogsPanel.tsx)', () => {
     expect(state().ui.logs.scrollMode).toBe('fresh')
   })
 
+  it('ignores a scroll while the textarea is not mounted', () => {
+    const { store, state } = makeStore()
+    const d = makeDispatcher()
+    const elTree = render(d, store, t)
+    // The textarea ref is null (not mounted): the scroll handler is a no-op.
+    expect(d.textareaRef().current).toBe(null)
+    ;(sectionParts(elTree).textarea.props.onScroll as () => void)()
+    expect(state().ui.logs.scrollMode).toBe('fresh')
+  })
+
+  it('ignores a resize move once the drag is cleared', () => {
+    const { store, state } = makeStore()
+    const d = makeDispatcher()
+    const elTree = render(d, store, t)
+    const start = sectionParts(elTree).chevron.props.onPointerDown as (event: {
+      clientY: number
+      preventDefault(): void
+    }) => void
+    withWindow((fire) => {
+      start({ clientY: 100, preventDefault: () => {} })
+      // Clear the drag base, then a move reads as a no-op (the guard).
+      d.dragRef().current = null
+      fire('pointermove', { clientY: 140, preventDefault: () => {} })
+      expect(state().ui.logs.height).toBe(96)
+    })
+  })
+
   it('drags the chevron to resize the pane, clamped to the 96-480 px range', () => {
     const { store, state } = makeStore()
     const d = makeDispatcher()

@@ -32,7 +32,7 @@ export default defineConfig({
     include: ['packages/*/tests/**/*.spec.ts'],
     coverage: {
       provider: 'v8',
-      include: ['packages/*/src/**/*.ts'],
+      include: ['packages/*/src/**/*.{ts,tsx}'],
       thresholds: { lines: 90, functions: 93, branches: 78, statements: 90 },
     },
   },
