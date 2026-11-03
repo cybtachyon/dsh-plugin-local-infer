@@ -23,11 +23,6 @@ const alias = Object.entries(paths).map(([find, targets]) => ({
   replacement: fileURLToPath(new URL(targets[0], import.meta.url)),
 }))
 
-// Coverage thresholds start modest for the scaffold (80% across the board) and
-// are raised in the hardening phase (Phase 9) to a level the suite clears with
-// a buffer: lines, functions, and statements above 90%, branches above 78%.
-// The codegraph 100% per-file baseline is the long-term target; the UI route
-// handler matrix and the node host live implementation are the remaining drag.
 export default defineConfig({
   resolve: {
     tsconfigPaths: true,
