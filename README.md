@@ -35,6 +35,10 @@ dsh plugin --profile web add dsh-plugin-local-infer
 dsh plugin --profile web add https://github.com/cybtachyon/dsh-plugin-local-infer
 ```
 
+When installing from a local checkout, run `pnpm build` first: it type-checks
+the workspace (`tsc -b`) and then produces the `dsh/client.js` browser card
+artifact with esbuild (`node scripts/build-client.mjs`).
+
 Web UI: click **Plugins** → **Add Plugin** → paste `dsh-plugin-local-infer`.
 
 Or add from the DSH Plugin Marketplace.
@@ -64,7 +68,7 @@ All values persist to `~/.dsh/local-infer/config.json`; the browser never sees a
 | Linux (Fedora, `dnf`)        | Untested  | Command set present, flagged untested on a live host.                                                               |
 | macOS (`brew`)               | Partial   | CPU/docker path (llama.cpp). No NVIDIA Container Toolkit on macOS, so the CUDA engines' docker path is unavailable. |
 | Windows (WSL2)               | Untested  | WSL2 is detected and the dflash2 pin-memory rule fires; the command set is flagged untested.                        |
-| Windows                      | Partial   | Code paths are only partially written; further development needed.                                                  |  
+| Windows                      | Partial   | Code paths are only partially written; further development needed.                                                  |
 
 ### Engines
 

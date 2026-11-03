@@ -6,30 +6,73 @@
 
 # Architecture
 
-- pnpm workspace over `packages/{core,service,providers,tool,ui,bundle}`.
-  The root `package.json` is the installable bundle (`dsh.bundle.patch` →
-  `cordis.patch.yml`).
-- **`core`** is the pure, framework-free domain model: `ParameterSpec`,
-  `HardwareProfile`, `EngineAdapter`, `VramEstimator`, `GuidelineEngine`,
-  `DefaultsResolver`, `DshModelRegistrar`, `SystemDepProvisioner`, and the OS
-  reserve resolver. Every parameter ↔ hardware relationship lives here as a
-  declaration; the estimator and guideline engine consume the declarations.
-- **`service`** is the `ctx.localInfer` Cordis service: the registries (engines,
-  VRAM models, presets, guidelines, dep plans, platform configs) plus the
-  orchestration entry points (`estimate`, `guidelines`, `deps`, `installString`,
-  `runInstall`, `launch`, `stop`, `registerModel`, `removeModel`,
-  `detectHardware`, `detectOsReserve`, `resolveDefaults`, `fetchPreset`).
-- **`providers`** carries the concrete adapters (NInfer, Hyper-Qwen,
-  llama.cpp, Strata) and all the data: parameter surfaces, measured VRAM
-  models, presets, built-in guidelines, per-OS install blocks, and the engine
-  registry.
-- **`tool`** registers the model-facing tools; **`ui`** carries the web routes
-  (`/local-infer/*`) and the render models; **`dsh/client.js`** is the
-  hand-written lazy-CJS browser card (no build step); **`bundle`** is the
-  no-source meta-package.
-- **Data-driven invariant:** adding an engine is one adapter plus its
-  parameter data, with zero changes to `core` or `service`. Adding a model is a
-  data edit (the model artifact maps).
+- PNPM Workspace: `packages/{core,service,providers,tool,ui,bundle}`.
+  - `./package.json` is the installable bundle
+  - Packages mounted with (`dsh.bundle.patch` → `cordis.patch.yml`).
+- **core** is the parameter ↔ hardware data model:
+  - `ParameterSpec`
+  - `HardwareProfile`
+  - `EngineAdapter`
+  - `VramEstimator`
+  - `GuidelineEngine`
+  - `DefaultsResolver`
+  - `DshModelRegistrar`
+  - `SystemDepProvisioner`
+- **service** is the `ctx.localInfer` Cordis service:
+  - Registries
+    - engines
+    - VRAM models
+    - presets
+    - guidelines
+    - dep plans
+    - platform configs
+  - Orchestration entry points
+    - `estimate`
+    - `guidelines`
+    - `deps`
+    - `installString`
+    - `runInstall`
+    - `launch`
+    - `stop`
+    - `registerModel`
+    - `removeModel`
+    - `detectHardware`
+    - `detectOsReserve`
+    - `resolveDefaults`
+    - `fetchPreset`
+  - The estimator and guideline engine consume the core model declarations.
+- **providers** The concrete adapters (NInfer, Hyper-Qwen, llama.cpp,
+  Strata etc.) and the data: parameter surfaces, measured VRAM models, presets,
+  built-in guidelines, per-OS install blocks, and the engine registry.
+- **tool** registers the model-facing tools:
+  - **ui** carries the web routes (`/local-infer/*`) and the render models.
+  - **client** is the browser card source:
+    - `packages/client` is the source private workspace package
+    - ESBuild bundles to lazy-CJS artifact `dsh/client.js`.
+    - **bundle** is the tree-shaken compiled meta-package.
+- **client build pipeline** `pnpm build`:
+  - Runs `tsc -b` (type-checks and emits `packages/client/lib`).
+  - Then `node scripts/build-client.mjs` esbuild-bundles
+    `packages/client/src/index.ts` to (`dsh/.build/client.cjs`) and wraps it in
+    `window.__ModuleLoader__.load({ id, factory: (require) => ... })` contract.
+    to write `dsh/client.js`.
+  - `react` and `@deepseek-ai/dsh-client-ui-primitives` are esbuild externals:
+    they stay out of the bundle and resolve at runtime through the DSH's
+    frozen platform module table with `require` calls.
+  - The client TypeScript source is not shipped; the root `files` list
+    ships only `dsh/client.js` and `dsh/host.js` from the client half.
+- **client** One store (`packages/client/src/store`):
+  - `draft` is the source for form field values.
+  - `summary` is never rendered as a field value.
+  - `state.launch` is the lifecycle state (the per-provider machine, driven
+    by `launchNextState`).
+  - `title-bar` control renders from (`deriveLifecycleControl`).
+  - Every server mutation goes through `performAction` (a `pending -> ack |
+    timeout` transition).
+  - Field edits are local-only and schedule a debounced re-estimate.
+- **Data-driven invariant:**
+  - Adding an engine is one adapter plus its parameter data.
+  - Adding a model is a data edit (the model artifact maps).
 
 # Dev Environment Tips
 
@@ -83,11 +126,12 @@
     token names and light/dark override requirements.
   - **Live slot topology:** the client `Slots` inspect provider's
     `listSubTree` method shows where a card can mount.
-- In the hand-written lazy-CJS card (`dsh/client.js`), React and the
-  primitives come from the shell's frozen platform module table:
-  `require('react')` and `require('@deepseek-ai/dsh-client-ui-primitives')`.
-  A missing seed is a fallback to native controls, not an error, so guard
-  every primitive use (`primitives && typeof primitives.Button === 'function'`).
+- In the lazy-CJS card (`dsh/client.js`, the esbuild artifact from
+  `packages/client`), React and the primitives come from the shell's frozen
+  platform module table: `require('react')` and
+  `require('@deepseek-ai/dsh-client-ui-primitives')`. A missing seed is a
+  fallback to native controls, not an error, so guard every primitive use
+  (`primitives && typeof primitives.Button === 'function'`).
 
 # Code Style
 
@@ -126,7 +170,8 @@ Fetch these docs to answer questions about their covered topic.
 
 # Testing Instructions
 
-- Build with `pnpm build` (runs `tsc -b`).
+- Build with `pnpm build` (runs `tsc -b`, then `node scripts/build-client.mjs`
+  to produce the `dsh/client.js` card artifact).
 - Run the full test suite with `pnpm test` (runs `vitest run`).
 - Run coverage with `pnpm test:coverage`; the suite must clear the thresholds
   in `vitest.config.ts` (lines 90 / functions 93 / branches 78 / statements 90).
@@ -144,4 +189,4 @@ Fetch these docs to answer questions about their covered topic.
   act --env-file .env --secret-file .secrets -s GUESTWISE_SSH_PRIVATE_KEY="${GUESTWISE_SSH_PRIVATE_KEY}" --pull=false -W .github/workflows/{{my-push-workflow}}.yml push
   act --env-file .env -W .github/workflows/{{my-schedule-workflow}}.yml schedule
   ```
-- Run `prek` to verify pre-commit hooks are successful.
+- Run `prek` before committing (verify pre-commit hooks).
