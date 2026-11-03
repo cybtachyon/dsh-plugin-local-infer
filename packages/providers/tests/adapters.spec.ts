@@ -1,3 +1,5 @@
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
@@ -1157,6 +1159,37 @@ describe('pollHealth', () => {
     const result = await pollHealth(host, plan, { pollMs: 0, maxAttempts: 5 })
     expect(result.healthy).toBe(true)
     expect(state.fetch).toHaveLength(3)
+  })
+})
+
+describe('LifecycleHost.writeFile', () => {
+  it('writes the content through the node host and creates the parent directory', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-lifecycle-'))
+    try {
+      const host = createNodeLifecycleHost()
+      // A nested path prices the missing parent directory the mkdir creates.
+      const path = join(dir, 'nested', 'basalt_config.json')
+      await host.writeFile?.(path, '{"server":{}}')
+      expect(await readFile(path, 'utf8')).toBe('{"server":{}}')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('leaves the plan un-written without throwing when the host has no writeFile', async () => {
+    // The stub host omits writeFile, so the deploy step's optional call
+    // resolves without writing and without throwing.
+    const { host } = stubHost()
+    expect(host.writeFile).toBeUndefined()
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-lifecycle-'))
+    try {
+      const path = join(dir, 'basalt_config.json')
+      await host.writeFile?.(path, '{"server":{}}')
+      // The file was never written, so a read of it rejects.
+      await expect(readFile(path, 'utf8')).rejects.toThrow()
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })
 

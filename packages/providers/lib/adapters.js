@@ -9,6 +9,8 @@
  * @module dsh-plugin-local-infer/providers/adapters
  */
 import { exec, spawn as nodeSpawn } from 'node:child_process';
+import { mkdir, writeFile as fsWriteFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 /**
  * flagsFromSpecs turns a spec surface and a config into the CLI flag list: each
  * spec's `toArgv` runs over the config value (falling back to the spec
@@ -101,8 +103,9 @@ export function envFromSpecs(specs, config) {
 /**
  * createNodeLifecycleHost builds the node `LifecycleHost`: `run` through the
  * system shell (a 10-minute cap, so a hung CUDA build cannot hang the panel),
- * `spawn` a detached child the stop step can signal, and `fetch` the health
- * URL. A fetch that throws (no route, connection refused) reads as status 0,
+ * `spawn` a detached child the stop step can signal, `writeFile` the config
+ * file the deploy step renders (creating the parent directory), and `fetch`
+ * the health URL. A fetch that throws (no route, connection refused) reads as status 0,
  * which the poll treats as not-ready. When `debug` is provided, the host logs
  * every command it issues (each `run` line and each `spawn` argv) through it,
  * so a DSH debug-mode host captures the full build-to-launch sequence. A
@@ -249,6 +252,13 @@ export function createNodeLifecycleHost(debug) {
                     listeners.add(listener);
                 },
             };
+        },
+        async writeFile(path, content) {
+            log?.(`writeFile: ${path}`);
+            // The parent directory may not exist (a fresh model directory), so the
+            // mkdir runs before the write; recursive keeps an existing dir a no-op.
+            await mkdir(dirname(path), { recursive: true });
+            await fsWriteFile(path, content);
         },
         async fetch(url) {
             try {

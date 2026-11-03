@@ -127,6 +127,14 @@ export interface LifecycleHost {
      */
     runStream?(command: string, onOutput: (chunk: string) => void, options?: RunOptions): Promise<CommandOutcome>;
     spawn(argv: readonly string[], env: Record<string, string>, cwd?: string): ProcessHandle;
+    /**
+     * Optional: write a file to the host, creating missing parent directories.
+     * The deploy step calls it to land the rendered config file the plan's
+     * `configFile` names before the spawn, so the engine's config flag points
+     * at a path that exists. A host that cannot write files (a test stub)
+     * omits it, and the deploy step skips the write without failing.
+     */
+    writeFile?(path: string, content: string): Promise<void>;
     fetch(url: string): Promise<FetchResult>;
     debug?: DebugLogger;
 }
