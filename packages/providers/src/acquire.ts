@@ -504,7 +504,7 @@ export async function syncAndRebuildEngine(
       buildCommands !== undefined
         ? [`cd ${directory} && ${buildCommands}`]
         : engineBuildSteps(request.engineId, request.os ?? 'linux')
-    // The engine OS profile's shell (the Windows vcpkg route's powershell.exe)
+    // The engine OS profile's shell (the Windows vcpkg route's pwsh.exe)
     // runs the build steps; absent keeps the host's default shell.
     const shell = engineOsProfile(request.engineId, request.os ?? 'linux')?.shell
     const stepOptions = shell !== undefined ? { shell } : undefined
@@ -585,7 +585,7 @@ export async function buildEngineRepo(
     log(`no local build steps for ${engineId}\n`)
     return { ok: true }
   }
-  // The engine OS profile's shell (the Windows vcpkg route's powershell.exe)
+  // The engine OS profile's shell (the Windows vcpkg route's pwsh.exe)
   // runs the build steps; absent keeps the host's default shell.
   const shell = engineOsProfile(engineId, os)?.shell
   const stepOptions = shell !== undefined ? { shell } : undefined

@@ -46,7 +46,7 @@ function stubHost() {
   const state = {
     run: [] as string[],
     // The shell option each run/runStream call carried (the engine OS
-    // profile's shell, e.g. powershell.exe for the Windows vcpkg route);
+    // profile's shell, e.g. pwsh.exe for the Windows vcpkg route);
     // undefined when the call kept the host's default shell.
     runShells: [] as (string | undefined)[],
     spawn: [] as { argv: string[]; env: Record<string, string>; cwd?: string }[],
@@ -375,11 +375,11 @@ describe('NInferAdapter.deploy', () => {
       engineDirectory: '/src/ninfer',
     })
     expect(result.ok).toBe(true)
-    // The vcpkg build step runs in the profile's powershell.exe shell; the git
+    // The vcpkg build step runs in the profile's pwsh.exe shell; the git
     // sync commands keep the host's default shell.
     const vcpkgIndex = state.run.findIndex((command) => command.includes('vcpkg install'))
     expect(vcpkgIndex).toBeGreaterThan(-1)
-    expect(state.runShells[vcpkgIndex]).toBe('powershell.exe')
+    expect(state.runShells[vcpkgIndex]).toBe('pwsh.exe')
     const gitIndex = state.run.findIndex((command) => command.includes('rev-parse'))
     expect(state.runShells[gitIndex]).toBeUndefined()
   })
@@ -1866,7 +1866,7 @@ describe('nodeLifecycleHost (the live host the service wires in)', () => {
     // The probe is shell-specific: Write-Output is a PowerShell cmdlet that
     // fails in cmd (the Windows default shell), so a clean exit proves the
     // named shell ran the command. POSIX names sh, the default there.
-    const shell = process.platform === 'win32' ? 'powershell.exe' : 'sh'
+    const shell = process.platform === 'win32' ? 'pwsh.exe' : 'sh'
     const command =
       process.platform === 'win32'
         ? 'Write-Output local-infer-shell-probe'
@@ -1877,7 +1877,7 @@ describe('nodeLifecycleHost (the live host the service wires in)', () => {
 
   it('streams a command run in the shell named by the options', async () => {
     const host = createNodeLifecycleHost()
-    const shell = process.platform === 'win32' ? 'powershell.exe' : 'sh'
+    const shell = process.platform === 'win32' ? 'pwsh.exe' : 'sh'
     const command =
       process.platform === 'win32'
         ? 'Write-Output local-infer-stream-shell-probe'

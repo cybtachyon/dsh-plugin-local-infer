@@ -259,7 +259,7 @@ export function handleEngineDeath(event) {
         `${event.port !== undefined ? ` (port ${event.port})` : ''}` +
         ` pid ${event.pid ?? 'unknown'} exited${signalNote}` +
         `${event.detail !== undefined ? `: ${event.detail}` : ''}\n`;
-    writeConfig(stored.engine, stored.config, stored.allowRunDeps, stored.platform, stored.showHelp, providers, stored.logPath, 
+    writeConfig(stored.engine, stored.config, stored.allowRunDeps, stored.platform, stored.showHelp, providers, stored.logPath,
     // Keep the last-run tail bounded, the same rule the launch logs cap uses.
     (stored.lastLogs + note).slice(-65536));
 }
@@ -425,7 +425,7 @@ export async function getEngine(localInfer, request, log, host = nodeLifecycleHo
     // The user's local build command (the card's Build commands field) overrides
     // the engine's default build steps; absent runs the engine's acquisition
     // steps. The host OS picks the engine's OS profile (the Windows vcpkg route
-    // and its powershell.exe shell on a Windows host, the cmake route elsewhere).
+    // and its pwsh.exe shell on a Windows host, the cmake route elsewhere).
     const build = await buildEngineRepo(host, engineId, directory, log, platform?.buildCommands, hardware.os);
     if (!build.ok) {
         if (build.detail !== undefined) {

@@ -97,7 +97,7 @@ export interface FetchResult {
 /**
  * RunOptions tunes a host command run: `shell` names the shell the command
  * line runs in, read from the engine OS profile (the Windows vcpkg build route
- * names powershell.exe, because its steps set $env: variables). Absent runs
+ * names pwsh.exe, because its steps set $env: variables). Absent runs
  * the host's default shell.
  */
 export interface RunOptions {

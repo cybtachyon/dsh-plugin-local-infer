@@ -24,6 +24,8 @@ export const NINFER_WINDOWS = {
     // joins cross-platform; the host's path module normalizes them on use.
     buildDir: 'build-windows/apps/Release',
     binary: 'ninfer-serve.exe',
+    // pwsh.exe (PowerShell 7+) is the modern shell the vcpkg build tooling
+    // expects; the legacy powershell.exe (Windows PowerShell 5.1) lacks it.
     shell: 'pwsh.exe'
 };
 /**

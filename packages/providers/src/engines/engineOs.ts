@@ -23,7 +23,7 @@ export interface EngineOsProfile {
   // engine has no local binary (the compose engines).
   binary?: string
   // The shell the build steps run in (the Windows vcpkg route names
-  // powershell.exe, because its steps set $env: variables). Absent runs the
+  // pwsh.exe, because its steps set $env: variables). Absent runs the
   // host's default shell.
   shell?: string
 }

@@ -31,7 +31,7 @@ function stubHost(options?: {
     run: [] as string[],
     streamed: [] as string[],
     // The shell option each run/runStream call carried (the engine OS
-    // profile's shell, e.g. powershell.exe for the Windows vcpkg route);
+    // profile's shell, e.g. pwsh.exe for the Windows vcpkg route);
     // undefined when the call kept the host's default shell.
     runShells: [] as (string | undefined)[],
     streamedShells: [] as (string | undefined)[],
@@ -376,7 +376,7 @@ describe('buildEngineRepo', () => {
     expect(state.logged).not.toContain('cmake -S /src/ninfer -B /src/ninfer/build')
   })
 
-  it('runs the Windows build steps in the profile shell (powershell.exe)', async () => {
+  it('runs the Windows build steps in the profile shell (pwsh.exe)', async () => {
     const { host, state } = stubHost()
     const result = await buildEngineRepo(
       host,
@@ -389,10 +389,10 @@ describe('buildEngineRepo', () => {
       'windows',
     )
     expect(result.ok).toBe(true)
-    // The Windows vcpkg route runs in the profile's powershell.exe shell, so
+    // The Windows vcpkg route runs in the profile's pwsh.exe shell, so
     // its $env: steps resolve; the git-free build step is the only command.
     expect(state.logged).toContain('vcpkg install')
-    expect(state.streamedShells).toEqual(['powershell.exe'])
+    expect(state.streamedShells).toEqual(['pwsh.exe'])
   })
 
   it('runs the Linux build steps in the host default shell (no profile shell)', async () => {
@@ -662,13 +662,13 @@ describe('syncAndRebuildEngine', () => {
     expect(result.ok).toBe(true)
     expect(result.rebuilt).toBe(true)
     // The clone runs in the host's default shell; the vcpkg build step runs in
-    // the profile's powershell.exe shell.
+    // the profile's pwsh.exe shell.
     const cloneIndex = state.streamed.findIndex((command) => command.startsWith('git clone'))
     expect(cloneIndex).toBeGreaterThan(-1)
     expect(state.streamedShells[cloneIndex]).toBeUndefined()
     const vcpkgIndex = state.streamed.findIndex((command) => command.includes('vcpkg install'))
     expect(vcpkgIndex).toBeGreaterThan(-1)
-    expect(state.streamedShells[vcpkgIndex]).toBe('powershell.exe')
+    expect(state.streamedShells[vcpkgIndex]).toBe('pwsh.exe')
   })
 })
 

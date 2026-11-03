@@ -47,7 +47,7 @@ export declare function envFromSpecs(specs: readonly ParameterSpec[], config: Co
  * which the poll treats as not-ready. When `debug` is provided, the host logs
  * every command it issues (each `run` line and each `spawn` argv) through it,
  * so a DSH debug-mode host captures the full build-to-launch sequence. A
- * `RunOptions.shell` (the engine OS profile's shell, e.g. powershell.exe for
+ * `RunOptions.shell` (the engine OS profile's shell, e.g. pwsh.exe for
  * the Windows vcpkg route) runs the command line in that shell instead of the
  * system default.
  */

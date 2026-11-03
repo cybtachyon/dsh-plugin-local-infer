@@ -582,7 +582,7 @@ export async function getEngine(
   // The user's local build command (the card's Build commands field) overrides
   // the engine's default build steps; absent runs the engine's acquisition
   // steps. The host OS picks the engine's OS profile (the Windows vcpkg route
-  // and its powershell.exe shell on a Windows host, the cmake route elsewhere).
+  // and its pwsh.exe shell on a Windows host, the cmake route elsewhere).
   const build = await buildEngineRepo(
     host,
     engineId,
