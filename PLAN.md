@@ -184,8 +184,8 @@ Each task: port the named component 1:1 from the current `client.js`
 into a typed TSX component that reads/writes the store, keep the
 rendered DOM and behavior identical, and verify in the GUI.
 
-- [ ] [**T3.1 `src/render/primitives.tsx`.**](docs/PLAN-TASK-T3.1-render-primitives.md)
-- [ ] [**T3.2 `NumberField` + `SelectPill`.**](docs/PLAN-TASK-T3.2-numberfield-selectpill.md)
+- [x] [**T3.1 `src/render/primitives.tsx`.**](docs/PLAN-TASK-T3.1-render-primitives.md)
+- [x] [**T3.2 `NumberField` + `SelectPill`.**](docs/PLAN-TASK-T3.2-numberfield-selectpill.md)
 - [ ] [**T3.3 `ChatTemplateField`.**](docs/PLAN-TASK-T3.3-chat-template-field.md)
 - [ ] [**T3.4 `Meter` + `CustomArgsPanel`.**](docs/PLAN-TASK-T3.4-meter-custom-args.md)
 - [ ] [**T3.5 `DepsPanel`.**](docs/PLAN-TASK-T3.5-deps-panel.md)
