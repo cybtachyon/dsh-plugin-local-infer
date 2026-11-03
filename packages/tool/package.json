@@ -36,6 +36,6 @@
     "@deepseek-ai/cordis": ">=4.0.1"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "^4.0.1"
+    "@deepseek-ai/cordis": "^4.0.5"
   }
 }

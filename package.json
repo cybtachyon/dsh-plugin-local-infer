@@ -100,15 +100,15 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^22.10.0",
+    "@types/node": "^26.6.6",
     "@types/react": "^18.3.31",
-    "@vitest/coverage-v8": "^5.0.4",
+    "@vitest/coverage-v8": "^5.0.5",
     "esbuild": "^0.28.2",
-    "eslint": "^10.12.0",
+    "eslint": "^10.14.0",
     "tsx": "^4.23.15",
-    "typescript": "^5.9.0",
-    "typescript-eslint": "^8.71.2",
-    "vite-tsconfig-paths": "^5.1.4",
-    "vitest": "^5.0.4"
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.1",
+    "vite-tsconfig-paths": "^6.1.1",
+    "vitest": "^5.0.5"
   }
 }
