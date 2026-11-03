@@ -21,6 +21,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { routeExists } from './api/routes.ts'
+import { setReactModule, type ReactLike as StoreReactLike } from './store/useCardStore.ts'
 
 // The require the lazy-CJS factory injects: the shell's frozen platform module
 // table. esbuild keeps these calls bare in the CJS output, so inside the
@@ -152,6 +153,10 @@ function mountCard(ctx: SlotsScope, localeRef: LocaleRef): void {
     console.error(`[local-infer] settings card skipped: ${error}`)
     return
   }
+  // The store binding (useCardStore) reads react through this seam, so the
+  // bundle keeps its two runtime require calls here and a react-absent host
+  // skips the card above, not at module load.
+  setReactModule(react as StoreReactLike)
   // The shell seeds the primitives into the frozen platform module table,
   // so the require resolves on every host that serves this page. A host
   // whose table predates the seed (or a loader that cannot materialize

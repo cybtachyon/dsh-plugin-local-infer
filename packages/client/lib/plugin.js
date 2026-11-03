@@ -19,6 +19,7 @@
  * @module dsh-plugin-local-infer/client/plugin
  */
 import { routeExists } from "./api/routes.js";
+import { setReactModule } from "./store/useCardStore.js";
 // The Plugins page dispatches a bundle's configuration by the bundle's
 // manifest name (the root package.json "name" field, unscoped for git-URL
 // installs), which is the key the package inventory uses for the
@@ -86,6 +87,10 @@ function mountCard(ctx, localeRef) {
         console.error(`[local-infer] settings card skipped: ${error}`);
         return;
     }
+    // The store binding (useCardStore) reads react through this seam, so the
+    // bundle keeps its two runtime require calls here and a react-absent host
+    // skips the card above, not at module load.
+    setReactModule(react);
     // The shell seeds the primitives into the frozen platform module table,
     // so the require resolves on every host that serves this page. A host
     // whose table predates the seed (or a loader that cannot materialize

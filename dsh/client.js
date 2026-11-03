@@ -39,6 +39,12 @@ async function routeExists() {
   }
 }
 
+// packages/client/src/store/useCardStore.ts
+var reactModuleRef = null;
+function setReactModule(react) {
+  reactModuleRef = react;
+}
+
 // packages/client/src/plugin.ts
 var PACKAGE_NAME = "dsh-plugin-local-infer";
 function placeholderCard(react, _localeRef, _primitives) {
@@ -85,6 +91,7 @@ function mountCard(ctx, localeRef) {
     console.error(`[local-infer] settings card skipped: ${error}`);
     return;
   }
+  setReactModule(react);
   let primitives;
   try {
     primitives = require("@deepseek-ai/dsh-client-ui-primitives");
