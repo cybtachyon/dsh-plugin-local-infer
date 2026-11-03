@@ -25,6 +25,11 @@ export { renderDeps } from './deps.ts';
 export type { ChatTemplateDepModel, DepItemModel, DepsModel } from './deps.ts';
 export { renderWarnings, toneFor } from './warnings.ts';
 export type { WarningBannerModel, WarningModel, WarningsModel, WarningTone, } from './warnings.ts';
+export type { StoredPlatformConfig } from './config.ts';
+export type { InstallResponse } from './viewmodels/depsHelpers.ts';
+export type { LocalInferSummary, ProviderSummaryEntry } from './viewmodels/summary.ts';
+export type { Config, RegisterResult } from 'dsh-plugin-local-infer/core';
+export type { DownloadResult, LaunchResult } from 'dsh-plugin-local-infer/service';
 /**
  * Mount the Web UI. The browser card (dsh/client.js) registers into the
  * Plugins page's `plugins.bundle.config` slot and talks to the settings route

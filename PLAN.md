@@ -168,7 +168,7 @@ its own `docs/PLAN-TASK-*.md` file, linked from the title below.
 - [x] [**T1.1 `src/text.ts`.**](docs/PLAN-TASK-T1.1-text-ts.md)
 - [x] [**T1.2 `src/styles.ts`.**](docs/PLAN-TASK-T1.2-styles-ts.md)
 - [x] [**T1.3 `src/machine/launch.ts`.**](docs/PLAN-TASK-T1.3-machine-launch.md)
-- [ ] [**T1.4 `src/api/routes.ts`.**](docs/PLAN-TASK-T1.4-api-routes.md)
+- [x] [**T1.4 `src/api/routes.ts`.**](docs/PLAN-TASK-T1.4-api-routes.md)
 
 ### Phase 2: the store (single source of truth)
 

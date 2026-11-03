@@ -18,6 +18,7 @@
  * the require fallback in mountCard.
  * @module dsh-plugin-local-infer/client/plugin
  */
+import { routeExists } from "./api/routes.js";
 // The Plugins page dispatches a bundle's configuration by the bundle's
 // manifest name (the root package.json "name" field, unscoped for git-URL
 // installs), which is the key the package inventory uses for the
@@ -54,11 +55,11 @@ function registerCard(ctx) {
     ctx.inject(['slots'], (scope) => {
         // The card and its route live and die together: with the host route
         // absent (no web profile) a card would only render an error, which is
-        // not what a headless profile means. Any response at all proves the
-        // route exists; only a 404 or a network failure reads as absent.
-        fetch('/local-infer/summary')
-            .then((response) => {
-            if (response.status === 404) {
+        // not what a headless profile means. The probe reads any response at
+        // all as proof the route exists; only a 404 or a network failure reads
+        // as absent.
+        routeExists().then((exists) => {
+            if (!exists) {
                 return;
             }
             try {
@@ -67,8 +68,7 @@ function registerCard(ctx) {
             catch (error) {
                 console.error(`[local-infer] settings card skipped: ${error}`);
             }
-        })
-            .catch(() => { });
+        });
     });
 }
 /**

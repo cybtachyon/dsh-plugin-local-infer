@@ -29,6 +29,16 @@ __export(index_exports, {
 });
 module.exports = __toCommonJS(index_exports);
 
+// packages/client/src/api/routes.ts
+async function routeExists() {
+  try {
+    const response = await fetch("/local-infer/summary");
+    return response.status !== 404;
+  } catch {
+    return false;
+  }
+}
+
 // packages/client/src/plugin.ts
 var PACKAGE_NAME = "dsh-plugin-local-infer";
 function placeholderCard(react, _localeRef, _primitives) {
@@ -55,8 +65,8 @@ function registerCard(ctx) {
     }
   });
   ctx.inject(["slots"], (scope) => {
-    fetch("/local-infer/summary").then((response) => {
-      if (response.status === 404) {
+    routeExists().then((exists) => {
+      if (!exists) {
         return;
       }
       try {
@@ -64,7 +74,6 @@ function registerCard(ctx) {
       } catch (error) {
         console.error(`[local-infer] settings card skipped: ${error}`);
       }
-    }).catch(() => {
     });
   });
 }

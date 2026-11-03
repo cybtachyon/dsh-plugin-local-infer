@@ -20,6 +20,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { routeExists } from './api/routes.ts'
 
 // The require the lazy-CJS factory injects: the shell's frozen platform module
 // table. esbuild keeps these calls bare in the CJS output, so inside the
@@ -121,20 +122,19 @@ function registerCard(ctx: Context): void {
   ctx.inject(['slots'], (scope) => {
     // The card and its route live and die together: with the host route
     // absent (no web profile) a card would only render an error, which is
-    // not what a headless profile means. Any response at all proves the
-    // route exists; only a 404 or a network failure reads as absent.
-    fetch('/local-infer/summary')
-      .then((response) => {
-        if (response.status === 404) {
-          return
-        }
-        try {
-          mountCard(scope as SlotsScope, localeRef)
-        } catch (error) {
-          console.error(`[local-infer] settings card skipped: ${error}`)
-        }
-      })
-      .catch(() => {})
+    // not what a headless profile means. The probe reads any response at
+    // all as proof the route exists; only a 404 or a network failure reads
+    // as absent.
+    routeExists().then((exists) => {
+      if (!exists) {
+        return
+      }
+      try {
+        mountCard(scope as SlotsScope, localeRef)
+      } catch (error) {
+        console.error(`[local-infer] settings card skipped: ${error}`)
+      }
+    })
   })
 }
 

@@ -46,6 +46,15 @@ export type {
   WarningTone,
 } from './warnings.ts'
 
+// The card-facing types the browser card (packages/client) consumes. The
+// card imports them with `import type` only, so they are erased at bundle
+// time and the card keeps its two runtime externals (react, primitives).
+export type { StoredPlatformConfig } from './config.ts'
+export type { InstallResponse } from './viewmodels/depsHelpers.ts'
+export type { LocalInferSummary, ProviderSummaryEntry } from './viewmodels/summary.ts'
+export type { Config, RegisterResult } from 'dsh-plugin-local-infer/core'
+export type { DownloadResult, LaunchResult } from 'dsh-plugin-local-infer/service'
+
 /**
  * Mount the Web UI. The browser card (dsh/client.js) registers into the
  * Plugins page's `plugins.bundle.config` slot and talks to the settings route
