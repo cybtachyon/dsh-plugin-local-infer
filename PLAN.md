@@ -167,7 +167,7 @@ its own `docs/PLAN-TASK-*.md` file, linked from the title below.
 
 - [x] [**T1.1 `src/text.ts`.**](docs/PLAN-TASK-T1.1-text-ts.md)
 - [x] [**T1.2 `src/styles.ts`.**](docs/PLAN-TASK-T1.2-styles-ts.md)
-- [ ] [**T1.3 `src/machine/launch.ts`.**](docs/PLAN-TASK-T1.3-machine-launch.md)
+- [x] [**T1.3 `src/machine/launch.ts`.**](docs/PLAN-TASK-T1.3-machine-launch.md)
 - [ ] [**T1.4 `src/api/routes.ts`.**](docs/PLAN-TASK-T1.4-api-routes.md)
 
 ### Phase 2: the store (single source of truth)
@@ -227,7 +227,11 @@ edited.
 
 ## Rollback
 
-The old hand-written `dsh/client.js` stays in git until T3.9. Rollback at
-any point: `git checkout -- dsh/client.js` and revert the root `build`
-script to `tsc -b`. The artifact is regenerable at any time with
-`pnpm build`.
+The old hand-written `dsh/client.js` stays in git until T3.9. The last
+hand-written card is pinned at commit
+`f9f115aaf0849a141eb23f5ffd57c964d8de4bd4` (read it with
+`git show f9f115a:dsh/client.js`); the working-tree file became the
+generated placeholder at T0.4, so the port tasks (T1.x, T3.x) source from
+that commit, not the working tree. Rollback at any point:
+`git checkout -- dsh/client.js` and revert the root `build` script to
+`tsc -b`. The artifact is regenerable at any time with `pnpm build`.

@@ -1,0 +1,75 @@
+/**
+ * The per-entry provider launch state machine: the card's Launch/Stop
+ * control lifecycle, ported 1:1 from the hand-written dsh/client.js.
+ *
+ * The states are the control's reads: idle (a plain Launch), the four
+ * rebuild phases (prereqs, download, build, launch), downloading (a busy
+ * throbber while the engine fetches model files), running (a Stop),
+ * stopping (a disabled throbber while the stop is in flight), and failed
+ * (a red Logs). launchNextState is the hardened transition: a step event
+ * only advances forward through the rebuild phases (a stale or
+ * out-of-order step is a no-op), a healthy result settles to running, a
+ * failed result settles to failed, a stop moves a running (or idle, a
+ * provider running per the summary with no machine entry) engine to
+ * stopping, a confirmed stop settles to idle, a stop that is still
+ * running at the deadline settles to failed with the cause 'stop', and a
+ * break (the Logs control, a navigation away) resets: a launch failure
+ * reads as Launch (idle), a stop timeout reads as Stop (running), because
+ * the engine is probably still up. The machine takes the entry
+ * ({status, cause}) and returns the next entry, so the cause-aware reset
+ * stays in one place. An event that names no legal next state leaves the
+ * control where it is, so a late event never corrupts it.
+ * @module dsh-plugin-local-infer/client/machine/launch
+ */
+export declare const LAUNCH_STEP_ORDER: {
+    readonly prereqs: 0;
+    readonly download: 1;
+    readonly build: 2;
+    readonly launch: 3;
+};
+/** The rebuild phase a launch step event names. */
+export type LaunchStep = keyof typeof LAUNCH_STEP_ORDER;
+/** The four rebuild phase states, in step order. */
+export declare const LAUNCH_PHASE_STATES: readonly LaunchStep[];
+export declare const LAUNCH_HEALTH_DEADLINE_MS = 150000;
+export declare const STOP_POLL_MS = 1000;
+export declare const STOP_HEALTH_DEADLINE_MS = 10000;
+/** The launch control's states, as the control reads them. */
+export type LaunchStatus = 'idle' | LaunchStep | 'downloading' | 'running' | 'stopping' | 'failed';
+/** The cause a failed state carries: 'stop' marks a stop that timed out. */
+export type LaunchCause = 'stop';
+/** A provider's launch machine entry. */
+export interface LaunchEntry {
+    status: LaunchStatus;
+    cause?: LaunchCause | undefined;
+}
+/** The events the machine consumes. */
+export type LaunchEvent = {
+    type: 'start';
+} | {
+    type: 'step';
+    step: string;
+} | {
+    type: 'healthy';
+} | {
+    type: 'failed';
+} | {
+    type: 'downloading';
+} | {
+    type: 'stop';
+} | {
+    type: 'stopped';
+} | {
+    type: 'stopFailed';
+} | {
+    type: 'reset';
+};
+/** launchIsPhase reports whether a state is one of the four rebuild phases. */
+export declare function launchIsPhase(state: LaunchStatus): state is LaunchStep;
+/**
+ * launchNextState computes the machine's next entry from the current entry
+ * and an event. A null or undefined entry prices as idle, so a provider
+ * running per the summary with no machine entry can be stopped.
+ */
+export declare function launchNextState(entry: LaunchEntry | null | undefined, event: LaunchEvent): LaunchEntry;
+//# sourceMappingURL=launch.d.ts.map
