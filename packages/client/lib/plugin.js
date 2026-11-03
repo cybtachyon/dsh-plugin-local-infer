@@ -19,6 +19,7 @@
  * @module dsh-plugin-local-infer/client/plugin
  */
 import { routeExists } from "./api/routes.js";
+import { setPrimitivesModule } from "./render/primitives.js";
 import { setReactModule } from "./store/useCardStore.js";
 // The Plugins page dispatches a bundle's configuration by the bundle's
 // manifest name (the root package.json "name" field, unscoped for git-URL
@@ -106,6 +107,9 @@ function mountCard(ctx, localeRef) {
     if (primitives && typeof primitives.Menu !== 'function') {
         primitives = null;
     }
+    // The renderers draw the seed when present and the native controls when it
+    // is absent, so the resolved value (or null) is handed to them here.
+    setPrimitivesModule(primitives);
     const Card = placeholderCard(react, localeRef, primitives);
     // slots.inject waits until a slot is declared, so each host fills the one
     // it has and the other wait never fires: from dsh 0.1.6-alpha.2 on hosts

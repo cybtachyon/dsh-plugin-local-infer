@@ -30,6 +30,17 @@ export function setReactModule(react) {
     reactModuleRef = react;
 }
 /**
+ * getReactModule returns the bootstrap's resolved react module. It throws if
+ * setReactModule has not run, so a render before the bootstrap wired react
+ * fails loudly (the same contract the hook has).
+ */
+export function getReactModule() {
+    if (reactModuleRef === null) {
+        throw new Error('react module not wired; call setReactModule first');
+    }
+    return reactModuleRef;
+}
+/**
  * createCardStore builds one per-mount store instance. dispatch reduces the
  * action over the current snapshot through cardReducer and notifies
  * subscribers only when the snapshot identity changes, so a no-op dispatch
@@ -71,12 +82,9 @@ export function createCardStore() {
  * components take the instance as a prop; only the owner calls the hook.
  */
 export function useCardStore() {
-    const react = reactModuleRef;
-    if (react === null) {
-        // The card renders only after mountCard wired react, so a null here is a
-        // hook called outside the card (a test, or a mis-wired mount).
-        throw new Error('useCardStore: react module not wired; call setReactModule first');
-    }
+    // The card renders only after mountCard wired react, so a throw here is a
+    // hook called outside the card (a test, or a mis-wired mount).
+    const react = getReactModule();
     const storeRef = react.useRef(null);
     let store = storeRef.current;
     if (store === null) {

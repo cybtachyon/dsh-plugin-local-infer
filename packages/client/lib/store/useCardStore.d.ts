@@ -17,14 +17,19 @@
  */
 import { type CardAction, type CardState } from './types.ts';
 /**
- * ReactLike is the react surface the store binding calls. The full react
- * type is a runtime external, not a compile dependency, so the store names
- * only what it calls.
+ * ReactLike is the react surface the card calls. The full react type is a
+ * runtime external, not a compile dependency, so the card names only what it
+ * calls: the classic transform's createElement and Fragment, the hooks the
+ * components and the store binding use.
  */
 export interface ReactLike {
+    createElement(type: unknown, props: unknown, ...children: unknown[]): unknown;
+    Fragment: unknown;
+    useState<S>(initial: S | (() => S)): [S, (value: S | ((prev: S) => S)) => void];
     useRef<T>(initialValue: T): {
         current: T;
     };
+    useEffect(effect: () => (void | (() => void)), deps?: unknown[]): void;
     useSyncExternalStore<Snapshot>(subscribe: (onStoreChange: () => void) => () => void, getSnapshot: () => Snapshot): Snapshot;
 }
 /**
@@ -46,6 +51,12 @@ export interface CardStoreInstance {
  * hook reads the same frozen-table module the card renders with.
  */
 export declare function setReactModule(react: ReactLike): void;
+/**
+ * getReactModule returns the bootstrap's resolved react module. It throws if
+ * setReactModule has not run, so a render before the bootstrap wired react
+ * fails loudly (the same contract the hook has).
+ */
+export declare function getReactModule(): ReactLike;
 /**
  * createCardStore builds one per-mount store instance. dispatch reduces the
  * action over the current snapshot through cardReducer and notifies

@@ -24,12 +24,17 @@ import {
 } from './types.ts'
 
 /**
- * ReactLike is the react surface the store binding calls. The full react
- * type is a runtime external, not a compile dependency, so the store names
- * only what it calls.
+ * ReactLike is the react surface the card calls. The full react type is a
+ * runtime external, not a compile dependency, so the card names only what it
+ * calls: the classic transform's createElement and Fragment, the hooks the
+ * components and the store binding use.
  */
 export interface ReactLike {
+  createElement(type: unknown, props: unknown, ...children: unknown[]): unknown
+  Fragment: unknown
+  useState<S>(initial: S | (() => S)): [S, (value: S | ((prev: S) => S)) => void]
   useRef<T>(initialValue: T): { current: T }
+  useEffect(effect: () => (void | (() => void)), deps?: unknown[]): void
   useSyncExternalStore<Snapshot>(
     subscribe: (onStoreChange: () => void) => () => void,
     getSnapshot: () => Snapshot,
@@ -62,6 +67,18 @@ let reactModuleRef: ReactLike | null = null
  */
 export function setReactModule(react: ReactLike): void {
   reactModuleRef = react
+}
+
+/**
+ * getReactModule returns the bootstrap's resolved react module. It throws if
+ * setReactModule has not run, so a render before the bootstrap wired react
+ * fails loudly (the same contract the hook has).
+ */
+export function getReactModule(): ReactLike {
+  if (reactModuleRef === null) {
+    throw new Error('react module not wired; call setReactModule first')
+  }
+  return reactModuleRef
 }
 
 /**
@@ -107,12 +124,9 @@ export function createCardStore(): CardStoreInstance {
  * components take the instance as a prop; only the owner calls the hook.
  */
 export function useCardStore(): CardStoreInstance {
-  const react = reactModuleRef
-  if (react === null) {
-    // The card renders only after mountCard wired react, so a null here is a
-    // hook called outside the card (a test, or a mis-wired mount).
-    throw new Error('useCardStore: react module not wired; call setReactModule first')
-  }
+  // The card renders only after mountCard wired react, so a throw here is a
+  // hook called outside the card (a test, or a mis-wired mount).
+  const react = getReactModule()
   const storeRef = react.useRef<CardStoreInstance | null>(null)
   let store = storeRef.current
   if (store === null) {

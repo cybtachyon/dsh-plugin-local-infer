@@ -39,16 +39,42 @@ async function routeExists() {
   }
 }
 
+// packages/client/src/styles.ts
+var BUTTON_BASE = {
+  padding: "5px 14px",
+  borderRadius: 6,
+  font: "inherit",
+  cursor: "pointer",
+  border: "1px solid var(--dsw-alias-border-secondary, rgba(128,128,128,0.24))"
+};
+var GHOST_BUTTON = {
+  ...BUTTON_BASE,
+  background: "transparent",
+  color: "inherit"
+};
+var PRIMARY_BUTTON = {
+  ...BUTTON_BASE,
+  background: "var(--dsw-alias-accent, #0a84ff)",
+  color: "#fff",
+  border: "none"
+};
+
 // packages/client/src/store/useCardStore.ts
 var reactModuleRef = null;
-function setReactModule(react) {
-  reactModuleRef = react;
+function setReactModule(react2) {
+  reactModuleRef = react2;
+}
+
+// packages/client/src/render/primitives.tsx
+var primitivesRef = null;
+function setPrimitivesModule(primitives) {
+  primitivesRef = primitives;
 }
 
 // packages/client/src/plugin.ts
 var PACKAGE_NAME = "dsh-plugin-local-infer";
-function placeholderCard(react, _localeRef, _primitives) {
-  return () => react.createElement(
+function placeholderCard(react2, _localeRef, _primitives) {
+  return () => react2.createElement(
     "div",
     { "data-local-infer": "placeholder" },
     "Local Infer (card under construction)"
@@ -84,14 +110,14 @@ function registerCard(ctx) {
   });
 }
 function mountCard(ctx, localeRef) {
-  let react;
+  let react2;
   try {
-    react = require("react");
+    react2 = require("react");
   } catch (error) {
     console.error(`[local-infer] settings card skipped: ${error}`);
     return;
   }
-  setReactModule(react);
+  setReactModule(react2);
   let primitives;
   try {
     primitives = require("@deepseek-ai/dsh-client-ui-primitives");
@@ -101,7 +127,8 @@ function mountCard(ctx, localeRef) {
   if (primitives && typeof primitives.Menu !== "function") {
     primitives = null;
   }
-  const Card = placeholderCard(react, localeRef, primitives);
+  setPrimitivesModule(primitives);
+  const Card = placeholderCard(react2, localeRef, primitives);
   ctx.slots.inject("plugins.bundle.config", function* () {
     yield ctx.slots.register({ name: "plugins.bundle.config", key: PACKAGE_NAME }, Card);
   });

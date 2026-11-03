@@ -21,6 +21,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { routeExists } from './api/routes.ts'
+import { setPrimitivesModule, type PrimitivesModule } from './render/primitives.tsx'
 import { setReactModule, type ReactLike as StoreReactLike } from './store/useCardStore.ts'
 
 // The require the lazy-CJS factory injects: the shell's frozen platform module
@@ -33,12 +34,6 @@ declare const require: (name: string) => unknown
 // dependency, so the card names only what it calls.
 interface ReactLike {
   createElement(type: unknown, props: unknown, ...children: unknown[]): unknown
-}
-
-// The minimal primitives surface the card checks for the native-control
-// fallback: a seed whose Menu is not a function predates the primitives table.
-interface PrimitivesLike {
-  Menu: unknown
 }
 
 // The Plugins page dispatches a bundle's configuration by the bundle's
@@ -86,7 +81,7 @@ type SlotsScope = Context & { slots: SlotsService }
 function placeholderCard(
   react: ReactLike,
   _localeRef: LocaleRef,
-  _primitives: PrimitivesLike | null,
+  _primitives: PrimitivesModule | null,
 ): () => unknown {
   return () =>
     react.createElement(
@@ -162,15 +157,18 @@ function mountCard(ctx: SlotsScope, localeRef: LocaleRef): void {
   // whose table predates the seed (or a loader that cannot materialize
   // it) keeps the native controls: a missing seed is a fallback, not an
   // error, so the card still renders.
-  let primitives: PrimitivesLike | null
+  let primitives: PrimitivesModule | null
   try {
-    primitives = require('@deepseek-ai/dsh-client-ui-primitives') as PrimitivesLike
+    primitives = require('@deepseek-ai/dsh-client-ui-primitives') as PrimitivesModule
   } catch {
     primitives = null
   }
   if (primitives && typeof primitives.Menu !== 'function') {
     primitives = null
   }
+  // The renderers draw the seed when present and the native controls when it
+  // is absent, so the resolved value (or null) is handed to them here.
+  setPrimitivesModule(primitives)
   const Card = placeholderCard(react as ReactLike, localeRef, primitives)
   // slots.inject waits until a slot is declared, so each host fills the one
   // it has and the other wait never fires: from dsh 0.1.6-alpha.2 on hosts
