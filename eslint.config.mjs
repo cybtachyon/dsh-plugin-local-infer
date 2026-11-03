@@ -2,6 +2,7 @@
 
 import js from '@eslint/js';
 import { defineConfig } from 'eslint/config';
+import reactHooks from 'eslint-plugin-react-hooks';
 import tseslint from 'typescript-eslint';
 
 /**
@@ -83,6 +84,27 @@ export default defineConfig([
             // the end-of-file-fixer pre-commit hook applies, so `pnpm lint`
             // reports a missing final newline before the commit barrier does.
             'eol-last': ['error', 'always'],
+        },
+    },
+    {
+        // The client package is the only React surface in the repo (the
+        // lazy-CJS card source and its tests). The two core hooks rules gate
+        // the use* bindings; the compiler-era rules from the recommended
+        // preset stay off: the card targets React 18 without the compiler.
+        //
+        // Known gap: the card reaches the hooks through the lowercase `react`
+        // shim (render/react.ts), and both rules only recognize a `use*`
+        // identifier or a PascalCase namespace (React.use*). So `react.useX`
+        // calls are not analyzed here. The rules still catch a direct
+        // `import { useX } from 'react'` and a `React.useX` call.
+        files: ['packages/client/**/*.{ts,tsx}'],
+        // The **/*.{js,ts} block above sets the parser only for its own
+        // glob, so the .tsx files need it here.
+        languageOptions: { parser: tseslint.parser },
+        plugins: { 'react-hooks': reactHooks },
+        rules: {
+            'react-hooks/rules-of-hooks': 'error',
+            'react-hooks/exhaustive-deps': 'warn',
         },
     },
 ]);

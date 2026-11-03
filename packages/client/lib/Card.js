@@ -231,7 +231,6 @@ export function card(_react, localeRef, _primitives) {
             };
             // The mount effect runs once; the store binding re-renders on a
             // dispatch, so the load guard reads the live snapshot.
-            // eslint-disable-next-line react-hooks/exhaustive-deps
         }, []);
         // The chat-template auto-download: fires once when the summary reports an
         // absent template the CLI can pull.

@@ -211,7 +211,7 @@ edited.
 - [x] [**T4.1 Meet the coverage thresholds.**](docs/PLAN-TASK-T4.1-coverage-thresholds.md)
 - [x] [**T4.2 End-to-end relink verification.**](docs/PLAN-TASK-T4.2-e2e-relink.md)
 - [x] [**T4.3 Update the docs.**](docs/PLAN-TASK-T4.3-update-docs.md)
-- [ ] [**T4.4 React hooks lint rules (optional).**](docs/PLAN-TASK-T4.4-react-hooks-lint.md)
+- [x] [**T4.4 React hooks lint rules (optional).**](docs/PLAN-TASK-T4.4-react-hooks-lint.md)
 
 ## Plan definition of done
 
