@@ -2,7 +2,7 @@
 /**
  * build-client: produce the lazy-CJS browser artifact dsh/client.js.
  *
- * Two steps (PLAN.md, "Build pipeline"):
+ * Two steps:
  *   1. esbuild bundles packages/client/src/index.ts to the CJS intermediate
  *      dsh/.build/client.cjs. react and @deepseek-ai/dsh-client-ui-primitives
  *      stay external: they resolve at runtime through the shell's frozen

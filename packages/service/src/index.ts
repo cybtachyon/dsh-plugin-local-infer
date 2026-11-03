@@ -195,8 +195,8 @@ export class LocalInfer extends Service implements LocalInferService {
   // confirm which model a live engine serves: a port the plugin launched reads
   // as that model, a port it did not launch (a foreign engine) has no entry and
   // reads as "engine running, model unknown". The map resets on a host
-  // restart, so a fresh start tracks only the launches it made itself. See
-  // PLAN.md for the PID-cache note: a full PID cache is a future refinement.
+  // restart, so a fresh start tracks only the launches it made itself. A full
+  // PID cache is a future refinement.
   private readonly launchedModels = new Map<number, { engineId: string; modelId: string }>()
   // The live ports tracked per launched engine (launches and adopted re-links
   // both register). The death handler clears the engine's plugin-launched flag
