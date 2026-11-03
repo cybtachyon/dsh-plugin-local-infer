@@ -24,8 +24,12 @@ import type { Context } from '@deepseek-ai/cordis';
  * so the card narrows the scoped context to the members it needs.
  */
 export interface SlotsService {
-    /** Wait until the named slot is declared, then run the generator body. */
-    inject(name: string, body: () => Generator<unknown, void, unknown>): void;
+    /**
+     * Wait until the named slot is declared, then run the body. The host calls
+     * the body as a plain function (the working plugins register this way), so
+     * a generator body is never driven and its register would not run.
+     */
+    inject(name: string, body: () => void): void;
     /** Register a component into the named slot; returns the registration handle. */
     register(spec: SlotSpec, component: unknown): unknown;
 }

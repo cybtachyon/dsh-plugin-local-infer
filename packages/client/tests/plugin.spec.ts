@@ -17,7 +17,7 @@ interface Scope {
   locale: string | undefined
   effect?: (disposer: () => void, label?: string) => void
   slots: {
-    inject: (name: string, body: () => Generator<unknown, void, unknown>) => void
+    inject: (name: string, body: () => void) => void
     register: (
       spec: { name: string; key?: string; id?: string; order?: number },
       component: unknown,
@@ -27,7 +27,7 @@ interface Scope {
 
 type ApplyCtx = Parameters<typeof apply>[0]
 
-// A slots scope that runs each injected generator so register is captured.
+// A slots scope that runs each injected body so register is captured.
 function makeScope(registrations: unknown[], withEffect = true): Scope {
   return {
     locale: 'en',
@@ -35,8 +35,8 @@ function makeScope(registrations: unknown[], withEffect = true): Scope {
       ? { effect: (disposer: () => void) => { disposer() } }
       : {}),
     slots: {
-      inject: (_name: string, body: () => Generator<unknown, void, unknown>) => {
-        body().next()
+      inject: (_name: string, body: () => void) => {
+        body()
       },
       register: (spec: unknown) => {
         registrations.push(spec)

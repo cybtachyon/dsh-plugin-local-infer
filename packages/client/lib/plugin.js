@@ -105,12 +105,15 @@ function mountCard(ctx, localeRef) {
     const Card = card(react, localeRef, primitives);
     // slots.inject waits until a slot is declared, so each host fills the one
     // it has and the other wait never fires: from dsh 0.1.6-alpha.2 on hosts
-    // declare the Plugins page's, older ones only the Settings one.
-    ctx.slots.inject('plugins.bundle.config', function* () {
-        yield ctx.slots.register({ name: 'plugins.bundle.config', key: PACKAGE_NAME }, Card);
+    // declare the Plugins page's, older ones only the Settings one. The body is
+    // a plain function (the host calls it directly, the way the other bundle
+    // config registrants do); a generator body is never driven, so its register
+    // would not run and the card would not mount.
+    ctx.slots.inject('plugins.bundle.config', () => {
+        ctx.slots.register({ name: 'plugins.bundle.config', key: PACKAGE_NAME }, Card);
     });
-    ctx.slots.inject('settings.plugin.item', function* () {
-        yield ctx.slots.register({ name: 'settings.plugin.item', id: 'local-infer', key: 'local-infer', order: 41 }, Card);
+    ctx.slots.inject('settings.plugin.item', () => {
+        ctx.slots.register({ name: 'settings.plugin.item', id: 'local-infer', key: 'local-infer', order: 41 }, Card);
     });
 }
 /**

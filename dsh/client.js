@@ -3366,11 +3366,11 @@ function mountCard(ctx, localeRef) {
   }
   setPrimitivesModule(primitives);
   const Card = card(react2, localeRef, primitives);
-  ctx.slots.inject("plugins.bundle.config", function* () {
-    yield ctx.slots.register({ name: "plugins.bundle.config", key: PACKAGE_NAME }, Card);
+  ctx.slots.inject("plugins.bundle.config", () => {
+    ctx.slots.register({ name: "plugins.bundle.config", key: PACKAGE_NAME }, Card);
   });
-  ctx.slots.inject("settings.plugin.item", function* () {
-    yield ctx.slots.register(
+  ctx.slots.inject("settings.plugin.item", () => {
+    ctx.slots.register(
       { name: "settings.plugin.item", id: "local-infer", key: "local-infer", order: 41 },
       Card
     );

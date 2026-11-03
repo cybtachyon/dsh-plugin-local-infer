@@ -48,8 +48,12 @@ const PACKAGE_NAME = 'dsh-plugin-local-infer'
  * so the card narrows the scoped context to the members it needs.
  */
 export interface SlotsService {
-  /** Wait until the named slot is declared, then run the generator body. */
-  inject(name: string, body: () => Generator<unknown, void, unknown>): void
+  /**
+   * Wait until the named slot is declared, then run the body. The host calls
+   * the body as a plain function (the working plugins register this way), so
+   * a generator body is never driven and its register would not run.
+   */
+  inject(name: string, body: () => void): void
   /** Register a component into the named slot; returns the registration handle. */
   register(spec: SlotSpec, component: unknown): unknown
 }
@@ -148,12 +152,15 @@ function mountCard(ctx: SlotsScope, localeRef: LocaleRef): void {
   const Card = card(react as ReactLike, localeRef, primitives)
   // slots.inject waits until a slot is declared, so each host fills the one
   // it has and the other wait never fires: from dsh 0.1.6-alpha.2 on hosts
-  // declare the Plugins page's, older ones only the Settings one.
-  ctx.slots.inject('plugins.bundle.config', function* () {
-    yield ctx.slots.register({ name: 'plugins.bundle.config', key: PACKAGE_NAME }, Card)
+  // declare the Plugins page's, older ones only the Settings one. The body is
+  // a plain function (the host calls it directly, the way the other bundle
+  // config registrants do); a generator body is never driven, so its register
+  // would not run and the card would not mount.
+  ctx.slots.inject('plugins.bundle.config', () => {
+    ctx.slots.register({ name: 'plugins.bundle.config', key: PACKAGE_NAME }, Card)
   })
-  ctx.slots.inject('settings.plugin.item', function* () {
-    yield ctx.slots.register(
+  ctx.slots.inject('settings.plugin.item', () => {
+    ctx.slots.register(
       { name: 'settings.plugin.item', id: 'local-infer', key: 'local-infer', order: 41 },
       Card,
     )
