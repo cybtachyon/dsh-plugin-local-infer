@@ -38,6 +38,10 @@ export interface ReactLike {
   useSyncExternalStore<Snapshot>(
     subscribe: (onStoreChange: () => void) => () => void,
     getSnapshot: () => Snapshot,
+    // The server pass reads the snapshot without subscribing; a client-only
+    // store hands back the same getSnapshot, so a host that server-renders a
+    // slot (the Plugins page) never throws "Missing getServerSnapshot".
+    getServerSnapshot?: () => Snapshot,
   ): Snapshot
 }
 
@@ -133,6 +137,9 @@ export function useCardStore(): CardStoreInstance {
     store = createCardStore()
     storeRef.current = store
   }
-  react.useSyncExternalStore(store.subscribe, store.getSnapshot)
+  // The third argument (getServerSnapshot) lets a host server-render the slot
+  // without a "Missing getServerSnapshot" throw; a client-only store reads the
+  // same snapshot, so it is safe to hand back getSnapshot.
+  react.useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot)
   return store
 }

@@ -794,7 +794,7 @@ function useCardStore() {
     store = createCardStore();
     storeRef.current = store;
   }
-  react2.useSyncExternalStore(store.subscribe, store.getSnapshot);
+  react2.useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   return store;
 }
 
@@ -807,7 +807,7 @@ var react = {
   useState: (initial) => getReactModule().useState(initial),
   useRef: (initialValue) => getReactModule().useRef(initialValue),
   useEffect: (effect, deps) => getReactModule().useEffect(effect, deps),
-  useSyncExternalStore: (subscribe, getSnapshot) => getReactModule().useSyncExternalStore(subscribe, getSnapshot)
+  useSyncExternalStore: (subscribe, getSnapshot, getServerSnapshot) => getReactModule().useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
 };
 
 // packages/client/src/render/SelectPill.tsx

@@ -30,7 +30,7 @@ export interface ReactLike {
         current: T;
     };
     useEffect(effect: () => (void | (() => void)), deps?: unknown[]): void;
-    useSyncExternalStore<Snapshot>(subscribe: (onStoreChange: () => void) => () => void, getSnapshot: () => Snapshot): Snapshot;
+    useSyncExternalStore<Snapshot>(subscribe: (onStoreChange: () => void) => () => void, getSnapshot: () => Snapshot, getServerSnapshot?: () => Snapshot): Snapshot;
 }
 /**
  * CardStoreInstance is the per-mount store instance: the live state read,

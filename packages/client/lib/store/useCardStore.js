@@ -91,7 +91,10 @@ export function useCardStore() {
         store = createCardStore();
         storeRef.current = store;
     }
-    react.useSyncExternalStore(store.subscribe, store.getSnapshot);
+    // The third argument (getServerSnapshot) lets a host server-render the slot
+    // without a "Missing getServerSnapshot" throw; a client-only store reads the
+    // same snapshot, so it is safe to hand back getSnapshot.
+    react.useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
     return store;
 }
 //# sourceMappingURL=useCardStore.js.map
