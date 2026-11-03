@@ -187,7 +187,7 @@ rendered DOM and behavior identical, and verify in the GUI.
 - [x] [**T3.1 `src/render/primitives.tsx`.**](docs/PLAN-TASK-T3.1-render-primitives.md)
 - [x] [**T3.2 `NumberField` + `SelectPill`.**](docs/PLAN-TASK-T3.2-numberfield-selectpill.md)
 - [x] [**T3.3 `ChatTemplateField`.**](docs/PLAN-TASK-T3.3-chat-template-field.md)
-- [ ] [**T3.4 `Meter` + `CustomArgsPanel`.**](docs/PLAN-TASK-T3.4-meter-custom-args.md)
+- [x] [**T3.4 `Meter` + `CustomArgsPanel`.**](docs/PLAN-TASK-T3.4-meter-custom-args.md)
 - [ ] [**T3.5 `DepsPanel`.**](docs/PLAN-TASK-T3.5-deps-panel.md)
 - [ ] [**T3.6 `ProviderList` + per-entry Launch button.**](docs/PLAN-TASK-T3.6-provider-list.md)
 - [ ] [**T3.7 `LogsPanel`.**](docs/PLAN-TASK-T3.7-logs-panel.md)

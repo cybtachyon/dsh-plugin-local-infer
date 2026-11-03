@@ -28,7 +28,7 @@ export type { WarningBannerModel, WarningModel, WarningsModel, WarningTone, } fr
 export type { StoredPlatformConfig } from './config.ts';
 export type { InstallResponse } from './viewmodels/depsHelpers.ts';
 export type { ChatTemplateStatusModel, LocalInferSummary, ProviderSummaryEntry, } from './viewmodels/summary.ts';
-export type { Config, RegisterResult } from 'dsh-plugin-local-infer/core';
+export type { Config, CustomArg, RegisterResult } from 'dsh-plugin-local-infer/core';
 export type { DownloadResult, LaunchResult } from 'dsh-plugin-local-infer/service';
 /**
  * Mount the Web UI. The browser card (dsh/client.js) registers into the

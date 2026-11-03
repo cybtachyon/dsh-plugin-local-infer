@@ -56,7 +56,7 @@ export type {
   LocalInferSummary,
   ProviderSummaryEntry,
 } from './viewmodels/summary.ts'
-export type { Config, RegisterResult } from 'dsh-plugin-local-infer/core'
+export type { Config, CustomArg, RegisterResult } from 'dsh-plugin-local-infer/core'
 export type { DownloadResult, LaunchResult } from 'dsh-plugin-local-infer/service'
 
 /**
