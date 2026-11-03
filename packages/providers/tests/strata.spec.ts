@@ -7,10 +7,10 @@ import {
   STRATA_VISION_OPTIONS,
   strataModelKey,
   strataSourceLaunchArgs,
-} from '../src/engines/strata.ts'
-import { strataLinuxSourceLaunch } from '../src/engines/strataLinux.ts'
-import { strataMacOSSourceLaunch } from '../src/engines/strataMacOS.ts'
-import { strataWindowsSourceLaunch } from '../src/engines/strataWindows.ts'
+} from '../src/engines/strata/strata.ts'
+import { strataLinuxSourceLaunch } from '../src/engines/strata/strataLinux.ts'
+import { strataMacOSSourceLaunch } from '../src/engines/strata/strataMacOS.ts'
+import { strataWindowsSourceLaunch } from '../src/engines/strata/strataWindows.ts'
 
 describe('Strata parameter surface', () => {
   it('ships the strata launch flag surface, one spec per flag', () => {

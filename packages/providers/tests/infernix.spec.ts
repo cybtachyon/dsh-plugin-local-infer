@@ -17,8 +17,8 @@ import {
   infernixDraftModelPath,
   infernixGetDownloads,
   infernixModelKey,
-} from '../src/engines/infernix.ts'
-import { LM_HEAD_DRAFT_GATE_MESSAGE, NINFER_PARAMETERS } from '../src/engines/ninfer.ts'
+} from '../src/engines/infernix/infernix.ts'
+import { LM_HEAD_DRAFT_GATE_MESSAGE, NINFER_PARAMETERS } from '../src/engines/ninfer/ninfer.ts'
 import type { ParameterSpec } from 'dsh-plugin-local-infer/core'
 
 // The same opener test the local-infer/behavior-first-description eslint rule

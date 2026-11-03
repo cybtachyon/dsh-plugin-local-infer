@@ -1,6 +1,7 @@
 /**
  * The shared engine-adapter helpers: the spec-to-argv and spec-to-env
- * translators the concrete adapters (the `engines/*Adapter.ts` files) compose
+ * translators the concrete adapters (the `engines/<engine>/<engine>Adapter.ts`
+ * files) compose
  * into a `LaunchPlan`, the card's Custom Arguments translators, the
  * `LifecycleHost` the deploy, health-check, and stop steps drive, and the
  * health poll. The node implementation (`nodeLifecycleHost`) is what the

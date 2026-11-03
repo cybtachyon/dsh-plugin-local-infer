@@ -8,21 +8,21 @@
  * local changes aborts, because a rebase would eat the user's work.
  * @module dsh-plugin-local-infer/providers/acquire
  */
-import { NINFER_LINUX } from "./engines/ninferLinux.js";
-import { NINFER_MACOS } from "./engines/ninferMacOS.js";
-import { NINFER_WINDOWS } from "./engines/ninferWindows.js";
-import { INFERNIX_LINUX } from "./engines/infernixLinux.js";
-import { INFERNIX_MACOS } from "./engines/infernixMacOS.js";
-import { INFERNIX_WINDOWS } from "./engines/infernixWindows.js";
-import { LLAMACPP_LINUX } from "./engines/llamacppLinux.js";
-import { LLAMACPP_MACOS } from "./engines/llamacppMacOS.js";
-import { LLAMACPP_WINDOWS } from "./engines/llamacppWindows.js";
-import { HYPERQWEN_LINUX } from "./engines/hyperqwenLinux.js";
-import { HYPERQWEN_MACOS } from "./engines/hyperqwenMacOS.js";
-import { HYPERQWEN_WINDOWS } from "./engines/hyperqwenWindows.js";
-import { STRATA_LINUX } from "./engines/strataLinux.js";
-import { STRATA_MACOS } from "./engines/strataMacOS.js";
-import { STRATA_WINDOWS } from "./engines/strataWindows.js";
+import { NINFER_LINUX } from "./engines/ninfer/ninferLinux.js";
+import { NINFER_MACOS } from "./engines/ninfer/ninferMacOS.js";
+import { NINFER_WINDOWS } from "./engines/ninfer/ninferWindows.js";
+import { INFERNIX_LINUX } from "./engines/infernix/infernixLinux.js";
+import { INFERNIX_MACOS } from "./engines/infernix/infernixMacOS.js";
+import { INFERNIX_WINDOWS } from "./engines/infernix/infernixWindows.js";
+import { LLAMACPP_LINUX } from "./engines/llamacpp/llamacppLinux.js";
+import { LLAMACPP_MACOS } from "./engines/llamacpp/llamacppMacOS.js";
+import { LLAMACPP_WINDOWS } from "./engines/llamacpp/llamacppWindows.js";
+import { HYPERQWEN_LINUX } from "./engines/hyperqwen/hyperqwenLinux.js";
+import { HYPERQWEN_MACOS } from "./engines/hyperqwen/hyperqwenMacOS.js";
+import { HYPERQWEN_WINDOWS } from "./engines/hyperqwen/hyperqwenWindows.js";
+import { STRATA_LINUX } from "./engines/strata/strataLinux.js";
+import { STRATA_MACOS } from "./engines/strata/strataMacOS.js";
+import { STRATA_WINDOWS } from "./engines/strata/strataWindows.js";
 /**
  * The remote name a user-provided fork is added under, so the checkout's own
  * origin (the upstream it was cloned from) survives the fork override.

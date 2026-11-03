@@ -7,7 +7,7 @@ import {
   NINFER_PARAMETERS,
   SPEC_GATE_MESSAGE,
   SPEC_OPTIONS,
-} from '../src/engines/ninfer.ts'
+} from '../src/engines/ninfer/ninfer.ts'
 import type { ParameterSpec } from 'dsh-plugin-local-infer/core'
 
 // The same opener test the local-infer/behavior-first-description eslint rule
