@@ -41,6 +41,24 @@ export declare function customArgEnv(config: Config): Record<string, string>;
  */
 export declare function envFromSpecs(specs: readonly ParameterSpec[], config: Config): Record<string, string>;
 /**
+ * ConfigFileFormat is the on-disk format a `config` deploy target renders to:
+ * JSON (the built-in stringify), a flat `.env` file, or YAML.
+ */
+export type ConfigFileFormat = 'json' | 'yaml' | 'env';
+/**
+ * configFileFromSpecs turns a spec surface and a config into the content of the
+ * config file the deploy step writes: every spec whose `deploy.target` is
+ * `'config'` resolves its value (`toConfig(value) ?? value`, falling back to the
+ * spec default) and nests it under `deploy.block` / `deploy.key` (the key
+ * defaults to the spec key), then the result renders in the requested format.
+ * A spec with no `deploy`, or a non-`config` target, contributes nothing.
+ *
+ * The YAML format loads the `yaml` package lazily (a root devDependency, so the
+ * JSON and env paths never touch it at runtime); a missing package throws only
+ * when the YAML format is requested.
+ */
+export declare function configFileFromSpecs(specs: readonly ParameterSpec[], config: Config, format: ConfigFileFormat): string;
+/**
  * createNodeLifecycleHost builds the node `LifecycleHost`: `run` through the
  * system shell (a 10-minute cap, so a hung CUDA build cannot hang the panel),
  * `spawn` a detached child the stop step can signal, `writeFile` the config

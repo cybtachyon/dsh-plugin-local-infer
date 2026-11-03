@@ -11,6 +11,7 @@
 
 import { exec, spawn as nodeSpawn } from 'node:child_process'
 import { mkdir, writeFile as fsWriteFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { dirname } from 'node:path'
 import type {
   CommandOutcome,
@@ -113,6 +114,104 @@ export function envFromSpecs(
     env[key] = valueString
   }
   return env
+}
+
+/**
+ * ConfigFileFormat is the on-disk format a `config` deploy target renders to:
+ * JSON (the built-in stringify), a flat `.env` file, or YAML.
+ */
+export type ConfigFileFormat = 'json' | 'yaml' | 'env'
+
+/**
+ * configFileFromSpecs turns a spec surface and a config into the content of the
+ * config file the deploy step writes: every spec whose `deploy.target` is
+ * `'config'` resolves its value (`toConfig(value) ?? value`, falling back to the
+ * spec default) and nests it under `deploy.block` / `deploy.key` (the key
+ * defaults to the spec key), then the result renders in the requested format.
+ * A spec with no `deploy`, or a non-`config` target, contributes nothing.
+ *
+ * The YAML format loads the `yaml` package lazily (a root devDependency, so the
+ * JSON and env paths never touch it at runtime); a missing package throws only
+ * when the YAML format is requested.
+ */
+export function configFileFromSpecs(
+  specs: readonly ParameterSpec[],
+  config: Config,
+  format: ConfigFileFormat,
+): string {
+  const object: Record<string, unknown> = {}
+  for (const spec of specs) {
+    if (spec.deploy?.target !== 'config') continue
+    const value = config[spec.key] ?? spec.defaultValue
+    if (value === undefined) continue
+    const resolved = spec.toConfig === undefined ? value : (spec.toConfig(value) ?? value)
+    const block = spec.deploy.block
+    const key = spec.deploy.key ?? spec.key
+    if (block === undefined) {
+      object[key] = resolved
+      continue
+    }
+    const existing = object[block]
+    const target =
+      existing !== null && typeof existing === 'object'
+        ? (existing as Record<string, unknown>)
+        : {}
+    target[key] = resolved
+    object[block] = target
+  }
+  switch (format) {
+    case 'json':
+      return JSON.stringify(object, null, 2)
+    case 'env':
+      return renderEnv(object)
+    case 'yaml':
+      return renderYaml(object)
+  }
+}
+
+/**
+ * renderEnv flattens a nested config object into flat `KEY=VALUE` lines: a
+ * top-level block object emits one line per leaf (the leaf key, not the block),
+ * and a top-level scalar emits itself. Non-string leaves stringify through
+ * String (numbers, booleans) or JSON (objects, arrays).
+ */
+function renderEnv(object: Record<string, unknown>): string {
+  const lines: string[] = []
+  for (const [key, value] of Object.entries(object)) {
+    if (value !== null && typeof value === 'object') {
+      for (const [leaf, leafValue] of Object.entries(value as Record<string, unknown>)) {
+        lines.push(`${leaf}=${envValue(leafValue)}`)
+      }
+    } else {
+      lines.push(`${key}=${envValue(value)}`)
+    }
+  }
+  return lines.join('\n')
+}
+
+/**
+ * envValue stringifies one `.env` leaf: strings pass through, numbers and
+ * booleans through String, and anything else through JSON.
+ */
+function envValue(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return JSON.stringify(value)
+}
+
+/**
+ * renderYaml stringifies a config object through the `yaml` package. The
+ * package is a root devDependency (the YAML format is a test and optional path),
+ * so it loads lazily through createRequire and the JSON/env paths never pay for
+ * it at runtime.
+ */
+function renderYaml(object: Record<string, unknown>): string {
+  // createRequire anchors the lookup at this file, so the root devDependency
+  // resolves through the parent node_modules even from the compiled lib/.
+  const { stringify } = createRequire(import.meta.url)('yaml') as {
+    stringify: (value: unknown) => string
+  }
+  return stringify(object)
 }
 
 /**

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  configFileFromSpecs,
   createNodeLifecycleHost,
   customArgEnv,
   customArgFlags,
@@ -25,12 +26,14 @@ import { HYPERQWEN_PARAMETERS } from '../src/engines/hyperqwen/hyperqwen.ts'
 import { INFERNIX_MODEL_ARTIFACTS } from '../src/engines/infernix/infernix.ts'
 import { LLAMACPP_PARAMETERS } from '../src/engines/llamacpp/llamacpp.ts'
 import { NINFER_PARAMETERS } from '../src/engines/ninfer/ninfer.ts'
+import { parse as parseYaml } from 'yaml'
 import type {
   CommandOutcome,
   FetchResult,
   HardwareProfile,
   LaunchPlan,
   LifecycleHost,
+  ParameterSpec,
   ProcessExitInfo,
   ProcessHandle,
   RunOptions,
@@ -1190,6 +1193,87 @@ describe('LifecycleHost.writeFile', () => {
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('configFileFromSpecs', () => {
+  // A surface mixing config-deployed specs (server and engine blocks), a cli
+  // spec, and a no-deploy spec: only the config specs may contribute.
+  const specs: ParameterSpec[] = [
+    {
+      key: 'port',
+      label: 'Port',
+      description: 'The port the server listens on.',
+      form: { kind: 'number' },
+      defaultValue: 8080,
+      deploy: { target: 'config', format: 'json', block: 'server', key: 'port' },
+    },
+    {
+      key: 'host',
+      label: 'Host',
+      description: 'The host the server binds to.',
+      form: { kind: 'text' },
+      defaultValue: '127.0.0.1',
+      deploy: { target: 'config', format: 'json', block: 'server', key: 'host' },
+    },
+    {
+      key: 'threads',
+      label: 'Threads',
+      description: 'The worker thread count.',
+      form: { kind: 'number' },
+      defaultValue: 4,
+      deploy: { target: 'config', format: 'json', block: 'engine', key: 'threads' },
+    },
+    {
+      key: 'cliOnly',
+      label: 'CLI only',
+      description: 'A cli-deployed parameter.',
+      form: { kind: 'text' },
+      defaultValue: 'x',
+      deploy: { target: 'cli' },
+    },
+    {
+      key: 'noDeploy',
+      label: 'No deploy',
+      description: 'A parameter with no deploy target.',
+      form: { kind: 'text' },
+      defaultValue: 'y',
+    },
+  ]
+
+  it('renders the nested JSON config from the server and engine blocks', () => {
+    const content = configFileFromSpecs(specs, {}, 'json')
+    expect(JSON.parse(content)).toEqual({
+      server: { port: 8080, host: '127.0.0.1' },
+      engine: { threads: 4 },
+    })
+  })
+
+  it('lets a config value override the spec default', () => {
+    const content = configFileFromSpecs(specs, { port: 9090 }, 'json')
+    expect(JSON.parse(content)).toEqual({
+      server: { port: 9090, host: '127.0.0.1' },
+      engine: { threads: 4 },
+    })
+  })
+
+  it('emits flat KEY=VALUE lines for the env format and skips non-config specs', () => {
+    const content = configFileFromSpecs(specs, {}, 'env')
+    const lines = content.split('\n')
+    expect(lines).toContain('port=8080')
+    expect(lines).toContain('host=127.0.0.1')
+    expect(lines).toContain('threads=4')
+    // The cli and no-deploy specs contribute nothing to the config file.
+    expect(lines).not.toContain('cliOnly')
+    expect(lines).not.toContain('noDeploy')
+  })
+
+  it('round-trips the same object through the yaml format', () => {
+    const content = configFileFromSpecs(specs, {}, 'yaml')
+    expect(parseYaml(content)).toEqual({
+      server: { port: 8080, host: '127.0.0.1' },
+      engine: { threads: 4 },
+    })
   })
 })
 
