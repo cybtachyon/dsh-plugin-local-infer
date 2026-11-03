@@ -172,7 +172,7 @@ its own `docs/PLAN-TASK-*.md` file, linked from the title below.
 
 ### Phase 2: the store (single source of truth)
 
-- [ ] [**T2.1 `src/store/types.ts`.**](docs/PLAN-TASK-T2.1-store-types.md)
+- [x] [**T2.1 `src/store/types.ts`.**](docs/PLAN-TASK-T2.1-store-types.md)
 - [ ] [**T2.2 `src/store/reducer.ts`.**](docs/PLAN-TASK-T2.2-store-reducer.md)
 - [ ] [**T2.3 `src/store/sync.ts`.**](docs/PLAN-TASK-T2.3-store-sync.md)
 - [ ] [**T2.4 `src/store/derive.ts`.**](docs/PLAN-TASK-T2.4-store-derive.md)
