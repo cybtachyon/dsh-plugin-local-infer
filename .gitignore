@@ -270,3 +270,6 @@ Temporary Items
 # TypeScript build output is committed so a git install ships the entry points
 # (the bundle's `files` ships `packages/*/lib/**`; see the root package.json).
 !lib/
+
+# esbuild intermediate for the generated dsh/client.js (scripts/build-client.mjs)
+dsh/.build/

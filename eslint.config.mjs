@@ -62,8 +62,10 @@ export default defineConfig([
     {
         // The packages' lib/ trees are committed tsc output so a git install
         // ships the entry points, but they are emit, not source: lint the
-        // source, not the build.
-        ignores: ['packages/*/lib/**'],
+        // source, not the build. dsh/client.js is the same kind of emit:
+        // scripts/build-client.mjs generates it from packages/client/src, so
+        // lint the source tree, not the artifact.
+        ignores: ['packages/*/lib/**', 'dsh/client.js'],
     },
     {
         files: ['**/*.{js,ts}'],
@@ -77,28 +79,6 @@ export default defineConfig([
                 { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
             ],
             'local-infer/behavior-first-description': 'error',
-        },
-    },
-    {
-        // The browser carrier is hand-written and runs in the page, so the
-        // browser globals it touches are declared here instead of the node
-        // host globals the rest of the workspace assumes.
-        files: ['dsh/client.js'],
-        languageOptions: {
-            globals: {
-                window: 'readonly',
-                document: 'readonly',
-                navigator: 'readonly',
-                console: 'readonly',
-                fetch: 'readonly',
-                URL: 'readonly',
-                URLSearchParams: 'readonly',
-                setTimeout: 'readonly',
-                clearTimeout: 'readonly',
-                setInterval: 'readonly',
-                clearInterval: 'readonly',
-                TextDecoder: 'readonly',
-            },
         },
     },
 ]);

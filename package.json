@@ -91,7 +91,7 @@
     "@deepseek-ai/cordis": ">=4.0.5-alpha.2"
   },
   "scripts": {
-    "build": "tsc -b",
+    "build": "tsc -b && node scripts/build-client.mjs",
     "typecheck": "tsc -b",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
