@@ -51,6 +51,19 @@ export declare const STRATA_PARAMETERS: readonly ParameterSpec[];
  */
 export declare function strataModelKey(config: Config): string;
 /**
+ * strataDefaults resolves the source-build launch values (family, vision,
+ * context) from the config, falling back to the parameter surface's
+ * defaultValue when the config names no value. The surface is the single home
+ * for the defaults, so the adapter's renderLaunch never hard-codes one.
+ * `context` carries no surface default (the engine picks the largest that
+ * fits), so it resolves to undefined when the config names no value.
+ */
+export declare function strataDefaults(config: Config): {
+    family: string;
+    vision: string;
+    context: string | undefined;
+};
+/**
  * StrataSourceLaunchArgs is the resolved input the OS-specific source-build
  * launch functions take: the model (empty lets the engine pick), the family,
  * the vision mode, the optional context, the port, and the card's Custom

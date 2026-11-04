@@ -45,7 +45,12 @@ import {
   trackChild,
 } from '../../adapters.ts'
 import { syncAndRebuildEngine } from '../../acquire.ts'
-import { STRATA_PARAMETERS, strataModelKey, type StrataSourceLaunchArgs } from './strata.ts'
+import {
+  STRATA_PARAMETERS,
+  strataDefaults,
+  strataModelKey,
+  type StrataSourceLaunchArgs,
+} from './strata.ts'
 import { strataLinuxSourceLaunch } from './strataLinux.ts'
 import { strataMacOSSourceLaunch } from './strataMacOS.ts'
 import { strataWindowsSourceLaunch } from './strataWindows.ts'
@@ -303,13 +308,12 @@ export class StrataAdapter extends EngineAdapter {
     // launch does not depend on the build step having written a script for this
     // exact model. The deploy step resolves the wrapper to an absolute path in
     // the checkout before spawning.
-    const family = typeof config.family === 'string' && config.family !== '' ? config.family : 'qwen'
-    const vision = typeof config.vision === 'string' && config.vision !== '' ? config.vision : 'on'
-    const context =
-      typeof config.context === 'string' && config.context !== '' ? config.context : undefined
     // The source-build wrapper is OS-specific (setup.sh on Linux/Mac,
     // START-HERE.bat on Windows), so the argv comes from the host OS's launch
-    // function. The config reads (family, vision, context) are OS-agnostic.
+    // function. The config reads (family, vision, context) are OS-agnostic and
+    // resolve their defaults from the parameter surface, so the defaults have
+    // one home.
+    const { family, vision, context } = strataDefaults(config)
     const sourceLaunch = STRATA_SOURCE_LAUNCH[_hw.os]
     return {
       engineId: this.id,

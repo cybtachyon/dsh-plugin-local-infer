@@ -230,6 +230,40 @@ export function strataModelKey(config: Config): string {
 }
 
 /**
+ * strataDefaults resolves the source-build launch values (family, vision,
+ * context) from the config, falling back to the parameter surface's
+ * defaultValue when the config names no value. The surface is the single home
+ * for the defaults, so the adapter's renderLaunch never hard-codes one.
+ * `context` carries no surface default (the engine picks the largest that
+ * fits), so it resolves to undefined when the config names no value.
+ */
+export function strataDefaults(config: Config): {
+  family: string
+  vision: string
+  context: string | undefined
+} {
+  const resolve = (key: 'family' | 'vision' | 'context'): string | undefined => {
+    const value = config[key]
+    if (typeof value === 'string' && value !== '') {
+      return value
+    }
+    const spec = STRATA_PARAMETERS.find((candidate) => candidate.key === key)
+    return typeof spec?.defaultValue === 'string' ? spec.defaultValue : undefined
+  }
+  const family = resolve('family')
+  const vision = resolve('vision')
+  // The surface declares string defaults for family and vision, so the
+  // resolver returns a string for both. Reaching the guard means a spec lost
+  // its defaultValue, so the launch cannot be spelled; fail fast at render
+  // time rather than emit a broken argv.
+  if (family === undefined || vision === undefined) {
+    const missing = family === undefined ? 'family' : 'vision'
+    throw new Error(`the strata surface lost its ${missing} default`)
+  }
+  return { family, vision, context: resolve('context') }
+}
+
+/**
  * StrataSourceLaunchArgs is the resolved input the OS-specific source-build
  * launch functions take: the model (empty lets the engine pick), the family,
  * the vision mode, the optional context, the port, and the card's Custom

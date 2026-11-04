@@ -5,6 +5,7 @@ import {
   STRATA_PARAMETERS,
   STRATA_TUNE_OPTIONS,
   STRATA_VISION_OPTIONS,
+  strataDefaults,
   strataModelKey,
   strataSourceLaunchArgs,
 } from '../src/engines/strata/strata.ts'
@@ -91,6 +92,24 @@ describe('Strata parameter surface', () => {
     // A falsy value spells no flag for the optional specs.
     expect(byKey['context']?.toArgv?.('')).toEqual([])
     expect(byKey['gpu']?.toArgv?.('')).toEqual([])
+  })
+
+  it('resolves the source-build defaults from the surface defaultValue', () => {
+    const byKey = Object.fromEntries(STRATA_PARAMETERS.map((spec) => [spec.key, spec]))
+    // A bare config falls back to the surface defaultValue for family and
+    // vision; context has no surface default, so it stays undefined.
+    const defaults = strataDefaults({})
+    expect(defaults.family).toBe(byKey['family']?.defaultValue)
+    expect(defaults.vision).toBe(byKey['vision']?.defaultValue)
+    expect(defaults.context).toBeUndefined()
+  })
+
+  it('lets a config value override the surface default', () => {
+    expect(strataDefaults({ family: 'coder', vision: 'gpu', context: '128k' })).toEqual({
+      family: 'coder',
+      vision: 'gpu',
+      context: '128k',
+    })
   })
 })
 
