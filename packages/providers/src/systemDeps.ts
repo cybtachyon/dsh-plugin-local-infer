@@ -261,16 +261,19 @@ export const SYSTEM_DEPS = {
   // its python as <src_dir>/.venv/bin/python if present, else the system
   // python3 (python_interpreter in src/platform/system.cpp), so the probe and
   // install target the system python the CLI falls back to. The probe imports
-  // the modules the server needs; the install pulls them through pip.
+  // the modules the server needs; the install pulls them through pip. The
+  // install bootstraps pip through the package manager (python3-pip on
+  // apt/dnf, python-pip on pacman) first, because the system python3 may lack
+  // the pip module (Arch without python-pip).
   basaltPip: {
     id: 'basalt-pip',
     purpose: 'installs the Basalt serve server Python requirements',
     requiresSudo: true,
     detect: probe('python3', ['-c', 'import regex, numpy, jinja2, yaml, tqdm, PIL, psutil']),
     install: {
-      apt: { commands: ['sudo python3 -m pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
-      dnf: { commands: ['sudo python3 -m pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
-      pacman: { commands: ['sudo python3 -m pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
+      apt: { commands: ['sudo apt-get install -y python3-pip && sudo python3 -m pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
+      dnf: { commands: ['sudo dnf install -y python3-pip && sudo python3 -m pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
+      pacman: { commands: ['sudo pacman -S --noconfirm python-pip && sudo python3 -m pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
       brew: { commands: ['python3 -m pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
       // The Windows interpreter is python, not python3, so the winget host
       // installs through the python alias the OS ships.

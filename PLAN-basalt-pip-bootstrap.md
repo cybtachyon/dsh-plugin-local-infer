@@ -30,7 +30,7 @@ requirements, so the install works on a host where `python3` has no `pip`.
 
 ### Phase 1: Bootstrap pip
 
-- [ ] [TASK-001-bootstrap-pip](docs/PLAN-basalt-pip-bootstrap-TASK-001-bootstrap-pip.md)
+- [x] [TASK-001-bootstrap-pip](docs/PLAN-basalt-pip-bootstrap-TASK-001-bootstrap-pip.md)
 
 ### Phase 2: Verification
 
