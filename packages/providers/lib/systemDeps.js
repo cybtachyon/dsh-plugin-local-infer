@@ -268,19 +268,22 @@ export const SYSTEM_DEPS = {
     // The Python packages the Basalt serve/ server imports (numpy, jinja2,
     // regex, pyyaml, tqdm, pillow, psutil). The C++ basalt binary launches the
     // Python server, which fails at import when a module is missing, so the
-    // launch reads as a 120-attempt health-poll timeout. The probe imports the
-    // modules the server needs; the install pulls them through pip.
+    // launch reads as a 120-attempt health-poll timeout. The serve CLI resolves
+    // its python as <src_dir>/.venv/bin/python if present, else the system
+    // python3 (python_interpreter in src/platform/system.cpp), so the probe and
+    // install target the system python the CLI falls back to. The probe imports
+    // the modules the server needs; the install pulls them through pip.
     basaltPip: {
         id: 'basalt-pip',
         purpose: 'installs the Basalt serve server Python requirements',
         requiresSudo: true,
-        detect: probe('uv run python', ['-c', 'import regex, numpy, jinja2, yaml, tqdm, PIL, psutil']),
+        detect: probe('python3', ['-c', 'import regex, numpy, jinja2, yaml, tqdm, PIL, psutil']),
         install: {
-            apt: { commands: ['uv pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
-            dnf: { commands: ['uv pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
-            pacman: { commands: ['uv pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
-            brew: { commands: ['uv pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
-            winget: { commands: ['uv pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
+            apt: { commands: ['sudo python3 -m pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
+            dnf: { commands: ['sudo python3 -m pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
+            pacman: { commands: ['sudo python3 -m pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
+            brew: { commands: ['python3 -m pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
+            winget: { commands: ['python3 -m pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
         },
     },
 };
