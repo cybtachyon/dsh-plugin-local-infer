@@ -102,6 +102,7 @@ by the previous commits in their phase and resolve the named code risks.
 ### Phase 4 — Current-Get-step indicator
 
 - [x] [TASK-014-logs-step-chips](docs/PLAN-get-progress-TASK-014-logs-step-chips.md)
+- [x] [TASK-023-clone-build-headers](docs/PLAN-get-progress-TASK-023-clone-build-headers.md)
 
 ### Phase 5 — Cancel affordance, surfaced
 
@@ -133,6 +134,7 @@ by the previous commits in their phase and resolve the named code risks.
 - TASK-012 depends on TASK-010 (the strip renders inside the branch).
 - TASK-013 depends on TASK-010..TASK-012 (reviews their commits).
 - TASK-014 depends on TASK-008 (the chips derive the current step from the same log lines).
+- TASK-023 depends on TASK-014 (the chips need the clone/build headers TASK-014's deriveGetStep tracks).
 - TASK-015 depends on TASK-007 (the driver clears the getProgress field).
 - TASK-016 depends on TASK-010 and TASK-015 (the surfaces hang on the branch and call the driver).
 - TASK-017 is independent of the render tasks but must land before TASK-011,

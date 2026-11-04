@@ -3383,12 +3383,15 @@ describe('shared Get-steps routine', () => {
       host,
     )
     expect(result.ok).toBe(true)
-    // The five steps land in order: the dep install, the clone, the build,
+    // The five steps land in order: the dep install, the clone (its header
+    // then the git command), the build (its header then the cmake command),
     // the model download, and the chat-template download.
     const order = [
       'system dependencies (local)',
       '  cmake: satisfied',
+      'engine clone: ninfer',
       `$ git clone https://github.com/Neroued/ninfer ${join(MODEL_DIR, 'ninfer')}`,
+      'engine build: ninfer',
       `cmake -S ${join(MODEL_DIR, 'ninfer')}`,
       `hf download neroued/Qwen3.8-27B-nvfp4-NInfer qwen3_8_27b_nvfp4.ninfer --local-dir ${MODEL_DIR}`,
       `hf download froggeric/Qwen-Fixed-Chat-Templates chat_template.jinja --local-dir ${MODEL_DIR}`,

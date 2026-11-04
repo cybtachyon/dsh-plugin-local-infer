@@ -33,10 +33,21 @@ export type GetStep = 'deps' | 'clone' | 'build' | 'model' | 'template' | 'done'
 export type StepTone = 'success' | 'info' | 'quiet' | 'danger'
 
 // The chip order the Logs header renders, matching the Get run's step
-// sequence. deriveGetStep names only the deps, model, template, and done
-// headers, so the clone and build chips read as completed the moment the
-// model header lands.
+// sequence. deriveGetStep names the deps, clone, build, model, template, and
+// done headers, so each chip tracks its own sub-step.
 const GET_STEP_ORDER: GetStep[] = ['deps', 'clone', 'build', 'model', 'template']
+
+// The running chip index each Get step maps to, in chip order. A step reads
+// its own position as the running chip, so the clone and build headers track
+// their own chips. done maps past the last chip, so every chip reads success.
+const STEP_RUNNING_INDEX: Record<GetStep, number> = {
+  deps: 0,
+  clone: 1,
+  build: 2,
+  model: 3,
+  template: 4,
+  done: 5,
+}
 
 // The file-count bar: `Fetching 102 files: 42%|...| 43/102 [00:01<00:02, ...]`.
 // The bar glyph run between the pipes is skipped, and the counts are plain
@@ -169,8 +180,7 @@ export function deriveGetStep(log: string): GetStep | null {
  */
 export function deriveGetStepTones(log: string, failed: boolean): StepTone[] {
   const current = deriveGetStep(log)
-  const runningIndex =
-    current === 'model' ? 3 : current === 'template' ? 4 : current === 'done' ? 5 : 0
+  const runningIndex = current === null ? 0 : STEP_RUNNING_INDEX[current]
   return GET_STEP_ORDER.map((_step, index) => {
     if (index < runningIndex) return 'success'
     if (index === runningIndex) return failed ? 'danger' : 'info'
@@ -182,6 +192,8 @@ export function deriveGetStepTones(log: string, failed: boolean): StepTone[] {
 // for a line that is not a step header.
 function stepForLine(line: string): GetStep | null {
   if (line.startsWith('system dependencies')) return 'deps'
+  if (line.startsWith('engine clone:')) return 'clone'
+  if (line.startsWith('engine build:')) return 'build'
   if (line.startsWith('model download:')) return 'model'
   if (line.startsWith('chat template:')) return 'template'
   if (line.trim() === 'get complete') return 'done'

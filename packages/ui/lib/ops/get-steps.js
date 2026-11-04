@@ -98,6 +98,10 @@ async function runSyncBuildStep(ctx) {
         emit('engine sync and build: auto rebuild off, skipped\n');
         return null;
     }
+    // The distinct clone and build headers let the Logs-header step chips track
+    // the two sub-steps separately: the clone chip runs until the build header
+    // lands, and the build chip runs until the model header lands.
+    emit(`engine clone: ${request.engineId}\n`);
     const fork = request.platform?.engineFork;
     const sync = await syncEngineRepo(request.host, {
         engineId: request.engineId,
@@ -120,6 +124,7 @@ async function runSyncBuildStep(ctx) {
     // acquisition steps. The host OS picks the engine's OS profile (the
     // Windows vcpkg route and its pwsh.exe shell on a Windows host, the
     // cmake route elsewhere).
+    emit(`engine build: ${request.engineId}\n`);
     const build = await buildEngineRepo(request.host, request.engineId, directory, emit, request.platform?.buildCommands, ctx.hardware.os);
     if (!build.ok) {
         if (build.detail !== undefined) {

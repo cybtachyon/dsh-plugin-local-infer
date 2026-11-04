@@ -1833,6 +1833,14 @@ var ProgressThrottle = class {
 
 // packages/client/src/store/progress.ts
 var GET_STEP_ORDER = ["deps", "clone", "build", "model", "template"];
+var STEP_RUNNING_INDEX = {
+  deps: 0,
+  clone: 1,
+  build: 2,
+  model: 3,
+  template: 4,
+  done: 5
+};
 var FILES_LINE = /^Fetching (\d+) files:\s*(\d+(?:\.\d+)?)%\|[^|]*\|\s*(\d+)\s*\/\s*(\d+)(?:\s*\[([^\]]*)\])?/;
 var BYTES_LINE = /^(?:Downloading|Fetching)\s+([^:]+):\s*(\d+(?:\.\d+)?)%\s*\|\s*(\d+(?:\.\d+)?[KMGTP]?i?B?)\s*\/\s*(\d+(?:\.\d+)?[KMGTP]?i?B?)\s*(?:\[([^\]]*)\])?/;
 var UNIT_EXPONENTS = { K: 1, M: 2, G: 3, T: 4, P: 5 };
@@ -1902,7 +1910,7 @@ function deriveGetStep(log) {
 }
 function deriveGetStepTones(log, failed) {
   const current = deriveGetStep(log);
-  const runningIndex = current === "model" ? 3 : current === "template" ? 4 : current === "done" ? 5 : 0;
+  const runningIndex = current === null ? 0 : STEP_RUNNING_INDEX[current];
   return GET_STEP_ORDER.map((_step, index) => {
     if (index < runningIndex) return "success";
     if (index === runningIndex) return failed ? "danger" : "info";
@@ -1911,6 +1919,8 @@ function deriveGetStepTones(log, failed) {
 }
 function stepForLine(line) {
   if (line.startsWith("system dependencies")) return "deps";
+  if (line.startsWith("engine clone:")) return "clone";
+  if (line.startsWith("engine build:")) return "build";
   if (line.startsWith("model download:")) return "model";
   if (line.startsWith("chat template:")) return "template";
   if (line.trim() === "get complete") return "done";

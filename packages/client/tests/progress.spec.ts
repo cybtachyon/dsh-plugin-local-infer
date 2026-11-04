@@ -182,6 +182,14 @@ describe('deriveGetStep', () => {
     expect(deriveGetStep('system dependencies (source)\n')).toBe('deps')
   })
 
+  it('maps the engine clone header to clone', () => {
+    expect(deriveGetStep('engine clone: ninfer\n')).toBe('clone')
+  })
+
+  it('maps the engine build header to build', () => {
+    expect(deriveGetStep('engine build: ninfer\n')).toBe('build')
+  })
+
   it('maps the model download header to model', () => {
     expect(
       deriveGetStep('model download: org/repo is already present, skipped\n'),
@@ -203,11 +211,30 @@ describe('deriveGetStep', () => {
       'get ninfer in /models/ninfer\n' +
       'system dependencies (source)\n' +
       '  git: satisfied\n' +
+      'engine clone: ninfer\n' +
+      'engine build: ninfer\n' +
       'model download: org/repo\n' +
       'Fetching 102 files: 42%|▏| 43/102\n' +
       'chat template: org/repo\n' +
       'get complete\n'
     expect(deriveGetStep(log)).toBe('done')
+  })
+
+  it('reads the clone step before the build header lands', () => {
+    const log =
+      'system dependencies (source)\n' +
+      'engine clone: ninfer\n' +
+      '$ git clone https://github.com/Neroued/ninfer /models/ninfer\n'
+    expect(deriveGetStep(log)).toBe('clone')
+  })
+
+  it('reads the build step before the model header lands', () => {
+    const log =
+      'system dependencies (source)\n' +
+      'engine clone: ninfer\n' +
+      'engine build: ninfer\n' +
+      'cmake -S /models/ninfer\n'
+    expect(deriveGetStep(log)).toBe('build')
   })
 
   it('reads the model step before the template header lands', () => {
@@ -233,6 +260,49 @@ describe('deriveGetStepTones', () => {
     expect(deriveGetStepTones('system dependencies (source)\n', false)).toEqual([
       'info',
       'quiet',
+      'quiet',
+      'quiet',
+      'quiet',
+    ])
+  })
+
+  it('tones the clone step running at the engine clone header', () => {
+    const log =
+      'system dependencies (source)\n' +
+      'engine clone: ninfer\n' +
+      '$ git clone https://github.com/Neroued/ninfer /models/ninfer\n'
+    expect(deriveGetStepTones(log, false)).toEqual([
+      'success',
+      'info',
+      'quiet',
+      'quiet',
+      'quiet',
+    ])
+  })
+
+  it('tones the build step running at the engine build header', () => {
+    const log =
+      'system dependencies (source)\n' +
+      'engine clone: ninfer\n' +
+      'engine build: ninfer\n' +
+      'cmake -S /models/ninfer\n'
+    expect(deriveGetStepTones(log, false)).toEqual([
+      'success',
+      'success',
+      'info',
+      'quiet',
+      'quiet',
+    ])
+  })
+
+  it('tones the failed clone step danger when the run settles failed at it', () => {
+    const log =
+      'system dependencies (source)\n' +
+      'engine clone: ninfer\n' +
+      '!! git clone failed: unknown\n'
+    expect(deriveGetStepTones(log, true)).toEqual([
+      'success',
+      'danger',
       'quiet',
       'quiet',
       'quiet',
