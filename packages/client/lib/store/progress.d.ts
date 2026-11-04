@@ -13,10 +13,12 @@ import type { HfProgressShape } from '../api/routes.ts';
  * GetProgressState is the structured download progress state the card folds
  * the streamed tqdm text into: the step label the bar names, the percent
  * complete, the done and total amounts (bytes for the byte bar, file counts
- * for the file-count bar), and the remaining time in seconds (0 when the bar
- * carries no tail). It aliases HfProgressShape, the shape the routes'
- * progress events carry, so the log-text fold and the structured events
- * populate one state.
+ * for the file-count bar), the remaining time in seconds (0 when the bar
+ * carries no tail), and the unit the done/total amounts carry ('bytes' for
+ * the byte bar, 'files' for the file-count bar), so a readout renders the
+ * amounts in the unit the bar measured. It aliases HfProgressShape, the
+ * shape the routes' progress events carry, so the log-text fold and the
+ * structured events populate one state.
  */
 export type GetProgressState = HfProgressShape;
 /** The Get step the step chips and the progress readout derive. */

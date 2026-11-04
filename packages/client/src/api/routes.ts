@@ -115,13 +115,16 @@ export interface ProviderDeleteRequest {
 // the client bundle cannot import the node-side core package): the step
 // label the tqdm bar names, the percent complete, the done and total
 // amounts (bytes for a file download, file counts for a multi-file fetch),
-// and the remaining time in seconds.
+// the remaining time in seconds, and the unit the done/total amounts carry
+// ('bytes' for the byte bar, 'files' for the file-count bar), so a readout
+// renders the amounts in the unit the bar measured.
 export interface HfProgressShape {
   step: string
   percent: number
   doneBytes: number
   totalBytes: number
   etaSeconds: number
+  unit: 'bytes' | 'files'
 }
 
 // One NDJSON line the launch route streams: a step event as a phase begins,

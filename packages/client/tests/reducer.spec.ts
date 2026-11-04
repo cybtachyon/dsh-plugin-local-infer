@@ -439,6 +439,7 @@ describe('client store reducer (store/reducer.ts)', () => {
         doneBytes: 5.2e9,
         totalBytes: 43.5e9,
         etaSeconds: 611,
+        unit: 'bytes',
       }
       const next = cardReducer(madeState(), { type: 'ui/patch', patch: { getProgress: progress } })
       expect(next.ui.getProgress).toEqual(progress)

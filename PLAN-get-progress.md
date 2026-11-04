@@ -95,7 +95,7 @@ by the previous commits in their phase and resolve the named code risks.
 ### Phase 3 — Provider title-bar progress readout
 
 - [x] [TASK-010-getting-control-branch](docs/PLAN-get-progress-TASK-010-getting-control-branch.md)
-- [ ] [TASK-011-provider-row-readout](docs/PLAN-get-progress-TASK-011-provider-row-readout.md)
+- [x] [TASK-011-provider-row-readout](docs/PLAN-get-progress-TASK-011-provider-row-readout.md)
 - [ ] [TASK-012-progress-strip-css](docs/PLAN-get-progress-TASK-012-progress-strip-css.md)
 - [ ] [TASK-013-refactor-phase3](docs/PLAN-get-progress-TASK-013-refactor-phase3.md)
 

@@ -15,10 +15,12 @@ import type { HfProgressShape } from '../api/routes.ts'
  * GetProgressState is the structured download progress state the card folds
  * the streamed tqdm text into: the step label the bar names, the percent
  * complete, the done and total amounts (bytes for the byte bar, file counts
- * for the file-count bar), and the remaining time in seconds (0 when the bar
- * carries no tail). It aliases HfProgressShape, the shape the routes'
- * progress events carry, so the log-text fold and the structured events
- * populate one state.
+ * for the file-count bar), the remaining time in seconds (0 when the bar
+ * carries no tail), and the unit the done/total amounts carry ('bytes' for
+ * the byte bar, 'files' for the file-count bar), so a readout renders the
+ * amounts in the unit the bar measured. It aliases HfProgressShape, the
+ * shape the routes' progress events carry, so the log-text fold and the
+ * structured events populate one state.
  */
 export type GetProgressState = HfProgressShape
 
@@ -82,24 +84,29 @@ function parseHfProgressLine(line: string): GetProgressState | null {
   const files = FILES_LINE.exec(trimmed)
   if (files !== null) {
     // The file-count bar carries counts, not bytes: the done/total fields
-    // hold the file numbers, and the step label names the fetch.
+    // hold the file numbers, the step label names the fetch, and the unit
+    // marks the amounts as file counts, so a readout renders them as files.
     return {
       step: `Fetching ${files[1]} files`,
       percent: Number(files[2]!),
       doneBytes: Number(files[3]!),
       totalBytes: Number(files[4]!),
       etaSeconds: etaSecondsFromTail(files[5]),
+      unit: 'files',
     }
   }
   const bytes = BYTES_LINE.exec(trimmed)
   if (bytes !== null) {
     const verb = trimmed.startsWith('Fetching') ? 'Fetching' : 'Downloading'
+    // The byte bar carries human byte sizes: the done/total fields hold the
+    // parsed byte counts, and the unit marks the amounts as bytes.
     return {
       step: `${verb} ${bytes[1]!.trim()}`,
       percent: Number(bytes[2]!),
       doneBytes: parseHumanSize(bytes[3]!),
       totalBytes: parseHumanSize(bytes[4]!),
       etaSeconds: etaSecondsFromTail(bytes[5]),
+      unit: 'bytes',
     }
   }
   return null

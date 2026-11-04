@@ -54,10 +54,11 @@ export interface LifecycleControl {
 export declare function deriveLaunchDisabled(state: CardState): boolean;
 /**
  * formatProgressReadout renders a GetProgressState as the download readout:
- * the download verb, the percent, the done and total amounts in GB, and the
- * remaining time in mm:ss when the bar carries a tail (a finished bar drops
- * the ETA segment). The 'getting' control branch and the provider row
- * (TASK-011) share it, so the readout text has one source.
+ * the download verb, the percent, the done and total amounts in the unit the
+ * bar measured (a file count for the file-count bar, GB for the byte bar),
+ * and the remaining time in mm:ss when the bar carries a tail (a finished
+ * bar drops the ETA segment). The 'getting' control branch and the provider
+ * row (TASK-011) share it, so the readout text has one source.
  */
 export declare function formatProgressReadout(state: GetProgressState, t: TextTable): string;
 /**

@@ -86,6 +86,7 @@ export interface HfProgressShape {
     doneBytes: number;
     totalBytes: number;
     etaSeconds: number;
+    unit: 'bytes' | 'files';
 }
 export type LaunchStreamEvent = {
     step: string;

@@ -21,7 +21,8 @@ import type {
 } from 'dsh-plugin-local-infer/ui'
 import { GHOST_BUTTON } from '../styles.ts'
 import type { TextTable } from '../text.ts'
-import { deriveProviderFormMode } from '../store/derive.ts'
+import { hasInFlightGet } from '../store/abort.ts'
+import { deriveProviderFormMode, formatProgressReadout } from '../store/derive.ts'
 import {
   cancelProvider,
   deleteProvider,
@@ -181,6 +182,14 @@ export function ProviderRow(props: ProviderRowProps): ReactNode {
     },
     [],
   )
+  const state = store.getSnapshot()
+  // A Get run in flight for this row's provider (the one being edited): the
+  // get action cell pending, or the in-flight registry true after the idle
+  // cap settled the cell. The row swaps its status dot to the ongoing
+  // spinner and appends the live download readout to the title.
+  const getting =
+    editingId === provider.id &&
+    (state.actions.get.status === 'pending' || hasInFlightGet())
   const engineLabel =
     engines.find((engine) => engine.id === provider.engine)?.label ?? provider.engine
   // The title bar renders the fork's owner/repo when the entry names a fork,
@@ -195,7 +204,19 @@ export function ProviderRow(props: ProviderRowProps): ReactNode {
       stopped: t.statusStopped,
       unsure: t.statusUnsure,
     }[provider.status] ?? provider.status
-  const title = titleLabel + ': ' + modelLabel + ' (' + statusLabel + ')'
+  let title: string
+  if (getting) {
+    // The getting readout: the title reads the getting status, and the live
+    // progress state (when one has landed) appends the download readout.
+    const progress = state.ui.getProgress
+    const readout = progress !== null ? ' · ' + formatProgressReadout(progress, t) : ''
+    title = titleLabel + ': ' + modelLabel + ' (' + t.gettingReadout + ')' + readout
+  } else {
+    title = titleLabel + ': ' + modelLabel + ' (' + statusLabel + ')'
+  }
+  // The status dot: the ongoing spinner while a Get is in flight, the
+  // status-mapped dot otherwise.
+  const dotState = getting ? 'ongoing' : (STATUS_TO_DOT[provider.status] ?? 'idle')
   return (
     <div
       style={{
@@ -207,7 +228,7 @@ export function ProviderRow(props: ProviderRowProps): ReactNode {
         borderRadius: 6,
       }}
     >
-      {renderStateDot(STATUS_TO_DOT[provider.status] ?? 'idle')}
+      {renderStateDot(dotState)}
       <span
         style={{
           flex: 1,

@@ -61,24 +61,29 @@ function parseHfProgressLine(line) {
     const files = FILES_LINE.exec(trimmed);
     if (files !== null) {
         // The file-count bar carries counts, not bytes: the done/total fields
-        // hold the file numbers, and the step label names the fetch.
+        // hold the file numbers, the step label names the fetch, and the unit
+        // marks the amounts as file counts, so a readout renders them as files.
         return {
             step: `Fetching ${files[1]} files`,
             percent: Number(files[2]),
             doneBytes: Number(files[3]),
             totalBytes: Number(files[4]),
             etaSeconds: etaSecondsFromTail(files[5]),
+            unit: 'files',
         };
     }
     const bytes = BYTES_LINE.exec(trimmed);
     if (bytes !== null) {
         const verb = trimmed.startsWith('Fetching') ? 'Fetching' : 'Downloading';
+        // The byte bar carries human byte sizes: the done/total fields hold the
+        // parsed byte counts, and the unit marks the amounts as bytes.
         return {
             step: `${verb} ${bytes[1].trim()}`,
             percent: Number(bytes[2]),
             doneBytes: parseHumanSize(bytes[3]),
             totalBytes: parseHumanSize(bytes[4]),
             etaSeconds: etaSecondsFromTail(bytes[5]),
+            unit: 'bytes',
         };
     }
     return null;

@@ -14,7 +14,8 @@
  * @module dsh-plugin-local-infer/client/render/ProviderList
  */
 import { GHOST_BUTTON } from "../styles.js";
-import { deriveProviderFormMode } from "../store/derive.js";
+import { hasInFlightGet } from "../store/abort.js";
+import { deriveProviderFormMode, formatProgressReadout } from "../store/derive.js";
 import { cancelProvider, deleteProvider, editProvider, newProvider, openEntryLogs, performEntryLaunch, performEntryStop, } from "../store/providers.js";
 import { renderButton, renderProcessButton, renderStateDot, } from "./primitives.js";
 import { react } from "./react.js";
@@ -118,6 +119,13 @@ export function ProviderRow(props) {
     react.useEffect(() => () => {
         handleRef.current?.cancel();
     }, []);
+    const state = store.getSnapshot();
+    // A Get run in flight for this row's provider (the one being edited): the
+    // get action cell pending, or the in-flight registry true after the idle
+    // cap settled the cell. The row swaps its status dot to the ongoing
+    // spinner and appends the live download readout to the title.
+    const getting = editingId === provider.id &&
+        (state.actions.get.status === 'pending' || hasInFlightGet());
     const engineLabel = engines.find((engine) => engine.id === provider.engine)?.label ?? provider.engine;
     // The title bar renders the fork's owner/repo when the entry names a fork,
     // so a forked engine reads as its repo (Ninfer/ninfer-all) rather than the
@@ -130,7 +138,20 @@ export function ProviderRow(props) {
         stopped: t.statusStopped,
         unsure: t.statusUnsure,
     }[provider.status] ?? provider.status;
-    const title = titleLabel + ': ' + modelLabel + ' (' + statusLabel + ')';
+    let title;
+    if (getting) {
+        // The getting readout: the title reads the getting status, and the live
+        // progress state (when one has landed) appends the download readout.
+        const progress = state.ui.getProgress;
+        const readout = progress !== null ? ' · ' + formatProgressReadout(progress, t) : '';
+        title = titleLabel + ': ' + modelLabel + ' (' + t.gettingReadout + ')' + readout;
+    }
+    else {
+        title = titleLabel + ': ' + modelLabel + ' (' + statusLabel + ')';
+    }
+    // The status dot: the ongoing spinner while a Get is in flight, the
+    // status-mapped dot otherwise.
+    const dotState = getting ? 'ongoing' : (STATUS_TO_DOT[provider.status] ?? 'idle');
     return (react.createElement("div", { style: {
             display: 'flex',
             alignItems: 'center',
@@ -139,7 +160,7 @@ export function ProviderRow(props) {
             border: '1px solid rgba(127,127,127,0.25)',
             borderRadius: 6,
         } },
-        renderStateDot(STATUS_TO_DOT[provider.status] ?? 'idle'),
+        renderStateDot(dotState),
         react.createElement("span", { style: {
                 flex: 1,
                 minWidth: 0,

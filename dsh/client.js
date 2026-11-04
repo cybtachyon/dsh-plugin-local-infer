@@ -249,6 +249,7 @@ var en = {
   gettingReadout: "Getting\u2026",
   gettingVerb: "Downloading\u2026",
   gettingEta: "ETA",
+  gettingFiles: "files",
   getFailed: "get failed",
   allowRun: "Allow one-click install (sudo)",
   depsSatisfied: "All dependencies satisfied.",
@@ -386,6 +387,7 @@ var zh = {
   gettingReadout: "\u83B7\u53D6\u4E2D\u2026",
   gettingVerb: "\u4E0B\u8F7D\u4E2D\u2026",
   gettingEta: "ETA",
+  gettingFiles: "\u6587\u4EF6",
   getFailed: "\u83B7\u53D6\u5931\u8D25",
   allowRun: "\u5141\u8BB8\u4E00\u952E\u5B89\u88C5 (sudo)",
   depsSatisfied: "\u6240\u6709\u4F9D\u8D56\u5DF2\u6EE1\u8DB3\u3002",
@@ -1764,7 +1766,8 @@ function parseHfProgressLine(line) {
       percent: Number(files[2]),
       doneBytes: Number(files[3]),
       totalBytes: Number(files[4]),
-      etaSeconds: etaSecondsFromTail(files[5])
+      etaSeconds: etaSecondsFromTail(files[5]),
+      unit: "files"
     };
   }
   const bytes = BYTES_LINE.exec(trimmed);
@@ -1775,7 +1778,8 @@ function parseHfProgressLine(line) {
       percent: Number(bytes[2]),
       doneBytes: parseHumanSize(bytes[3]),
       totalBytes: parseHumanSize(bytes[4]),
-      etaSeconds: etaSecondsFromTail(bytes[5])
+      etaSeconds: etaSecondsFromTail(bytes[5]),
+      unit: "bytes"
     };
   }
   return null;
@@ -2114,10 +2118,16 @@ function formatEtaClock(seconds) {
   const secs = seconds % 60;
   return minutes + ":" + String(secs).padStart(2, "0");
 }
+function sizeSegment(state, t) {
+  if (state.unit === "files") {
+    return state.doneBytes + "/" + state.totalBytes + " " + t.gettingFiles;
+  }
+  return toGb(state.doneBytes) + "/" + toGb(state.totalBytes) + " GB";
+}
 function formatProgressReadout(state, t) {
   const parts = [
     t.gettingVerb + " " + state.percent + "%",
-    toGb(state.doneBytes) + "/" + toGb(state.totalBytes) + " GB"
+    sizeSegment(state, t)
   ];
   if (state.etaSeconds > 0) {
     parts.push(t.gettingEta + " " + formatEtaClock(state.etaSeconds));
@@ -2617,6 +2627,8 @@ function ProviderRow(props) {
     },
     []
   );
+  const state = store.getSnapshot();
+  const getting = editingId === provider.id && (state.actions.get.status === "pending" || hasInFlightGet());
   const engineLabel = engines.find((engine) => engine.id === provider.engine)?.label ?? provider.engine;
   const forkName = repoShortName(provider.platform?.engineFork);
   const titleLabel = forkName !== void 0 ? forkName : engineLabel;
@@ -2626,7 +2638,15 @@ function ProviderRow(props) {
     stopped: t.statusStopped,
     unsure: t.statusUnsure
   }[provider.status] ?? provider.status;
-  const title = titleLabel + ": " + modelLabel + " (" + statusLabel + ")";
+  let title;
+  if (getting) {
+    const progress = state.ui.getProgress;
+    const readout = progress !== null ? " \xB7 " + formatProgressReadout(progress, t) : "";
+    title = titleLabel + ": " + modelLabel + " (" + t.gettingReadout + ")" + readout;
+  } else {
+    title = titleLabel + ": " + modelLabel + " (" + statusLabel + ")";
+  }
+  const dotState = getting ? "ongoing" : STATUS_TO_DOT[provider.status] ?? "idle";
   return /* @__PURE__ */ react.createElement(
     "div",
     {
@@ -2639,7 +2659,7 @@ function ProviderRow(props) {
         borderRadius: 6
       }
     },
-    renderStateDot(STATUS_TO_DOT[provider.status] ?? "idle"),
+    renderStateDot(dotState),
     /* @__PURE__ */ react.createElement(
       "span",
       {

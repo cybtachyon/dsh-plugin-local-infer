@@ -28,6 +28,7 @@ function barState(percent: number): GetProgressState {
     doneBytes: (percent / 100) * 50.0e9,
     totalBytes: 50.0e9,
     etaSeconds: 2,
+    unit: 'bytes',
   }
 }
 

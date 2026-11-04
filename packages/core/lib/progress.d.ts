@@ -9,7 +9,10 @@
  * the byte bar (`Downloading x.safetensors: 12% | 5.2G/43.5G [01:23<10:11,
  * 72.3MB/s]`, where the done/total fields carry human byte sizes). It
  * converts the human byte sizes to bytes and the `[elapsed<remaining, rate]`
- * tail to remaining seconds. The client package mirrors this parser in
+ * tail to remaining seconds, and marks the unit the done/total amounts carry
+ * (`'files'` for the file-count bar, `'bytes'` for the byte bar), so a
+ * readout renders the amounts in the unit the bar measured. The client
+ * package mirrors this parser in
  * `packages/client/src/store/progress.ts` (the TASK-006 browser-side copy):
  * the core package is not browser-safe, so the client bundle keeps its own
  * copy and the two shapes (`HfProgress` and the client's `HfProgressShape`)
@@ -20,8 +23,10 @@
  * HfProgress is the structured state one tqdm bar update folds to: the step
  * label the bar names (the file, or the file-count fetch), the percent
  * complete, the done and total amounts (bytes for the byte bar, file counts
- * for the file-count bar), and the remaining time in seconds (0 when the bar
- * carries no tail).
+ * for the file-count bar), the remaining time in seconds (0 when the bar
+ * carries no tail), and the unit the done/total amounts carry ('bytes' for
+ * the byte bar, 'files' for the file-count bar), so a readout renders the
+ * amounts in the unit the bar measured.
  */
 export interface HfProgress {
     step: string;
@@ -29,6 +34,7 @@ export interface HfProgress {
     doneBytes: number;
     totalBytes: number;
     etaSeconds: number;
+    unit: 'bytes' | 'files';
 }
 /**
  * parseHfProgressLine parses one tqdm bar line into an HfProgress state, or

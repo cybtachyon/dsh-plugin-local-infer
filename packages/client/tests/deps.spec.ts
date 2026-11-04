@@ -391,6 +391,7 @@ describe('the deps panel drivers (store/deps.ts)', () => {
         doneBytes: 5.0e9,
         totalBytes: 50.0e9,
         etaSeconds: 2,
+        unit: 'bytes',
       })
       // The Logs buffer kept every chunk (the progress parse has no side
       // effect on the log text).
@@ -405,6 +406,7 @@ describe('the deps panel drivers (store/deps.ts)', () => {
         doneBytes: 20.0e9,
         totalBytes: 50.0e9,
         etaSeconds: 2,
+        unit: 'bytes',
       })
       // The settle lands the latest state (the final chunk), then clears the
       // field back to null: the readout must not outlive the run.
@@ -417,6 +419,7 @@ describe('the deps panel drivers (store/deps.ts)', () => {
         doneBytes: 20.0e9,
         totalBytes: 50.0e9,
         etaSeconds: 2,
+        unit: 'bytes',
       })
       expect(patches[patches.length - 1]).toBeNull()
       expect(state().ui.getProgress).toBeNull()
@@ -449,6 +452,7 @@ describe('the deps panel drivers (store/deps.ts)', () => {
         doneBytes: 5.0e9,
         totalBytes: 50.0e9,
         etaSeconds: 2,
+        unit: 'bytes',
       })
       // ...and the structured event (the server-parsed state) wins,
       // throttled to the window's end.
@@ -458,6 +462,7 @@ describe('the deps panel drivers (store/deps.ts)', () => {
         doneBytes: 27.5e9,
         totalBytes: 50.0e9,
         etaSeconds: 30,
+        unit: 'bytes',
       }
       stream.enqueue(JSON.stringify({ progress: structured }) + '\n')
       await vi.advanceTimersByTimeAsync(0)
@@ -470,6 +475,7 @@ describe('the deps panel drivers (store/deps.ts)', () => {
         doneBytes: 5.0e9,
         totalBytes: 50.0e9,
         etaSeconds: 2,
+        unit: 'bytes',
       })
       await vi.advanceTimersByTimeAsync(GET_PROGRESS_THROTTLE_MS)
       expect(patches).toHaveLength(2)

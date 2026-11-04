@@ -236,7 +236,7 @@ describe('readLaunchStream (the launch route answer)', () => {
     const steps: string[] = []
     const progress: unknown[] = []
     const response = streamResponse([
-      '{"step":"prereqs"}\n{"progress":{"step":"Downloading x.safetensors","percent":12,"doneBytes":5200000000,"totalBytes":43500000000,"etaSeconds":611}}\n',
+      '{"step":"prereqs"}\n{"progress":{"step":"Downloading x.safetensors","percent":12,"doneBytes":5200000000,"totalBytes":43500000000,"etaSeconds":611,"unit":"bytes"}}\n',
       '{"result":{"healthy":true}}\n',
     ])
     const result = await readLaunchStream(
@@ -252,6 +252,7 @@ describe('readLaunchStream (the launch route answer)', () => {
         doneBytes: 5200000000,
         totalBytes: 43500000000,
         etaSeconds: 611,
+        unit: 'bytes',
       },
     ])
     expect(result).toEqual({ healthy: true })
@@ -270,7 +271,7 @@ describe('readGetStream (the get route answer)', () => {
     const chunks: string[] = []
     const progress: unknown[] = []
     const response = streamResponse([
-      '{"log":"line one\\n"}\n{"progress":{"step":"Downloading x.safetensors","percent":12,"doneBytes":5200000000,"totalBytes":43500000000,"etaSeconds":611}}\n',
+      '{"log":"line one\\n"}\n{"progress":{"step":"Downloading x.safetensors","percent":12,"doneBytes":5200000000,"totalBytes":43500000000,"etaSeconds":611,"unit":"bytes"}}\n',
       '{"log":"line two\\n"}\n',
     ])
     await readGetStream(response, (text) => chunks.push(text), (state) => progress.push(state))
@@ -282,6 +283,7 @@ describe('readGetStream (the get route answer)', () => {
         doneBytes: 5200000000,
         totalBytes: 43500000000,
         etaSeconds: 611,
+        unit: 'bytes',
       },
     ])
   })
@@ -325,7 +327,7 @@ describe('postLaunch and postGet (the streamed routes)', () => {
   it('hands get progress events through onProgress', async () => {
     stubFetch(() =>
       streamResponse([
-        '{"progress":{"step":"Downloading x.safetensors","percent":12,"doneBytes":5200000000,"totalBytes":43500000000,"etaSeconds":611}}\n',
+        '{"progress":{"step":"Downloading x.safetensors","percent":12,"doneBytes":5200000000,"totalBytes":43500000000,"etaSeconds":611,"unit":"bytes"}}\n',
       ]),
     )
     const progress: unknown[] = []
@@ -342,6 +344,7 @@ describe('postLaunch and postGet (the streamed routes)', () => {
         doneBytes: 5200000000,
         totalBytes: 43500000000,
         etaSeconds: 611,
+        unit: 'bytes',
       },
     ])
   })

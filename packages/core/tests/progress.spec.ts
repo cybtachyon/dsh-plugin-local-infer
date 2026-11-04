@@ -12,7 +12,15 @@ describe('parseHfProgressLine (the file-count bar)', () => {
       doneBytes: 43,
       totalBytes: 102,
       etaSeconds: 2,
+      unit: 'files',
     })
+  })
+
+  it('marks the file-count bar amounts as files', () => {
+    const state = parseHfProgressLine(
+      'Fetching 102 files: 42%|████▏     | 43/102 [00:01<00:02, 20.5it/s]',
+    )
+    expect(state?.unit).toBe('files')
   })
 
   it('reads a finished bar with no remaining time as eta 0', () => {
@@ -40,7 +48,15 @@ describe('parseHfProgressLine (the byte bar)', () => {
       doneBytes: 5.2e9,
       totalBytes: 43.5e9,
       etaSeconds: 611,
+      unit: 'bytes',
     })
+  })
+
+  it('marks the byte bar amounts as bytes', () => {
+    const state = parseHfProgressLine(
+      'Downloading x.safetensors: 12% | 5.2G/43.5G [01:23<10:11, 72.3MB/s]',
+    )
+    expect(state?.unit).toBe('bytes')
   })
 
   it('converts the human byte sizes with the decimal base', () => {
@@ -96,6 +112,7 @@ describe('foldHfProgressChunk', () => {
       doneBytes: 5.2e9,
       totalBytes: 43.5e9,
       etaSeconds: 611,
+      unit: 'bytes',
     })
   })
 
@@ -106,6 +123,7 @@ describe('foldHfProgressChunk', () => {
       doneBytes: 5.2e9,
       totalBytes: 43.5e9,
       etaSeconds: 611,
+      unit: 'bytes',
     }
     expect(foldHfProgressChunk('plain log line\n', prior)).toEqual(prior)
     expect(foldHfProgressChunk('', undefined)).toBeUndefined()

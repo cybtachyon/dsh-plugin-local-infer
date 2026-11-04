@@ -69,6 +69,19 @@ function barState(): GetProgressState {
     doneBytes: 43.2e9,
     totalBytes: 102.4e9,
     etaSeconds: 751,
+    unit: 'bytes',
+  }
+}
+
+// filesState builds a GetProgressState the way the parser folds a file-count bar.
+function filesState(): GetProgressState {
+  return {
+    step: 'Fetching 102 files',
+    percent: 42,
+    doneBytes: 43,
+    totalBytes: 102,
+    etaSeconds: 2,
+    unit: 'files',
   }
 }
 
@@ -397,6 +410,12 @@ describe('client store derive (store/derive.ts)', () => {
       )
     })
 
+    it('renders a file-count state as a file count, not GB', () => {
+      expect(formatProgressReadout(filesState(), t)).toBe(
+        'Downloading… 42% · 43/102 files · ETA 0:02',
+      )
+    })
+
     it('drops the ETA segment when the bar carries no tail', () => {
       const state: GetProgressState = {
         step: 'Downloading m.safetensors',
@@ -404,6 +423,7 @@ describe('client store derive (store/derive.ts)', () => {
         doneBytes: 102.4e9,
         totalBytes: 102.4e9,
         etaSeconds: 0,
+        unit: 'bytes',
       }
       expect(formatProgressReadout(state, t)).toBe('Downloading… 100% · 102.4/102.4 GB')
     })

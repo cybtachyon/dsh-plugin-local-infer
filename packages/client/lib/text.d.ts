@@ -59,6 +59,7 @@ declare const en: {
     gettingReadout: string;
     gettingVerb: string;
     gettingEta: string;
+    gettingFiles: string;
     getFailed: string;
     allowRun: string;
     depsSatisfied: string;

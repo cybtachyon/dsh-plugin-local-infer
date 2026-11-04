@@ -1786,6 +1786,7 @@ describe('route handlers over a fake web server', () => {
       doneBytes: 5.2e9,
       totalBytes: 43.5e9,
       etaSeconds: 611,
+      unit: 'bytes',
     })
     expect(events[events.length - 1].result.healthy).toBe(true)
   })
@@ -3244,6 +3245,7 @@ describe('get route (git sync, deps, build)', () => {
       doneBytes: 5.2e9,
       totalBytes: 43.5e9,
       etaSeconds: 611,
+      unit: 'bytes',
     })
     // The log events carry the plain step text, and the persisted run stays
     // plain text: the log file reads the run, not the NDJSON it streamed.

@@ -11,6 +11,7 @@ import {
   ProviderList,
   ProviderRow,
 } from '../src/render/ProviderList.tsx'
+import { clearInFlightRuns, trackGetAbort } from '../src/store/abort.ts'
 import {
   performEntryLaunch,
   type EntryTimerHandle,
@@ -238,6 +239,87 @@ describe('the provider row (render/ProviderList.tsx ProviderRow)', () => {
     // The title reads the engine label, the model, and the status.
     const title = children(row).find((c) => c.type === 'span' && c.props['aria-label'])
     expect(title?.props['aria-label']).toBe('NInfer: a-model (' + t.statusRunning + ')')
+  })
+
+  it('shows the ongoing spinner and the live readout while a Get run is in flight', () => {
+    const { store } = makeStore()
+    store.dispatch({
+      type: 'summary/ack',
+      summary: summaryWith([providerWith({ status: 'stopped' })]),
+    })
+    try {
+      // A Get run in flight for the provider being edited: the in-flight
+      // registry reads true, and the progress state has landed.
+      trackGetAbort(new AbortController())
+      store.dispatch({
+        type: 'ui/patch',
+        patch: {
+          editingProviderId: 'p1',
+          getProgress: {
+            step: 'Downloading x.safetensors',
+            percent: 42,
+            doneBytes: 43.2e9,
+            totalBytes: 102.4e9,
+            etaSeconds: 751,
+            unit: 'bytes',
+          },
+        },
+      })
+      const { dispatcher } = makeDispatcher()
+      const provider = providerWith({ status: 'stopped' })
+      const row = withDispatcher(dispatcher, () =>
+        el(
+          ProviderRow({
+            store,
+            provider,
+            t,
+            engines: [{ id: 'ninfer', label: 'NInfer', supports: { docker: true, local: true } }],
+            editingId: 'p1',
+            deletingId: null,
+          }),
+        ),
+      )
+      // The title reads the getting status and the live download readout.
+      const title = children(row).find((c) => c.type === 'span' && c.props['aria-label'])
+      expect(title?.props['aria-label']).toBe(
+        'NInfer: a-model (' + t.gettingReadout + ') · Downloading… 42% · 43.2/102.4 GB · ETA 12:31',
+      )
+      // The status dot is the ongoing spinner, not the status-mapped dot.
+      const dot = children(row)[0]
+      expect(dot.type).toBe('span')
+      expect(dot.props['aria-hidden']).toBe('true')
+      expect(text(dot)).toBe('…')
+    } finally {
+      clearInFlightRuns()
+    }
+  })
+
+  it('keeps the status dot and title unchanged when no Get run is in flight', () => {
+    const { store } = makeStore()
+    store.dispatch({
+      type: 'summary/ack',
+      summary: summaryWith([providerWith({ status: 'stopped' })]),
+    })
+    const { dispatcher } = makeDispatcher()
+    const provider = providerWith({ status: 'stopped' })
+    const row = withDispatcher(dispatcher, () =>
+      el(
+        ProviderRow({
+          store,
+          provider,
+          t,
+          engines: [{ id: 'ninfer', label: 'NInfer', supports: { docker: true, local: true } }],
+          editingId: 'p1',
+          deletingId: null,
+        }),
+      )
+    )
+    // No Get in flight: the title reads the status, and the dot is the
+    // status-mapped dot (stopped is the error glyph).
+    const title = children(row).find((c) => c.type === 'span' && c.props['aria-label'])
+    expect(title?.props['aria-label']).toBe('NInfer: a-model (' + t.statusStopped + ')')
+    const dot = children(row)[0]
+    expect(text(dot)).toBe('✗')
   })
 
   it('renders the fork owner/repo as the title when the entry names a fork', () => {

@@ -75,19 +75,30 @@ function formatEtaClock(seconds) {
     const secs = seconds % 60;
     return minutes + ':' + String(secs).padStart(2, '0');
 }
+// sizeSegment renders the done/total amounts in the unit the bar measured:
+// a file count (`43/102 files`) for the file-count bar, GB for the byte bar.
+// An absent unit (a progress event from a host that predates the field)
+// reads as bytes, the byte-bar rendering.
+function sizeSegment(state, t) {
+    if (state.unit === 'files') {
+        return state.doneBytes + '/' + state.totalBytes + ' ' + t.gettingFiles;
+    }
+    return toGb(state.doneBytes) + '/' + toGb(state.totalBytes) + ' GB';
+}
 /**
  * formatProgressReadout renders a GetProgressState as the download readout:
- * the download verb, the percent, the done and total amounts in GB, and the
- * remaining time in mm:ss when the bar carries a tail (a finished bar drops
- * the ETA segment). The 'getting' control branch and the provider row
- * (TASK-011) share it, so the readout text has one source.
+ * the download verb, the percent, the done and total amounts in the unit the
+ * bar measured (a file count for the file-count bar, GB for the byte bar),
+ * and the remaining time in mm:ss when the bar carries a tail (a finished
+ * bar drops the ETA segment). The 'getting' control branch and the provider
+ * row (TASK-011) share it, so the readout text has one source.
  */
 export function formatProgressReadout(state, t) {
     // The verb and the percent read as one segment (a space apart), the sizes
     // and the ETA as the middle-dot-separated segments that follow.
     const parts = [
         t.gettingVerb + ' ' + state.percent + '%',
-        toGb(state.doneBytes) + '/' + toGb(state.totalBytes) + ' GB',
+        sizeSegment(state, t),
     ];
     if (state.etaSeconds > 0) {
         parts.push(t.gettingEta + ' ' + formatEtaClock(state.etaSeconds));
