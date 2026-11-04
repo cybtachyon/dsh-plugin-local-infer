@@ -92,6 +92,11 @@
   (`../../core/lib/index.js`). A self-referencing bare specifier
   (`dsh-plugin-local-infer/core`) only resolves when the package has a
   self-link inside a `node_modules` tree, so it fails on local/pnpm installs.
+- Tracked `lib/` outputs land with their `src/` changes. A `git clean` after
+  a verification build can delete emitted outputs while the git-ignored
+  `packages/*/tsconfig.tsbuildinfo` survives, and then `tsc -b` reports
+  "up to date" over the missing outputs: delete the stale tsbuildinfo files
+  and rebuild.
 - A bundle with a client half needs a bare-package carrier row: a no-op
   `dsh/host.js` module, a root `.` export, and a bundle row named after the
   bare package. The client-module scan keys `dsh.client` on a bare

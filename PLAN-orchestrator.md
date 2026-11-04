@@ -25,6 +25,11 @@ system prompt when enabled. Document the feature in README.md.
   unrelated to the task in progress. (The working tree was observed dirty with
   pre-existing basalt lib edits at blueprint time; they were gone by commit
   time, so treat any unexpected dirty file as out of scope.)
+- Tracked `lib/` outputs and the `dsh/client.js` artifact land in the same
+  commit as the `src/` change they come from; repo specs load committed
+  artifacts, and `tsc -b` can report "up to date" over deleted outputs when a
+  git-ignored `packages/*/tsconfig.tsbuildinfo` is stale (delete it and
+  rebuild).
 - The lazy-CJS card bundle keeps exactly two runtime externals (`react`,
   `@deepseek-ai/dsh-client-ui-primitives`); guard every primitive use and the
   react require, per the existing card pattern.
