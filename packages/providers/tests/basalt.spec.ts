@@ -208,11 +208,10 @@ describe('Basalt Blackwell constraint', () => {
 
 describe('Basalt OS profiles', () => {
   it('spells the README CMake commands for the Linux and Windows routes', () => {
-    // The Linux route also chains the serve/ server pip requirements after the
-    // build, so the launch's health poll does not time out on a missing module
-    // import.
+    // The Linux route is the CMake build alone; the serve/ server pip
+    // requirements ride the basaltPip prereq dep (fc68df6), not the build step.
     expect(BASALT_LINUX.buildSteps).toEqual([
-      'cmake -S {dir} -B {dir}/build -DCMAKE_BUILD_TYPE=Release && cmake --build {dir}/build -j && sudo python3 -m pip install -r {dir}/requirements.txt',
+      'cmake -S {dir} -B {dir}/build -DCMAKE_BUILD_TYPE=Release && cmake --build {dir}/build -j',
     ])
     // The Windows route adds the Ninja generator and runs in the MSVC
     // developer shell (vcvars64.bat) so cl, cmake, and ninja are on the path.
