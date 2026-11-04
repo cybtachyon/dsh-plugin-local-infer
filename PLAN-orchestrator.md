@@ -100,5 +100,5 @@ system prompt when enabled. Document the feature in README.md.
 ### Phase 4: Gates, docs, and activation
 
 - [x] [TASK-010-build-test-lint-gate](docs/PLAN-orchestrator-TASK-010-build-test-lint-gate.md)
-- [ ] [TASK-011-readme](docs/PLAN-orchestrator-TASK-011-readme.md)
+- [x] [TASK-011-readme](docs/PLAN-orchestrator-TASK-011-readme.md)
 - [ ] [TASK-012-activation-walkthrough](docs/PLAN-orchestrator-TASK-012-activation-walkthrough.md)
