@@ -69,8 +69,8 @@ export declare function deriveLaunchDisabled(state: CardState): boolean;
 /**
  * isGettingInFlight reports whether a Get run is in flight: the get action
  * cell pending, or the in-flight registry true after the idle cap settled the
- * cell. The 'getting' control branch, the provider row (TASK-011), and the
- * Launch gate share it, so the surfaces agree on when a Get is in flight.
+ * cell. The 'getting' control branch, the provider row, and the Launch gate
+ * share it, so the surfaces agree on when a Get is in flight.
  */
 export declare function isGettingInFlight(state: CardState): boolean;
 export declare const PROGRESS_READOUT_SEPARATOR = " \u00B7 ";
@@ -80,7 +80,7 @@ export declare const PROGRESS_READOUT_SEPARATOR = " \u00B7 ";
  * bar measured (a file count for the file-count bar, GB for the byte bar),
  * and the remaining time in mm:ss when the bar carries a tail (a finished
  * bar drops the ETA segment). The 'getting' control branch and the provider
- * row (TASK-011) share it, so the readout text has one source.
+ * row share it, so the readout text has one source.
  */
 export declare function formatProgressReadout(state: GetProgressState, t: TextTable): string;
 /**

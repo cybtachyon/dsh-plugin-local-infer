@@ -58,7 +58,7 @@ export function LogsPanel(props) {
     const dragRef = react.useRef(null);
     // The step chips render only while a Get run is in flight (the streamed
     // buffer is active and the get cell or the in-flight registry reads in
-    // flight, the TASK-010 detection), or while the run has just settled
+    // flight, the isGettingInFlight detection), or while the run has just settled
     // failed (the buffer is still active, so the failed step reads as danger).
     // The Cancel pill (the performGetCancel driver) renders only while a run
     // is in flight, beside the chips. With no run in flight the header shows

@@ -74,8 +74,8 @@ export function deriveLaunchDisabled(state) {
 /**
  * isGettingInFlight reports whether a Get run is in flight: the get action
  * cell pending, or the in-flight registry true after the idle cap settled the
- * cell. The 'getting' control branch, the provider row (TASK-011), and the
- * Launch gate share it, so the surfaces agree on when a Get is in flight.
+ * cell. The 'getting' control branch, the provider row, and the Launch gate
+ * share it, so the surfaces agree on when a Get is in flight.
  */
 export function isGettingInFlight(state) {
     return state.actions.get.status === 'pending' || hasInFlightGet();
@@ -104,8 +104,8 @@ function sizeSegment(state, t) {
 }
 // The separator between the readout's segments (the verb, the sizes, the
 // ETA) and between a title and an appended readout. One constant, so the
-// 'getting' control branch and the provider row (TASK-011) share the readout
-// text and its spacing.
+// 'getting' control branch and the provider row share the readout text and
+// its spacing.
 export const PROGRESS_READOUT_SEPARATOR = ' · ';
 /**
  * formatProgressReadout renders a GetProgressState as the download readout:
@@ -113,7 +113,7 @@ export const PROGRESS_READOUT_SEPARATOR = ' · ';
  * bar measured (a file count for the file-count bar, GB for the byte bar),
  * and the remaining time in mm:ss when the bar carries a tail (a finished
  * bar drops the ETA segment). The 'getting' control branch and the provider
- * row (TASK-011) share it, so the readout text has one source.
+ * row share it, so the readout text has one source.
  */
 export function formatProgressReadout(state, t) {
     // The verb and the percent read as one segment (a space apart), the sizes

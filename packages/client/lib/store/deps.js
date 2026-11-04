@@ -314,8 +314,8 @@ export function performGet(store, t) {
  * getProgress readout back to null. The form stays open (the draft and the
  * form mode are untouched, unlike cancelProvider). The aborted run settles
  * the get cell to error through performGet's settle path, so the 'getting'
- * control branch and the step chips stop firing. The cancel surfaces
- * (TASK-016) call it.
+ * control branch and the step chips stop firing. The cancel affordances
+ * (the title bar, the deps panel, and the Logs header) call it.
  */
 export function performGetCancel(store) {
     const aborted = cancelInFlightRuns();
