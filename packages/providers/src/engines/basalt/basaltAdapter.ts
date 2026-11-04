@@ -15,7 +15,7 @@
  */
 
 import { existsSync } from 'node:fs'
-import { isAbsolute, join } from 'node:path'
+import { join } from 'node:path'
 import {
   EngineAdapter,
   hfDownloadCommand,
@@ -137,11 +137,12 @@ export class BasaltAdapter extends EngineAdapter {
   renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan {
     const port = this.port(config)
     const modelDirectory = typeof config.modelDirectory === 'string' ? config.modelDirectory : ''
-    // The config file lands in the model directory (the engine's --config flag
-    // and the model artifact share one home). A bare config (no model
-    // directory) writes it into the spawn's working directory.
-    const configPath =
-      modelDirectory === '' ? BASALT_CONFIG_FILE : join(modelDirectory, BASALT_CONFIG_FILE)
+    // The config file lands in the model download target directory (the
+    // hub-cache root for the default layout, the user model directory for an
+    // override), so the engine's --config flag and the model artifact share one
+    // home and the config never dirties the engine's git checkout.
+    const { baseDir } = modelDownloadTarget(modelDirectory)
+    const configPath = join(baseDir, BASALT_CONFIG_FILE)
     // The engine binary is OS-specific (the .exe on Windows), so the name
     // comes from the host OS's binary function. CMake writes it into the
     // profile's buildDir (the repo's bin/ folder), so the launch spells it as
@@ -241,16 +242,10 @@ export class BasaltAdapter extends EngineAdapter {
       if (this.host.writeFile === undefined) {
         return withLogs({ ok: false, detail: 'the host cannot write the config file' })
       }
-      // A relative config path (a bare config, no model directory) is written
-      // into the engine directory the spawn runs in, so the engine's --config
-      // flag (resolved against its cwd) finds the file. An absolute path (a
-      // user model directory) is written as-is.
-      const configPath = isAbsolute(plan.configFile.path)
-        ? plan.configFile.path
-        : engineDir !== undefined
-          ? join(engineDir, plan.configFile.path)
-          : plan.configFile.path
-      await this.host.writeFile(configPath, plan.configFile.content)
+      // The config path is always absolute (renderLaunch joins the model
+      // download target base directory), so the file is written as-is into the
+      // model download target directory, never the engine's git checkout.
+      await this.host.writeFile(plan.configFile.path, plan.configFile.content)
     }
     // A relative launch path (a build-tree binary) is joined against the
     // engine directory the spawn runs in, so the spawn resolves an absolute
