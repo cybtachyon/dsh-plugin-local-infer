@@ -333,20 +333,25 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return json
 }
 
+// probeRoute answers the bootstrap's presence check for one route: any
+// response other than a 404 proves the route exists. A network failure (the
+// host is unreachable) reads as absent.
+async function probeRoute(path: string): Promise<boolean> {
+  try {
+    const response = await fetch(path)
+    return response.status !== 404
+  } catch {
+    return false
+  }
+}
+
 /**
- * routeExists probes whether the host route is mounted: any response other
- * than a 404 (and other than a network failure) proves the route exists.
+ * routeExists probes whether the host route is mounted (see probeRoute).
  * The bootstrap uses it to decide whether to mount the card, so a headless
  * profile (no web route) keeps the card off the Plugins page.
  */
-export async function routeExists(): Promise<boolean> {
-  try {
-    const response = await fetch('/local-infer/summary')
-    return response.status !== 404
-  } catch {
-    // A network failure (the host is unreachable) reads as absent.
-    return false
-  }
+export function routeExists(): Promise<boolean> {
+  return probeRoute('/local-infer/summary')
 }
 
 /** fetchSummary reads the card's read model (the GET /local-infer/summary route). */
@@ -436,19 +441,12 @@ export function postProviderDelete(
 
 /**
  * orchestratorRouteExists probes whether the orchestrator's GET route is
- * mounted: the same rule as routeExists (any response other than a 404 or a
- * network failure proves presence). The orchestrator component ships
- * disabled, and its routes live and die with the component, so the probe is
- * the card's enablement read.
+ * mounted (see probeRoute). The orchestrator component ships disabled, and
+ * its routes live and die with the component, so the probe is the card's
+ * enablement read.
  */
-export async function orchestratorRouteExists(): Promise<boolean> {
-  try {
-    const response = await fetch('/local-infer/orchestrator')
-    return response.status !== 404
-  } catch {
-    // A network failure (the host is unreachable) reads as absent.
-    return false
-  }
+export function orchestratorRouteExists(): Promise<boolean> {
+  return probeRoute('/local-infer/orchestrator')
 }
 
 /** fetchOrchestrator reads the orchestrator prompt model (the GET /local-infer/orchestrator route). */

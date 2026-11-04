@@ -95,7 +95,7 @@ system prompt when enabled. Document the feature in README.md.
 
 - [x] [TASK-007-client-card](docs/PLAN-orchestrator-TASK-007-client-card.md)
 - [x] [TASK-008-client-build](docs/PLAN-orchestrator-TASK-008-client-build.md)
-- [ ] [TASK-009-refactor-client-half](docs/PLAN-orchestrator-TASK-009-refactor-client-half.md)
+- [x] [TASK-009-refactor-client-half](docs/PLAN-orchestrator-TASK-009-refactor-client-half.md)
 
 ### Phase 4: Gates, docs, and activation
 

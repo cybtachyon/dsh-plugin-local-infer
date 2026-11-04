@@ -22,6 +22,7 @@ import { labels } from "./text.js";
 import { renderButton } from "./render/primitives.js";
 import { react } from "./render/react.js";
 import { fetchOrchestrator, postOrchestratorSave } from "./api/routes.js";
+import { localeStores } from "./Card.js";
 // The field body: a label above the textarea (the 120px row label would
 // float beside a multi-line field).
 const FIELD_LABEL_STYLE = {
@@ -62,16 +63,9 @@ const NOTE_STYLE = {
  * same way; the button draws the primitives seed through the shared seam.
  */
 export function orchestratorCard(_react, localeRef) {
-    // The locale closures are created once per mount (the same pattern as
-    // card()), so useSyncExternalStore does not re-subscribe each render.
-    const subscribeLocale = (onChange) => {
-        const locale = localeRef.current;
-        return locale ? locale.subscribe(onChange) : () => { };
-    };
-    const readLocale = () => {
-        const locale = localeRef.current;
-        return locale ? locale.getSnapshot().active : '';
-    };
+    // The locale pair (the shared localeStores seam) is created once per
+    // mount, so useSyncExternalStore does not re-subscribe each render.
+    const { subscribeLocale, readLocale } = localeStores(localeRef);
     return function OrchestratorCard() {
         const active = react.useSyncExternalStore(subscribeLocale, readLocale, readLocale);
         const t = labels(active);

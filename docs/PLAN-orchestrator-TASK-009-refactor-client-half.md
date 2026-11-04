@@ -44,3 +44,55 @@ commit if code changed, otherwise a short note here and no commit.
   after a verification build removed the new lib files but kept the
   git-ignored `packages/*/tsconfig.tsbuildinfo`. If a rebuild emits nothing
   while outputs are missing, delete the tsbuildinfo files and rebuild.
+
+## Refactor outcome (2026-11-04)
+
+Resolved risks:
+
+- Duplicate Code (the carry-over item): the carrier bootstrap harness and
+  five behavior tests (the lazy-CJS load contract, the locale and slots
+  seams, the 404 probe skip, the mounted slot set, the primitives-seed
+  fallback) were near-identical mirrors in `packages/ui/tests/client.spec.ts`
+  and `packages/client/tests/carrier.spec.ts`. The behavior pins now live
+  only in `carrier.spec.ts` (the home its header claims); the ui suite keeps
+  only the source pins and cross-references the carrier suite in its header.
+  The ui route-contract pin gained the two orchestrator route strings the
+  artifact now carries.
+- Duplicate Code: `routeExists` and `orchestratorRouteExists` each spelled
+  the same fetch / status-not-404 / network-failure rule. Extracted
+  `probeRoute(path)` in `routes.ts`; both are one-line delegates now.
+- Duplicate Code: `plugin.ts` carried the probe-then-mount-try/catch pattern
+  twice in `registerCard` and duplicated the skip-line logging again inside
+  both mount functions. Extracted `mountWhenRouteExists(label, probe,
+  mount)`; the mount functions rethrow `requireRuntimeModules` failures to
+  that one catcher. The emitted skip log strings are unchanged.
+- Multiple Sources of Truth / Duplicate Code: the `card()` and
+  `orchestratorCard()` locale closures (`subscribeLocale`, `readLocale`)
+  were identical. Extracted `localeStores(localeRef)` next to `LocaleRef`
+  in `Card.tsx`; both factories destructure the pair.
+
+Reported, not present in the reviewed scope:
+
+- Bloaters: none introduced by TASK-006 through TASK-008. The Card.tsx file
+  size is pre-existing and out of scope.
+- Data Clumps: `(ctx, localeRef)` is a two-parameter handoff, idiomatic
+  here; no variable group travels through methods.
+- Feature Envy: none found in the reviewed methods.
+- Magic Numbers: the OrchestratorCard style literals follow the established
+  named-style-constant convention used across the card.
+
+Reported, pre-existing and accepted:
+
+- The client `OrchestratorModel` mirrors the node-side private
+  `OrchestratorPayload` by hand (the documented TASK-007 decision; the
+  client bundle cannot import the node-side orchestrator package). Both
+  sides pin the exact field set (routes.spec and mount-e2e payloads on the
+  client, full-object `toEqual` payload assertions in
+  `orchestrator-routes.spec.ts`), so drifting one side breaks its own suite.
+- The two `cordis.patch.yml` copies must stay row-identical (a repo
+  structure predating TASK-006); bundle.spec pins the matching row id sets.
+
+Verification: `pnpm build` regenerated `dsh/client.js` and the
+`packages/client/lib` outputs in the same commit as the sources; `pnpm test`
+78 files / 1412 green (five duplicated tests removed); `pnpm test:coverage`
+passes the vitest thresholds; `pnpm lint` green.

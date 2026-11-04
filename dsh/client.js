@@ -1357,13 +1357,16 @@ async function postJson(path, body) {
   }
   return json;
 }
-async function routeExists() {
+async function probeRoute(path) {
   try {
-    const response = await fetch("/local-infer/summary");
+    const response = await fetch(path);
     return response.status !== 404;
   } catch {
     return false;
   }
+}
+function routeExists() {
+  return probeRoute("/local-infer/summary");
 }
 function fetchSummary(query) {
   return getJson("/local-infer/summary", query);
@@ -1403,13 +1406,8 @@ function postChatTemplate(request) {
 function postProviderDelete(request) {
   return postJson("/local-infer/provider-delete", request);
 }
-async function orchestratorRouteExists() {
-  try {
-    const response = await fetch("/local-infer/orchestrator");
-    return response.status !== 404;
-  } catch {
-    return false;
-  }
+function orchestratorRouteExists() {
+  return probeRoute("/local-infer/orchestrator");
 }
 function fetchOrchestrator() {
   return getJson("/local-infer/orchestrator");
@@ -3176,6 +3174,19 @@ function performDownload(store, t) {
 }
 
 // packages/client/src/Card.tsx
+function localeStores(localeRef) {
+  return {
+    subscribeLocale: (onChange) => {
+      const locale = localeRef.current;
+      return locale ? locale.subscribe(onChange) : () => {
+      };
+    },
+    readLocale: () => {
+      const locale = localeRef.current;
+      return locale ? locale.getSnapshot().active : "";
+    }
+  };
+}
 function renderField(props) {
   const { field, onValue, inlineWarnings, help, t } = props;
   const value = field.value;
@@ -3361,15 +3372,7 @@ function renderTitleBarControl(control, onControlClick, onCancel, cancelLabel) {
   });
 }
 function card(_react, localeRef, _primitives) {
-  const subscribeLocale = (onChange) => {
-    const locale = localeRef.current;
-    return locale ? locale.subscribe(onChange) : () => {
-    };
-  };
-  const readLocale = () => {
-    const locale = localeRef.current;
-    return locale ? locale.getSnapshot().active : "";
-  };
+  const { subscribeLocale, readLocale } = localeStores(localeRef);
   return function Card() {
     const store = useCardStore();
     const state = store.getSnapshot();
@@ -3840,15 +3843,7 @@ var NOTE_STYLE = {
   color: "var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))"
 };
 function orchestratorCard(_react, localeRef) {
-  const subscribeLocale = (onChange) => {
-    const locale = localeRef.current;
-    return locale ? locale.subscribe(onChange) : () => {
-    };
-  };
-  const readLocale = () => {
-    const locale = localeRef.current;
-    return locale ? locale.getSnapshot().active : "";
-  };
+  const { subscribeLocale, readLocale } = localeStores(localeRef);
   return function OrchestratorCard() {
     const active = react.useSyncExternalStore(subscribeLocale, readLocale, readLocale);
     const t = labels(active);
@@ -3925,26 +3920,24 @@ function registerCard(ctx) {
     }
   });
   ctx.inject(["slots"], (scope) => {
-    routeExists().then((exists) => {
-      if (!exists) {
-        return;
-      }
-      try {
-        mountCard(scope, localeRef);
-      } catch (error) {
-        console.error(`[local-infer] settings card skipped: ${error}`);
-      }
+    mountWhenRouteExists("settings card", routeExists, () => {
+      mountCard(scope, localeRef);
     });
-    orchestratorRouteExists().then((exists) => {
-      if (!exists) {
-        return;
-      }
-      try {
-        mountOrchestratorCard(scope, localeRef);
-      } catch (error) {
-        console.error(`[local-infer] orchestrator settings card skipped: ${error}`);
-      }
+    mountWhenRouteExists("orchestrator settings card", orchestratorRouteExists, () => {
+      mountOrchestratorCard(scope, localeRef);
     });
+  });
+}
+function mountWhenRouteExists(label, probe, mount) {
+  probe().then((exists) => {
+    if (!exists) {
+      return;
+    }
+    try {
+      mount();
+    } catch (error) {
+      console.error(`[local-infer] ${label} card skipped: ${error}`);
+    }
   });
 }
 function requireRuntimeModules() {
@@ -3963,13 +3956,7 @@ function requireRuntimeModules() {
   return { react: reactModule, primitives };
 }
 function mountCard(ctx, localeRef) {
-  let modules;
-  try {
-    modules = requireRuntimeModules();
-  } catch (error) {
-    console.error(`[local-infer] settings card skipped: ${error}`);
-    return;
-  }
+  const modules = requireRuntimeModules();
   const Card = card(modules.react, localeRef, modules.primitives);
   ctx.slots.inject("plugins.bundle.config", () => {
     ctx.slots.register({ name: "plugins.bundle.config", key: PACKAGE_NAME }, Card);
@@ -3982,13 +3969,7 @@ function mountCard(ctx, localeRef) {
   });
 }
 function mountOrchestratorCard(ctx, localeRef) {
-  let modules;
-  try {
-    modules = requireRuntimeModules();
-  } catch (error) {
-    console.error(`[local-infer] orchestrator settings card skipped: ${error}`);
-    return;
-  }
+  const modules = requireRuntimeModules();
   const Card = orchestratorCard(modules.react, localeRef);
   ctx.slots.inject("plugins.row.config", () => {
     ctx.slots.register(

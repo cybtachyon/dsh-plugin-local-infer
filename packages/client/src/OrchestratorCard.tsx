@@ -24,7 +24,7 @@ import { labels } from './text.ts'
 import { renderButton } from './render/primitives.tsx'
 import { react } from './render/react.ts'
 import { fetchOrchestrator, postOrchestratorSave, type OrchestratorModel } from './api/routes.ts'
-import type { LocaleRef } from './Card.tsx'
+import { localeStores, type LocaleRef } from './Card.tsx'
 
 // One settled save note: 'ok' reads the saved label, 'error' the host's own
 // message. Any other interaction clears it.
@@ -81,16 +81,9 @@ export function orchestratorCard(
   _react: unknown,
   localeRef: LocaleRef,
 ): () => ReactNode {
-  // The locale closures are created once per mount (the same pattern as
-  // card()), so useSyncExternalStore does not re-subscribe each render.
-  const subscribeLocale = (onChange: () => void): (() => void) => {
-    const locale = localeRef.current
-    return locale ? locale.subscribe(onChange) : () => {}
-  }
-  const readLocale = (): string => {
-    const locale = localeRef.current
-    return locale ? locale.getSnapshot().active : ''
-  }
+  // The locale pair (the shared localeStores seam) is created once per
+  // mount, so useSyncExternalStore does not re-subscribe each render.
+  const { subscribeLocale, readLocale } = localeStores(localeRef)
 
   return function OrchestratorCard(): ReactNode {
     const active = react.useSyncExternalStore(subscribeLocale, readLocale, readLocale)

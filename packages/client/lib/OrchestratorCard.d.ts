@@ -18,7 +18,7 @@
  * @module dsh-plugin-local-infer/client/OrchestratorCard
  */
 import type { ReactNode } from 'react';
-import type { LocaleRef } from './Card.tsx';
+import { type LocaleRef } from './Card.tsx';
 /**
  * orchestratorCard builds the Orchestrator card component. It has the same
  * (react, localeRef) factory shape as the main card(), so the bootstrap

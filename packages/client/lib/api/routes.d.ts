@@ -156,8 +156,7 @@ export declare function readLaunchStream(response: Response, onStep?: (step: str
  */
 export declare function readGetStream(response: Response, onChunk: (text: string) => void, onProgress?: (progress: HfProgressShape) => void): Promise<void>;
 /**
- * routeExists probes whether the host route is mounted: any response other
- * than a 404 (and other than a network failure) proves the route exists.
+ * routeExists probes whether the host route is mounted (see probeRoute).
  * The bootstrap uses it to decide whether to mount the card, so a headless
  * profile (no web route) keeps the card off the Plugins page.
  */
@@ -204,10 +203,9 @@ export declare function postChatTemplate(request: ChatTemplateRequest): Promise<
 export declare function postProviderDelete(request: ProviderDeleteRequest): Promise<LocalInferSummary>;
 /**
  * orchestratorRouteExists probes whether the orchestrator's GET route is
- * mounted: the same rule as routeExists (any response other than a 404 or a
- * network failure proves presence). The orchestrator component ships
- * disabled, and its routes live and die with the component, so the probe is
- * the card's enablement read.
+ * mounted (see probeRoute). The orchestrator component ships disabled, and
+ * its routes live and die with the component, so the probe is the card's
+ * enablement read.
  */
 export declare function orchestratorRouteExists(): Promise<boolean>;
 /** fetchOrchestrator reads the orchestrator prompt model (the GET /local-infer/orchestrator route). */

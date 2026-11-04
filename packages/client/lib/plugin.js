@@ -1,6 +1,6 @@
 /**
- * The browser card bootstrap: apply, registerCard, mountCard, and
- * mountOrchestratorCard.
+ * The browser card bootstrap: apply, registerCard, mountWhenRouteExists,
+ * mountCard, and mountOrchestratorCard.
  *
  * dsh web users have no terminal, so the local-inference config (engine,
  * model, parameters) had no way in from the browser. The card is contributed
@@ -63,38 +63,41 @@ function registerCard(ctx) {
         }
     });
     ctx.inject(['slots'], (scope) => {
-        // The card and its route live and die together: with the host route
+        // Each card and its route live and die together: with the host route
         // absent (no web profile) a card would only render an error, which is
-        // not what a headless profile means. The probe reads any response at
-        // all as proof the route exists; only a 404 or a network failure reads
-        // as absent.
-        routeExists().then((exists) => {
-            if (!exists) {
-                return;
-            }
-            try {
-                mountCard(scope, localeRef);
-            }
-            catch (error) {
-                console.error(`[local-infer] settings card skipped: ${error}`);
-            }
+        // not what a headless profile means. mountWhenRouteExists owns the
+        // shared read for both cards: any response at all is proof the route
+        // exists, only a 404 or a network failure reads as absent.
+        mountWhenRouteExists('settings card', routeExists, () => {
+            mountCard(scope, localeRef);
         });
         // The orchestrator card is probed on its own: its routes belong to the
         // disabled-by-default orchestrator component row, and only an enabled
         // component mounts GET /local-infer/orchestrator, so the probe reads
         // the component's enablement. The ui row and the orchestrator row
         // toggle independently, hence the separate probe.
-        orchestratorRouteExists().then((exists) => {
-            if (!exists) {
-                return;
-            }
-            try {
-                mountOrchestratorCard(scope, localeRef);
-            }
-            catch (error) {
-                console.error(`[local-infer] orchestrator settings card skipped: ${error}`);
-            }
+        mountWhenRouteExists('orchestrator settings card', orchestratorRouteExists, () => {
+            mountOrchestratorCard(scope, localeRef);
         });
+    });
+}
+/**
+ * mountWhenRouteExists runs the mount only after the route probe proves the
+ * host serves the card's routes, and logs the card's skip line when the
+ * mount throws (a react-absent host skips the card here, not at module
+ * load). Each card carries its own label and probe.
+ */
+function mountWhenRouteExists(label, probe, mount) {
+    probe().then((exists) => {
+        if (!exists) {
+            return;
+        }
+        try {
+            mount();
+        }
+        catch (error) {
+            console.error(`[local-infer] ${label} card skipped: ${error}`);
+        }
     });
 }
 /**
@@ -102,8 +105,8 @@ function registerCard(ctx) {
  * seams (the store's react binding, the renderers' primitives ref), so every
  * card mount draws the same resolved modules. A missing primitives seed is
  * a fallback, not an error, so the card still renders; a missing react
- * rethrows to the caller, which logs its own skip line (a react-absent host
- * skips the card here, not at module load).
+ * rethrows through the mount to mountWhenRouteExists, which logs the skip
+ * line (a react-absent host skips the card there, not at module load).
  */
 function requireRuntimeModules() {
     const reactModule = require('react');
@@ -131,18 +134,12 @@ function requireRuntimeModules() {
     return { react: reactModule, primitives };
 }
 /**
- * mountCard resolves the two runtime externals and registers the card into
- * both slots.
+ * mountCard resolves the two runtime externals and registers the Engine
+ * card into both slots. A react-absent host rethrows to
+ * mountWhenRouteExists, which logs the skip line.
  */
 function mountCard(ctx, localeRef) {
-    let modules;
-    try {
-        modules = requireRuntimeModules();
-    }
-    catch (error) {
-        console.error(`[local-infer] settings card skipped: ${error}`);
-        return;
-    }
+    const modules = requireRuntimeModules();
     const Card = card(modules.react, localeRef, modules.primitives);
     // slots.inject waits until a slot is declared, so each host fills the one
     // it has and the other wait never fires: from dsh 0.1.6-alpha.2 on hosts
@@ -164,17 +161,11 @@ function mountCard(ctx, localeRef) {
  * Plugins page dispatches for the orchestrator component row, whose title
  * and description the component's shipped locale/en.json meta carries. No
  * settings.plugin.item registration: the older Settings page keeps the
- * Engine card alone.
+ * Engine card alone. A react-absent host rethrows to mountWhenRouteExists,
+ * which logs the skip line.
  */
 function mountOrchestratorCard(ctx, localeRef) {
-    let modules;
-    try {
-        modules = requireRuntimeModules();
-    }
-    catch (error) {
-        console.error(`[local-infer] orchestrator settings card skipped: ${error}`);
-        return;
-    }
+    const modules = requireRuntimeModules();
     const Card = orchestratorCard(modules.react, localeRef);
     ctx.slots.inject('plugins.row.config', () => {
         ctx.slots.register({ name: 'plugins.row.config', key: ORCHESTRATOR_ROW_CONFIG_KEY }, Card);
