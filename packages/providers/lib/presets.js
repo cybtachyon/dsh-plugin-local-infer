@@ -16,6 +16,7 @@
  * @module dsh-plugin-local-infer/providers/presets
  */
 import { WILDCARD_HARDWARE_CLASS } from '../../core/lib/index.js';
+import { BASALT_DEFAULT_MODEL_ID } from "./engines/basalt/basalt.js";
 /**
  * The hardware class every built-in preset is sourced for: a 24 GiB Ampere
  * (sm86) card, the card the NInfer constants were measured on and the card the
@@ -132,7 +133,7 @@ const HYPERQWEN_PRESETS = [
 const BASALT_PRESETS = [
     {
         engineId: 'basalt',
-        modelId: 'qwen38-flash-next',
+        modelId: BASALT_DEFAULT_MODEL_ID,
         hardwareClass: WILDCARD_HARDWARE_CLASS,
         values: {
             kv: 'int8',

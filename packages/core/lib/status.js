@@ -12,6 +12,14 @@ export function isGpuBusy(usage) {
     return usage.usedMiB / usage.totalMiB >= GPU_USAGE_BUSY_THRESHOLD;
 }
 /**
+ * namesNoModel reports whether one model field names no model: the absent
+ * value or the empty string. The provider side and the engine-ref side of the
+ * status tie both read it, so one rule decides both representations.
+ */
+function namesNoModel(model) {
+    return model === undefined || model === '';
+}
+/**
  * computeProviderStatuses resolves each saved provider's running-state from
  * the detector's answer. The order is the plan's contract:
  * 1. A provider whose engine the process probe confirmed running is running
@@ -41,9 +49,9 @@ export function computeProviderStatuses(input) {
         if (matches.length > 0) {
             // The engine is running. The question is which model it serves: the
             // detector's identified model, if it tied one, else unknown.
-            const identified = matches.find((ref) => ref.modelId !== undefined && ref.modelId !== '');
+            const identified = matches.find((ref) => !namesNoModel(ref.modelId));
             if (identified !== undefined &&
-                (provider.model === undefined || identified.modelId === provider.model)) {
+                (namesNoModel(provider.model) || identified.modelId === provider.model)) {
                 statuses[provider.id] = 'running';
                 continue;
             }

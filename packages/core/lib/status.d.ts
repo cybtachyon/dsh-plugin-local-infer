@@ -10,9 +10,10 @@ export type ProviderStatus = 'running' | 'stopped' | 'unsure';
 /**
  * ProviderRef is the identity side of one saved provider config: the stable
  * id the card renders and the engine and model it serves. The model is
- * optional: a config that names no model confirms against a plugin-launched
- * engine the detector tied to any model on its port, and reads as unsure only
- * while no running engine carries a model tie. The config is
+ * optional: a config that names no model (an absent or empty value) confirms
+ * against a plugin-launched engine the detector tied to any model on its
+ * port, and reads as unsure only while no running engine carries a model tie.
+ * The config is
  * optional and lets the detector price the provider's own launch signature
  * (the engine binary the build mode runs, the port it binds) rather than the
  * adapter's default-port signature; the port is the resolved bind port the

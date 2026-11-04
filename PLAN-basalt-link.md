@@ -66,7 +66,7 @@ runs, and `stopped` (killable from the card) when stopped.
  - [x] [TASK-003-signature-port-in-config](docs/PLAN-basalt-link-TASK-003-signature-port-in-config.md)
  - [x] [TASK-004-plan-model-id](docs/PLAN-basalt-link-TASK-004-plan-model-id.md)
  - [x] [TASK-005-record-spawn-argv](docs/PLAN-basalt-link-TASK-005-record-spawn-argv.md)
- - [ ] [TASK-006-refactor-review](docs/PLAN-basalt-link-TASK-006-refactor-review.md)
+ - [x] [TASK-006-refactor-review](docs/PLAN-basalt-link-TASK-006-refactor-review.md)
 
 ### Phase 3: verification
 
@@ -92,6 +92,24 @@ runs, and `stopped` (killable from the card) when stopped.
   marker-only match without a launched-models tie reads unsure, not
   running. Do not tighten binary matching to path-component/token form in
   the refactor pass.
+- TASK-006 (refactor pass): resolved two risks in the reviewed code.
+  `computeProviderStatuses` read "the provider names no model" from
+  `provider.model === undefined` only, while the card passes a saved
+  `config.model: ''` through and the tie side already treats an empty
+  modelId as no tie; both sides now share the `namesNoModel` rule in
+  core/status.ts. And the `BASALT_DEFAULT_MODEL_ID` extraction (19d841b)
+  left the same literal keying basalt in `presets.ts` and `vram.ts`; both
+  now read the constant.
+- TASK-006 reviewed, no action: the `plan.argv` write-back is sound
+  (planKey is engineId:port, the swap and resolve passes are idempotent,
+  and `persistLaunchRecord` reads the same post-deploy plan object). The
+  `ensureModelArtifact` synthetic entry's `modelId: 'basalt'` is an inert
+  shape placeholder (the download helpers read url and file only).
+- TASK-006 pre-existing, unfixed (outside the five commits):
+  `NInferAdapter.deploy` spawns the `resolveLaunchArgv` result without
+  writing it back onto the plan, so a Windows build-tree launch with an
+  engineDirectory persists a record argv the process never carries (the
+  D4 defect class; Linux and macOS bare names keep the records matching).
 
 ## Answers
 

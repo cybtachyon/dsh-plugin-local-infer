@@ -13,6 +13,7 @@
  */
 
 import type { Config, VramModel } from 'dsh-plugin-local-infer/core'
+import { BASALT_DEFAULT_MODEL_ID } from './engines/basalt/basalt.ts'
 
 /**
  * DFlash2's CUDA-graph allowance is a step in context, measured at 8,192 /
@@ -268,7 +269,7 @@ export function ninferVramModel(modelId: string): VramModel | undefined {
  */
 export const BASALT_VRAM_MODELS: readonly VramModel[] = [
   {
-    id: 'qwen38-flash-next',
+    id: BASALT_DEFAULT_MODEL_ID,
     source: 'estimated',
     weightsBytes: 24000000000,
     workspaceBytes: 536870912,

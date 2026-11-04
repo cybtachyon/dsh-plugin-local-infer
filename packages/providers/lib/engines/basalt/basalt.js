@@ -31,8 +31,9 @@ export const BASALT_MODEL_FILE = 'Qwen3.8-FN-NVFP4-DQ6_K.basalt';
 export const BASALT_DEFAULT_PORT = 8080;
 /**
  * The model id of the single default registry entry: the Qwen3.8-Flash-Next
- * `.basalt` artifact the engine serves. The default model list and the
- * adapter's plan modelId stamp share this one constant, so a bare config
+ * `.basalt` artifact the engine serves. The default model list, the built-in
+ * preset key, the Basalt VramModel id, and the adapter's plan modelId stamp
+ * all share this one constant, so every model-id keyed read of the engine
  * names the same model the card's Model dropdown offers.
  */
 export const BASALT_DEFAULT_MODEL_ID = 'qwen38-flash-next';

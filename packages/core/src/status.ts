@@ -13,9 +13,10 @@ export type ProviderStatus = 'running' | 'stopped' | 'unsure'
 /**
  * ProviderRef is the identity side of one saved provider config: the stable
  * id the card renders and the engine and model it serves. The model is
- * optional: a config that names no model confirms against a plugin-launched
- * engine the detector tied to any model on its port, and reads as unsure only
- * while no running engine carries a model tie. The config is
+ * optional: a config that names no model (an absent or empty value) confirms
+ * against a plugin-launched engine the detector tied to any model on its
+ * port, and reads as unsure only while no running engine carries a model tie.
+ * The config is
  * optional and lets the detector price the provider's own launch signature
  * (the engine binary the build mode runs, the port it binds) rather than the
  * adapter's default-port signature; the port is the resolved bind port the
@@ -68,6 +69,15 @@ export function isGpuBusy(usage?: GpuUsageProbe | null): boolean {
 }
 
 /**
+ * namesNoModel reports whether one model field names no model: the absent
+ * value or the empty string. The provider side and the engine-ref side of the
+ * status tie both read it, so one rule decides both representations.
+ */
+function namesNoModel(model: string | undefined): boolean {
+  return model === undefined || model === ''
+}
+
+/**
  * computeProviderStatuses resolves each saved provider's running-state from
  * the detector's answer. The order is the plan's contract:
  * 1. A provider whose engine the process probe confirmed running is running
@@ -102,10 +112,10 @@ export function computeProviderStatuses(
     if (matches.length > 0) {
       // The engine is running. The question is which model it serves: the
       // detector's identified model, if it tied one, else unknown.
-      const identified = matches.find((ref) => ref.modelId !== undefined && ref.modelId !== '')
+      const identified = matches.find((ref) => !namesNoModel(ref.modelId))
       if (
         identified !== undefined &&
-        (provider.model === undefined || identified.modelId === provider.model)
+        (namesNoModel(provider.model) || identified.modelId === provider.model)
       ) {
         statuses[provider.id] = 'running'
         continue
