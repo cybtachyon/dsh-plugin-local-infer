@@ -10,6 +10,7 @@
  * @module dsh-plugin-local-infer/orchestrator
  */
 import { getOrchestratorPrompt } from './config.js';
+import { registerOrchestratorRoutes } from './route.js';
 export { defaultOrchestratorPrompt, getOrchestratorPrompt, orchestratorConfigPath, readOrchestratorConfig, setOrchestratorPrompt, writeOrchestratorConfig, } from './config.js';
 export const name = 'local-infer-orchestrator';
 // No required top-level services: the `systemPrompt` and `webServer` seams
@@ -26,7 +27,9 @@ const orchestratorSectionOrder = 100;
  * Mount the Orchestrator prompt. The scoped `systemPrompt` inject registers
  * the one global `orchestrator` section where the seam exists; the effect
  * scope ties the registration to the plugin, so it unregisters with the
- * plugin. The /local-infer/orchestrator routes land in TASK-004.
+ * plugin. The scoped `webServer` inject registers the /local-infer/
+ * orchestrator settings routes where that seam exists, so a headless profile
+ * keeps no routes.
  */
 export function apply(ctx) {
     if (typeof ctx.inject !== 'function') {
@@ -48,6 +51,14 @@ export function apply(ctx) {
         }
         catch (error) {
             console.error(`[local-infer] orchestrator prompt section skipped: ${error}`);
+        }
+    });
+    ctx.inject(['webServer'], (scope) => {
+        try {
+            registerOrchestratorRoutes(scope);
+        }
+        catch (error) {
+            console.error(`[local-infer] orchestrator settings routes skipped: ${error}`);
         }
     });
 }

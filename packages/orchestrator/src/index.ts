@@ -12,6 +12,8 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { getOrchestratorPrompt } from './config.js'
+import { registerOrchestratorRoutes } from './route.js'
+import type { WebServerService } from './route.js'
 
 export {
   defaultOrchestratorPrompt,
@@ -61,7 +63,9 @@ const orchestratorSectionOrder = 100
  * Mount the Orchestrator prompt. The scoped `systemPrompt` inject registers
  * the one global `orchestrator` section where the seam exists; the effect
  * scope ties the registration to the plugin, so it unregisters with the
- * plugin. The /local-infer/orchestrator routes land in TASK-004.
+ * plugin. The scoped `webServer` inject registers the /local-infer/
+ * orchestrator settings routes where that seam exists, so a headless profile
+ * keeps no routes.
  */
 export function apply(ctx: Context): void {
   if (typeof ctx.inject !== 'function') {
@@ -82,6 +86,13 @@ export function apply(ctx: Context): void {
       })
     } catch (error) {
       console.error(`[local-infer] orchestrator prompt section skipped: ${error}`)
+    }
+  })
+  ctx.inject(['webServer'], (scope) => {
+    try {
+      registerOrchestratorRoutes(scope as Context & { webServer: WebServerService })
+    } catch (error) {
+      console.error(`[local-infer] orchestrator settings routes skipped: ${error}`)
     }
   })
 }
