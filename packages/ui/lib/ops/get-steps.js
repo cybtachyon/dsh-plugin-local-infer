@@ -144,6 +144,7 @@ async function runModelDownloadStep(ctx) {
                 const download = await localInfer.downloadModel(entry, modelDir, {
                     useHubCache,
                     ...(request.signal !== undefined ? { signal: request.signal } : {}),
+                    ...(ctx.onChunk !== undefined ? { onChunk: ctx.onChunk } : {}),
                 });
                 if (!download.ok) {
                     emit(`!! ${download.detail ?? 'model download failed'}\n`);
@@ -189,6 +190,7 @@ async function runChatTemplateStep(ctx) {
             const download = await localInfer.downloadChatTemplate(template, modelDir, {
                 useHubCache,
                 ...(request.signal !== undefined ? { signal: request.signal } : {}),
+                ...(ctx.onChunk !== undefined ? { onChunk: ctx.onChunk } : {}),
             });
             if (!download.ok) {
                 emit(`!! ${download.detail ?? 'chat template download failed'}\n`);
@@ -228,6 +230,7 @@ export async function runGetSteps(localInfer, request, log) {
         useHubCache,
         hardware: await localInfer.detectHardware(),
         emit,
+        ...(request.onChunk !== undefined ? { onChunk: request.onChunk } : {}),
     };
     ctx.emit(`get ${request.engineId} in ${ctx.directory}\n`);
     for (const step of [runDepsStep, runSyncBuildStep, runModelDownloadStep, runChatTemplateStep]) {

@@ -625,6 +625,36 @@ describe('launch and stop route helpers', () => {
     expect(seenOptions?.autoRebuild).toBeUndefined()
   })
 
+  it('streams the Get-step download chunks through the launch onChunk sink', async () => {
+    writeConfig('ninfer', { port: 18020, model: 'qwen3-27b', modelDirectory: MODEL_DIR }, true)
+    // The model artifact starts absent, so the launch's Get-step download runs.
+    rmSync(join(MODEL_DIR, 'qwen3_8_27b_nvfp4.ninfer'), { force: true })
+    const service = stubService([], {
+      launchResult: { plan: { engineId: 'ninfer', kind: 'process', port: 18020, healthUrl: 'http://127.0.0.1:18020/health' }, healthy: true },
+    })
+    service.downloadModel = (
+      _entry: DefaultModel,
+      _directory: string,
+      options?: { onChunk?: (chunk: string) => void },
+    ) => {
+      options?.onChunk?.('42%| 4.2G/10G [00:12<00:16, 300.0MiB/s]\n')
+      return Promise.resolve({ ok: true })
+    }
+    const chunks: string[] = []
+    const result = await launchEngine(
+      service,
+      { engine: 'ninfer', config: { port: 18020, model: 'qwen3-27b', modelDirectory: MODEL_DIR } },
+      undefined,
+      stubGetHost({ exists: false }).host,
+      undefined,
+      (chunk) => {
+        chunks.push(chunk)
+      },
+    )
+    expect(result.healthy).toBe(true)
+    expect(chunks).toEqual(['42%| 4.2G/10G [00:12<00:16, 300.0MiB/s]\n'])
+  })
+
   it('persists the launch logs as the last run and writes the log file', async () => {
     const service = stubService([], {
       launchResult: {
@@ -3017,6 +3047,45 @@ describe('get route (git sync, deps, build)', () => {
     )
     expect(result.ok).toBe(true)
     expect(logged).not.toContain('hf download')
+    expect(logged).toContain('get complete')
+  })
+
+  it('hands the hf download raw stderr chunks to the onChunk sink', async () => {
+    writeConfig('ninfer', { model: 'qwen3-27b', modelDirectory: MODEL_DIR }, true)
+    // The model artifact starts absent, so the download step runs.
+    rmSync(join(MODEL_DIR, 'qwen3_8_27b_nvfp4.ninfer'), { force: true })
+    const { host } = stubGetHost({ exists: false })
+    const service = stubService([])
+    // The stubbed download invokes the injected onChunk, the way the real
+    // service hands the runner's streamed stderr chunks to it.
+    service.downloadModel = (
+      _entry: DefaultModel,
+      _directory: string,
+      options?: { onChunk?: (chunk: string) => void },
+    ) => {
+      options?.onChunk?.('42%| 4.2G/10G [00:12<00:16, 300.0MiB/s]\n')
+      return Promise.resolve({ ok: true })
+    }
+    const chunks: string[] = []
+    let logged = ''
+    const result = await getEngine(
+      service,
+      { engine: 'ninfer', config: { model: 'qwen3-27b', modelDirectory: MODEL_DIR } },
+      (chunk) => {
+        logged += chunk
+      },
+      host,
+      undefined,
+      (chunk) => {
+        chunks.push(chunk)
+      },
+    )
+    expect(result.ok).toBe(true)
+    // The raw tqdm line reaches the onChunk sink as it lands, separate from
+    // the log text sink.
+    expect(chunks).toEqual(['42%| 4.2G/10G [00:12<00:16, 300.0MiB/s]\n'])
+    // The step log lines stay on the log sink, unchanged.
+    expect(logged).toContain('$ hf download')
     expect(logged).toContain('get complete')
   })
 

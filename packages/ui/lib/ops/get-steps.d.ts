@@ -26,6 +26,10 @@ import type { StoredPlatformConfig } from '../config.ts';
  * (SIGINT, then SIGTERM), resume is within-invocation only (the hf CLI resumes a network blip via
  * HTTP Range inside one run); a killed run re-downloads from zero on the
  * re-run, and the orphaned `.incomplete` blob lingers until `hf cache prune`.
+ * `onChunk` is the hf download's raw stderr progress sink: the download
+ * runner hands each streamed stdout and stderr chunk to it as it lands,
+ * separate from the log text sink the step lines stream through, so the
+ * caller parses the tqdm lines into progress events.
  */
 export interface GetStepsRequest {
     engineId: string;
@@ -35,6 +39,7 @@ export interface GetStepsRequest {
     autoRebuild?: boolean;
     host: LifecycleHost;
     signal?: AbortSignal;
+    onChunk?: (chunk: string) => void;
 }
 /**
  * GetStepsResult reports the run: whether every step passed, a detail the

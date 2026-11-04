@@ -79,7 +79,7 @@ by the previous commits in their phase and resolve the named code risks.
 - [x] [TASK-002-spawn-runner-onchunk](docs/PLAN-get-progress-TASK-002-spawn-runner-onchunk.md)
 - [x] [TASK-019-watchchildabort-sigterm](docs/PLAN-get-progress-TASK-019-watchchildabort-sigterm.md)
 - [x] [TASK-020-providers-watchchildabort-sigterm](docs/PLAN-get-progress-TASK-020-providers-watchchildabort-sigterm.md)
-- [ ] [TASK-003-getsteps-onchunk-sink](docs/PLAN-get-progress-TASK-003-getsteps-onchunk-sink.md)
+- [x] [TASK-003-getsteps-onchunk-sink](docs/PLAN-get-progress-TASK-003-getsteps-onchunk-sink.md)
 - [ ] [TASK-004-launch-route-progress-event](docs/PLAN-get-progress-TASK-004-launch-route-progress-event.md)
 - [ ] [TASK-005-refactor-phase1](docs/PLAN-get-progress-TASK-005-refactor-phase1.md)
 

@@ -132,9 +132,12 @@ function registerLaunchPlatform(localInfer, request, stored, engineId, config) {
  * process pid that launched it) on the request's provider entry, so a DSH
  * restart can re-link a surviving engine to its config. The optional signal
  * is the card's cancel: an abort interrupts the in-flight Get-step download
- * child, and the persisted run carries a "Canceled" line.
+ * child, and the persisted run carries a "Canceled" line. The optional
+ * onChunk is the hf download's raw stderr progress sink: the download runner
+ * hands each streamed chunk to it as it lands, so a launch that runs the Get
+ * steps streams the download progress the same way a Get does.
  */
-export async function launchEngine(localInfer, request, onProgress, host = nodeLifecycleHost, signal) {
+export async function launchEngine(localInfer, request, onProgress, host = nodeLifecycleHost, signal, onChunk) {
     const { stored, engineId, config } = resolveStoredRequest(request);
     const adapter = resolveAdapter(localInfer, engineId);
     const hardware = await localInfer.detectHardware();
@@ -161,6 +164,7 @@ export async function launchEngine(localInfer, request, onProgress, host = nodeL
         ...(request.autoRebuild !== undefined ? { autoRebuild: request.autoRebuild } : {}),
         host,
         ...(signal !== undefined ? { signal } : {}),
+        ...(onChunk !== undefined ? { onChunk } : {}),
     }, (chunk) => {
         getLogs += chunk;
     });
@@ -449,9 +453,12 @@ export async function relinkStoredProviders(localInfer, stored) {
  * the hf CLI (huggingface_hub 2.x) resumes a network blip via HTTP Range inside
  * one `hf download` run, but a killed run re-downloads from zero on the re-run
  * (each run writes a process-unique `.incomplete` temp blob and unlinks it on
- * failure), so an orphaned partial blob lingers until `hf cache prune`.
+ * failure), so an orphaned partial blob lingers until `hf cache prune`. The
+ * optional onChunk is the hf download's raw stderr progress sink: the
+ * download runner hands each streamed chunk to it as it lands, separate from
+ * the log sink, so the route parses the tqdm lines into progress events.
  */
-export async function getEngine(localInfer, request, log, host = nodeLifecycleHost, signal) {
+export async function getEngine(localInfer, request, log, host = nodeLifecycleHost, signal, onChunk) {
     const { stored, engineId, config } = resolveStoredRequest(request);
     // Register the request's platform override the same way launchEngine does,
     // so the next launch reads the Engine Directory / Engine Fork the Get used.
@@ -463,6 +470,7 @@ export async function getEngine(localInfer, request, log, host = nodeLifecycleHo
         allowRunDeps: stored.allowRunDeps,
         host,
         ...(signal !== undefined ? { signal } : {}),
+        ...(onChunk !== undefined ? { onChunk } : {}),
     }, log);
     return { ok: result.ok, ...(result.detail !== undefined ? { detail: result.detail } : {}) };
 }

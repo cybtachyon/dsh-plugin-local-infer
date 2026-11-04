@@ -49,6 +49,10 @@ import { resolveModelDirectory } from './model.ts'
  * (SIGINT, then SIGTERM), resume is within-invocation only (the hf CLI resumes a network blip via
  * HTTP Range inside one run); a killed run re-downloads from zero on the
  * re-run, and the orphaned `.incomplete` blob lingers until `hf cache prune`.
+ * `onChunk` is the hf download's raw stderr progress sink: the download
+ * runner hands each streamed stdout and stderr chunk to it as it lands,
+ * separate from the log text sink the step lines stream through, so the
+ * caller parses the tqdm lines into progress events.
  */
 export interface GetStepsRequest {
   engineId: string
@@ -58,6 +62,7 @@ export interface GetStepsRequest {
   autoRebuild?: boolean
   host: LifecycleHost
   signal?: AbortSignal
+  onChunk?: (chunk: string) => void
 }
 
 /**
@@ -99,8 +104,9 @@ export function resolveEngineDirectory(
  * GetStepContext is the shared state one Get-steps run threads through its
  * steps: the service and the run's request, the engine entry and the
  * checkout and model directories the steps price, the hub-cache layout flag
- * the download steps read, the detected hardware the dep plan prices, and
- * the emit sink the steps stream through.
+ * the download steps read, the detected hardware the dep plan prices, the
+ * emit sink the steps stream through, and the onChunk sink the download
+ * steps hand the hf download's raw stderr chunks to.
  */
 interface GetStepContext {
   localInfer: LocalInferService
@@ -111,6 +117,7 @@ interface GetStepContext {
   useHubCache: boolean
   hardware: HardwareProfile
   emit: (chunk: string) => void
+  onChunk?: (chunk: string) => void
 }
 
 /**
@@ -243,6 +250,7 @@ async function runModelDownloadStep(ctx: GetStepContext): Promise<GetStepFailure
         const download = await localInfer.downloadModel(entry, modelDir, {
           useHubCache,
           ...(request.signal !== undefined ? { signal: request.signal } : {}),
+          ...(ctx.onChunk !== undefined ? { onChunk: ctx.onChunk } : {}),
         })
         if (!download.ok) {
           emit(`!! ${download.detail ?? 'model download failed'}\n`)
@@ -288,6 +296,7 @@ async function runChatTemplateStep(ctx: GetStepContext): Promise<GetStepFailure>
       const download = await localInfer.downloadChatTemplate(template, modelDir, {
         useHubCache,
         ...(request.signal !== undefined ? { signal: request.signal } : {}),
+        ...(ctx.onChunk !== undefined ? { onChunk: ctx.onChunk } : {}),
       })
       if (!download.ok) {
         emit(`!! ${download.detail ?? 'chat template download failed'}\n`)
@@ -337,6 +346,7 @@ export async function runGetSteps(
     useHubCache,
     hardware: await localInfer.detectHardware(),
     emit,
+    ...(request.onChunk !== undefined ? { onChunk: request.onChunk } : {}),
   }
   ctx.emit(`get ${request.engineId} in ${ctx.directory}\n`)
   for (const step of [runDepsStep, runSyncBuildStep, runModelDownloadStep, runChatTemplateStep]) {

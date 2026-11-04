@@ -48,9 +48,12 @@ export declare function resolveAdapter(localInfer: LocalInferService, engineId: 
  * process pid that launched it) on the request's provider entry, so a DSH
  * restart can re-link a surviving engine to its config. The optional signal
  * is the card's cancel: an abort interrupts the in-flight Get-step download
- * child, and the persisted run carries a "Canceled" line.
+ * child, and the persisted run carries a "Canceled" line. The optional
+ * onChunk is the hf download's raw stderr progress sink: the download runner
+ * hands each streamed chunk to it as it lands, so a launch that runs the Get
+ * steps streams the download progress the same way a Get does.
  */
-export declare function launchEngine(localInfer: LocalInferService, request: LaunchRequest, onProgress?: (step: LaunchStep) => void, host?: LifecycleHost, signal?: AbortSignal): Promise<LaunchResult>;
+export declare function launchEngine(localInfer: LocalInferService, request: LaunchRequest, onProgress?: (step: LaunchStep) => void, host?: LifecycleHost, signal?: AbortSignal, onChunk?: (chunk: string) => void): Promise<LaunchResult>;
 /**
  * handleEngineDeath persists a provider entry's state when its engine process
  * dies outside the plugin's stop path: a crash, a pkill of a plugin-launched
@@ -124,9 +127,12 @@ export type GetOutcome = {
  * the hf CLI (huggingface_hub 2.x) resumes a network blip via HTTP Range inside
  * one `hf download` run, but a killed run re-downloads from zero on the re-run
  * (each run writes a process-unique `.incomplete` temp blob and unlinks it on
- * failure), so an orphaned partial blob lingers until `hf cache prune`.
+ * failure), so an orphaned partial blob lingers until `hf cache prune`. The
+ * optional onChunk is the hf download's raw stderr progress sink: the
+ * download runner hands each streamed chunk to it as it lands, separate from
+ * the log sink, so the route parses the tqdm lines into progress events.
  */
-export declare function getEngine(localInfer: LocalInferService, request: GetRequest, log: (chunk: string) => void, host?: LifecycleHost, signal?: AbortSignal): Promise<GetOutcome>;
+export declare function getEngine(localInfer: LocalInferService, request: GetRequest, log: (chunk: string) => void, host?: LifecycleHost, signal?: AbortSignal, onChunk?: (chunk: string) => void): Promise<GetOutcome>;
 /**
  * syncPlatformConfigs re-syncs the service registry with the stored platform
  * map: it registers (or re-registers) every engine that carries a config, and
