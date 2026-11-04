@@ -18,7 +18,7 @@
  * @module dsh-plugin-local-infer/service
  */
 import { Context, Service } from '@deepseek-ai/cordis';
-import type { BuildMode, Config, DefaultModel, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, GpuUsageProbe, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, ProviderLaunchRecord, ProviderRef, ProviderStatus, ReLinkOutcome, RegisterResult, ReserveResolution, ResolvedDefaults, SystemDep, VramModel } from 'dsh-plugin-local-infer/core';
+import type { BuildMode, Config, DefaultModel, ModelCacheEntry, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, GpuUsageProbe, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, ProviderLaunchRecord, ProviderRef, ProviderStatus, ReLinkOutcome, RegisterResult, ReserveResolution, ResolvedDefaults, SystemDep, VramModel } from 'dsh-plugin-local-infer/core';
 import type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EngineDeathEvent, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, ProviderStatusOptions, RegisterModelOptions } from './types.ts';
 export type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EngineDeathEvent, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, ProviderStatusOptions, RegisterModelOptions, SettingsDescribeResult, SettingsForms, SettingsNamespaceDescriptor, } from './types.ts';
 declare module '@deepseek-ai/cordis' {
@@ -371,6 +371,22 @@ export declare class LocalInfer extends Service implements LocalInferService {
      * route renders as "no local models".
      */
     listModelDirectory(directory: string): ModelDirectoryEntry[];
+    /**
+     * listModelCache lists the hub cache's `models--*` directories, the data the
+     * per-engine model dropdown's cache scan draws from when the model directory
+     * is the plugin default (the hub cache). Each entry carries the repo id the
+     * directory names (the `{namespace}/{name}` decoded from the
+     * `models--{ns}--{name}` form) and the artifact file names its snapshots
+     * hold (the union across every commit). A missing or unreadable cache reads
+     * as an empty list, which the route renders as "no cached models".
+     */
+    listModelCache(): ModelCacheEntry[];
+    /**
+     * snapshotFiles unions the file names across every commit directory under a
+     * `models--*` dir's `snapshots/`, the artifact set the per-engine cache scan
+     * filters. A missing snapshots folder reads as an empty set.
+     */
+    private snapshotFiles;
     /**
      * specsForEngine reads the parameter surface of the registered adapter for
      * an engine id, so the defaults resolver floors the result on that engine's

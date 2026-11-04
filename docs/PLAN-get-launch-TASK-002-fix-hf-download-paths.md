@@ -28,6 +28,28 @@ The presence check (`modelArtifactPath`) and the dropdown scan
 - **Existing artifacts:** clean up the flat `hub/basalt/` dir and prune the
   stuck 102GB `.incomplete` blob (a one-time cleanup, recorded in TASK-005).
 
+## Cleanup performed (one-time, against the real hub cache)
+
+Against `~/.cache/huggingface/hub` (the resolved hub cache; `HF_HUB_CACHE` and
+`HF_HOME` were unset):
+
+- Removed the flat `hub/basalt/` dir (887M, the Basalt engine source checkout
+  that a flat `--local-dir` Get had left in the hub root).
+- Pruned the stuck shared blob `hub/blobs/37/37daf5caf4480140f76dc9b78741ab3abf
+  ec93b108e977f5449145a2b0180e18` (123GB, the interrupted
+  `jesdga/Qwen3.8-Flash-Next-Basalt` download; it carried a 0-byte `.lock`, so
+  the download was in-progress, not complete) plus its `.lock` and `.refs`.
+- Removed the now-dangling `hub/models--jesdga--Qwen3.8-Flash-Next-Basalt/`
+  dir (its `blobs/` and `snapshots/` entries were symlinks into the pruned
+  blob), so the presence check reads the model as absent and a fresh Get
+  re-downloads it.
+
+The remaining cache holds `hub/blobs/` (the empty shared-blob store, with its
+`.huggingface-shared-blobs` marker) and
+`hub/models--alesha-pro--Qwen3.8-Flash-Next-abliterated-GSQ-RCO-Coder-Strata-GGUF`
+(a completed Strata GGUF model). TASK-005 re-validates by running the full
+Basalt download to completion.
+
 ## Work
 
 1. Make the model download target the hub-cache layout when the model directory

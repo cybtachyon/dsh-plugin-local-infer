@@ -1,4 +1,4 @@
-import type { BuildMode, CommandOutcome, Config, DefaultModel, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EngineLaunchState, EnginePlatformConfig, Guideline, GuidelineResult, GpuUsageProbe, HardwareProfile, InstallResult, LaunchPlan, LaunchProgress, ModelRow, Preset, PresetSource, ProcessLine, ProviderLaunchRecord, ProviderRef, ProviderStatus, ReLinkOutcome, RegisterResult, ReserveResolution, ReserveSource, ResolvedDefaults, SettingsOp, SystemDep, VramBreakdown, VramModel, VramVerdict } from 'dsh-plugin-local-infer/core';
+import type { BuildMode, CommandOutcome, Config, DefaultModel, ModelCacheEntry, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EngineLaunchState, EnginePlatformConfig, Guideline, GuidelineResult, GpuUsageProbe, HardwareProfile, InstallResult, LaunchPlan, LaunchProgress, ModelRow, Preset, PresetSource, ProcessLine, ProviderLaunchRecord, ProviderRef, ProviderStatus, ReLinkOutcome, RegisterResult, ReserveResolution, ReserveSource, ResolvedDefaults, SettingsOp, SystemDep, VramBreakdown, VramModel, VramVerdict } from 'dsh-plugin-local-infer/core';
 /**
  * EstimateResult is the answer to an estimate call: the full VRAM breakdown,
  * the one-word verdict the meter renders, the source the numbers came from,
@@ -149,9 +149,13 @@ export interface DownloadResult {
 /**
  * DownloadModelOptions tunes the model download: runner injects the command
  * runner, so a test captures the rendered hf CLI command without a live hf.
+ * useHubCache selects the hub-cache layout (no `--local-dir`, the
+ * `models--{ns}--{name}` directories) when the model directory is the plugin
+ * default; a user-overridden directory keeps the flat `--local-dir` target.
  */
 export interface DownloadModelOptions {
     runner?: (command: string) => Promise<CommandOutcome>;
+    useHubCache?: boolean;
 }
 /**
  * SettingsNamespaceDescriptor is the structural view of one profile plugin
@@ -270,5 +274,6 @@ export interface LocalInferService {
     downloadChatTemplate(repo: string, directory: string, options?: DownloadModelOptions): Promise<DownloadResult>;
     modelIsRegistered(providerId: string, modelId: string): Promise<boolean>;
     listModelDirectory(directory: string): ModelDirectoryEntry[];
+    listModelCache(): ModelCacheEntry[];
 }
 //# sourceMappingURL=types.d.ts.map

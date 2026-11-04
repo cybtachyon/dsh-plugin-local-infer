@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -733,6 +733,11 @@ describe('NInferAdapter.deploy', () => {
   it('rewrites an HF chat-template reference to the local file the engine reads', async () => {
     const { host, state } = stubHost()
     const adapter = new NInferAdapter(host)
+    // The template file is on disk in the (overridden) model directory, so the
+    // deploy step reads it as present and rewrites the flag to the local path
+    // the engine reads, without a download.
+    const modelDir = await mkdtemp(join(tmpdir(), 'ninfer-template-'))
+    await writeFile(join(modelDir, 'chat_template.jinja'), 'template')
     const plan: LaunchPlan = {
       engineId: 'ninfer',
       kind: 'process',
@@ -744,30 +749,29 @@ describe('NInferAdapter.deploy', () => {
       ],
       env: {},
       modelId: 'qwen3-27b',
-      modelDirectory: '/models',
+      modelDirectory: modelDir,
       port: 18020,
       healthUrl: 'http://127.0.0.1:18020/health',
     }
     const result = await adapter.deploy(plan)
     expect(result.ok).toBe(true)
-    // The deploy step probes for the local template (the default stub reads it
-    // as present, so the download is skipped) and rewrites the flag to the
-    // local path the engine reads.
-    expect(state.run).toContain(`[ -f ${join('/models', 'chat_template.jinja')} ]`)
-    expect(state.spawn[0]?.argv).toContain(join('/models', 'chat_template.jinja'))
+    expect(state.spawn[0]?.argv).toContain(join(modelDir, 'chat_template.jinja'))
     expect(state.spawn[0]?.argv).not.toContain('froggeric/Qwen-Fixed-Chat-Templates')
+    await rm(modelDir, { recursive: true, force: true })
   })
 
   it('downloads an absent HF chat template into the model directory before the spawn', async () => {
-    // A host whose probe reads the template as absent (the file is not on
-    // disk) and whose download succeeds, so the spawn carries the local path.
+    // A host whose download creates the template file on disk, so the
+    // post-download re-resolution finds it and the spawn carries the local
+    // path.
+    const modelDir = await mkdtemp(join(tmpdir(), 'ninfer-template-dl-'))
     const runLog: string[] = []
     const host: LifecycleHost = {
       async run(command: string): Promise<CommandOutcome> {
         runLog.push(command)
-        // The existence probe reads as absent (the file is not on disk), so
-        // the download runs; every other command (the download itself) is ok.
-        if (command.startsWith('[ -f')) return { ok: false }
+        if (command.startsWith('hf download')) {
+          await writeFile(join(modelDir, 'chat_template.jinja'), 'template')
+        }
         return { ok: true }
       },
       spawn(): ProcessHandle {
@@ -788,16 +792,16 @@ describe('NInferAdapter.deploy', () => {
         'froggeric/Qwen-Fixed-Chat-Templates',
       ],
       env: {},
-      modelDirectory: '/models',
+      modelDirectory: modelDir,
       port: 18020,
       healthUrl: 'http://127.0.0.1:18020/health',
     }
     const result = await adapter.deploy(plan)
     expect(result.ok).toBe(true)
-    expect(runLog).toContain(`[ -f ${join('/models', 'chat_template.jinja')} ]`)
     expect(runLog).toContain(
-      'hf download froggeric/Qwen-Fixed-Chat-Templates chat_template.jinja --local-dir /models',
+      `hf download froggeric/Qwen-Fixed-Chat-Templates chat_template.jinja --local-dir ${modelDir}`,
     )
+    await rm(modelDir, { recursive: true, force: true })
   })
 
   it('leaves a local chat-template path untouched', async () => {

@@ -9,8 +9,7 @@
  * @module dsh-plugin-local-infer/ui/viewmodels/summary
  */
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { buildModelEntry, CHAT_TEMPLATE_FILE, hfChatTemplateCommand, hfDownloadCommand, modelArtifactPath, modelEntriesForEngine, } from '../../../core/lib/index.js';
+import { buildModelEntry, chatTemplateArtifactPath, hfChatTemplateCommand, hfDownloadCommand, isModelDirectoryOverridden, modelArtifactPath, modelCacheEntriesForEngine, modelEntriesForEngine, } from '../../../core/lib/index.js';
 import { defaultModelFor, defaultModelsForEngine, ENGINES, enginePlatformDefaults, } from '../../../providers/lib/index.js';
 import { readConfig } from "../config.js";
 import { renderForm } from "../form.js";
@@ -43,6 +42,10 @@ export async function buildSummary(localInfer, request) {
         ? rawConfig
         : { ...rawConfig, modelDirectory };
     const modelDir = typeof config.modelDirectory === 'string' ? config.modelDirectory : modelDirectory;
+    // The hub-cache layout (the models--{ns}--{name} dirs) applies only when the
+    // model directory is the plugin default; a user override keeps the flat
+    // layout. modelDir is the hub cache root in the default case.
+    const useHubCache = !isModelDirectoryOverridden(config.modelDirectory);
     const hardware = await localInfer.detectHardware();
     // The model value the card carries maps onto the VramModel registry key the
     // estimator prices: a default-model selection is already a registry key, a
@@ -64,17 +67,21 @@ export async function buildSummary(localInfer, request) {
     const defaults = await localInfer.resolveDefaults(engine.id, modelId, hardware, pricedConfig);
     const estimate = await localInfer.estimate(defaults.config, hardware, engine.id);
     const guidelineResults = await localInfer.guidelines(defaults.config, hardware, engine.id);
-    // The directory scan lists the model files the selected engine can serve
-    // straight from the model directory, so the card's Model dropdown offers
-    // them beside the defaults. A missing directory reads as an empty list.
-    const modelFiles = modelEntriesForEngine(localInfer.listModelDirectory(modelDir), engine.id);
+    // The model scan lists the models the selected engine can serve: the hub
+    // cache's `models--*` directories (the repo ids, filtered by the engine's
+    // artifact types) when the model directory is the plugin default, else the
+    // flat directory's top-level entries. A missing directory reads as an empty
+    // list.
+    const modelFiles = useHubCache
+        ? modelCacheEntriesForEngine(localInfer.listModelCache(), engine.id)
+        : modelEntriesForEngine(localInfer.listModelDirectory(modelDir), engine.id);
     // The model status checks the selected model against the model directory
     // and probes the hf CLI, so the card shows its Download row (or the URL
     // row) only while the model is absent.
     const entry = defaultModelFor(engine.id, modelId);
     let modelStatus = null;
     if (entry !== undefined) {
-        const present = existsSync(modelArtifactPath(entry, modelDir));
+        const present = existsSync(modelArtifactPath(entry, modelDir, useHubCache));
         const hfCli = (await localInfer.hfCliAvailable()) !== null;
         modelStatus = {
             modelId: entry.modelId,
@@ -82,7 +89,7 @@ export async function buildSummary(localInfer, request) {
             url: entry.url,
             present,
             hfCli,
-            downloadCommand: hfDownloadCommand(entry, modelDir),
+            downloadCommand: hfDownloadCommand(entry, modelDir, useHubCache),
         };
     }
     // The chat-template status checks the selected template against the model
@@ -93,14 +100,14 @@ export async function buildSummary(localInfer, request) {
     const chatTemplateValue = typeof config.chatTemplate === 'string' ? config.chatTemplate : '';
     let chatTemplateStatus = null;
     if (isHfRepoReference(chatTemplateValue)) {
-        const present = existsSync(join(modelDir, CHAT_TEMPLATE_FILE));
+        const present = existsSync(chatTemplateArtifactPath(chatTemplateValue, modelDir, useHubCache));
         const hfCli = (await localInfer.hfCliAvailable()) !== null;
         chatTemplateStatus = {
             repo: chatTemplateValue,
             label: chatTemplateLabel(chatTemplateValue),
             present,
             hfCli,
-            downloadCommand: hfChatTemplateCommand(chatTemplateValue, modelDir),
+            downloadCommand: hfChatTemplateCommand(chatTemplateValue, modelDir, useHubCache),
         };
     }
     // The restart re-link: a provider entry whose launch record names a still-

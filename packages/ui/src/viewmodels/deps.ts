@@ -9,12 +9,12 @@
  */
 
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
 import type { Config } from 'dsh-plugin-local-infer/core'
 import {
-  CHAT_TEMPLATE_FILE,
+  chatTemplateArtifactPath,
   checkDeps,
   hfChatTemplateCommand,
+  isModelDirectoryOverridden,
   renderInstallString,
 } from '../../../core/lib/index.js'
 import type { BuildMode } from '../../../core/lib/index.js'
@@ -81,14 +81,20 @@ export async function buildDeps(
   const rawModelDir = config.modelDirectory
   const modelDir =
     typeof rawModelDir === 'string' && rawModelDir.trim() !== '' ? rawModelDir : modelDirectory
+  // The hub-cache layout applies only when the model directory is the plugin
+  // default; a user override keeps the flat layout.
+  const useHubCache = !isModelDirectoryOverridden(config.modelDirectory)
   const chatTemplateValue = typeof config.chatTemplate === 'string' ? config.chatTemplate : ''
   let chatTemplate: ChatTemplateDepModel | undefined
-  if (isHfRepoReference(chatTemplateValue) && !existsSync(join(modelDir, CHAT_TEMPLATE_FILE))) {
+  if (
+    isHfRepoReference(chatTemplateValue) &&
+    !existsSync(chatTemplateArtifactPath(chatTemplateValue, modelDir, useHubCache))
+  ) {
     chatTemplate = {
       repo: chatTemplateValue,
       present: false,
       hfCli: (await localInfer.hfCliAvailable()) !== null,
-      downloadCommand: hfChatTemplateCommand(chatTemplateValue, modelDir),
+      downloadCommand: hfChatTemplateCommand(chatTemplateValue, modelDir, useHubCache),
     }
   }
   // exactOptionalPropertyTypes: the chat-template row only lands while a

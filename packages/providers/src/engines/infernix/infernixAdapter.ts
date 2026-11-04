@@ -15,9 +15,16 @@
 
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { EngineAdapter } from '../../../../core/lib/index.js'
+import {
+  EngineAdapter,
+  hfDownloadCommand,
+  hfHubCacheDirectory,
+  hubCacheSnapshotFilePath,
+  modelArtifactPath,
+} from '../../../../core/lib/index.js'
 import type {
   Config,
+  DefaultModel,
   DeployOptions,
   DeployResult,
   EngineLaunchSignature,
@@ -119,7 +126,15 @@ export class InfernixAdapter extends EngineAdapter {
         ? modelKey
         : artifact.file
     const modelDirectory = typeof config.modelDirectory === 'string' ? config.modelDirectory : ''
-    const modelPath = modelDirectory === '' ? file : join(modelDirectory, file)
+    // The hub-cache layout (the model directory is the plugin default)
+    // resolves the concrete snapshot file the engine reads; a user override
+    // keeps the flat model-directory path. A not-yet-downloaded model falls
+    // back to the bare file name, the same as the flat layout's missing-file
+    // case.
+    const modelPath =
+      modelDirectory === ''
+        ? (hubCacheSnapshotFilePath(hfHubCacheDirectory(), artifact.repo, file) ?? file)
+        : join(modelDirectory, file)
     // The engine binary is the .exe on a Windows host, where the published
     // release zip ships the server and its DLLs. The name comes from the host
     // OS's binary function, so the .exe spelling has one home in the OS file.
@@ -260,21 +275,33 @@ export class InfernixAdapter extends EngineAdapter {
     // A model key that names a local artifact file carries no artifact entry,
     // so the file the user has on disk launches as-is without a download.
     if (artifact === undefined) return { ok: true }
-    const target = plan.modelDirectory ?? '.'
+    // The hub-cache layout (no --local-dir) applies when the model directory is
+    // the plugin default; a user override keeps the flat --local-dir target.
+    const useHubCache = plan.modelDirectory === undefined || plan.modelDirectory === ''
+    const baseDir = useHubCache ? hfHubCacheDirectory() : (plan.modelDirectory ?? '.')
     // A multi-file artifact (the Flash-Next shards) downloads the whole repo,
     // which carries the n-gram volume beside the shards, so the
     // --ngram-volume flag points at a file the same download left on disk.
     // A single-file artifact downloads the file alone.
     const repo = artifact.repo
     const files = artifact.files ?? [artifact.file]
+    const entry: DefaultModel = {
+      engineId: this.id,
+      modelId: plan.modelId ?? '',
+      label: artifact.modelId,
+      url: `https://huggingface.co/${repo}`,
+      ...(files.length > 1 ? {} : { file: artifact.file }),
+    }
     // A model the shared Get-steps routine already downloaded is on disk, so
     // the deploy step skips the re-fetch and a launch after a Get does no
-    // duplicate download.
-    if (files.every((file) => existsSync(join(target, file)))) return { ok: true }
-    const download =
-      files.length > 1
-        ? await this.host.run(`hf download ${repo} --local-dir ${target}`)
-        : await this.host.run(`hf download ${repo} ${artifact.file} --local-dir ${target}`)
+    // duplicate download. Presence is the per-model cache dir's blobs folder
+    // in the hub-cache layout, else every shard in the flat directory.
+    if (useHubCache) {
+      if (existsSync(modelArtifactPath(entry, baseDir, true))) return { ok: true }
+    } else if (files.every((file) => existsSync(join(baseDir, file)))) {
+      return { ok: true }
+    }
+    const download = await this.host.run(hfDownloadCommand(entry, baseDir, useHubCache))
     if (!download.ok) {
       return { ok: false, detail: `model download failed: ${download.detail ?? 'unknown'}` }
     }

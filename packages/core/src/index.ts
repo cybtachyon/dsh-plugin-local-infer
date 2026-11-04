@@ -164,14 +164,23 @@ export {
 } from './deps.ts'
 export {
   CHAT_TEMPLATE_FILE,
+  chatTemplateArtifactPath,
   hfChatTemplateCommand,
   hfDownloadCommand,
+  hubCacheModelDirectory,
+  hubCacheSnapshotFilePath,
+  isModelDirectoryOverridden,
   modelArtifactPath,
+  modelCacheEntriesForEngine,
   modelEntriesForEngine,
   repoIdFromUrl,
   repoNameFromUrl,
 } from './models.ts'
-export type { DefaultModel, ModelDirectoryEntry } from './models.ts'
+export type {
+  DefaultModel,
+  ModelCacheEntry,
+  ModelDirectoryEntry,
+} from './models.ts'
 export {
   hfDatasetsCacheDirectory,
   hfHubCacheDirectory,

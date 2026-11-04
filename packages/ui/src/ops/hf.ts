@@ -39,7 +39,13 @@ export async function downloadFor(
       : typeof storedDir === 'string' && storedDir.trim() !== ''
         ? storedDir
         : localInfer.defaultModelDirectory()
-  return localInfer.downloadModel(entry, directory)
+  // The hub-cache layout applies only when the directory fell back to the
+  // plugin default (neither the request nor the stored config names one); a
+  // named directory keeps the flat --local-dir target.
+  const useHubCache =
+    !(typeof request.directory === 'string' && request.directory.trim() !== '') &&
+    !(typeof storedDir === 'string' && storedDir.trim() !== '')
+  return localInfer.downloadModel(entry, directory, { useHubCache })
 }
 
 /**
@@ -72,5 +78,11 @@ export async function chatTemplateDownloadFor(
       : typeof storedDir === 'string' && storedDir.trim() !== ''
         ? storedDir
         : localInfer.defaultModelDirectory()
-  return localInfer.downloadChatTemplate(template, directory)
+  // The hub-cache layout applies only when the directory fell back to the
+  // plugin default (neither the request nor the stored config names one); a
+  // named directory keeps the flat --local-dir target.
+  const useHubCache =
+    !(typeof request.directory === 'string' && request.directory.trim() !== '') &&
+    !(typeof storedDir === 'string' && storedDir.trim() !== '')
+  return localInfer.downloadChatTemplate(template, directory, { useHubCache })
 }

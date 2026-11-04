@@ -10,7 +10,7 @@
  */
 import { existsSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { EngineAdapter } from '../../../../core/lib/index.js';
+import { EngineAdapter, hfDownloadCommand, hfHubCacheDirectory, hubCacheSnapshotFilePath, modelArtifactPath, } from '../../../../core/lib/index.js';
 import { customArgFlags, flagsFromSpecs, nodeLifecycleHost, pollHealth, stopProcessPlan, trackChild, } from "../../adapters.js";
 import { syncAndRebuildEngine } from "../../acquire.js";
 import { LLAMACPP_MODEL_ARTIFACTS, LLAMACPP_PARAMETERS, llamaCppModelKey, } from "./llamacpp.js";
@@ -126,7 +126,14 @@ export class LlamaCppAdapter extends EngineAdapter {
                 os: _hw.os,
             };
         }
-        const modelPath = modelDirectory === '' ? file : join(modelDirectory, file);
+        // The hub-cache layout (the model directory is the plugin default)
+        // resolves the concrete snapshot file the engine reads; a user override
+        // keeps the flat model-directory path. A not-yet-downloaded model falls
+        // back to the bare file name, the same as the flat layout's missing-file
+        // case.
+        const modelPath = modelDirectory === ''
+            ? (hubCacheSnapshotFilePath(hfHubCacheDirectory(), artifact.repo, file) ?? file)
+            : join(modelDirectory, file);
         const customArgs = customArgFlags(config);
         return {
             engineId: this.id,
@@ -248,13 +255,23 @@ export class LlamaCppAdapter extends EngineAdapter {
         const artifact = plan.modelId !== undefined ? LLAMACPP_MODEL_ARTIFACTS[plan.modelId] : undefined;
         if (artifact === undefined)
             return { ok: true };
-        const target = plan.modelDirectory ?? '.';
+        // The hub-cache layout (no --local-dir) applies when the model directory is
+        // the plugin default; a user override keeps the flat --local-dir target.
+        const useHubCache = plan.modelDirectory === undefined || plan.modelDirectory === '';
+        const baseDir = useHubCache ? hfHubCacheDirectory() : (plan.modelDirectory ?? '.');
+        const entry = {
+            engineId: this.id,
+            modelId: plan.modelId ?? '',
+            label: artifact.modelId,
+            url: `https://huggingface.co/${artifact.repo}`,
+            file: artifact.file,
+        };
         // A model the shared Get-steps routine already downloaded is on disk, so
         // the deploy step skips the re-fetch and a launch after a Get does no
         // duplicate download.
-        if (existsSync(join(target, artifact.file)))
+        if (existsSync(modelArtifactPath(entry, baseDir, useHubCache)))
             return { ok: true };
-        const download = await this.host.run(`hf download ${artifact.repo} ${artifact.file} --local-dir ${target}`);
+        const download = await this.host.run(hfDownloadCommand(entry, baseDir, useHubCache));
         if (!download.ok) {
             return { ok: false, detail: `model download failed: ${download.detail ?? 'unknown'}` };
         }

@@ -3,6 +3,7 @@ import type {
   CommandOutcome,
   Config,
   DefaultModel,
+  ModelCacheEntry,
   ModelDirectoryEntry,
   EngineAdapter,
   EngineDepPlan,
@@ -198,9 +199,13 @@ export interface DownloadResult {
 /**
  * DownloadModelOptions tunes the model download: runner injects the command
  * runner, so a test captures the rendered hf CLI command without a live hf.
+ * useHubCache selects the hub-cache layout (no `--local-dir`, the
+ * `models--{ns}--{name}` directories) when the model directory is the plugin
+ * default; a user-overridden directory keeps the flat `--local-dir` target.
  */
 export interface DownloadModelOptions {
   runner?: (command: string) => Promise<CommandOutcome>
+  useHubCache?: boolean
 }
 
 /**
@@ -361,4 +366,9 @@ export interface LocalInferService {
   // types without duplicating a fresh registration.
   modelIsRegistered(providerId: string, modelId: string): Promise<boolean>
   listModelDirectory(directory: string): ModelDirectoryEntry[]
+  // The hub cache's `models--*` directories: the repo id each names and the
+  // artifact file names its snapshots hold, the data the per-engine model
+  // dropdown's cache scan filters. A missing or unreadable cache reads as an
+  // empty list.
+  listModelCache(): ModelCacheEntry[]
 }

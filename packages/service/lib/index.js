@@ -999,7 +999,7 @@ export class LocalInfer extends Service {
     async downloadModel(entry, directory, options) {
         mkdirSync(directory, { recursive: true });
         const runner = options?.runner ?? downloadRunner;
-        const result = await runner(hfDownloadCommand(entry, directory));
+        const result = await runner(hfDownloadCommand(entry, directory, options?.useHubCache === true));
         if (result.ok)
             return { ok: true };
         return { ok: false, detail: `model download failed: ${result.detail ?? 'unknown'}` };
@@ -1014,7 +1014,7 @@ export class LocalInfer extends Service {
     async downloadChatTemplate(repo, directory, options) {
         mkdirSync(directory, { recursive: true });
         const runner = options?.runner ?? downloadRunner;
-        const result = await runner(hfChatTemplateCommand(repo, directory));
+        const result = await runner(hfChatTemplateCommand(repo, directory, options?.useHubCache === true));
         if (result.ok)
             return { ok: true };
         return { ok: false, detail: `chat template download failed: ${result.detail ?? 'unknown'}` };
@@ -1063,6 +1063,71 @@ export class LocalInfer extends Service {
             });
         }
         return entries;
+    }
+    /**
+     * listModelCache lists the hub cache's `models--*` directories, the data the
+     * per-engine model dropdown's cache scan draws from when the model directory
+     * is the plugin default (the hub cache). Each entry carries the repo id the
+     * directory names (the `{namespace}/{name}` decoded from the
+     * `models--{ns}--{name}` form) and the artifact file names its snapshots
+     * hold (the union across every commit). A missing or unreadable cache reads
+     * as an empty list, which the route renders as "no cached models".
+     */
+    listModelCache() {
+        const hub = hfHubCacheDirectory();
+        let dirents;
+        try {
+            dirents = readdirSync(hub, { withFileTypes: true });
+        }
+        catch {
+            return [];
+        }
+        const entries = [];
+        for (const dirent of dirents) {
+            if (!dirent.isDirectory() || !dirent.name.startsWith('models--'))
+                continue;
+            // Decode models--{ns}--{name} back to {ns}/{name}: the name is the
+            // segment after the last --, the namespace everything before it.
+            const body = dirent.name.slice('models--'.length);
+            const separator = body.lastIndexOf('--');
+            if (separator <= 0)
+                continue;
+            const repoId = `${body.slice(0, separator)}/${body.slice(separator + 2)}`;
+            entries.push({ repoId, files: this.snapshotFiles(hub, dirent.name) });
+        }
+        return entries;
+    }
+    /**
+     * snapshotFiles unions the file names across every commit directory under a
+     * `models--*` dir's `snapshots/`, the artifact set the per-engine cache scan
+     * filters. A missing snapshots folder reads as an empty set.
+     */
+    snapshotFiles(hub, modelDir) {
+        const snapshots = join(hub, modelDir, 'snapshots');
+        let commits;
+        try {
+            commits = readdirSync(snapshots, { withFileTypes: true });
+        }
+        catch {
+            return [];
+        }
+        const files = new Set();
+        for (const commit of commits) {
+            if (!commit.isDirectory())
+                continue;
+            let commitFiles;
+            try {
+                commitFiles = readdirSync(join(snapshots, commit.name), { withFileTypes: true });
+            }
+            catch {
+                continue;
+            }
+            for (const file of commitFiles) {
+                if (file.isFile())
+                    files.add(file.name);
+            }
+        }
+        return [...files];
     }
     /**
      * specsForEngine reads the parameter surface of the registered adapter for

@@ -13,7 +13,7 @@
  */
 import { existsSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join } from 'node:path';
-import { EngineAdapter } from '../../../../core/lib/index.js';
+import { CHAT_TEMPLATE_FILE, EngineAdapter, hfChatTemplateCommand, hfDownloadCommand, hfHubCacheDirectory, hubCacheSnapshotFilePath, modelArtifactPath, } from '../../../../core/lib/index.js';
 import { customArgFlags, flagsFromSpecs, nodeLifecycleHost, pollHealth, stopProcessPlan, trackChild, } from "../../adapters.js";
 import { syncAndRebuildEngine } from "../../acquire.js";
 import { NINFER_PARAMETERS } from "./ninfer.js";
@@ -168,7 +168,14 @@ export class NInferAdapter extends EngineAdapter {
                 os: _hw.os,
             };
         }
-        const modelPath = modelDirectory === '' ? file : join(modelDirectory, file);
+        // The hub-cache layout (the model directory is the plugin default)
+        // resolves the concrete snapshot file the engine reads; a user override
+        // keeps the flat model-directory path. A not-yet-downloaded model falls
+        // back to the bare file name, the same as the flat layout's missing-file
+        // case.
+        const modelPath = modelDirectory === ''
+            ? (hubCacheSnapshotFilePath(hfHubCacheDirectory(), artifact.repo, file) ?? file)
+            : join(modelDirectory, file);
         const customArgs = customArgFlags(config);
         return {
             engineId: this.id,
@@ -312,13 +319,23 @@ export class NInferAdapter extends EngineAdapter {
         const artifact = plan.modelId !== undefined ? NINFER_MODEL_ARTIFACTS[plan.modelId] : undefined;
         if (artifact === undefined)
             return { ok: true };
-        const target = plan.modelDirectory ?? '.';
+        // The hub-cache layout (no --local-dir) applies when the model directory is
+        // the plugin default; a user override keeps the flat --local-dir target.
+        const useHubCache = plan.modelDirectory === undefined || plan.modelDirectory === '';
+        const baseDir = useHubCache ? hfHubCacheDirectory() : (plan.modelDirectory ?? '.');
+        const entry = {
+            engineId: this.id,
+            modelId: plan.modelId ?? '',
+            label: artifact.modelId,
+            url: `https://huggingface.co/${artifact.repo}`,
+            file: artifact.file,
+        };
         // A model the shared Get-steps routine already downloaded is on disk, so
         // the deploy step skips the re-fetch and a launch after a Get does no
         // duplicate download.
-        if (existsSync(join(target, artifact.file)))
+        if (existsSync(modelArtifactPath(entry, baseDir, useHubCache)))
             return { ok: true };
-        const download = await this.host.run(`hf download ${artifact.repo} ${artifact.file} --local-dir ${target}`);
+        const download = await this.host.run(hfDownloadCommand(entry, baseDir, useHubCache));
         if (!download.ok) {
             return { ok: false, detail: `model download failed: ${download.detail ?? 'unknown'}` };
         }
@@ -347,22 +364,34 @@ export class NInferAdapter extends EngineAdapter {
         // is a bare file name the engine resolves against its own directory.
         if (value.startsWith('/') || !value.includes('/'))
             return { ok: true };
-        // An HF repo reference: download the template file into the model
-        // directory and point the flag at the local copy. join keeps the path
-        // cross-platform (the host's path module normalizes the separators), so
-        // the flag the engine reads resolves on Windows, Linux, and macOS alike.
-        const target = plan.modelDirectory ?? '.';
-        const localPath = join(target, 'chat_template.jinja');
+        // An HF repo reference: download the template file and point the flag at
+        // the local copy. The hub-cache layout (the model directory is the plugin
+        // default) resolves the concrete snapshot file path the hf CLI writes; a
+        // user override keeps the flat model-directory path. join keeps the flat
+        // path cross-platform (the host's path module normalizes the separators),
+        // so the flag the engine reads resolves on Windows, Linux, and macOS
+        // alike.
+        const useHubCache = plan.modelDirectory === undefined || plan.modelDirectory === '';
+        const baseDir = useHubCache ? hfHubCacheDirectory() : (plan.modelDirectory ?? '.');
+        const resolvePath = () => useHubCache
+            ? hubCacheSnapshotFilePath(baseDir, value, CHAT_TEMPLATE_FILE)
+            : existsSync(join(baseDir, CHAT_TEMPLATE_FILE))
+                ? join(baseDir, CHAT_TEMPLATE_FILE)
+                : null;
+        let localPath = resolvePath();
         // A template already on disk skips the re-fetch; the hf CLI is optional,
         // so a download failure is reported but does not abort the launch.
-        const probe = await this.host.run(`[ -f ${localPath} ]`);
-        if (!probe.ok) {
-            const download = await this.host.run(`hf download ${value} chat_template.jinja --local-dir ${target}`);
+        if (localPath === null) {
+            const download = await this.host.run(hfChatTemplateCommand(value, baseDir, useHubCache));
             if (!download.ok) {
                 return {
                     ok: false,
                     detail: `chat template download failed: ${download.detail ?? 'unknown'}`,
                 };
+            }
+            localPath = resolvePath();
+            if (localPath === null) {
+                return { ok: false, detail: 'chat template download failed' };
             }
         }
         argv[index + 1] = localPath;

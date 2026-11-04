@@ -8,8 +8,7 @@
  * @module dsh-plugin-local-infer/ui/viewmodels/deps
  */
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { CHAT_TEMPLATE_FILE, checkDeps, hfChatTemplateCommand, renderInstallString, } from '../../../core/lib/index.js';
+import { chatTemplateArtifactPath, checkDeps, hfChatTemplateCommand, isModelDirectoryOverridden, renderInstallString, } from '../../../core/lib/index.js';
 import { ENGINES } from '../../../providers/lib/index.js';
 import { readConfig } from "../config.js";
 import { renderDeps } from "../deps.js";
@@ -61,14 +60,18 @@ export async function buildDeps(localInfer, request) {
     const modelDirectory = localInfer.defaultModelDirectory();
     const rawModelDir = config.modelDirectory;
     const modelDir = typeof rawModelDir === 'string' && rawModelDir.trim() !== '' ? rawModelDir : modelDirectory;
+    // The hub-cache layout applies only when the model directory is the plugin
+    // default; a user override keeps the flat layout.
+    const useHubCache = !isModelDirectoryOverridden(config.modelDirectory);
     const chatTemplateValue = typeof config.chatTemplate === 'string' ? config.chatTemplate : '';
     let chatTemplate;
-    if (isHfRepoReference(chatTemplateValue) && !existsSync(join(modelDir, CHAT_TEMPLATE_FILE))) {
+    if (isHfRepoReference(chatTemplateValue) &&
+        !existsSync(chatTemplateArtifactPath(chatTemplateValue, modelDir, useHubCache))) {
         chatTemplate = {
             repo: chatTemplateValue,
             present: false,
             hfCli: (await localInfer.hfCliAvailable()) !== null,
-            downloadCommand: hfChatTemplateCommand(chatTemplateValue, modelDir),
+            downloadCommand: hfChatTemplateCommand(chatTemplateValue, modelDir, useHubCache),
         };
     }
     // exactOptionalPropertyTypes: the chat-template row only lands while a

@@ -203,18 +203,26 @@ export function infernixDraftModelPath(config) {
  * one. The commands are the single source the Get route streams, so a Get
  * leaves the model directory ready to launch.
  */
-export function infernixGetDownloads(config, modelDir) {
+export function infernixGetDownloads(config, modelDir, useHubCache = false) {
     const commands = [];
     const preset = typeof config.draftModelPreset === 'string' ? config.draftModelPreset : '';
     if (preset !== '' && preset !== DFLASH2_CUSTOM_VALUE) {
         const model = INFERNIX_DFLASH2_MODELS.find((entry) => entry.file === preset);
         if (model !== undefined) {
-            commands.push(`hf download ${model.repo} ${model.file} --local-dir ${join(modelDir, model.file)}`);
+            // The hub-cache layout (the model directory is the plugin default)
+            // drops --local-dir so the drafter lands in the hub cache; an override
+            // keeps the flat --local-dir target under the drafter's own folder.
+            const target = useHubCache ? '' : join(modelDir, model.file);
+            commands.push(target === ''
+                ? `hf download ${model.repo} ${model.file}`
+                : `hf download ${model.repo} ${model.file} --local-dir ${target}`);
         }
     }
     const volume = INFERNIX_NGRAM_VOLUMES[infernixModelKey(config)];
     if (volume !== undefined) {
-        commands.push(`hf download ${volume.repo} ${volume.file} --local-dir ${modelDir}`);
+        commands.push(useHubCache
+            ? `hf download ${volume.repo} ${volume.file}`
+            : `hf download ${volume.repo} ${volume.file} --local-dir ${modelDir}`);
     }
     return commands;
 }

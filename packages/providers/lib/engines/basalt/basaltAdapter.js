@@ -15,7 +15,7 @@
  */
 import { existsSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
-import { EngineAdapter } from '../../../../core/lib/index.js';
+import { EngineAdapter, hfDownloadCommand, hfHubCacheDirectory, modelArtifactPath, } from '../../../../core/lib/index.js';
 import { configFileFromSpecs, nodeLifecycleHost, pollHealth, stopProcessPlan, trackChild, } from "../../adapters.js";
 import { syncAndRebuildEngine } from "../../acquire.js";
 import { BASALT_PARAMETERS, basaltModelKey } from "./basalt.js";
@@ -169,14 +169,23 @@ export class BasaltAdapter extends EngineAdapter {
         }
         const withLogs = (result) => buildLogs !== '' ? { ...result, logs: buildLogs } : result;
         // The .basalt model artifact the engine serves, downloaded into the model
-        // directory. A bare config (no model directory) downloads into the spawn
-        // working directory. A model the shared Get-steps routine already
-        // downloaded is on disk, so the deploy step skips the re-fetch and a
-        // launch after a Get does no duplicate download.
-        const modelDirectory = plan.modelDirectory ?? '.';
-        if (!existsSync(join(modelDirectory, BASALT_MODEL_FILE))) {
+        // directory. A bare config (no model directory) downloads into the hub
+        // cache (the hub-cache layout, no --local-dir); a user-overridden model
+        // directory keeps the flat --local-dir target. A model the shared
+        // Get-steps routine already downloaded is on disk, so the deploy step
+        // skips the re-fetch and a launch after a Get does no duplicate download.
+        const useHubCache = plan.modelDirectory === undefined || plan.modelDirectory === '';
+        const baseDir = useHubCache ? hfHubCacheDirectory() : (plan.modelDirectory ?? '.');
+        const entry = {
+            engineId: this.id,
+            modelId: 'basalt',
+            label: 'Basalt',
+            url: `https://huggingface.co/${BASALT_MODEL_REPO}`,
+            file: BASALT_MODEL_FILE,
+        };
+        if (!existsSync(modelArtifactPath(entry, baseDir, useHubCache))) {
             onProgress?.('download');
-            const download = await this.host.run(`hf download ${BASALT_MODEL_REPO} ${BASALT_MODEL_FILE} --local-dir ${modelDirectory}`);
+            const download = await this.host.run(hfDownloadCommand(entry, baseDir, useHubCache));
             if (!download.ok) {
                 return withLogs({
                     ok: false,

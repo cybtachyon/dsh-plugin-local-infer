@@ -2099,4 +2099,96 @@ describe('model directory, hf CLI, and model download', () => {
     const ctx = await seam()
     expect(ctx.localInfer.listModelDirectory(join(home, 'no-such-dir'))).toEqual([])
   })
+
+  it('lists the hub cache models--* dirs with their snapshot files', async () => {
+    const ctx = await seam()
+    const hub = join(home, '.cache', 'huggingface', 'hub')
+    // Two models--* dirs: one with a .basalt snapshot file, one with a .gguf.
+    // A non-models dir and a dot dir are ignored.
+    const basaltSnap = join(hub, 'models--jesdga--Qwen3.8-Flash-Next-Basalt', 'snapshots', 'c1')
+    mkdirSync(basaltSnap, { recursive: true })
+    writeFileSync(join(basaltSnap, 'Qwen3.8-FN-NVFP4-DQ6_K.basalt'), 'weights')
+    const ggufSnap = join(hub, 'models--ggml-org--Qwen3.8-27B-GGUF', 'snapshots', 'c2')
+    mkdirSync(ggufSnap, { recursive: true })
+    writeFileSync(join(ggufSnap, 'Qwen3.8-27B-Q4_K_M.gguf'), 'weights')
+    mkdirSync(join(hub, 'blobs'), { recursive: true })
+    mkdirSync(join(hub, '.locks'), { recursive: true })
+    const entries = ctx.localInfer.listModelCache()
+    expect(entries).toEqual([
+      { repoId: 'ggml-org/Qwen3.8-27B-GGUF', files: ['Qwen3.8-27B-Q4_K_M.gguf'] },
+      { repoId: 'jesdga/Qwen3.8-Flash-Next-Basalt', files: ['Qwen3.8-FN-NVFP4-DQ6_K.basalt'] },
+    ])
+  })
+
+  it('reads a missing hub cache as an empty list', async () => {
+    const ctx = await seam()
+    process.env.HF_HUB_CACHE = join(home, 'no-such-hub-cache')
+    expect(ctx.localInfer.listModelCache()).toEqual([])
+  })
+
+  it('renders the hub-cache layout command (no local-dir) for a default-directory download', async () => {
+    const ctx = await seam()
+    const entry: DefaultModel = {
+      engineId: 'basalt',
+      modelId: 'basalt',
+      label: 'Basalt',
+      url: 'https://huggingface.co/jesdga/Qwen3.8-Flash-Next-Basalt',
+      file: 'Qwen3.8-FN-NVFP4-DQ6_K.basalt',
+    }
+    const commands: string[] = []
+    const runner = async (command: string) => {
+      commands.push(command)
+      return { ok: true }
+    }
+    const hub = join(home, '.cache', 'huggingface', 'hub')
+    const result = await ctx.localInfer.downloadModel(entry, hub, { runner, useHubCache: true })
+    expect(result).toEqual({ ok: true })
+    expect(commands).toEqual([
+      'hf download jesdga/Qwen3.8-Flash-Next-Basalt Qwen3.8-FN-NVFP4-DQ6_K.basalt',
+    ])
+  })
+
+  it('renders the flat local-dir command for an overridden-directory download', async () => {
+    const ctx = await seam()
+    const entry: DefaultModel = {
+      engineId: 'ninfer',
+      modelId: 'qwen3-27b',
+      label: 'Ninfer Qwen3.8-27B',
+      url: 'https://huggingface.co/neroued/Qwen3.8-27B-nvfp4-NInfer',
+      file: 'qwen3_8_27b_nvfp4.ninfer',
+    }
+    const commands: string[] = []
+    const runner = async (command: string) => {
+      commands.push(command)
+      return { ok: true }
+    }
+    const target = join(home, 'custom-models')
+    const result = await ctx.localInfer.downloadModel(entry, target, {
+      runner,
+      useHubCache: false,
+    })
+    expect(result).toEqual({ ok: true })
+    expect(commands).toEqual([
+      `hf download neroued/Qwen3.8-27B-nvfp4-NInfer qwen3_8_27b_nvfp4.ninfer --local-dir ${target}`,
+    ])
+  })
+
+  it('renders the hub-cache layout command for a default-directory chat template download', async () => {
+    const ctx = await seam()
+    const commands: string[] = []
+    const runner = async (command: string) => {
+      commands.push(command)
+      return { ok: true }
+    }
+    const hub = join(home, '.cache', 'huggingface', 'hub')
+    const result = await ctx.localInfer.downloadChatTemplate(
+      'froggeric/Qwen-Fixed-Chat-Templates',
+      hub,
+      { runner, useHubCache: true },
+    )
+    expect(result).toEqual({ ok: true })
+    expect(commands).toEqual([
+      'hf download froggeric/Qwen-Fixed-Chat-Templates chat_template.jinja',
+    ])
+  })
 })

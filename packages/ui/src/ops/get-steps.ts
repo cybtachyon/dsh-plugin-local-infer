@@ -16,10 +16,11 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Config, LifecycleHost } from 'dsh-plugin-local-infer/core'
 import {
-  CHAT_TEMPLATE_FILE,
   checkDeps,
+  chatTemplateArtifactPath,
   hfChatTemplateCommand,
   hfDownloadCommand,
+  isModelDirectoryOverridden,
   modelArtifactPath,
 } from '../../../core/lib/index.js'
 import type { LocalInferService } from 'dsh-plugin-local-infer/service'
@@ -112,6 +113,11 @@ export async function runGetSteps(
   const directory = resolveEngineDirectory(localInfer, config, engineId, platform)
   const fork = platform?.engineFork
   const modelDir = resolveModelDirectory(localInfer, config)
+  // The hub-cache layout (no --local-dir, the models--{ns}--{name} dirs)
+  // applies only when the model directory is the plugin default; a user
+  // override keeps the flat --local-dir target. modelDir is the hub cache root
+  // in the default case, the base the cache-layout paths join onto.
+  const useHubCache = !isModelDirectoryOverridden(config.modelDirectory)
   const hardware = await localInfer.detectHardware()
   emit(`get ${engineId} in ${directory}\n`)
 
@@ -207,12 +213,12 @@ export async function runGetSteps(
     if (entry === undefined) {
       emit(`model download: ${modelId} has no registered default, skipped\n`)
     } else {
-      const artifact = modelArtifactPath(entry, modelDir)
+      const artifact = modelArtifactPath(entry, modelDir, useHubCache)
       if (existsSync(artifact)) {
         emit(`model download: ${modelId} is already present, skipped\n`)
       } else {
-        emit(`$ ${hfDownloadCommand(entry, modelDir)}\n`)
-        const download = await localInfer.downloadModel(entry, modelDir)
+        emit(`$ ${hfDownloadCommand(entry, modelDir, useHubCache)}\n`)
+        const download = await localInfer.downloadModel(entry, modelDir, { useHubCache })
         if (!download.ok) {
           emit(`!! ${download.detail ?? 'model download failed'}\n`)
           return {
@@ -230,7 +236,7 @@ export async function runGetSteps(
   // drafter (when a preset is selected) and the PLE n-gram volume (when the
   // model key names one), pulled through the hf CLI into the model directory.
   if (engineId === 'infernix') {
-    for (const command of infernixGetDownloads(config, modelDir)) {
+    for (const command of infernixGetDownloads(config, modelDir, useHubCache)) {
       emit(`$ ${command}\n`)
       const outcome =
         host.runStream !== undefined
@@ -248,12 +254,12 @@ export async function runGetSteps(
   // file is already present in the model directory.
   const template = typeof config.chatTemplate === 'string' ? config.chatTemplate : ''
   if (template !== '' && isHfRepoReference(template)) {
-    const localPath = join(modelDir, CHAT_TEMPLATE_FILE)
+    const localPath = chatTemplateArtifactPath(template, modelDir, useHubCache)
     if (existsSync(localPath)) {
       emit(`chat template: ${template} is already present, skipped\n`)
     } else {
-      emit(`$ ${hfChatTemplateCommand(template, modelDir)}\n`)
-      const download = await localInfer.downloadChatTemplate(template, modelDir)
+      emit(`$ ${hfChatTemplateCommand(template, modelDir, useHubCache)}\n`)
+      const download = await localInfer.downloadChatTemplate(template, modelDir, { useHubCache })
       if (!download.ok) {
         emit(`!! ${download.detail ?? 'chat template download failed'}\n`)
         return {

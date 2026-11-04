@@ -144,7 +144,7 @@ export declare function infernixDraftModelPath(config: Config): string | null;
  * one. The commands are the single source the Get route streams, so a Get
  * leaves the model directory ready to launch.
  */
-export declare function infernixGetDownloads(config: Config, modelDir: string): string[];
+export declare function infernixGetDownloads(config: Config, modelDir: string, useHubCache?: boolean): string[];
 /**
  * The Infernix `ParameterSpec` surface, in form order. The `group` field is
  * the form section; specs without a group render under `General`. The

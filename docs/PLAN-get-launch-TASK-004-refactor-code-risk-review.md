@@ -16,11 +16,20 @@ Review the files touched by the previous 5 commits and identify the following co
 Then address and resolve each risk.
 
 Focus areas (the files the recent commits and TASK-001/002/003 touch):
-`packages/ui/src/ops/engine.ts`, `packages/ui/src/ops/hf.ts`,
-`packages/ui/src/ops/logs.ts`, `packages/providers/src/acquire.ts`,
+`packages/ui/src/ops/engine.ts`, `packages/ui/src/ops/get-steps.ts`,
+`packages/ui/src/ops/hf.ts`, `packages/ui/src/ops/logs.ts`,
+`packages/providers/src/acquire.ts`,
 `packages/providers/src/engines/basalt/basaltAdapter.ts`,
+`packages/providers/src/engines/ninfer/ninferAdapter.ts`,
 `packages/core/src/models.ts`, `packages/core/src/hf-cache.ts`,
 `packages/client/src/store/deps.ts`, `packages/client/src/text.ts`.
+
+Pre-existing issue to resolve here (found during TASK-001):
+`ninferAdapter.resolveChatTemplate` probes file presence with a POSIX-only
+`[ -f ... ]` shell command, which misbehaves on Windows cmd (the same reason
+`acquire.ts` deliberately uses a `git rev-parse` presence probe). Make the
+chat-template presence probe cross-platform (a node `existsSync` on the
+resolved path, not a shell test).
 
 ## Definition of Done
 
