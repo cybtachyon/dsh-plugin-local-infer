@@ -43,4 +43,5 @@ above each carry their new rows; one commit.
 
 ## Answered open questions
 
-(to be filled during the questionnaire)
+(none specific to this task; the questionnaire answers landed in
+PLAN-orchestrator.md on 2026-11-04)

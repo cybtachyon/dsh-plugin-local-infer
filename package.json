@@ -63,6 +63,11 @@
       "types": "./packages/ui/lib/index.d.ts",
       "default": "./packages/ui/lib/index.js"
     },
+    "./orchestrator": {
+      "types": "./packages/orchestrator/lib/index.d.ts",
+      "default": "./packages/orchestrator/lib/index.js"
+    },
+    "./orchestrator/locale/en.json": "./packages/orchestrator/locale/en.json",
     "./package.json": "./package.json"
   },
   "files": [
@@ -85,7 +90,12 @@
     "packages/tool/lib/**/*.d.ts",
     "packages/ui/package.json",
     "packages/ui/lib/**/*.js",
-    "packages/ui/lib/**/*.d.ts"
+    "packages/ui/lib/**/*.d.ts",
+    "packages/orchestrator/package.json",
+    "packages/orchestrator/lib/**/*.js",
+    "packages/orchestrator/lib/**/*.d.ts",
+    "packages/orchestrator/prompt.md",
+    "packages/orchestrator/locale/en.json"
   ],
   "peerDependencies": {
     "@deepseek-ai/cordis": ">=4.0.6-alpha.2"

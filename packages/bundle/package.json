@@ -24,7 +24,8 @@
     "dsh-plugin-local-infer-service": "workspace:^",
     "dsh-plugin-local-infer-providers": "workspace:^",
     "dsh-plugin-local-infer-tool": "workspace:^",
-    "dsh-plugin-local-infer-ui": "workspace:^"
+    "dsh-plugin-local-infer-ui": "workspace:^",
+    "dsh-plugin-local-infer-orchestrator": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": ">=4.0.6-alpha.2"

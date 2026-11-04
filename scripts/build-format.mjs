@@ -6,6 +6,7 @@ const TARGET_DIRS = [
     'dsh',
     'packages/client/lib',
     'packages/core/lib',
+    'packages/orchestrator/lib',
     'packages/providers/lib',
     'packages/service/lib',
     'packages/tool/lib',

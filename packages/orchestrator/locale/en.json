@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Orchestrator",
+    "description": "Edit the Orchestrator Prompt the component injects into the system prompt while it is enabled."
+  }
+}

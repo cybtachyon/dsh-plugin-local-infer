@@ -36,6 +36,7 @@
       "dsh-plugin-local-infer/providers": ["./packages/providers/src"],
       "dsh-plugin-local-infer/tool": ["./packages/tool/src"],
       "dsh-plugin-local-infer/ui": ["./packages/ui/src"],
+      "dsh-plugin-local-infer/orchestrator": ["./packages/orchestrator/src"],
       "dsh-plugin-local-infer/client": ["./packages/client/src"]
     }
   }

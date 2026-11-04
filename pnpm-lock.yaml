@@ -221,6 +221,9 @@ importers:
 
   packages/bundle:
     dependencies:
+      dsh-plugin-local-infer-orchestrator:
+        specifier: workspace:^
+        version: link:../orchestrator
       dsh-plugin-local-infer-providers:
         specifier: workspace:^
         version: link:../providers
@@ -241,6 +244,12 @@ importers:
   packages/client: {}
 
   packages/core: {}
+
+  packages/orchestrator:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: ^4.0.6-alpha.2
+        version: 4.0.6-alpha.2
 
   packages/providers:
     dependencies:
