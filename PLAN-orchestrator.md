@@ -21,9 +21,10 @@ system prompt when enabled. Document the feature in README.md.
   off/on); a page refresh only picks up a rebuilt `dsh/client.js`. The profile
   install of this plugin symlinks the repo, so `pnpm build` plus a host
   restart activates host work.
-- Commits must be path-scoped (`git add <paths>`). The working tree carries
-  pre-existing unrelated edits to `packages/{providers,client}` lib artifacts
-  and `basaltLinux.ts`; never stage them.
+- Commits must be path-scoped (`git add <paths>`). Do not stage files
+  unrelated to the task in progress. (The working tree was observed dirty with
+  pre-existing basalt lib edits at blueprint time; they were gone by commit
+  time, so treat any unexpected dirty file as out of scope.)
 - The lazy-CJS card bundle keeps exactly two runtime externals (`react`,
   `@deepseek-ai/dsh-client-ui-primitives`); guard every primitive use and the
   react require, per the existing card pattern.
