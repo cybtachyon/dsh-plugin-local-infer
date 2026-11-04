@@ -550,8 +550,11 @@ export type GetOutcome = { ok: true } | { ok: false; detail?: string }
  * only runs while the Play/Run trust gate is on; with the gate off the deps
  * are re-checked and a missing one aborts the step with the copy/paste note.
  * The optional signal is the card's cancel: an abort interrupts the in-flight
- * hf download child (SIGINT, then SIGTERM), and the hub-cache `.incomplete`
- * blob resumes on the re-run.
+ * hf download child (SIGINT, then SIGTERM). Resume is within-invocation only:
+ * the hf CLI (huggingface_hub 2.x) resumes a network blip via HTTP Range inside
+ * one `hf download` run, but a killed run re-downloads from zero on the re-run
+ * (each run writes a process-unique `.incomplete` temp blob and unlinks it on
+ * failure), so an orphaned partial blob lingers until `hf cache prune`.
  */
 export async function getEngine(
   localInfer: LocalInferService,

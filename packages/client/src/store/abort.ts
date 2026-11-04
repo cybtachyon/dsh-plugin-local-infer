@@ -3,8 +3,10 @@
  * t.cancel control) aborts the in-flight Get run and the entry's Launch run.
  * The abort closes the client stream, and the route's response close
  * interrupts the in-flight hf child on the host (SIGINT, then SIGTERM), so a
- * canceled download stops instead of running to the timeout, and the
- * hub-cache .incomplete blob resumes on the re-run. Each driver registers its
+ * canceled download stops instead of running to the timeout. Resume is
+ * within-invocation only; a canceled/killed run re-downloads from zero on the
+ * re-run (the orphaned .incomplete blob lingers until `hf cache prune`). Each
+ * driver registers its
  * AbortController when the run starts and forgets it when the run settles, so
  * a settled run never reads as in flight.
  * @module dsh-plugin-local-infer/client/store/abort

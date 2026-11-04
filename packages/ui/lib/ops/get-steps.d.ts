@@ -23,8 +23,9 @@ import type { StoredPlatformConfig } from '../config.ts';
  * checkbox off) skips the sync and build steps, so a launch reads the
  * checkout as-is, the same rule the adapter's deploy step applies. `signal`
  * is the card's cancel: an abort interrupts the in-flight hf download child
- * (SIGINT, then SIGTERM), and the hub-cache `.incomplete` blob resumes on
- * the re-run.
+ * (SIGINT, then SIGTERM), resume is within-invocation only (the hf CLI resumes a network blip via
+ * HTTP Range inside one run); a killed run re-downloads from zero on the
+ * re-run, and the orphaned `.incomplete` blob lingers until `hf cache prune`.
  */
 export interface GetStepsRequest {
     engineId: string;

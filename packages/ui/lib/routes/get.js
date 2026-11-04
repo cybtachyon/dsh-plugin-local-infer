@@ -42,8 +42,10 @@ export function getRoute(localInfer, getHost) {
             };
             // The card's provider-form Cancel aborts the fetch, which closes the
             // response: the abort interrupts the in-flight hf child (SIGINT, then
-            // SIGTERM), and the hub-cache .incomplete blob resumes on the re-run.
-            // A close after the run settled is the normal end, not a cancel.
+            // SIGTERM). Resume is within-invocation only; a killed run re-downloads
+            // from zero on the re-run (the orphaned .incomplete blob lingers until
+            // `hf cache prune`). A close after the run settled is the normal end,
+            // not a cancel.
             const controller = new AbortController();
             let finished = false;
             res.onClose(() => {

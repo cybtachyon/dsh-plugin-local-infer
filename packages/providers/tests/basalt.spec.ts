@@ -516,7 +516,9 @@ describe('BasaltAdapter.deploy', () => {
     const { host, state } = basaltStubHost()
     state.runOutput['rev-list'] = '3'
     const adapter = new BasaltAdapter(host)
-    const plan = adapter.renderLaunch({ port: 8090 }, ADAPTER_HW)
+    // An overridden (absent) model directory keeps the presence check off the
+    // real hub cache, so the model download runs deterministically.
+    const plan = adapter.renderLaunch({ port: 8090, modelDirectory: 'models' }, ADAPTER_HW)
     const result = await adapter.deploy(
       plan,
       { engineId: 'basalt', engineDirectory: '/src/basalt' },
@@ -561,10 +563,12 @@ describe('BasaltAdapter.deploy', () => {
     const { host, state } = basaltStubHost()
     state.runOutput['rev-list'] = '0'
     // The hf download is the only command that fails, so the launch aborts
-    // before the config write and the spawn.
+    // before the config write and the spawn. An overridden (absent) model
+    // directory keeps the presence check off the real hub cache, so the
+    // download runs and fails deterministically.
     state.runFail.push('hf download')
     const adapter = new BasaltAdapter(host)
-    const plan = adapter.renderLaunch({ port: 8090 }, ADAPTER_HW)
+    const plan = adapter.renderLaunch({ port: 8090, modelDirectory: 'models' }, ADAPTER_HW)
     const result = await adapter.deploy(plan, {
       engineId: 'basalt',
       engineDirectory: '/src/basalt',

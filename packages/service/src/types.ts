@@ -203,8 +203,10 @@ export interface DownloadResult {
  * `models--{ns}--{name}` directories) when the model directory is the plugin
  * default; a user-overridden directory keeps the flat `--local-dir` target.
  * signal is the card's cancel: an abort interrupts the in-flight hf child
- * (SIGINT, then SIGTERM), and the hub-cache `.incomplete` blob resumes on the
- * re-run.
+ * (SIGINT, then SIGTERM). Resume is within-invocation only (the hf CLI resumes
+ * a network blip via HTTP Range inside one run); a killed run re-downloads
+ * from zero on the re-run, and the orphaned `.incomplete` blob lingers until
+ * `hf cache prune`.
  */
 export interface DownloadModelOptions {
   runner?: (command: string, signal?: AbortSignal) => Promise<CommandOutcome>

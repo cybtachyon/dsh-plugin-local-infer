@@ -3170,8 +3170,8 @@ describe('shared Get-steps routine', () => {
 
   it('downloads into the hub-cache layout when the model directory is the default', async () => {
     // No modelDirectory override: the hub-cache layout applies, so the
-    // download targets the cache root (no --local-dir), and an interrupted
-    // .incomplete blob resumes in place without a duplicate flat dir.
+    // download targets the cache root (no --local-dir) and leaves no duplicate
+    // flat dir. (Resume is within-invocation only; a killed run re-downloads.)
     writeConfig('ninfer', { model: 'qwen3-27b' }, true)
     const downloads: { entry: DefaultModel; directory: string }[] = []
     const service = stubService([], { onDownload: (args) => downloads.push(args) })
