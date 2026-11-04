@@ -9,6 +9,8 @@ import {
   renderProcessButton,
   renderProgressStrip,
   renderSelect,
+  renderTag,
+  renderTextShimmer,
   renderStateDot,
   renderThrobber,
   setPrimitivesModule,
@@ -35,12 +37,16 @@ const CheckboxMarker = () => null
 const StateDotMarker = () => null
 const ChevronMarker = () => null
 const PillMarker = () => null
+const TagMarker = () => null
+const TextShimmerMarker = () => null
 const seed: PrimitivesModule = {
   Menu: MenuMarker,
   Button: ButtonMarker,
   Checkbox: CheckboxMarker,
   StateDot: StateDotMarker,
   Pill: PillMarker,
+  Tag: TagMarker,
+  TextShimmer: TextShimmerMarker,
   IconChevronDownOutlineRegular: ChevronMarker,
 }
 
@@ -106,6 +112,40 @@ describe('client primitive renderers (render/primitives.tsx)', () => {
     expect(e.props.children).toBe('Cancel')
     const style = e.props.style as Record<string, unknown>
     expect(style.borderRadius).toBe(10)
+  })
+
+  it('renderTag draws the seed Tag when present', () => {
+    setPrimitivesModule(seed)
+    const e = el(renderTag('success', 'model'))
+    expect(e.type).toBe(TagMarker)
+    expect(e.props.tone).toBe('success')
+    expect(e.props.children).toBe('model')
+  })
+
+  it('renderTag falls back to a native tone-tinted span when the seed is absent', () => {
+    setPrimitivesModule(null)
+    const e = el(renderTag('danger', 'failed'))
+    expect(e.type).toBe('span')
+    expect(e.props.children).toBe('failed')
+    const style = e.props.style as Record<string, unknown>
+    expect(style.borderRadius).toBe(10)
+    expect(style.color).toBe('var(--dsw-alias-label-error, #ff3b30)')
+  })
+
+  it('renderTextShimmer draws the seed TextShimmer when present', () => {
+    setPrimitivesModule(seed)
+    const e = el(renderTextShimmer('Downloading'))
+    expect(e.type).toBe(TextShimmerMarker)
+    expect(e.props.children).toBe('Downloading')
+  })
+
+  it('renderTextShimmer falls back to a native CSS shimmer span when the seed is absent', () => {
+    setPrimitivesModule(null)
+    const e = el(renderTextShimmer('Downloading'))
+    expect(e.type).toBe('span')
+    expect(e.props.children).toBe('Downloading')
+    const style = e.props.style as Record<string, unknown>
+    expect(style.animation).toBe('dsh-local-infer-shimmer 1.6s linear infinite')
   })
 
   it('renderCheckbox draws the seed Checkbox when present', () => {

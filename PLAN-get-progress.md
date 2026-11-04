@@ -111,7 +111,7 @@ by the previous commits in their phase and resolve the named code risks.
 
 ### Phase 6 — Primitives mapping
 
-- [ ] [TASK-017-primitives-members](docs/PLAN-get-progress-TASK-017-primitives-members.md)
+- [x] [TASK-017-primitives-members](docs/PLAN-get-progress-TASK-017-primitives-members.md)
 
 ## Task dependencies
 

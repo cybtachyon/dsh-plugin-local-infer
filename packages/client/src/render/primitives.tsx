@@ -37,14 +37,15 @@ export interface PrimitivesModule {
   // component, so renderProgressStrip's guard stays a fallback for a future
   // seed. If the seed adds one, the guard picks it up automatically.
   Progress?: unknown
-  // Forward-looking: the installed primitives seed exports no Tag or
-  // TextShimmer, so renderTag and renderTextShimmer's guards stay fallbacks
-  // for a future seed (TASK-017 adds the members).
+  // The installed primitives seed (0.2.1-alpha.3) exports Tag and
+  // TextShimmer, so the renderTag and renderTextShimmer guards pick them up
+  // when the host provides the seed; the native fallbacks keep a host without
+  // the seed rendering.
   Tag?: unknown
   TextShimmer?: unknown
-  // Forward-looking: the installed primitives seed exports no Pill, so
-  // renderPill's guard stays a fallback for a future seed (TASK-017 adds the
-  // member).
+  // The installed primitives seed (0.2.1-alpha.3) exports Pill, so
+  // renderPill's guard picks it up when the host provides the seed; the
+  // native fallback keeps a host without the seed rendering.
   Pill?: unknown
   IconChevronDownOutlineRegular?: unknown
   IconRefreshOutlineRegular?: unknown
