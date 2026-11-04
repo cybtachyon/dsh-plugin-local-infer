@@ -248,6 +248,11 @@ export class NInferAdapter extends EngineAdapter {
             // path. A bare name (the Linux and macOS binaries, resolved against the
             // path) is left as-is.
             const resolvedArgv = resolveLaunchArgv(engineDir, plan.argv);
+            // The plan is the launch record's argv source (launchRecordFromPlan reads
+            // it), and the re-link rule substring-matches every record argv token
+            // against the live command line, so the record must name the spawn, not
+            // the build-tree relative binary.
+            plan.argv = resolvedArgv;
             const handle = this.host.spawn(resolvedArgv, plan.env ?? {}, engineDir);
             trackChild(this.children, this.planKey(plan), handle);
             return withLogs({ ok: true, handle });
