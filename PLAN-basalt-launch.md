@@ -63,7 +63,7 @@ CLI contract and the existing model-download-target rule)
 
 ### Phase 3: Refactor
 
-- [ ] [TASK-005-refactor-basalt-fix](docs/PLAN-basalt-launch-TASK-005-refactor-basalt-fix.md)
+- [x] [TASK-005-refactor-basalt-fix](docs/PLAN-basalt-launch-TASK-005-refactor-basalt-fix.md)
 
 ### Phase 4: Tests and verification
 

@@ -453,6 +453,9 @@ describe('BasaltAdapter.renderLaunch', () => {
       join('models', 'models/Qwen3.8-FN-NVFP4-DQ6_K.basalt'),
     )
     expect(argv[argv.indexOf('--engine-bin') + 1]).toBe(join('bin', 'basalt'))
+    // The plan stamps the resolved model value, so the deploy step downloads
+    // exactly the file the --model flag points at without re-parsing the argv.
+    expect(plan.modelFile).toBe('models/Qwen3.8-FN-NVFP4-DQ6_K.basalt')
     // The config file content is exactly what the surface renders, and the
     // path lands in the model directory.
     expect(plan.configFile?.content).toBe(configFileFromSpecs(BASALT_PARAMETERS, config, 'json'))
@@ -476,6 +479,9 @@ describe('BasaltAdapter.renderLaunch', () => {
     expect(plan.configFile?.path).toBe(join(hfHubCacheDirectory(), BASALT_CONFIG_FILE))
     expect(plan.modelDirectory).toBeUndefined()
     expect(plan.port).toBe(8080)
+    // A bare config names no model, so the plan stamps the engine default
+    // artifact for the deploy step to download.
+    expect(plan.modelFile).toBe(BASALT_MODEL_FILE)
   })
 
   it('spells the Windows binary on a Windows host', () => {
@@ -528,9 +534,10 @@ describe('BasaltAdapter.deploy', () => {
     // The spawn runs the serve command with the config, model, and engine-bin
     // flags, in the engine directory. The first token is the build-tree path
     // joined against the engine directory (CMake's bin/ output dir), so the
-    // spawn resolves the real binary without the PATH. The --model value is a
-    // placeholder the deploy step resolves (TASK-004); the --engine-bin value
-    // is the build-tree binary the first token names.
+    // spawn resolves the real binary without the PATH. The --model value is
+    // the concrete artifact path the deploy step resolves (the flat join, where
+    // the download lands); the --engine-bin value is the build-tree binary the
+    // first token names.
     expect(state.spawn).toHaveLength(1)
     expect(state.spawn[0]?.argv).toEqual([
       join('/src/basalt', 'bin', 'basalt'),
@@ -538,7 +545,7 @@ describe('BasaltAdapter.deploy', () => {
       '--config',
       join('models', BASALT_CONFIG_FILE),
       '--model',
-      join('models', 'models/Qwen3.8-FN-NVFP4-DQ6_K.basalt'),
+      join('models', 'Qwen3.8-FN-NVFP4-DQ6_K.basalt'),
       '--engine-bin',
       join('bin', 'basalt'),
     ])
