@@ -51,10 +51,13 @@ Answers are recorded beside each question as they arrive.
 - TASK-003 (Refactor) depends on TASK-001 and TASK-002 (it reviews their
   commits).
 - TASK-004 (Verify) depends on TASK-003.
+- TASK-005 (pre-existing basalt test fix) executes immediately after
+  TASK-001; it is independent of the sync-override work.
 
 ## Phase 1: Get process override
 
 - [x] [TASK-001-GET-STEP-OVERRIDE](docs/PLAN-SYNC-OVERRIDE-TASK-001-GET-STEP-OVERRIDE.md)
+- [x] [TASK-005-BASALT-TEST](docs/PLAN-SYNC-OVERRIDE-TASK-005-BASALT-TEST.md)
 - [ ] [TASK-002-LAUNCH-WIRING](docs/PLAN-SYNC-OVERRIDE-TASK-002-LAUNCH-WIRING.md)
 
 ## Phase 2: Refactor
