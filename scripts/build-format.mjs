@@ -29,7 +29,9 @@ async function processDirectory(dir) {
                 return processDirectory(fullPath);
             }
 
-            if (entry.isFile() && (entry.name.endsWith('.js') || entry.name.endsWith('.d.ts'))) {
+            const isEmitted = entry.name.endsWith('.js') || entry.name.endsWith('.d.ts')
+                || entry.name.endsWith('.js.map') || entry.name.endsWith('.d.ts.map');
+            if (entry.isFile() && isEmitted) {
                 const content = await fs.readFile(fullPath, 'utf8');
 
                 if (!content.endsWith('\n')) {

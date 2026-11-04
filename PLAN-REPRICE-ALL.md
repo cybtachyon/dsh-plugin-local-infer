@@ -66,7 +66,7 @@ the draft)
 - [x] [TASK-002-convert-actions-sites](docs/PLAN-REPRICE-ALL-TASK-002-convert-actions-sites.md)
 - [x] [TASK-003-convert-providers-sites](docs/PLAN-REPRICE-ALL-TASK-003-convert-providers-sites.md)
 - [x] [TASK-006-normalize-lib-newlines](docs/PLAN-REPRICE-ALL-TASK-006-normalize-lib-newlines.md)
-- [ ] [TASK-007-settle-build-docs](docs/PLAN-REPRICE-ALL-TASK-007-settle-build-docs.md)
+- [x] [TASK-007-settle-build-docs](docs/PLAN-REPRICE-ALL-TASK-007-settle-build-docs.md)
 - [ ] [TASK-004-refactor-review](docs/PLAN-REPRICE-ALL-TASK-004-refactor-review.md)
 
 ### Phase 2: Verify
@@ -88,3 +88,12 @@ the draft)
   touched).
 - TASK-005: TASK-004 (the gate runs after the refactor review settles the
   source).
+
+## Known pre-existing issues
+
+- **`packages/ui/lib/viewmodels/summary.js` content churn.** tsc re-emits a
+  collapsed `renderMeter(` call and a trailing space that the hooks had
+  normalized, so a ui-package re-emit shows a 2-line diff that no
+  trailing-newline pass can absorb. A post-build formatter pass is a bigger
+  tooling change, out of scope here. The commit hooks absorb the churn on
+  commit, so it is documented, not fixed.

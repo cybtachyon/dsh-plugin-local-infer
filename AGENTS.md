@@ -56,6 +56,9 @@
     `packages/client/src/index.ts` to (`dsh/.build/client.cjs`) and wraps it in
     `window.__ModuleLoader__.load({ id, factory: (require) => ... })` contract.
     to write `dsh/client.js`.
+  - Then `node scripts/build-format.mjs` normalizes the trailing newlines of
+    the emitted lib artifacts (`.js`, `.d.ts`, `.js.map`, and `.d.ts.map` in
+    `dsh` and every `packages/*/lib`) so the build leaves the tree clean.
   - `react` and `@deepseek-ai/dsh-client-ui-primitives` are esbuild externals:
     they stay out of the bundle and resolve at runtime through the DSH's
     frozen platform module table with `require` calls.
@@ -189,4 +192,5 @@ Fetch these docs to answer questions about their covered topic.
   act --env-file .env --secret-file .secrets -s GUESTWISE_SSH_PRIVATE_KEY="${GUESTWISE_SSH_PRIVATE_KEY}" --pull=false -W .github/workflows/{{my-push-workflow}}.yml push
   act --env-file .env -W .github/workflows/{{my-schedule-workflow}}.yml schedule
   ```
-- Run `prek` before committing (verify pre-commit hooks).
+- Run `prek run --files <paths>` before committing (verify pre-commit hooks).
+  The installed prek takes `--files`, not `--filename`.
