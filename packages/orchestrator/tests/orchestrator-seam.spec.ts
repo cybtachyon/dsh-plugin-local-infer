@@ -63,6 +63,19 @@ function withFakeInject(
 }
 
 /**
+ * fireFor returns an inject impl that runs the callback only for the named
+ * seam and leaves every other seam absent, so these specs stay scoped to the
+ * systemPrompt half while apply also asks for webServer.
+ */
+function fireFor(seam: string, scope: unknown) {
+  return (names: string[], cb: (scope: unknown) => void): void => {
+    if (names[0] === seam) {
+      cb(scope)
+    }
+  }
+}
+
+/**
  * loadFresh returns a fresh copy of the plugin module (and, with it, of the
  * config holder) so each seam test starts with an empty effective-prompt
  * cache.
@@ -95,7 +108,7 @@ describe('systemPrompt seam', () => {
       // The seam is absent in this profile: cordis never runs the callback.
     })
     expect(() => mod.apply(ctx)).not.toThrow()
-    expect(requested).toEqual([['systemPrompt']])
+    expect(requested).toEqual([['systemPrompt'], ['webServer']])
     expect(sections).toEqual([])
   })
 
@@ -107,7 +120,7 @@ describe('systemPrompt seam', () => {
   it('registers one orchestrator section with the default prompt before any save', async () => {
     const mod = await loadFresh()
     const { scope, sections } = makeSeamScope()
-    mod.apply(withFakeInject((_names, cb) => cb(scope)))
+    mod.apply(withFakeInject(fireFor('systemPrompt', scope)))
     expect(sections.length).toBe(1)
     const [section] = sections
     expect(section?.name).toBe('orchestrator')
@@ -122,7 +135,7 @@ describe('systemPrompt seam', () => {
   it('follows the holder after a setOrchestratorPrompt update', async () => {
     const mod = await loadFresh()
     const { scope, sections } = makeSeamScope()
-    mod.apply(withFakeInject((_names, cb) => cb(scope)))
+    mod.apply(withFakeInject(fireFor('systemPrompt', scope)))
     const [section] = sections
     expect(section?.text()).toBe(readFileSync(promptPath, 'utf8'))
     mod.setOrchestratorPrompt('edited orchestrator prompt')
@@ -135,7 +148,9 @@ describe('systemPrompt seam', () => {
       /* the inject catch logs and continues */
     })
     const { scope } = makeSeamScope(true)
-    expect(() => mod.apply(withFakeInject((_names, cb) => cb(scope)))).not.toThrow()
+    expect(() =>
+      mod.apply(withFakeInject(fireFor('systemPrompt', scope))),
+    ).not.toThrow()
     expect(error).toHaveBeenCalledWith(expect.stringContaining('orchestrator prompt section skipped'))
     error.mockRestore()
   })

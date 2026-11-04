@@ -37,7 +37,9 @@ export interface SystemPromptService {
  * Mount the Orchestrator prompt. The scoped `systemPrompt` inject registers
  * the one global `orchestrator` section where the seam exists; the effect
  * scope ties the registration to the plugin, so it unregisters with the
- * plugin. The /local-infer/orchestrator routes land in TASK-004.
+ * plugin. The scoped `webServer` inject registers the /local-infer/
+ * orchestrator settings routes where that seam exists, so a headless profile
+ * keeps no routes.
  */
 export declare function apply(ctx: Context): void;
 declare const plugin: {
