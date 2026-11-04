@@ -694,6 +694,26 @@ describe('launch and stop route helpers', () => {
     )
   })
 
+  it('persists the Get-step output exactly once in a successful launch run', async () => {
+    const service = stubService([], {
+      launchResult: {
+        plan: { engineId: 'ninfer', kind: 'process', port: 18020, healthUrl: 'http://127.0.0.1:18020/health' },
+        healthy: true,
+        logs: 'engine booted\nlistening on 18020',
+      },
+    })
+    await launchEngine(
+      service,
+      { engine: 'ninfer', config: { port: 18020, model: 'qwen3-8-27b' } },
+      undefined,
+      stubGetHost().host,
+    )
+    // The Get-step output leads the run logs composeLaunchLogs assembled in
+    // the result, so the persisted run carries it once, not twice.
+    const lastLogs = readConfig().lastLogs
+    expect(lastLogs.match(/get complete/g)?.length).toBe(1)
+  })
+
   it('prints the plan launch command above the run logs the card shows', async () => {
     const argv = ['infernix-serve', '/opt/hf-models/m.infernix', '--host', '127.0.0.1', '--port', '18080']
     const service = stubService([], {
@@ -3532,6 +3552,9 @@ describe('shared Get-steps routine', () => {
     expect(lastLogs.startsWith('--- Launching...\n')).toBe(true)
     expect(lastLogs).toContain('  cmake: missing')
     expect(lastLogs).toContain('a system dependency is missing')
+    // The get-failed path leaves the result's logs unset, so the persisted
+    // run leads with the Get-step output and carries it exactly once.
+    expect(lastLogs.match(/a system dependency is missing/g)?.length).toBe(1)
   })
 })
 

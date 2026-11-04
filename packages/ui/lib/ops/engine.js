@@ -205,7 +205,10 @@ export async function launchEngine(localInfer, request, onProgress, host = nodeL
     // closed the stream during the deploy or health poll) adds the "Canceled"
     // line, so the persisted run reads as canceled.
     composeLaunchLogs(result, getLogs, commandNote, signal?.aborted === true);
-    persistLaunchOutcome(result, engineId, config, request.providerId, getLogs);
+    // The result's logs field already carries the Get-step output via
+    // composeLaunchLogs, so the persisted run leads with no getLogs. Passing
+    // getLogs again would include the Get steps twice in the persisted run.
+    persistLaunchOutcome(result, engineId, config, request.providerId, '');
     return result;
 }
 /**
@@ -231,9 +234,13 @@ function composeLaunchLogs(result, getLogs, commandNote, canceled) {
 }
 /**
  * persistLaunchOutcome persists a settled launch: the run logs to the stored
- * last-run logs and the log file (the Get-step output the launch ran leads),
- * and the launch record on the target provider entry, so a DSH restart can
- * re-link a surviving engine to its config.
+ * last-run logs and the log file, and the launch record on the target
+ * provider entry, so a DSH restart can re-link a surviving engine to its
+ * config. The getLogs argument leads the persisted run only when the result
+ * carries no logs of its own (the get-failed path, where the deploy never
+ * ran). The success path passes an empty string, because composeLaunchLogs
+ * already folded the Get-step output into the result's logs, and leading it
+ * again would include the Get steps twice.
  */
 function persistLaunchOutcome(result, engineId, config, providerId, getLogs) {
     persistLaunchLogs(result, engineId, config, getLogs);

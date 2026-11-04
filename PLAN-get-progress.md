@@ -83,6 +83,7 @@ by the previous commits in their phase and resolve the named code risks.
 - [x] [TASK-021-infernix-progress-sink](docs/PLAN-get-progress-TASK-021-infernix-progress-sink.md)
 - [x] [TASK-004-launch-route-progress-event](docs/PLAN-get-progress-TASK-004-launch-route-progress-event.md)
 - [x] [TASK-005-refactor-phase1](docs/PLAN-get-progress-TASK-005-refactor-phase1.md)
+- [x] [TASK-022-launch-logs-double-include](docs/PLAN-get-progress-TASK-022-launch-logs-double-include.md)
 
 ### Phase 2 — Client store progress state
 
@@ -122,6 +123,8 @@ by the previous commits in their phase and resolve the named code risks.
 - TASK-021 depends on TASK-003 (the Infernix chunks route through the sink TASK-003 added).
 - TASK-004 depends on TASK-003 (the launch route emits progress from the get-steps run).
 - TASK-005 depends on TASK-001..TASK-004 (reviews their commits).
+- TASK-022 depends on TASK-005 (the double-include surfaced in the refactor's
+  composeLaunchLogs / persistLaunchOutcome helpers).
 - TASK-007 depends on TASK-006 (the state field is typed by the parser's output).
 - TASK-008 depends on TASK-006 and TASK-007 (the throttle populates the field via the parser).
 - TASK-009 depends on TASK-006..TASK-008 (reviews their commits).
