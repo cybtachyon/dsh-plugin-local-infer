@@ -2,7 +2,7 @@
 /**
  * build-client: produce the lazy-CJS browser artifact dsh/client.js.
  *
- * Two steps:
+ * Three steps:
  *   1. esbuild bundles packages/client/src/index.ts to the CJS intermediate
  *      dsh/.build/client.cjs. react and @deepseek-ai/dsh-client-ui-primitives
  *      stay external: they resolve at runtime through the shell's frozen
@@ -12,12 +12,15 @@
  *      contract and written to dsh/client.js. esbuild's CJS external shim
  *      resolves `require` dynamically, so inside the factory it picks up the
  *      injected platform-table require.
+ *   3. Normalize the trailing newlines of packages/client/lib/** so the
+ *      build leaves the tree clean (tsc drops the newline the commit hook
+ *      adds).
  *
  * Run after `tsc -b` (the root build script chains the two). The output is
  * deterministic: a second run writes a byte-identical dsh/client.js.
  */
 
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import esbuild from 'esbuild'
@@ -53,3 +56,15 @@ ${bundle}
 `
 writeFileSync(artifact, output)
 console.log(`wrote dsh/client.js (${output.length} bytes)`)
+
+// tsc -b re-emits packages/client/lib without the trailing newline the
+// end-of-file-fixer commit hook adds on commit, so every build marks the
+// lib files dirty. Append a newline to any re-emitted text file that lacks
+// one so the build output matches the committed state.
+const libDir = join(root, 'packages/client/lib')
+for (const rel of readdirSync(libDir, { recursive: true })) {
+  const file = join(libDir, rel)
+  if (!statSync(file).isFile()) continue
+  const content = readFileSync(file, 'utf8')
+  if (!content.endsWith('\n')) writeFileSync(file, content + '\n')
+}
