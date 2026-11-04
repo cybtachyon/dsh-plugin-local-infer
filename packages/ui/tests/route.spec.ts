@@ -2105,7 +2105,7 @@ describe('model defaults, status, and download read model', () => {
       url: 'https://huggingface.co/neroued/Qwen3.8-27B-nvfp4-NInfer',
       present: false,
       hfCli: false,
-      downloadCommand: `hf download neroued/Qwen3.8-27B-nvfp4-NInfer qwen3_8_27b_nvfp4.ninfer --local-dir ${MODEL_DIR}`,
+      downloadCommand: `hf download neroued/Qwen3.8-27B-nvfp4-NInfer qwen3_8_27b_nvfp4.ninfer --local-dir ${MODEL_DIR} --format human`,
     })
   })
 
@@ -2119,7 +2119,7 @@ describe('model defaults, status, and download read model', () => {
       label: 'Froggeric22 (Qwen fixed chat templates)',
       present: false,
       hfCli: true,
-      downloadCommand: `hf download froggeric/Qwen-Fixed-Chat-Templates chat_template.jinja --local-dir ${MODEL_DIR}`,
+      downloadCommand: `hf download froggeric/Qwen-Fixed-Chat-Templates chat_template.jinja --local-dir ${MODEL_DIR} --format human`,
     })
 
     // A local path is not an HF repo reference, so the status reads as null.
@@ -3189,7 +3189,7 @@ describe('shared Get-steps routine', () => {
     // The hub-cache command drops --local-dir, and the download targets the
     // cache root (the stub's default model directory), not a flat subdir.
     expect(logged).toContain(
-      '$ hf download neroued/Qwen3.8-27B-nvfp4-NInfer qwen3_8_27b_nvfp4.ninfer\n',
+      '$ hf download neroued/Qwen3.8-27B-nvfp4-NInfer qwen3_8_27b_nvfp4.ninfer --format human\n',
     )
     expect(logged).not.toContain('--local-dir')
     expect(downloads).toHaveLength(1)

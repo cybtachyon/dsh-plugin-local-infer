@@ -799,7 +799,7 @@ describe('NInferAdapter.deploy', () => {
     const result = await adapter.deploy(plan)
     expect(result.ok).toBe(true)
     expect(runLog).toContain(
-      `hf download froggeric/Qwen-Fixed-Chat-Templates chat_template.jinja --local-dir ${modelDir}`,
+      `hf download froggeric/Qwen-Fixed-Chat-Templates chat_template.jinja --local-dir ${modelDir} --format human`,
     )
     await rm(modelDir, { recursive: true, force: true })
   })
@@ -2818,7 +2818,7 @@ describe('InfernixAdapter', () => {
     // The build runs the engine's own preset sequence in the engine
     // directory, then the hf CLI pulls the single-file artifact.
     expect(state.run).toContain('cd /engines/infernix && cmake --preset release && cmake --build build -j')
-    expect(state.run).toContain('hf download Wallawalla47/Qwen3.8-27B-NVIDIA-NVFP4-NInferV3 qwen3_8_27b_nvfp4-nvidia.ninfer --local-dir /models')
+    expect(state.run).toContain('hf download Wallawalla47/Qwen3.8-27B-NVIDIA-NVFP4-NInferV3 qwen3_8_27b_nvfp4-nvidia.ninfer --local-dir /models --format human')
     expect(state.spawn).toHaveLength(1)
     expect(state.spawn[0]?.cwd).toBe('/engines/infernix')
   })
@@ -2833,7 +2833,7 @@ describe('InfernixAdapter', () => {
     const result = await adapter.deploy(plan)
     expect(result.ok).toBe(true)
     expect(state.run).toEqual([
-      'hf download Wallawalla47/Qwen3.8-Flash-Next-NVIDIA-NVFP4-Dense8-Infernix --local-dir /models',
+      'hf download Wallawalla47/Qwen3.8-Flash-Next-NVIDIA-NVFP4-Dense8-Infernix --local-dir /models --format human',
     ])
   })
 
@@ -2895,7 +2895,7 @@ describe('InfernixAdapter', () => {
     const result = await adapter.deploy(plan)
     expect(result.ok).toBe(true)
     expect(state.run).toEqual([
-      'hf download Wallawalla47/Qwen3.8-27B-NVIDIA-NVFP4-NInferV3 qwen3_8_27b_nvfp4-nvidia.ninfer --local-dir /models',
+      'hf download Wallawalla47/Qwen3.8-27B-NVIDIA-NVFP4-NInferV3 qwen3_8_27b_nvfp4-nvidia.ninfer --local-dir /models --format human',
     ])
     expect(state.spawn).toHaveLength(1)
   })

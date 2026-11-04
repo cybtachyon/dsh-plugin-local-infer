@@ -69,14 +69,16 @@ export function modelArtifactPath(entry, directory, useHubCache = false) {
  * dropped so the hf CLI writes into the hub cache's `models--{ns}--{name}`
  * directory (the content-addressed `blobs/` plus the `snapshots/`). The string
  * is the single source the download route runs and the card shows beside its
- * Download button.
+ * Download button. The `--format human` flag overrides the non-TTY default
+ * (`auto` picks `agent`, which prints no progress) so the hf CLI prints tqdm
+ * progress lines to stderr, which the progress streaming tasks consume.
  */
 export function hfDownloadCommand(entry, directory, useHubCache = false) {
     const repo = repoIdFromUrl(entry.url);
     const file = entry.file !== undefined && entry.file !== '' ? ` ${entry.file}` : '';
     if (useHubCache)
-        return `hf download ${repo}${file}`;
-    return `hf download ${repo}${file} --local-dir ${directory}`;
+        return `hf download ${repo}${file} --format human`;
+    return `hf download ${repo}${file} --local-dir ${directory} --format human`;
 }
 /**
  * The chat template file the hf CLI pulls into the model directory. The
@@ -92,11 +94,14 @@ export const CHAT_TEMPLATE_FILE = 'chat_template.jinja';
  * `models--{ns}--{name}` directory. The string is the single source the
  * template download route runs and the card shows beside its Download button
  * and in the System dependencies box when the auto-download is unavailable.
+ * The `--format human` flag overrides the non-TTY default (`auto` picks
+ * `agent`, which prints no progress) so the hf CLI prints tqdm progress
+ * lines to stderr, which the progress streaming tasks consume.
  */
 export function hfChatTemplateCommand(repo, directory, useHubCache = false) {
     if (useHubCache)
-        return `hf download ${repo} ${CHAT_TEMPLATE_FILE}`;
-    return `hf download ${repo} ${CHAT_TEMPLATE_FILE} --local-dir ${directory}`;
+        return `hf download ${repo} ${CHAT_TEMPLATE_FILE} --format human`;
+    return `hf download ${repo} ${CHAT_TEMPLATE_FILE} --local-dir ${directory} --format human`;
 }
 /**
  * chatTemplateArtifactPath is the path the chat-template presence check looks

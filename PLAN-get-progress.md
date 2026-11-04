@@ -74,7 +74,7 @@ by the previous commits in their phase and resolve the named code risks.
 
 ### Phase 1 — Server-side progress streaming
 
-- [ ] [TASK-001-add-format-human](docs/PLAN-get-progress-TASK-001-add-format-human.md)
+- [x] [TASK-001-add-format-human](docs/PLAN-get-progress-TASK-001-add-format-human.md)
 - [ ] [TASK-002-spawn-runner-onchunk](docs/PLAN-get-progress-TASK-002-spawn-runner-onchunk.md)
 - [ ] [TASK-003-getsteps-onchunk-sink](docs/PLAN-get-progress-TASK-003-getsteps-onchunk-sink.md)
 - [ ] [TASK-004-launch-route-progress-event](docs/PLAN-get-progress-TASK-004-launch-route-progress-event.md)

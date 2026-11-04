@@ -2046,7 +2046,7 @@ describe('model directory, hf CLI, and model download', () => {
     const result = await ctx.localInfer.downloadModel(entry, target, { runner })
     expect(result).toEqual({ ok: true })
     expect(commands).toEqual([
-      `hf download neroued/Qwen3.8-27B-nvfp4-NInfer qwen3_8_27b_nvfp4.ninfer --local-dir ${target}`,
+      `hf download neroued/Qwen3.8-27B-nvfp4-NInfer qwen3_8_27b_nvfp4.ninfer --local-dir ${target} --format human`,
     ])
     expect(existsSync(target)).toBe(true)
   })
@@ -2144,7 +2144,7 @@ describe('model directory, hf CLI, and model download', () => {
     const result = await ctx.localInfer.downloadModel(entry, hub, { runner, useHubCache: true })
     expect(result).toEqual({ ok: true })
     expect(commands).toEqual([
-      'hf download jesdga/Qwen3.8-Flash-Next-Basalt Qwen3.8-FN-NVFP4-DQ6_K.basalt',
+      'hf download jesdga/Qwen3.8-Flash-Next-Basalt Qwen3.8-FN-NVFP4-DQ6_K.basalt --format human',
     ])
   })
 
@@ -2169,7 +2169,7 @@ describe('model directory, hf CLI, and model download', () => {
     })
     expect(result).toEqual({ ok: true })
     expect(commands).toEqual([
-      `hf download neroued/Qwen3.8-27B-nvfp4-NInfer qwen3_8_27b_nvfp4.ninfer --local-dir ${target}`,
+      `hf download neroued/Qwen3.8-27B-nvfp4-NInfer qwen3_8_27b_nvfp4.ninfer --local-dir ${target} --format human`,
     ])
   })
 
@@ -2188,7 +2188,7 @@ describe('model directory, hf CLI, and model download', () => {
     )
     expect(result).toEqual({ ok: true })
     expect(commands).toEqual([
-      'hf download froggeric/Qwen-Fixed-Chat-Templates chat_template.jinja',
+      'hf download froggeric/Qwen-Fixed-Chat-Templates chat_template.jinja --format human',
     ])
   })
 

@@ -57,7 +57,9 @@ export declare function modelArtifactPath(entry: DefaultModel, directory: string
  * dropped so the hf CLI writes into the hub cache's `models--{ns}--{name}`
  * directory (the content-addressed `blobs/` plus the `snapshots/`). The string
  * is the single source the download route runs and the card shows beside its
- * Download button.
+ * Download button. The `--format human` flag overrides the non-TTY default
+ * (`auto` picks `agent`, which prints no progress) so the hf CLI prints tqdm
+ * progress lines to stderr, which the progress streaming tasks consume.
  */
 export declare function hfDownloadCommand(entry: DefaultModel, directory: string, useHubCache?: boolean): string;
 /**
@@ -74,6 +76,9 @@ export declare const CHAT_TEMPLATE_FILE = "chat_template.jinja";
  * `models--{ns}--{name}` directory. The string is the single source the
  * template download route runs and the card shows beside its Download button
  * and in the System dependencies box when the auto-download is unavailable.
+ * The `--format human` flag overrides the non-TTY default (`auto` picks
+ * `agent`, which prints no progress) so the hf CLI prints tqdm progress
+ * lines to stderr, which the progress streaming tasks consume.
  */
 export declare function hfChatTemplateCommand(repo: string, directory: string, useHubCache?: boolean): string;
 /**

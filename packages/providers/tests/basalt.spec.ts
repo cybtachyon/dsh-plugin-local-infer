@@ -493,7 +493,7 @@ describe('BasaltAdapter.deploy', () => {
     // The download targets the model directory, and the config write carries
     // the rendered content at the model-directory path.
     expect(state.run).toContain(
-      `hf download ${BASALT_MODEL_REPO} ${BASALT_MODEL_FILE} --local-dir models`,
+      `hf download ${BASALT_MODEL_REPO} ${BASALT_MODEL_FILE} --local-dir models --format human`,
     )
     expect(state.writeFile).toHaveLength(1)
     expect(state.writeFile[0]?.path).toBe(join('models', BASALT_CONFIG_FILE))

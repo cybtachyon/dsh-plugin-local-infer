@@ -83,22 +83,22 @@ describe('modelArtifactPath', () => {
 describe('hfDownloadCommand', () => {
   it('renders the repo, file, and local-dir for an entry with a file', () => {
     expect(hfDownloadCommand(ENTRY, '/home/user/.dsh/models')).toBe(
-      'hf download neroued/Qwen3.8-27B-nvfp4-NInfer qwen3_8_27b_nvfp4.ninfer --local-dir /home/user/.dsh/models',
+      'hf download neroued/Qwen3.8-27B-nvfp4-NInfer qwen3_8_27b_nvfp4.ninfer --local-dir /home/user/.dsh/models --format human',
     )
   })
 
   it('renders a whole-repo download for an entry without a file', () => {
     expect(hfDownloadCommand(NO_FILE, '/models')).toBe(
-      'hf download born2bewild/Qwen3.8-27B-W4A16-AutoRound-fast --local-dir /models',
+      'hf download born2bewild/Qwen3.8-27B-W4A16-AutoRound-fast --local-dir /models --format human',
     )
   })
 
   it('drops the local-dir for the hub-cache layout (the default model directory)', () => {
     expect(hfDownloadCommand(ENTRY, '/hub', true)).toBe(
-      'hf download neroued/Qwen3.8-27B-nvfp4-NInfer qwen3_8_27b_nvfp4.ninfer',
+      'hf download neroued/Qwen3.8-27B-nvfp4-NInfer qwen3_8_27b_nvfp4.ninfer --format human',
     )
     expect(hfDownloadCommand(NO_FILE, '/hub', true)).toBe(
-      'hf download born2bewild/Qwen3.8-27B-W4A16-AutoRound-fast',
+      'hf download born2bewild/Qwen3.8-27B-W4A16-AutoRound-fast --format human',
     )
   })
 })
@@ -106,19 +106,19 @@ describe('hfDownloadCommand', () => {
 describe('hfChatTemplateCommand', () => {
   it('renders the repo, the template file, and the local-dir target', () => {
     expect(hfChatTemplateCommand('froggeric/Qwen-Fixed-Chat-Templates', '/models')).toBe(
-      `hf download froggeric/Qwen-Fixed-Chat-Templates ${CHAT_TEMPLATE_FILE} --local-dir /models`,
+      `hf download froggeric/Qwen-Fixed-Chat-Templates ${CHAT_TEMPLATE_FILE} --local-dir /models --format human`,
     )
   })
 
   it('targets a custom repo reference into the model directory', () => {
     expect(hfChatTemplateCommand('acme/my-templates', '/home/user/.dsh/models')).toBe(
-      `hf download acme/my-templates ${CHAT_TEMPLATE_FILE} --local-dir /home/user/.dsh/models`,
+      `hf download acme/my-templates ${CHAT_TEMPLATE_FILE} --local-dir /home/user/.dsh/models --format human`,
     )
   })
 
   it('drops the local-dir for the hub-cache layout (the default model directory)', () => {
     expect(hfChatTemplateCommand('froggeric/Qwen-Fixed-Chat-Templates', '/hub', true)).toBe(
-      `hf download froggeric/Qwen-Fixed-Chat-Templates ${CHAT_TEMPLATE_FILE}`,
+      `hf download froggeric/Qwen-Fixed-Chat-Templates ${CHAT_TEMPLATE_FILE} --format human`,
     )
   })
 })
