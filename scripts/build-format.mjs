@@ -1,5 +1,5 @@
-const fs = require('node:fs');
-const path = require('node:path');
+import fs from 'node:fs/promises';
+import path from 'node:path';
 
 // Define target directory (usually your tsc outDir)
 const TARGET_DIRS = [
@@ -18,11 +18,12 @@ async function processDirectory(dir) {
         const stat = await fs.stat(dir).catch(() => null);
         if (!stat || !stat.isDirectory()) return;
 
-        const entries = await fs.readdir(dir, { withFileTypes: true });
+        const entries = await fs.readdir(dir, { recursive: true, withFileTypes: true });
 
         // Map entries to a list of promises so they run concurrently
         const tasks = entries.map(async (entry) => {
-            const fullPath = path.join(dir, entry.name);
+            const currentDir = entry.parentPath || entry.path;
+            const fullPath = path.join(currentDir, entry.name);
 
             if (entry.isDirectory()) {
                 return processDirectory(fullPath);
