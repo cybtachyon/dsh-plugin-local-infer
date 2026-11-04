@@ -36,6 +36,7 @@ import {
   BASALT_EXPERT_CACHE_OPTIONS,
   BASALT_KV_OPTIONS,
   BASALT_PARAMETERS,
+  BASALT_SERVED_MODEL_ID,
   BASALT_VISION_OPTIONS,
   basaltModelKey,
 } from '../src/engines/basalt/basalt.ts'
@@ -886,14 +887,23 @@ describe('BasaltAdapter.stop', () => {
 })
 
 describe('BasaltAdapter model data', () => {
-  it('publishes the model path the config names, falling back to the engine name', () => {
+  it('publishes the served model id for the bundled artifact and the file name otherwise', () => {
     const { host } = basaltStubHost()
     const adapter = new BasaltAdapter(host)
+    // The serve server advertises the artifact's meta.name on /v1/models and
+    // matches requests against it beside the artifact file name. The bare
+    // config, the registry key, and the bundled artifact file name all pick
+    // the bundled artifact, so each publishes the served meta.name.
+    const served = { id: BASALT_SERVED_MODEL_ID, name: BASALT_SERVED_MODEL_ID }
+    expect(adapter.modelRef({})).toEqual(served)
+    expect(adapter.modelRef({ model: BASALT_DEFAULT_MODEL_ID })).toEqual(served)
+    expect(adapter.modelRef({ model: BASALT_MODEL_FILE })).toEqual(served)
+    // A custom .basalt pick publishes its basename: the engine accepts the
+    // artifact's own file name beside its meta.name.
     expect(adapter.modelRef({ model: 'models/m.basalt' })).toEqual({
-      id: 'models/m.basalt',
-      name: 'models/m.basalt',
+      id: 'm.basalt',
+      name: 'm.basalt',
     })
-    expect(adapter.modelRef({})).toEqual({ id: 'basalt', name: 'Basalt' })
   })
 
   it('withholds the image input only when vision is off or unset', () => {
