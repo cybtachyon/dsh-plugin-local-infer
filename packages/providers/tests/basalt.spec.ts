@@ -1,8 +1,14 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import LocalInfer from 'dsh-plugin-local-infer/service'
-import { hfHubCacheDirectory } from 'dsh-plugin-local-infer/core'
+import {
+  hfHubCacheDirectory,
+  hubCacheModelDirectory,
+  repoIdFromUrl,
+} from 'dsh-plugin-local-infer/core'
 import type {
   CommandOutcome,
   FetchResult,
@@ -414,6 +420,32 @@ function basaltStubHost() {
   return { host, state }
 }
 
+/**
+ * seededHubCache points HF_HUB_CACHE at a temp dir seeded with the basalt
+ * model's content-addressed tree (the blobs store the presence check looks
+ * for, plus a snapshot commit holding the .basalt file), so a hub-cache
+ * layout deploy reads a deterministic tree, never the real cache. Returns
+ * the hub root and a cleanup that restores the env and removes the dir.
+ */
+function seededHubCache(): { hub: string; cleanup: () => void } {
+  const hub = mkdtempSync(join(tmpdir(), 'basalt-hub-'))
+  const saved = process.env.HF_HUB_CACHE
+  process.env.HF_HUB_CACHE = hub
+  const modelDir = hubCacheModelDirectory(repoIdFromUrl(`https://huggingface.co/${BASALT_MODEL_REPO}`))
+  mkdirSync(join(hub, modelDir, 'blobs'), { recursive: true })
+  const snapshot = join(hub, modelDir, 'snapshots', 'c1')
+  mkdirSync(snapshot, { recursive: true })
+  writeFileSync(join(snapshot, BASALT_MODEL_FILE), 'weights')
+  return {
+    hub,
+    cleanup: (): void => {
+      if (saved === undefined) delete process.env.HF_HUB_CACHE
+      else process.env.HF_HUB_CACHE = saved
+      rmSync(hub, { recursive: true, force: true })
+    },
+  }
+}
+
 describe('BasaltAdapter.renderLaunch', () => {
   it('renders a serve process plan with the config file the surface renders', () => {
     const { host } = basaltStubHost()
@@ -482,6 +514,24 @@ describe('BasaltAdapter.renderLaunch', () => {
     // A bare config names no model, so the plan stamps the engine default
     // artifact for the deploy step to download.
     expect(plan.modelFile).toBe(BASALT_MODEL_FILE)
+  })
+
+  it('maps a registry-key model value to its artifact file name', () => {
+    const { host } = basaltStubHost()
+    const adapter = new BasaltAdapter(host)
+    // A registry key (the Model dropdown's default-model selection) maps to
+    // the default model entry's artifact file through the default list.
+    const keyed = adapter.renderLaunch({ model: 'qwen38-flash-next' }, ADAPTER_HW)
+    expect(keyed.modelFile).toBe(BASALT_MODEL_FILE)
+    // A .basalt file name (a directory-scan selection) passes through, and
+    // the --model flag points at it in the model directory.
+    const file = adapter.renderLaunch({ model: 'models/m.basalt', modelDirectory: 'models' }, ADAPTER_HW)
+    expect(file.modelFile).toBe('models/m.basalt')
+    expect(file.argv?.[file.argv?.indexOf('--model') + 1]).toBe(join('models', 'models/m.basalt'))
+    // A value that is neither a .basalt name nor a known registry key falls
+    // back to the engine default artifact.
+    const unknown = adapter.renderLaunch({ model: 'not-a-key' }, ADAPTER_HW)
+    expect(unknown.modelFile).toBe(BASALT_MODEL_FILE)
   })
 
   it('spells the Windows binary on a Windows host', () => {
@@ -583,7 +633,9 @@ describe('BasaltAdapter.deploy', () => {
     const adapter = new BasaltAdapter(host)
     // A relative launch path (a build-tree binary, CMake's bin/ output dir)
     // is joined against the engine directory, so the spawn resolves an
-    // absolute path.
+    // absolute path. The named model directory keeps the model presence
+    // check off the real hub cache (the flat layout is deterministic), so
+    // the test is hermetic on a clean runner.
     const relativeBinary = join('bin', 'basalt')
     const plan: LaunchPlan = {
       engineId: 'basalt',
@@ -592,6 +644,7 @@ describe('BasaltAdapter.deploy', () => {
       env: {},
       port: 8090,
       healthUrl: 'http://127.0.0.1:8090/health',
+      modelDirectory: 'models',
       configFile: { path: BASALT_CONFIG_FILE, content: '{}' },
     }
     const result = await adapter.deploy(plan, {
@@ -623,6 +676,66 @@ describe('BasaltAdapter.deploy', () => {
     expect(state.writeFile).toHaveLength(0)
     expect(state.spawn).toHaveLength(0)
   })
+
+  it('resolves the hub-cache layout --model flag to the seeded snapshot path', async () => {
+    const { host, state } = basaltStubHost()
+    state.runOutput['rev-list'] = '0'
+    const { hub, cleanup } = seededHubCache()
+    try {
+      const adapter = new BasaltAdapter(host)
+      // A bare config (no model directory) targets the hub cache, so the
+      // deploy resolves the --model placeholder to the snapshot path the
+      // seeded tree holds.
+      const plan = adapter.renderLaunch({ port: 8090 }, ADAPTER_HW)
+      const result = await adapter.deploy(plan, {
+        engineId: 'basalt',
+        engineDirectory: '/src/basalt',
+      })
+      expect(result.ok).toBe(true)
+      // The seeded artifact is on disk, so the deploy skips the download.
+      expect(state.run.some((command) => command.includes('hf download'))).toBe(false)
+      // The --model flag resolves to the snapshot path, and the config write
+      // lands in the hub cache root.
+      expect(state.spawn).toHaveLength(1)
+      expect(state.spawn[0]?.argv).toEqual([
+        join('/src/basalt', 'bin', 'basalt'),
+        'serve',
+        '--config',
+        join(hub, BASALT_CONFIG_FILE),
+        '--model',
+        join(hub, 'models--jesdga--Qwen3.8-Flash-Next-Basalt', 'snapshots', 'c1', BASALT_MODEL_FILE),
+        '--engine-bin',
+        join('bin', 'basalt'),
+      ])
+      expect(state.writeFile).toHaveLength(1)
+      expect(state.writeFile[0]?.path).toBe(join(hub, BASALT_CONFIG_FILE))
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('writes the config file into the hub cache root, never the engine directory', async () => {
+    const { host, state } = basaltStubHost()
+    state.runOutput['rev-list'] = '0'
+    const { hub, cleanup } = seededHubCache()
+    try {
+      const adapter = new BasaltAdapter(host)
+      const plan = adapter.renderLaunch({ port: 8090 }, ADAPTER_HW)
+      const result = await adapter.deploy(plan, {
+        engineId: 'basalt',
+        engineDirectory: '/src/basalt',
+      })
+      expect(result.ok).toBe(true)
+      // The Get step's dirty-check scenario: the config write lands in the
+      // model download target directory (the hub cache root for the default
+      // layout), so the engine's git checkout carries no basalt_config.json.
+      expect(state.writeFile).toHaveLength(1)
+      expect(state.writeFile[0]?.path).toBe(join(hub, BASALT_CONFIG_FILE))
+      expect(state.writeFile[0]?.path.startsWith('/src/basalt')).toBe(false)
+    } finally {
+      cleanup()
+    }
+  })
 })
 
 describe('BasaltAdapter.healthCheck', () => {
@@ -639,7 +752,9 @@ describe('BasaltAdapter.healthCheck', () => {
     const { host, state } = basaltStubHost()
     state.fetchStatus = 503
     const adapter = new BasaltAdapter(host)
-    const plan = adapter.renderLaunch({ port: 8090 }, ADAPTER_HW)
+    // The named model directory keeps the deploy's model presence check off
+    // the real hub cache, so the test is hermetic on a clean runner.
+    const plan = adapter.renderLaunch({ port: 8090, modelDirectory: 'models' }, ADAPTER_HW)
     // A tracked process that has output reads as starting (in progress), not
     // failed.
     await adapter.deploy(plan, { engineId: 'basalt', engineDirectory: '/src/basalt' })
@@ -664,7 +779,9 @@ describe('BasaltAdapter.stop', () => {
   it('signals the tracked handle and drops the entry', async () => {
     const { host, state } = basaltStubHost()
     const adapter = new BasaltAdapter(host)
-    const plan = adapter.renderLaunch({ port: 8090 }, ADAPTER_HW)
+    // The named model directory keeps the deploy's model presence check off
+    // the real hub cache, so the test is hermetic on a clean runner.
+    const plan = adapter.renderLaunch({ port: 8090, modelDirectory: 'models' }, ADAPTER_HW)
     const result = await adapter.deploy(plan, {
       engineId: 'basalt',
       engineDirectory: '/src/basalt',
