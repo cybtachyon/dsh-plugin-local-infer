@@ -43,7 +43,8 @@ CLI contract and the existing model-download-target rule)
 - TASK-002 (config path) depends on TASK-001 (diagnosis).
 - TASK-003 (argv flags) depends on TASK-001 (diagnosis).
 - TASK-004 (model path resolution) depends on TASK-003 (argv flags).
-- TASK-005 (refactor) depends on TASK-002, TASK-003, TASK-004 (the fix commits).
+- TASK-004b (download selected model) depends on TASK-004 (model path resolution).
+- TASK-005 (refactor) depends on TASK-002, TASK-003, TASK-004, TASK-004b (the fix commits).
 - TASK-006 (tests) depends on TASK-004 (model path resolution).
 - TASK-007 (build/test/lint) depends on TASK-006 (tests).
 
@@ -58,6 +59,7 @@ CLI contract and the existing model-download-target rule)
 - [x] [TASK-002-config-path-model-dir](docs/PLAN-basalt-launch-TASK-002-config-path-model-dir.md)
 - [x] [TASK-003-add-model-engine-bin-flags](docs/PLAN-basalt-launch-TASK-003-add-model-engine-bin-flags.md)
 - [x] [TASK-004-resolve-model-path-deploy](docs/PLAN-basalt-launch-TASK-004-resolve-model-path-deploy.md)
+- [ ] [TASK-004b-download-selected-model](docs/PLAN-basalt-launch-TASK-004b-download-selected-model.md)
 
 ### Phase 3: Refactor
 
