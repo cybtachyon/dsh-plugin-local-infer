@@ -1,6 +1,6 @@
 # TASK-005: Refactor (host half)
 
-Review the files touched by the previous 4 commits and identify the following code risks:
+Review the files touched by the previous 5 commits and identify the following code risks:
  - **Multiple Sources of Truth**: Same calculations done in multiple places.
  - **Duplicate Code**: Nearly-identical code in multiple methods.
  - **Bloaters**: Too many things done in a single method or class.
