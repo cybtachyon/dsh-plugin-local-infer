@@ -101,7 +101,7 @@ by the previous commits in their phase and resolve the named code risks.
 
 ### Phase 4 — Current-Get-step indicator
 
-- [ ] [TASK-014-logs-step-chips](docs/PLAN-get-progress-TASK-014-logs-step-chips.md)
+- [x] [TASK-014-logs-step-chips](docs/PLAN-get-progress-TASK-014-logs-step-chips.md)
 
 ### Phase 5 — Cancel affordance, surfaced
 
