@@ -67,7 +67,7 @@ the draft)
 - [x] [TASK-003-convert-providers-sites](docs/PLAN-REPRICE-ALL-TASK-003-convert-providers-sites.md)
 - [x] [TASK-006-normalize-lib-newlines](docs/PLAN-REPRICE-ALL-TASK-006-normalize-lib-newlines.md)
 - [x] [TASK-007-settle-build-docs](docs/PLAN-REPRICE-ALL-TASK-007-settle-build-docs.md)
-- [ ] [TASK-004-refactor-review](docs/PLAN-REPRICE-ALL-TASK-004-refactor-review.md)
+- [x] [TASK-004-refactor-review](docs/PLAN-REPRICE-ALL-TASK-004-refactor-review.md)
 
 ### Phase 2: Verify
 
