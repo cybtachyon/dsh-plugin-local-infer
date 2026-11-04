@@ -43,6 +43,15 @@ export declare function repriceDeps(store: CardStore, query?: PriceQuery): Promi
  */
 export declare function repriceSummary(store: CardStore, query?: PriceQuery): Promise<void>;
 /**
+ * repriceAll re-fetches both read models the card prices from the host's
+ * stored config: the summary (the meter, the provider list, the status dots)
+ * and the deps panel. The pair always re-prices together with the same query,
+ * so the drivers call this one helper instead of the two fetches. The fetches
+ * are fire-and-forget (the drivers do not await them), so the returned
+ * promise settles immediately.
+ */
+export declare function repriceAll(store: CardStore, query?: PriceQuery): Promise<void>;
+/**
  * copyInstallString hands the install block to the clipboard (client-side
  * only, so it rides the copy note, not an action cell). The note shows the
  * localized copied / copy-failed label for two seconds, then clears. A host

@@ -15,7 +15,7 @@ import { fetchDeps, fetchSummary, postGet, postInstall, postSave, } from "../api
 import { cancelInFlightRuns, forgetGetAbort, hasInFlightGet, trackGetAbort, } from "./abort.js";
 import { ProgressThrottle } from "./progress-throttle.js";
 import { parseHfProgress } from "./progress.js";
-import { appendCanceledLog, seedProcessLog } from "./logs.js";
+import { appendCanceledLog, appendLogChunk, seedProcessLog } from "./logs.js";
 import { performAction, ACTION_TIMEOUTS } from "./sync.js";
 /**
  * GET_IDLE_MS is the Get run's output-idle cap in ms. Two minutes without a
@@ -66,6 +66,19 @@ export function repriceSummary(store, query) {
         const message = error instanceof Error ? error.message : String(error);
         store.dispatch({ type: 'summary/fail', note: message });
     });
+}
+/**
+ * repriceAll re-fetches both read models the card prices from the host's
+ * stored config: the summary (the meter, the provider list, the status dots)
+ * and the deps panel. The pair always re-prices together with the same query,
+ * so the drivers call this one helper instead of the two fetches. The fetches
+ * are fire-and-forget (the drivers do not await them), so the returned
+ * promise settles immediately.
+ */
+export function repriceAll(store, query) {
+    void repriceSummary(store, query);
+    void repriceDeps(store, query);
+    return Promise.resolve();
 }
 /**
  * copyInstallString hands the install block to the clipboard (client-side
@@ -201,11 +214,7 @@ export function performGet(store, t) {
     // state before clearing the field, so the readout never outlives the run.
     const throttle = new ProgressThrottle(store, GET_PROGRESS_THROTTLE_MS);
     const append = (chunk) => {
-        const logs = store.getSnapshot().ui.logs;
-        store.dispatch({
-            type: 'ui/patch',
-            patch: { logs: { ...logs, getLogs: (logs.getLogs ?? '') + chunk } },
-        });
+        appendLogChunk(store, chunk);
         // The text parse is the fallback for hosts that stream log text without
         // progress events: fold the chunk into the latest state, and note the
         // state only when the chunk carries a bar update (the fold returns the

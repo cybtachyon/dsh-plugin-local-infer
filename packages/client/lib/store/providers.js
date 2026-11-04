@@ -18,8 +18,8 @@
 import { postLaunch, postProviderDelete, postStop, } from "../api/routes.js";
 import { LAUNCH_HEALTH_DEADLINE_MS, STOP_HEALTH_DEADLINE_MS, STOP_POLL_MS, } from "../machine/launch.js";
 import { cancelInFlightRuns, forgetLaunchAbort, trackLaunchAbort, } from "./abort.js";
-import { repriceDeps, repriceSummary } from "./deps.js";
-import { appendCanceledLog, appendProcessLog, seedProcessLog } from "./logs.js";
+import { repriceAll, repriceSummary } from "./deps.js";
+import { appendCanceledLog, appendProcessLog, separatorLine, seedProcessLog, } from "./logs.js";
 import { ACTION_TIMEOUTS, performAction } from "./sync.js";
 // noHandle is the handle a guarded-out action returns: nothing to cancel.
 const noHandle = { cancel() { } };
@@ -27,6 +27,12 @@ const noHandle = { cancel() { } };
 // entry's machine is driven through.
 function move(store, providerId, event) {
     store.dispatch({ type: 'launch/move', providerId, event });
+}
+// formModeForProviderCount picks the form mode after a provider list change:
+// entries remain reads as the collapsed list, an empty list reads as the
+// new-provider form.
+function formModeForProviderCount(count) {
+    return count > 0 ? 'collapsed' : 'new';
 }
 /**
  * editProvider loads a stored provider's engine, config, and platform into
@@ -53,8 +59,7 @@ export function editProvider(store, provider) {
             platform: { [provider.engine]: provider.platform },
         },
     });
-    void repriceSummary(store, { engine: provider.engine, config: provider.config });
-    void repriceDeps(store, { engine: provider.engine, config: provider.config });
+    void repriceAll(store, { engine: provider.engine, config: provider.config });
 }
 /**
  * cancelProvider collapses the editing form back to the provider entry list
@@ -72,17 +77,15 @@ export function cancelProvider(store, providerId) {
         appendCanceledLog(store);
     }
     const state = store.getSnapshot();
-    const hasProviders = (state.summary?.providers.length ?? 0) > 0;
     store.dispatch({
         type: 'ui/patch',
         patch: {
             editingProviderId: null,
-            providerFormMode: hasProviders ? 'collapsed' : 'new',
+            providerFormMode: formModeForProviderCount(state.summary?.providers.length ?? 0),
         },
     });
     store.dispatch({ type: 'draft/discard' });
-    void repriceSummary(store);
-    void repriceDeps(store);
+    void repriceAll(store);
 }
 /**
  * newProvider resets the form to a fresh provider (the next Save mints an id
@@ -104,8 +107,7 @@ export function newProvider(store) {
         patch: { editingProviderId: null, providerFormMode: 'new' },
     });
     store.dispatch({ type: 'draft/load', draft: next });
-    void repriceSummary(store, { engine: next.engine, config: next.config });
-    void repriceDeps(store, { engine: next.engine, config: next.config });
+    void repriceAll(store, { engine: next.engine, config: next.config });
 }
 /**
  * deleteProvider removes a saved provider entry through the provider-delete
@@ -128,7 +130,7 @@ export function deleteProvider(store, providerId) {
                 type: 'ui/patch',
                 patch: {
                     editingProviderId: null,
-                    providerFormMode: summary.providers.length > 0 ? 'collapsed' : 'new',
+                    providerFormMode: formModeForProviderCount(summary.providers.length),
                 },
             });
         }
@@ -189,14 +191,22 @@ export function performEntryLaunch(store, provider, t) {
     // streaming in the background, the same rule the stop driver applies.
     const controller = new AbortController();
     trackLaunchAbort(provider.id, controller);
+    // settle marks the run settled and clears its deadline timer and the abort
+    // registry entry once, whichever settle path lands first (the unmount
+    // cancel, the result, the stream break). It reports whether it was the
+    // first settle, so the late paths no-op.
+    const settle = () => {
+        if (settled) {
+            return false;
+        }
+        settled = true;
+        clearDeadline();
+        forgetLaunchAbort(provider.id);
+        return true;
+    };
     const handle = {
         cancel() {
-            if (settled) {
-                return;
-            }
-            settled = true;
-            clearDeadline();
-            forgetLaunchAbort(provider.id);
+            settle();
         },
     };
     // The health-poll deadline arms only for the launch (health-poll) step; the
@@ -217,7 +227,7 @@ export function performEntryLaunch(store, provider, t) {
     const onStep = (step) => {
         move(store, provider.id, { type: 'step', step });
         if (step === 'build') {
-            appendProcessLog(store, '--- ' + t.entryBuilding + '\n');
+            appendProcessLog(store, separatorLine(t.entryBuilding));
         }
         if (step === 'launch') {
             armDeadline();
@@ -230,12 +240,9 @@ export function performEntryLaunch(store, provider, t) {
         providerId: provider.id,
     }, onStep, controller.signal)
         .then((result) => {
-        if (settled) {
+        if (settle() !== true) {
             return;
         }
-        settled = true;
-        clearDeadline();
-        forgetLaunchAbort(provider.id);
         if (result === null) {
             // The stream ended without a result event: settle to failed.
             move(store, provider.id, { type: 'failed' });
@@ -255,12 +262,9 @@ export function performEntryLaunch(store, provider, t) {
         void repriceSummary(store, { engine: provider.engine, config: provider.config });
     })
         .catch(() => {
-        if (settled) {
+        if (settle() !== true) {
             return;
         }
-        settled = true;
-        clearDeadline();
-        forgetLaunchAbort(provider.id);
         // An aborted run (the provider form's Cancel) reads as failed, not a
         // stream break: the "Canceled" line the Cancel wrote is the run's tail,
         // and the red Logs control re-opens the entry for a re-launch.

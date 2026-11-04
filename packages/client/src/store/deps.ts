@@ -29,7 +29,7 @@ import {
 } from './abort.ts'
 import { ProgressThrottle } from './progress-throttle.ts'
 import { parseHfProgress } from './progress.ts'
-import { appendCanceledLog, seedProcessLog } from './logs.ts'
+import { appendCanceledLog, appendLogChunk, seedProcessLog } from './logs.ts'
 import { performAction, ACTION_TIMEOUTS, type CardStore } from './sync.ts'
 
 /**
@@ -85,6 +85,20 @@ export function repriceSummary(store: CardStore, query?: PriceQuery): Promise<vo
       const message = error instanceof Error ? error.message : String(error)
       store.dispatch({ type: 'summary/fail', note: message })
     })
+}
+
+/**
+ * repriceAll re-fetches both read models the card prices from the host's
+ * stored config: the summary (the meter, the provider list, the status dots)
+ * and the deps panel. The pair always re-prices together with the same query,
+ * so the drivers call this one helper instead of the two fetches. The fetches
+ * are fire-and-forget (the drivers do not await them), so the returned
+ * promise settles immediately.
+ */
+export function repriceAll(store: CardStore, query?: PriceQuery): Promise<void> {
+  void repriceSummary(store, query)
+  void repriceDeps(store, query)
+  return Promise.resolve()
 }
 
 /**
@@ -237,11 +251,7 @@ export function performGet(store: CardStore, t: TextTable): Promise<void> {
   // state before clearing the field, so the readout never outlives the run.
   const throttle = new ProgressThrottle(store, GET_PROGRESS_THROTTLE_MS)
   const append = (chunk: string): void => {
-    const logs = store.getSnapshot().ui.logs
-    store.dispatch({
-      type: 'ui/patch',
-      patch: { logs: { ...logs, getLogs: (logs.getLogs ?? '') + chunk } },
-    })
+    appendLogChunk(store, chunk)
     // The text parse is the fallback for hosts that stream log text without
     // progress events: fold the chunk into the latest state, and note the
     // state only when the chunk carries a bar update (the fold returns the

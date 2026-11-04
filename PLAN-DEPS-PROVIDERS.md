@@ -46,7 +46,7 @@ the new leaf module and the cycle disappears.
   `deps.ts` `performGet` with `seedProcessLog(store, t.getting)`.
   Definition of done: no import edge between `deps.ts` and `providers.ts`;
   `pnpm build` and `pnpm test` pass.
-- [ ] TASK-002 (Refactor): Review the files touched by the previous 1
+- [x] TASK-002 (Refactor): Review the files touched by the previous 1
   commits and identify the following code risks:
   - **Multiple Sources of Truth**: Same calculations done in multiple places.
   - **Duplicate Code**: Nearly-identical code in multiple methods.
@@ -59,6 +59,14 @@ the new leaf module and the cycle disappears.
   Definition of done: each identified risk is resolved in the touched files
   or explicitly noted as accepted in the commit message; `pnpm build` and
   `pnpm test` pass.
+- [ ] TASK-004: Fix the stale task-id doc-comment references discovered
+  by TASK-001 (pre-existing): `packages/client/src/store/derive.ts`
+  (L120, L155, L165, "TASK-011"), `packages/client/src/store/deps.ts`
+  (L357, "TASK-016"), `packages/client/src/render/LogsPanel.tsx` (L84,
+  "TASK-010") point at the Get-progress plan that commit 6dba961 removed.
+  Rewrite the comments to name the behavior, not the dead task id.
+  Definition of done: no `TASK-0NN` references remain in
+  `packages/client/src`; `pnpm build` and `pnpm test` pass.
 - [ ] TASK-003: Run the full gate set (`pnpm build`, `pnpm test`,
   `pnpm lint`) and confirm the client bundle (`dsh/client.js`) contains no
   import edge between the deps and providers store modules.
@@ -67,4 +75,5 @@ the new leaf module and the cycle disappears.
 ## Task dependencies
 
 - TASK-002 depends on TASK-001 (it reviews the commit TASK-001 produces).
-- TASK-003 depends on TASK-002 (final verification after the refactor pass).
+- TASK-004 depends on TASK-002 (comment cleanup after the refactor pass).
+- TASK-003 depends on TASK-004 (final verification after all code changes).

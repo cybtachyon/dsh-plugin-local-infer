@@ -35,8 +35,13 @@ import {
   forgetLaunchAbort,
   trackLaunchAbort,
 } from './abort.ts'
-import { repriceDeps, repriceSummary } from './deps.ts'
-import { appendCanceledLog, appendProcessLog, seedProcessLog } from './logs.ts'
+import { repriceAll, repriceSummary } from './deps.ts'
+import {
+  appendCanceledLog,
+  appendProcessLog,
+  separatorLine,
+  seedProcessLog,
+} from './logs.ts'
 import { ACTION_TIMEOUTS, performAction, type CardStore } from './sync.ts'
 
 /**
@@ -56,6 +61,13 @@ const noHandle: EntryTimerHandle = { cancel() {} }
 // entry's machine is driven through.
 function move(store: CardStore, providerId: string, event: LaunchEvent): void {
   store.dispatch({ type: 'launch/move', providerId, event })
+}
+
+// formModeForProviderCount picks the form mode after a provider list change:
+// entries remain reads as the collapsed list, an empty list reads as the
+// new-provider form.
+function formModeForProviderCount(count: number): 'collapsed' | 'new' {
+  return count > 0 ? 'collapsed' : 'new'
 }
 
 /**
@@ -83,8 +95,7 @@ export function editProvider(store: CardStore, provider: ProviderSummaryEntry): 
       platform: { [provider.engine]: provider.platform },
     },
   })
-  void repriceSummary(store, { engine: provider.engine, config: provider.config })
-  void repriceDeps(store, { engine: provider.engine, config: provider.config })
+  void repriceAll(store, { engine: provider.engine, config: provider.config })
 }
 
 /**
@@ -103,17 +114,15 @@ export function cancelProvider(store: CardStore, providerId?: string): void {
     appendCanceledLog(store)
   }
   const state = store.getSnapshot()
-  const hasProviders = (state.summary?.providers.length ?? 0) > 0
   store.dispatch({
     type: 'ui/patch',
     patch: {
       editingProviderId: null,
-      providerFormMode: hasProviders ? 'collapsed' : 'new',
+      providerFormMode: formModeForProviderCount(state.summary?.providers.length ?? 0),
     },
   })
   store.dispatch({ type: 'draft/discard' })
-  void repriceSummary(store)
-  void repriceDeps(store)
+  void repriceAll(store)
 }
 
 /**
@@ -137,8 +146,7 @@ export function newProvider(store: CardStore): void {
     patch: { editingProviderId: null, providerFormMode: 'new' },
   })
   store.dispatch({ type: 'draft/load', draft: next })
-  void repriceSummary(store, { engine: next.engine, config: next.config })
-  void repriceDeps(store, { engine: next.engine, config: next.config })
+  void repriceAll(store, { engine: next.engine, config: next.config })
 }
 
 /**
@@ -162,7 +170,7 @@ export function deleteProvider(store: CardStore, providerId: string): Promise<vo
           type: 'ui/patch',
           patch: {
             editingProviderId: null,
-            providerFormMode: summary.providers.length > 0 ? 'collapsed' : 'new',
+            providerFormMode: formModeForProviderCount(summary.providers.length),
           },
         })
       }
@@ -229,14 +237,22 @@ export function performEntryLaunch(
   // streaming in the background, the same rule the stop driver applies.
   const controller = new AbortController()
   trackLaunchAbort(provider.id, controller)
+  // settle marks the run settled and clears its deadline timer and the abort
+  // registry entry once, whichever settle path lands first (the unmount
+  // cancel, the result, the stream break). It reports whether it was the
+  // first settle, so the late paths no-op.
+  const settle = (): boolean => {
+    if (settled) {
+      return false
+    }
+    settled = true
+    clearDeadline()
+    forgetLaunchAbort(provider.id)
+    return true
+  }
   const handle: EntryTimerHandle = {
     cancel() {
-      if (settled) {
-        return
-      }
-      settled = true
-      clearDeadline()
-      forgetLaunchAbort(provider.id)
+      settle()
     },
   }
   // The health-poll deadline arms only for the launch (health-poll) step; the
@@ -257,7 +273,7 @@ export function performEntryLaunch(
   const onStep = (step: string): void => {
     move(store, provider.id, { type: 'step', step })
     if (step === 'build') {
-      appendProcessLog(store, '--- ' + t.entryBuilding + '\n')
+      appendProcessLog(store, separatorLine(t.entryBuilding))
     }
     if (step === 'launch') {
       armDeadline()
@@ -274,12 +290,9 @@ export function performEntryLaunch(
     controller.signal,
   )
     .then((result) => {
-      if (settled) {
+      if (settle() !== true) {
         return
       }
-      settled = true
-      clearDeadline()
-      forgetLaunchAbort(provider.id)
       if (result === null) {
         // The stream ended without a result event: settle to failed.
         move(store, provider.id, { type: 'failed' })
@@ -296,12 +309,9 @@ export function performEntryLaunch(
       void repriceSummary(store, { engine: provider.engine, config: provider.config })
     })
     .catch(() => {
-      if (settled) {
+      if (settle() !== true) {
         return
       }
-      settled = true
-      clearDeadline()
-      forgetLaunchAbort(provider.id)
       // An aborted run (the provider form's Cancel) reads as failed, not a
       // stream break: the "Canceled" line the Cancel wrote is the run's tail,
       // and the red Logs control re-opens the entry for a re-launch.

@@ -1954,6 +1954,13 @@ function stepForLine(line) {
 }
 
 // packages/client/src/store/logs.ts
+var SEPARATOR_PREFIX = "--- ";
+function joinLine(base, line) {
+  return base + (base === "" ? "" : "\n") + line;
+}
+function separatorLine(label) {
+  return SEPARATOR_PREFIX + label + "\n";
+}
 function seedProcessLog(store, label) {
   const state = store.getSnapshot();
   const base = state.ui.logs.getLogs ?? state.summary?.lastLogs ?? "";
@@ -1962,21 +1969,27 @@ function seedProcessLog(store, label) {
     patch: {
       logs: {
         ...state.ui.logs,
-        getLogs: base + (base === "" ? "" : "\n") + "--- " + label + "\n"
+        getLogs: joinLine(base, separatorLine(label))
       }
     }
   });
 }
 function appendProcessLog(store, line) {
   const logs = store.getSnapshot().ui.logs;
-  const base = logs.getLogs ?? "";
   store.dispatch({
     type: "ui/patch",
-    patch: { logs: { ...logs, getLogs: base + (base === "" ? "" : "\n") + line } }
+    patch: { logs: { ...logs, getLogs: joinLine(logs.getLogs ?? "", line) } }
+  });
+}
+function appendLogChunk(store, chunk) {
+  const logs = store.getSnapshot().ui.logs;
+  store.dispatch({
+    type: "ui/patch",
+    patch: { logs: { ...logs, getLogs: (logs.getLogs ?? "") + chunk } }
   });
 }
 function appendCanceledLog(store) {
-  appendProcessLog(store, "--- Canceled\n");
+  appendProcessLog(store, separatorLine("Canceled"));
 }
 
 // packages/client/src/store/deps.ts
@@ -1997,6 +2010,11 @@ function repriceSummary(store, query) {
     const message = error instanceof Error ? error.message : String(error);
     store.dispatch({ type: "summary/fail", note: message });
   });
+}
+function repriceAll(store, query) {
+  void repriceSummary(store, query);
+  void repriceDeps(store, query);
+  return Promise.resolve();
 }
 function copyInstallString(store, t) {
   const deps = store.getSnapshot().deps;
@@ -2084,11 +2102,7 @@ function performGet(store, t) {
   seedProcessLog(store, t.getting);
   const throttle = new ProgressThrottle(store, GET_PROGRESS_THROTTLE_MS);
   const append = (chunk) => {
-    const logs = store.getSnapshot().ui.logs;
-    store.dispatch({
-      type: "ui/patch",
-      patch: { logs: { ...logs, getLogs: (logs.getLogs ?? "") + chunk } }
-    });
+    appendLogChunk(store, chunk);
     const parsed = parseHfProgress(chunk, throttle.latest);
     if (parsed !== null && parsed !== throttle.latest) {
       throttle.note(parsed, false);
@@ -2415,6 +2429,9 @@ var noHandle = { cancel() {
 function move(store, providerId, event) {
   store.dispatch({ type: "launch/move", providerId, event });
 }
+function formModeForProviderCount(count) {
+  return count > 0 ? "collapsed" : "new";
+}
 function editProvider(store, provider) {
   const state = store.getSnapshot();
   store.dispatch({
@@ -2433,25 +2450,22 @@ function editProvider(store, provider) {
       platform: { [provider.engine]: provider.platform }
     }
   });
-  void repriceSummary(store, { engine: provider.engine, config: provider.config });
-  void repriceDeps(store, { engine: provider.engine, config: provider.config });
+  void repriceAll(store, { engine: provider.engine, config: provider.config });
 }
 function cancelProvider(store, providerId) {
   if (cancelInFlightRuns(providerId)) {
     appendCanceledLog(store);
   }
   const state = store.getSnapshot();
-  const hasProviders = (state.summary?.providers.length ?? 0) > 0;
   store.dispatch({
     type: "ui/patch",
     patch: {
       editingProviderId: null,
-      providerFormMode: hasProviders ? "collapsed" : "new"
+      providerFormMode: formModeForProviderCount(state.summary?.providers.length ?? 0)
     }
   });
   store.dispatch({ type: "draft/discard" });
-  void repriceSummary(store);
-  void repriceDeps(store);
+  void repriceAll(store);
 }
 function newProvider(store) {
   const state = store.getSnapshot();
@@ -2465,8 +2479,7 @@ function newProvider(store) {
     patch: { editingProviderId: null, providerFormMode: "new" }
   });
   store.dispatch({ type: "draft/load", draft: next });
-  void repriceSummary(store, { engine: next.engine, config: next.config });
-  void repriceDeps(store, { engine: next.engine, config: next.config });
+  void repriceAll(store, { engine: next.engine, config: next.config });
 }
 function deleteProvider(store, providerId) {
   if (store.getSnapshot().ui.deletingProviderId !== null) {
@@ -2481,7 +2494,7 @@ function deleteProvider(store, providerId) {
         type: "ui/patch",
         patch: {
           editingProviderId: null,
-          providerFormMode: summary.providers.length > 0 ? "collapsed" : "new"
+          providerFormMode: formModeForProviderCount(summary.providers.length)
         }
       });
     }
@@ -2514,14 +2527,18 @@ function performEntryLaunch(store, provider, t) {
   };
   const controller = new AbortController();
   trackLaunchAbort(provider.id, controller);
+  const settle = () => {
+    if (settled) {
+      return false;
+    }
+    settled = true;
+    clearDeadline();
+    forgetLaunchAbort(provider.id);
+    return true;
+  };
   const handle = {
     cancel() {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      clearDeadline();
-      forgetLaunchAbort(provider.id);
+      settle();
     }
   };
   const armDeadline = () => {
@@ -2539,7 +2556,7 @@ function performEntryLaunch(store, provider, t) {
   const onStep = (step) => {
     move(store, provider.id, { type: "step", step });
     if (step === "build") {
-      appendProcessLog(store, "--- " + t.entryBuilding + "\n");
+      appendProcessLog(store, separatorLine(t.entryBuilding));
     }
     if (step === "launch") {
       armDeadline();
@@ -2555,12 +2572,9 @@ function performEntryLaunch(store, provider, t) {
     onStep,
     controller.signal
   ).then((result) => {
-    if (settled) {
+    if (settle() !== true) {
       return;
     }
-    settled = true;
-    clearDeadline();
-    forgetLaunchAbort(provider.id);
     if (result === null) {
       move(store, provider.id, { type: "failed" });
     } else if (result.healthy === true) {
@@ -2572,12 +2586,9 @@ function performEntryLaunch(store, provider, t) {
     }
     void repriceSummary(store, { engine: provider.engine, config: provider.config });
   }).catch(() => {
-    if (settled) {
+    if (settle() !== true) {
       return;
     }
-    settled = true;
-    clearDeadline();
-    forgetLaunchAbort(provider.id);
     move(store, provider.id, { type: "failed" });
   });
   return handle;
