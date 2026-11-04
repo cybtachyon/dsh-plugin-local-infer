@@ -6,6 +6,13 @@
  */
 export declare const DEFAULT_LOG_PATH_TEMPLATE = "${HOME}/.dsh/local-infer/logs";
 /**
+ * LOG_TAIL_BYTES is the tail cap on captured log text: the stored last-run
+ * logs, a spawned engine's accumulated output, and an appended run all keep
+ * only the last 64 KiB, so a chatty engine or a long build cannot grow the
+ * config file or the host's memory without bound.
+ */
+export declare const LOG_TAIL_BYTES = 65536;
+/**
  * LOG_FILE_NAME_TEMPLATE is the fixed file name a launch's log file carries,
  * inside the user-edited log directory. The placeholders resolve against the
  * engine, the model it serves, and the launch time, so concurrent launches of

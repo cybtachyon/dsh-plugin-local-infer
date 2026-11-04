@@ -13,7 +13,7 @@
  */
 
 import { existsSync } from 'node:fs'
-import { basename, dirname, isAbsolute, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import {
   CHAT_TEMPLATE_FILE,
   EngineAdapter,
@@ -22,6 +22,7 @@ import {
   hfHubCacheDirectory,
   hubCacheSnapshotFilePath,
   modelArtifactPath,
+  modelDownloadTarget,
 } from '../../../../core/lib/index.js'
 import type {
   Config,
@@ -44,10 +45,11 @@ import {
   flagsFromSpecs,
   nodeLifecycleHost,
   pollHealth,
+  resolveLaunchArgv,
   stopProcessPlan,
   trackChild,
 } from '../../adapters.ts'
-import { syncAndRebuildEngine } from '../../acquire.ts'
+import { syncEngineForDeploy } from '../../acquire.ts'
 import { NINFER_PARAMETERS } from './ninfer.ts'
 import { ninferLinuxBinary } from './ninferLinux.ts'
 import { ninferMacOSBinary } from './ninferMacOS.ts'
@@ -271,42 +273,24 @@ export class NInferAdapter extends EngineAdapter {
       // Auto Rebuild off (the card's checkbox): the git sync (fetch, rebase,
       // rebuild) is skipped and the checkout launches as-is.
       if (engineDir !== undefined && options?.autoRebuild !== false) {
-        // The git sync is the checkout download: the card's button reads
-        // "Downloading..." for it, not "Building...".
-        onProgress?.('download')
         // The conditional rebuild fetches the checkout, prices it against the
         // remote branch, and rebuilds only when it is behind (or a fresh
         // clone). The decision, the build command, and its output are captured
         // into buildLogs and threaded to the card's Logs section.
-        const sync = await syncAndRebuildEngine(
-          this.host,
-          {
-            engineId: this.id,
-            directory: engineDir,
-            ...(platform?.engineFork !== undefined ? { fork: platform.engineFork } : {}),
-            ...(options?.allowRunDeps !== undefined ? { allowRunDeps: options.allowRunDeps } : {}),
-            ...(platform?.buildCommands !== undefined
-              ? { buildCommands: platform.buildCommands }
-              : {}),
-            // The host OS the build steps pick for: a Windows host reads the
-            // engine's Windows build steps (the vcpkg route) when the user
-            // carries no build-command override.
-            ...(plan.os !== undefined ? { os: plan.os } : {}),
-            // Report the build phase the moment the build steps start, so the
-            // card's button reads "Building..." while the build is in flight.
-            onBuildStart: () => onProgress?.('build'),
-          },
-          () => {},
-        )
-        buildLogs = sync.logs
+        const sync = await syncEngineForDeploy(this.host, {
+          engineId: this.id,
+          directory: engineDir,
+          ...(platform !== undefined ? { platform } : {}),
+          ...(options !== undefined ? { options } : {}),
+          // The host OS the build steps pick for: a Windows host reads the
+          // engine's Windows build steps (the vcpkg route) when the user
+          // carries no build-command override.
+          ...(plan.os !== undefined ? { os: plan.os } : {}),
+          ...(onProgress !== undefined ? { onProgress } : {}),
+        })
+        buildLogs = sync.buildLogs
         if (!sync.ok) {
           return { ok: false, detail: sync.detail ?? 'unknown', logs: buildLogs }
-        }
-        // The build output reads as a fresh Logs section: a "Building..."
-        // separator leads the build decision and output, the same line the
-        // card writes when the build step event lands.
-        if (sync.rebuilt && buildLogs !== '') {
-          buildLogs = `--- Building...\n${buildLogs}`
         }
       }
       const withLogs = (result: DeployResult): DeployResult =>
@@ -326,15 +310,7 @@ export class NInferAdapter extends EngineAdapter {
       // engine directory the spawn runs in, so the spawn resolves an absolute
       // path. A bare name (the Linux and macOS binaries, resolved against the
       // path) is left as-is.
-      const argv = plan.argv ?? []
-      const first = argv[0]
-      const resolvedArgv =
-        engineDir !== undefined &&
-        first !== undefined &&
-        !isAbsolute(first) &&
-        (first.includes('\\') || first.includes('/'))
-          ? [join(engineDir, first), ...argv.slice(1)]
-          : argv
+      const resolvedArgv = resolveLaunchArgv(engineDir, plan.argv)
       const handle = this.host.spawn(resolvedArgv, plan.env ?? {}, engineDir)
       trackChild(this.children, this.planKey(plan), handle)
       return withLogs({ ok: true, handle })
@@ -380,11 +356,9 @@ export class NInferAdapter extends EngineAdapter {
   }
 
   private port(config: Config): number {
+    // 18020 is the port the ninfer-serve CLI binds by default, so a bare
+    // config launches on it.
     return typeof config.port === 'number' ? config.port : 18020
-  }
-
-  private planKey(plan: LaunchPlan): string {
-    return `${plan.engineId}:${plan.port}`
   }
 
   private async downloadModel(plan: LaunchPlan): Promise<DeployResult> {
@@ -392,8 +366,7 @@ export class NInferAdapter extends EngineAdapter {
     if (artifact === undefined) return { ok: true }
     // The hub-cache layout (no --local-dir) applies when the model directory is
     // the plugin default; a user override keeps the flat --local-dir target.
-    const useHubCache = plan.modelDirectory === undefined || plan.modelDirectory === ''
-    const baseDir = useHubCache ? hfHubCacheDirectory() : (plan.modelDirectory ?? '.')
+    const { baseDir, useHubCache } = modelDownloadTarget(plan.modelDirectory)
     const entry: DefaultModel = {
       engineId: this.id,
       modelId: plan.modelId ?? '',
@@ -434,12 +407,10 @@ export class NInferAdapter extends EngineAdapter {
     // An HF repo reference: download the template file and point the flag at
     // the local copy. The hub-cache layout (the model directory is the plugin
     // default) resolves the concrete snapshot file path the hf CLI writes; a
-    // user override keeps the flat model-directory path. join keeps the flat
-    // path cross-platform (the host's path module normalizes the separators),
-    // so the flag the engine reads resolves on Windows, Linux, and macOS
-    // alike.
-    const useHubCache = plan.modelDirectory === undefined || plan.modelDirectory === ''
-    const baseDir = useHubCache ? hfHubCacheDirectory() : (plan.modelDirectory ?? '.')
+    // user override keeps the flat model-directory path. The flat path is
+    // built with join (the host's path module normalizes the separators), so
+    // the flag the engine reads resolves on Windows, Linux, and macOS alike.
+    const { baseDir, useHubCache } = modelDownloadTarget(plan.modelDirectory)
     const resolvePath = (): string | null =>
       useHubCache
         ? hubCacheSnapshotFilePath(baseDir, value, CHAT_TEMPLATE_FILE)

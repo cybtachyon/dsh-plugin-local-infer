@@ -17,8 +17,8 @@
  */
 import { join } from 'node:path';
 import { EngineAdapter } from '../../../../core/lib/index.js';
-import { customArgEnv, customArgFlags, delay, envFromSpecs, flagsFromSpecs, nodeLifecycleHost, stopProcessPlan, trackChild, } from "../../adapters.js";
-import { syncAndRebuildEngine } from "../../acquire.js";
+import { HEALTH_POLL_DEFAULT_MS, HEALTH_POLL_MAX_ATTEMPTS, customArgEnv, customArgFlags, delay, envFromSpecs, flagsFromSpecs, nodeLifecycleHost, stopProcessPlan, trackChild, } from "../../adapters.js";
+import { syncEngineForDeploy } from "../../acquire.js";
 import { STRATA_PARAMETERS, strataDefaults, strataModelKey, } from "./strata.js";
 import { strataLinuxSourceLaunch } from "./strataLinux.js";
 import { strataMacOSSourceLaunch } from "./strataMacOS.js";
@@ -310,32 +310,24 @@ export class StrataAdapter extends EngineAdapter {
                     };
                 }
                 if (options?.autoRebuild !== false) {
-                    onProgress?.('download');
-                    const sync = await syncAndRebuildEngine(this.host, {
+                    // The conditional rebuild fetches the checkout, prices it against the
+                    // remote branch, and rebuilds only when it is behind (or a fresh
+                    // clone). The decision, the build command, and its output are
+                    // captured into buildLogs and threaded to the card's Logs section.
+                    const sync = await syncEngineForDeploy(this.host, {
                         engineId: this.id,
                         directory: engineDir,
-                        ...(platform?.engineFork !== undefined ? { fork: platform.engineFork } : {}),
-                        ...(options?.allowRunDeps !== undefined ? { allowRunDeps: options.allowRunDeps } : {}),
-                        ...(platform?.buildCommands !== undefined
-                            ? { buildCommands: platform.buildCommands }
-                            : {}),
+                        ...(platform !== undefined ? { platform } : {}),
+                        ...(options !== undefined ? { options } : {}),
                         // The host OS the build steps pick for: a Windows host reads the
                         // engine's Windows build steps when the user carries no build-
                         // command override.
                         ...(plan.os !== undefined ? { os: plan.os } : {}),
-                        // Report the build phase the moment the build steps start, so the
-                        // card's button reads "Building..." while the build is in flight.
-                        onBuildStart: () => onProgress?.('build'),
-                    }, () => { });
-                    buildLogs = sync.logs;
+                        ...(onProgress !== undefined ? { onProgress } : {}),
+                    });
+                    buildLogs = sync.buildLogs;
                     if (!sync.ok) {
                         return { ok: false, detail: sync.detail ?? 'unknown', logs: buildLogs };
-                    }
-                    // The build output reads as a fresh Logs section: a "Building..."
-                    // separator leads the build decision and output, the same line the
-                    // card writes when the build step event lands.
-                    if (sync.rebuilt && buildLogs !== '') {
-                        buildLogs = `--- Building...\n${buildLogs}`;
                     }
                 }
             }
@@ -364,8 +356,8 @@ export class StrataAdapter extends EngineAdapter {
         // readiness is failed, and a process still fetching its files after the
         // attempt cap is downloading (in progress, not a failure) so the card
         // re-polls instead of showing a broken launch.
-        const pollMs = options?.pollMs ?? 1000;
-        const maxAttempts = options?.maxAttempts ?? 120;
+        const pollMs = options?.pollMs ?? HEALTH_POLL_DEFAULT_MS;
+        const maxAttempts = options?.maxAttempts ?? HEALTH_POLL_MAX_ATTEMPTS;
         let last = { status: 0, ok: false };
         let lastPreReady = null;
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -435,10 +427,9 @@ export class StrataAdapter extends EngineAdapter {
         return 'binary';
     }
     port(config) {
+        // 8080 is the port the strata launch CLI binds by default, so a bare
+        // config launches on it.
         return typeof config.port === 'number' ? config.port : 8080;
-    }
-    planKey(plan) {
-        return `${plan.engineId}:${plan.port}`;
     }
 }
 //# sourceMappingURL=strataAdapter.js.map

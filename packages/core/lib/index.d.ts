@@ -18,7 +18,7 @@ export type { ProviderLaunchRecord, ReLinkInput, ReLinkOutcome, } from './launch
 export type { EngineLaunchSignature, GpuUsageProbe, ProcessLine, ReserveResolution, ReserveSource, } from './reserve.ts';
 export { computeProviderStatuses, isGpuBusy, } from './status.ts';
 export type { ProviderRef, ProviderStatus, ProviderStatusInput, RunningEngineRef, } from './status.ts';
-export { DEFAULT_LOG_PATH_TEMPLATE, LOG_FILE_NAME_TEMPLATE, LOG_TEMPLATE_ENGINE, LOG_TEMPLATE_HOME, LOG_TEMPLATE_MODEL, LOG_TEMPLATE_TIMESTAMP, formatLogTimestamp, resolveLogPath, slugifyModelName, } from './logs.ts';
+export { DEFAULT_LOG_PATH_TEMPLATE, LOG_FILE_NAME_TEMPLATE, LOG_TAIL_BYTES, LOG_TEMPLATE_ENGINE, LOG_TEMPLATE_HOME, LOG_TEMPLATE_MODEL, LOG_TEMPLATE_TIMESTAMP, formatLogTimestamp, resolveLogPath, slugifyModelName, } from './logs.ts';
 export { EngineAdapter } from './adapter.ts';
 export type { BuildMode, DeployOptions, DeployResult, EngineLaunchState, EnginePlatformConfig, FetchResult, HealthCheckOptions, HealthResult, LaunchPlan, LaunchProgress, LaunchStep, LifecycleHost, ProcessExitInfo, ProcessHandle, RunOptions, } from './adapter.ts';
 export { NOOP_DEBUG_LOGGER, createCommandDebugLogger, isHarnessLogDebug, } from './debug.ts';
@@ -32,6 +32,7 @@ export type { DshModelEntry, DshModelRegistrar, ModelRow, RegisterResult, Settin
 export { checkDeps, detectPackageManager, osLabel, planDeps, renderInstallString, runInstall, } from './deps.ts';
 export { CHAT_TEMPLATE_FILE, chatTemplateArtifactPath, hfChatTemplateCommand, hfDownloadCommand, hubCacheModelDirectory, hubCacheSnapshotFilePath, isModelDirectoryOverridden, modelArtifactPath, modelCacheEntriesForEngine, modelEntriesForEngine, repoIdFromUrl, repoNameFromUrl, } from './models.ts';
 export type { DefaultModel, ModelCacheEntry, ModelDirectoryEntry, } from './models.ts';
-export { hfDatasetsCacheDirectory, hfHubCacheDirectory, } from './hf-cache.ts';
+export { hfDatasetsCacheDirectory, hfHubCacheDirectory, modelDownloadTarget, } from './hf-cache.ts';
+export type { ModelDownloadTarget } from './hf-cache.ts';
 export type { CommandOutcome, CommandRunner, DepCheck, DepStatus, EngineDepPlan, InstallCommands, InstallResult, PackageManager, PackageManagerProbes, SystemDep, SystemDepProvisioner, } from './deps.ts';
 //# sourceMappingURL=index.d.ts.map

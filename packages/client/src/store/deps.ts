@@ -32,6 +32,12 @@ import { performAction, ACTION_TIMEOUTS, type CardStore } from './sync.ts'
 export const GET_IDLE_MS = 120_000
 
 /**
+ * COPY_NOTE_MS is how long the clipboard copy's note (the copied /
+ * copy-failed label) stays visible before it clears.
+ */
+const COPY_NOTE_MS = 2_000
+
+/**
  * repriceDeps re-fetches the deps panel model (the GET /local-infer/deps
  * route). A fetch failure reads as no panel: a host that predates the deps
  * route keeps the card usable, so the model clears and the panel hides.
@@ -81,7 +87,7 @@ export function copyInstallString(store: CardStore, t: TextTable): void {
     store.dispatch({ type: 'note/set', key: 'copy', note: ok ? t.copied : t.copyFailed })
     setTimeout(() => {
       store.dispatch({ type: 'note/clear', key: 'copy' })
-    }, 2000)
+    }, COPY_NOTE_MS)
   }
   if (typeof navigator !== 'undefined' && navigator.clipboard !== undefined) {
     navigator.clipboard

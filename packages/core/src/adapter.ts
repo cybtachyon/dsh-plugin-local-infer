@@ -325,4 +325,14 @@ export abstract class EngineAdapter {
    * process omits it, and the reserve falls back to the GPU-usage rule.
    */
   launchSignature?(config?: Config): EngineLaunchSignature | undefined
+
+  /**
+   * planKey is the children-map key an adapter tracks a spawned engine
+   * process under: the plan's engine id and port, the pair that identifies
+   * one running engine. The base class owns the rule, so every adapter
+   * tracks and stops the exact process it started.
+   */
+  protected planKey(plan: LaunchPlan): string {
+    return `${plan.engineId}:${plan.port}`
+  }
 }

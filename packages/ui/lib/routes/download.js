@@ -8,7 +8,7 @@
  */
 import { defineRoute } from "../route.js";
 import { downloadFor } from "../ops/hf.js";
-import { persistDownloadLog } from "../ops/logs.js";
+import { persistProcessLog } from "../ops/logs.js";
 /**
  * downloadRoute builds the POST /local-infer/download route definition the
  * register step holds by an effect.
@@ -40,7 +40,7 @@ export function downloadRoute(localInfer) {
             const line = result.ok
                 ? 'download complete\n'
                 : `!! download failed${result.detail !== undefined ? `: ${result.detail}` : ''}\n`;
-            persistDownloadLog(`--- Downloading...\n${line}`);
+            persistProcessLog(`--- Downloading...\n${line}`);
             res.json(200, result);
         },
     });

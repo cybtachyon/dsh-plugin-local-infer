@@ -17,6 +17,7 @@ import {
   hfHubCacheDirectory,
   hubCacheSnapshotFilePath,
   modelArtifactPath,
+  modelDownloadTarget,
 } from '../../../../core/lib/index.js'
 import type {
   Config,
@@ -42,7 +43,7 @@ import {
   stopProcessPlan,
   trackChild,
 } from '../../adapters.ts'
-import { syncAndRebuildEngine } from '../../acquire.ts'
+import { syncEngineForDeploy } from '../../acquire.ts'
 import {
   LLAMACPP_MODEL_ARTIFACTS,
   LLAMACPP_PARAMETERS,
@@ -218,42 +219,24 @@ export class LlamaCppAdapter extends EngineAdapter {
       // Auto Rebuild off (the card's checkbox): the git sync (fetch, rebase,
       // rebuild) is skipped and the checkout launches as-is.
       if (engineDir !== undefined && options?.autoRebuild !== false) {
-        // The git sync is the checkout download: the card's button reads
-        // "Downloading..." for it, not "Building...".
-        onProgress?.('download')
         // The conditional rebuild fetches the checkout, prices it against the
         // remote branch, and rebuilds only when it is behind (or a fresh
         // clone). The decision, the build command, and its output are captured
         // into buildLogs and threaded to the card's Logs section.
-        const sync = await syncAndRebuildEngine(
-          this.host,
-          {
-            engineId: this.id,
-            directory: engineDir,
-            ...(platform?.engineFork !== undefined ? { fork: platform.engineFork } : {}),
-            ...(options?.allowRunDeps !== undefined ? { allowRunDeps: options.allowRunDeps } : {}),
-            ...(platform?.buildCommands !== undefined
-              ? { buildCommands: platform.buildCommands }
-              : {}),
-            // The host OS the build steps pick for: a Windows host reads the
-            // engine's Windows build steps when the user carries no build-
-            // command override.
-            ...(plan.os !== undefined ? { os: plan.os } : {}),
-            // Report the build phase the moment the build steps start, so the
-            // card's button reads "Building..." while the build is in flight.
-            onBuildStart: () => onProgress?.('build'),
-          },
-          () => {},
-        )
-        buildLogs = sync.logs
+        const sync = await syncEngineForDeploy(this.host, {
+          engineId: this.id,
+          directory: engineDir,
+          ...(platform !== undefined ? { platform } : {}),
+          ...(options !== undefined ? { options } : {}),
+          // The host OS the build steps pick for: a Windows host reads the
+          // engine's Windows build steps when the user carries no build-
+          // command override.
+          ...(plan.os !== undefined ? { os: plan.os } : {}),
+          ...(onProgress !== undefined ? { onProgress } : {}),
+        })
+        buildLogs = sync.buildLogs
         if (!sync.ok) {
           return { ok: false, detail: sync.detail ?? 'unknown', logs: buildLogs }
-        }
-        // The build output reads as a fresh Logs section: a "Building..."
-        // separator leads the build decision and output, the same line the
-        // card writes when the build step event lands.
-        if (sync.rebuilt && buildLogs !== '') {
-          buildLogs = `--- Building...\n${buildLogs}`
         }
       }
       const withLogs = (result: DeployResult): DeployResult =>
@@ -306,11 +289,9 @@ export class LlamaCppAdapter extends EngineAdapter {
   }
 
   private port(config: Config): number {
+    // 8080 is the port the llama-server CLI binds by default, so a bare
+    // config launches on it.
     return typeof config.port === 'number' ? config.port : 8080
-  }
-
-  private planKey(plan: LaunchPlan): string {
-    return `${plan.engineId}:${plan.port}`
   }
 
   private async downloadModel(plan: LaunchPlan): Promise<DeployResult> {
@@ -318,8 +299,7 @@ export class LlamaCppAdapter extends EngineAdapter {
     if (artifact === undefined) return { ok: true }
     // The hub-cache layout (no --local-dir) applies when the model directory is
     // the plugin default; a user override keeps the flat --local-dir target.
-    const useHubCache = plan.modelDirectory === undefined || plan.modelDirectory === ''
-    const baseDir = useHubCache ? hfHubCacheDirectory() : (plan.modelDirectory ?? '.')
+    const { baseDir, useHubCache } = modelDownloadTarget(plan.modelDirectory)
     const entry: DefaultModel = {
       engineId: this.id,
       modelId: plan.modelId ?? '',

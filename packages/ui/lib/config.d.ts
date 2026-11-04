@@ -64,6 +64,14 @@ export declare function readConfig(): StoredConfig;
  */
 export declare function writeConfig(engine: string, config: Config, allowRunDeps: boolean, platform?: Record<string, StoredPlatformConfig>, showHelp?: boolean, providers?: StoredProviderConfig[], logPath?: string, lastLogs?: string): void;
 /**
+ * writeStored persists a read StoredConfig with a patch over one or more of
+ * its fields, leaving every unpatched field as the read returned it. The
+ * eight stored fields travel as one value through the ops, so a caller names
+ * only the field it changes (the providers list, the last-run logs) instead
+ * of re-passing every field the read returned.
+ */
+export declare function writeStored(stored: StoredConfig, patch?: Partial<StoredConfig>): void;
+/**
  * parsePlatformConfigs reads the stored platform map, keeping only entries
  * whose fields are strings. A non-object map or a non-object entry reads as
  * absent, so the deploy step never sees a platform config it cannot price.

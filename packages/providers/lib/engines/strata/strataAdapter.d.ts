@@ -93,6 +93,5 @@ export declare class StrataAdapter extends EngineAdapter {
     stop(plan: LaunchPlan): Promise<void>;
     private buildMode;
     private port;
-    private planKey;
 }
 //# sourceMappingURL=strataAdapter.d.ts.map

@@ -14,7 +14,7 @@
 
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Config, LifecycleHost } from 'dsh-plugin-local-infer/core'
+import type { Config, HardwareProfile, LifecycleHost } from 'dsh-plugin-local-infer/core'
 import {
   checkDeps,
   chatTemplateArtifactPath,
@@ -31,6 +31,7 @@ import {
   infernixGetDownloads,
   syncEngineRepo,
 } from '../../../providers/lib/index.js'
+import type { EngineInfo } from '../../../providers/lib/index.js'
 import type { StoredPlatformConfig } from '../config.ts'
 import { isHfRepoReference } from '../viewmodels/summaryHelpers.ts'
 import { resolveBuildMode } from '../viewmodels/deps.ts'
@@ -94,6 +95,209 @@ export function resolveEngineDirectory(
 }
 
 /**
+ * GetStepContext is the shared state one Get-steps run threads through its
+ * steps: the service and the run's request, the engine entry and the
+ * checkout and model directories the steps price, the hub-cache layout flag
+ * the download steps read, the detected hardware the dep plan prices, and
+ * the emit sink the steps stream through.
+ */
+interface GetStepContext {
+  localInfer: LocalInferService
+  request: GetStepsRequest
+  engine: EngineInfo
+  directory: string
+  modelDir: string
+  useHubCache: boolean
+  hardware: HardwareProfile
+  emit: (chunk: string) => void
+}
+
+/**
+ * GetStepFailure is the answer a Get step reports when it stops the run:
+ * the detail the Logs section shows. A step that passes reports null, so
+ * the runner moves to the next step.
+ */
+type GetStepFailure = { ok: false; detail?: string } | null
+
+/**
+ * runDepsStep is the Get step's system-dependency install: it runs the
+ * install while the Play/Run trust gate is on, and re-checks the deps with
+ * a copy/paste note when the gate is off, so a missing dependency aborts the
+ * run instead of a broken build.
+ */
+async function runDepsStep(ctx: GetStepContext): Promise<GetStepFailure> {
+  const { localInfer, request, engine, hardware, emit } = ctx
+  const buildMode = resolveBuildMode(engine, request.config)
+  emit(`system dependencies (${buildMode})\n`)
+  if (request.allowRunDeps === true) {
+    const install = await localInfer.runInstall(request.engineId, buildMode, hardware)
+    for (const entry of install.results) {
+      emit(
+        `  ${entry.id}: ${entry.status}${entry.detail !== undefined ? ` (${entry.detail})` : ''}\n`,
+      )
+    }
+    if (!install.ok) {
+      emit('!! a system dependency install failed; copy the install string from the panel\n')
+      return { ok: false, detail: 'a system dependency install failed' }
+    }
+    return null
+  }
+  const deps = await localInfer.deps(request.engineId, buildMode, hardware)
+  const checks = await checkDeps(deps, hardware)
+  let missing = false
+  for (const check of checks) {
+    emit(`  ${check.dep.id}: ${check.status}\n`)
+    if (check.status !== 'satisfied') missing = true
+  }
+  if (missing) {
+    emit(
+      '!! a system dependency is missing and one-click install is off; copy the install string from the panel\n',
+    )
+    return { ok: false, detail: 'a system dependency is missing' }
+  }
+  return null
+}
+
+/**
+ * runSyncBuildStep is the Get step's git clone (or fork) of the engine repo,
+ * the fetch and rebase of a clean checkout, and the source build step (the
+ * compose engines carry no local build steps and pass through). A checkout
+ * with local changes aborts, so the user's work is never rebased away. The
+ * Auto Rebuild checkbox off skips both, so a launch reads the checkout as-is.
+ */
+async function runSyncBuildStep(ctx: GetStepContext): Promise<GetStepFailure> {
+  const { request, directory, emit } = ctx
+  if (request.autoRebuild === false) {
+    emit('engine sync and build: auto rebuild off, skipped\n')
+    return null
+  }
+  const fork = request.platform?.engineFork
+  const sync = await syncEngineRepo(
+    request.host,
+    {
+      engineId: request.engineId,
+      directory,
+      ...(fork !== undefined && fork.trim() !== '' ? { fork } : {}),
+    },
+    emit,
+  )
+  if (!sync.ok) {
+    // A dirty checkout already alerted in the sync step; any other failure
+    // names its step here.
+    if (sync.aborted !== true && sync.detail !== undefined) {
+      emit(`!! ${sync.detail}\n`)
+    }
+    return {
+      ok: false,
+      ...(sync.detail !== undefined ? { detail: sync.detail } : {}),
+    }
+  }
+  // The user's local build command (the card's Build commands field)
+  // overrides the engine's default build steps; absent runs the engine's
+  // acquisition steps. The host OS picks the engine's OS profile (the
+  // Windows vcpkg route and its pwsh.exe shell on a Windows host, the
+  // cmake route elsewhere).
+  const build = await buildEngineRepo(
+    request.host,
+    request.engineId,
+    directory,
+    emit,
+    request.platform?.buildCommands,
+    ctx.hardware.os,
+  )
+  if (!build.ok) {
+    if (build.detail !== undefined) {
+      emit(`!! ${build.detail}\n`)
+    }
+    return {
+      ok: false,
+      ...(build.detail !== undefined ? { detail: build.detail } : {}),
+    }
+  }
+  return null
+}
+
+/**
+ * runModelDownloadStep is the Get step's hf download of the selected model,
+ * skipped when the artifact is already present in the model directory (the
+ * single presence check the card's Model dropdown and the download route
+ * share), plus the Infernix extras a Get leaves ready to launch (the
+ * selected DFlash2 drafter and the PLE n-gram volume, pulled through the
+ * hf CLI into the model directory). A download failure aborts the run, so
+ * a launch never reads a missing model.
+ */
+async function runModelDownloadStep(ctx: GetStepContext): Promise<GetStepFailure> {
+  const { localInfer, request, modelDir, useHubCache, emit } = ctx
+  const modelId = typeof request.config.model === 'string' ? request.config.model : undefined
+  if (modelId !== undefined) {
+    const entry = defaultModelFor(request.engineId, modelId)
+    if (entry === undefined) {
+      emit(`model download: ${modelId} has no registered default, skipped\n`)
+    } else {
+      const artifact = modelArtifactPath(entry, modelDir, useHubCache)
+      if (existsSync(artifact)) {
+        emit(`model download: ${modelId} is already present, skipped\n`)
+      } else {
+        emit(`$ ${hfDownloadCommand(entry, modelDir, useHubCache)}\n`)
+        const download = await localInfer.downloadModel(entry, modelDir, {
+          useHubCache,
+          ...(request.signal !== undefined ? { signal: request.signal } : {}),
+        })
+        if (!download.ok) {
+          emit(`!! ${download.detail ?? 'model download failed'}\n`)
+          return { ok: false, detail: download.detail ?? 'a model download failed' }
+        }
+      }
+    }
+  } else {
+    emit('model download: no model selected, skipped\n')
+  }
+  if (request.engineId === 'infernix') {
+    for (const command of infernixGetDownloads(request.config, modelDir, useHubCache)) {
+      emit(`$ ${command}\n`)
+      const outcome =
+        request.host.runStream !== undefined
+          ? await request.host.runStream(command, (chunk) => emit(chunk), {
+              ...(request.signal !== undefined ? { signal: request.signal } : {}),
+            })
+          : await request.host.run(command)
+      if (!outcome.ok) {
+        emit(`!! ${command} failed: ${outcome.detail ?? 'unknown'}\n`)
+        return { ok: false, detail: 'a model artifact download failed' }
+      }
+    }
+  }
+  return null
+}
+
+/**
+ * runChatTemplateStep is the Get step's hf download of the selected chat
+ * template (an HF repo reference the form's combo control offers), skipped
+ * when the template file is already present in the model directory.
+ */
+async function runChatTemplateStep(ctx: GetStepContext): Promise<GetStepFailure> {
+  const { localInfer, request, modelDir, useHubCache, emit } = ctx
+  const template = typeof request.config.chatTemplate === 'string' ? request.config.chatTemplate : ''
+  if (template !== '' && isHfRepoReference(template)) {
+    const localPath = chatTemplateArtifactPath(template, modelDir, useHubCache)
+    if (existsSync(localPath)) {
+      emit(`chat template: ${template} is already present, skipped\n`)
+    } else {
+      emit(`$ ${hfChatTemplateCommand(template, modelDir, useHubCache)}\n`)
+      const download = await localInfer.downloadChatTemplate(template, modelDir, {
+        useHubCache,
+        ...(request.signal !== undefined ? { signal: request.signal } : {}),
+      })
+      if (!download.ok) {
+        emit(`!! ${download.detail ?? 'chat template download failed'}\n`)
+        return { ok: false, detail: download.detail ?? 'a chat template download failed' }
+      }
+    }
+  }
+  return null
+}
+
+/**
  * runGetSteps is the shared Get-steps routine. It runs the five steps in
  * order, streaming each through log and collecting the same text as the
  * result's logs, so a caller can persist the run (a Get) or thread it into
@@ -106,183 +310,40 @@ export async function runGetSteps(
   request: GetStepsRequest,
   log: (chunk: string) => void,
 ): Promise<GetStepsResult> {
-  const { engineId, config, platform, allowRunDeps, host, signal } = request
   const chunks: string[] = []
   const emit = (chunk: string): void => {
     chunks.push(chunk)
     log(chunk)
   }
   // ENGINES is a known non-empty constant, so the fallback is always defined.
-  const engine = ENGINES.find((entry) => entry.id === engineId) ?? ENGINES[0]!
-  const directory = resolveEngineDirectory(localInfer, config, engineId, platform)
-  const fork = platform?.engineFork
-  const modelDir = resolveModelDirectory(localInfer, config)
+  const engine = ENGINES.find((entry) => entry.id === request.engineId) ?? ENGINES[0]!
   // The hub-cache layout (no --local-dir, the models--{ns}--{name} dirs)
   // applies only when the model directory is the plugin default; a user
   // override keeps the flat --local-dir target. modelDir is the hub cache root
   // in the default case, the base the cache-layout paths join onto.
-  const useHubCache = !isModelDirectoryOverridden(config.modelDirectory)
-  const hardware = await localInfer.detectHardware()
-  emit(`get ${engineId} in ${directory}\n`)
-
-  // Step 1: the system dependencies the local build needs. The install only
-  // runs while the Play/Run trust gate is on; with the gate off the deps are
-  // re-checked and a missing one aborts the run with the copy/paste note.
-  const buildMode = resolveBuildMode(engine, config)
-  emit(`system dependencies (${buildMode})\n`)
-  if (allowRunDeps === true) {
-    const install = await localInfer.runInstall(engineId, buildMode, hardware)
-    for (const entry of install.results) {
-      emit(
-        `  ${entry.id}: ${entry.status}${entry.detail !== undefined ? ` (${entry.detail})` : ''}\n`,
-      )
-    }
-    if (!install.ok) {
-      emit('!! a system dependency install failed; copy the install string from the panel\n')
-      return { ok: false, logs: chunks.join(''), detail: 'a system dependency install failed' }
-    }
-  } else {
-    const deps = await localInfer.deps(engineId, buildMode, hardware)
-    const checks = await checkDeps(deps, hardware)
-    let missing = false
-    for (const check of checks) {
-      emit(`  ${check.dep.id}: ${check.status}\n`)
-      if (check.status !== 'satisfied') missing = true
-    }
-    if (missing) {
-      emit(
-        '!! a system dependency is missing and one-click install is off; copy the install string from the panel\n',
-      )
-      return { ok: false, logs: chunks.join(''), detail: 'a system dependency is missing' }
+  const useHubCache = !isModelDirectoryOverridden(request.config.modelDirectory)
+  const ctx: GetStepContext = {
+    localInfer,
+    request,
+    engine,
+    directory: resolveEngineDirectory(
+      localInfer,
+      request.config,
+      request.engineId,
+      request.platform,
+    ),
+    modelDir: resolveModelDirectory(localInfer, request.config),
+    useHubCache,
+    hardware: await localInfer.detectHardware(),
+    emit,
+  }
+  ctx.emit(`get ${request.engineId} in ${ctx.directory}\n`)
+  for (const step of [runDepsStep, runSyncBuildStep, runModelDownloadStep, runChatTemplateStep]) {
+    const failure = await step(ctx)
+    if (failure !== null) {
+      return { ...failure, logs: chunks.join('') }
     }
   }
-
-  // Step 2: the git clone (or the fork) of the engine repo, and the fetch and
-  // rebase of a clean checkout. A checkout with local changes aborts, so the
-  // user's work is never rebased away. Step 3: the source build step (the
-  // compose engines carry no local build steps and pass through). The Auto
-  // Rebuild checkbox off skips both, so a launch reads the checkout as-is.
-  if (request.autoRebuild === false) {
-    emit('engine sync and build: auto rebuild off, skipped\n')
-  } else {
-    const sync = await syncEngineRepo(
-      host,
-      { engineId, directory, ...(fork !== undefined && fork.trim() !== '' ? { fork } : {}) },
-      emit,
-    )
-    if (!sync.ok) {
-      // A dirty checkout already alerted in the sync step; any other failure
-      // names its step here.
-      if (sync.aborted !== true && sync.detail !== undefined) {
-        emit(`!! ${sync.detail}\n`)
-      }
-      return {
-        ok: false,
-        logs: chunks.join(''),
-        ...(sync.detail !== undefined ? { detail: sync.detail } : {}),
-      }
-    }
-    // The user's local build command (the card's Build commands field)
-    // overrides the engine's default build steps; absent runs the engine's
-    // acquisition steps. The host OS picks the engine's OS profile (the
-    // Windows vcpkg route and its pwsh.exe shell on a Windows host, the
-    // cmake route elsewhere).
-    const build = await buildEngineRepo(
-      host,
-      engineId,
-      directory,
-      emit,
-      platform?.buildCommands,
-      hardware.os,
-    )
-    if (!build.ok) {
-      if (build.detail !== undefined) {
-        emit(`!! ${build.detail}\n`)
-      }
-      return {
-        ok: false,
-        logs: chunks.join(''),
-        ...(build.detail !== undefined ? { detail: build.detail } : {}),
-      }
-    }
-  }
-
-  // Step 4: the hf download of the selected model, skipped when the artifact
-  // is already present in the model directory (the single presence check the
-  // card's Model dropdown and the download route share). A download failure
-  // aborts the run, so a launch never reads a missing model.
-  const modelId = typeof config.model === 'string' ? config.model : undefined
-  if (modelId !== undefined) {
-    const entry = defaultModelFor(engineId, modelId)
-    if (entry === undefined) {
-      emit(`model download: ${modelId} has no registered default, skipped\n`)
-    } else {
-      const artifact = modelArtifactPath(entry, modelDir, useHubCache)
-      if (existsSync(artifact)) {
-        emit(`model download: ${modelId} is already present, skipped\n`)
-      } else {
-        emit(`$ ${hfDownloadCommand(entry, modelDir, useHubCache)}\n`)
-        const download = await localInfer.downloadModel(entry, modelDir, {
-          useHubCache,
-          ...(signal !== undefined ? { signal } : {}),
-        })
-        if (!download.ok) {
-          emit(`!! ${download.detail ?? 'model download failed'}\n`)
-          return {
-            ok: false,
-            logs: chunks.join(''),
-            detail: download.detail ?? 'a model download failed',
-          }
-        }
-      }
-    }
-  } else {
-    emit('model download: no model selected, skipped\n')
-  }
-  // The Infernix extras a Get leaves ready to launch: the selected DFlash2
-  // drafter (when a preset is selected) and the PLE n-gram volume (when the
-  // model key names one), pulled through the hf CLI into the model directory.
-  if (engineId === 'infernix') {
-    for (const command of infernixGetDownloads(config, modelDir, useHubCache)) {
-      emit(`$ ${command}\n`)
-      const outcome =
-        host.runStream !== undefined
-          ? await host.runStream(command, (chunk) => emit(chunk), {
-              ...(signal !== undefined ? { signal } : {}),
-            })
-          : await host.run(command)
-      if (!outcome.ok) {
-        emit(`!! ${command} failed: ${outcome.detail ?? 'unknown'}\n`)
-        return { ok: false, logs: chunks.join(''), detail: 'a model artifact download failed' }
-      }
-    }
-  }
-
-  // Step 5: the hf download of the selected chat template (an HF repo
-  // reference the form's combo control offers), skipped when the template
-  // file is already present in the model directory.
-  const template = typeof config.chatTemplate === 'string' ? config.chatTemplate : ''
-  if (template !== '' && isHfRepoReference(template)) {
-    const localPath = chatTemplateArtifactPath(template, modelDir, useHubCache)
-    if (existsSync(localPath)) {
-      emit(`chat template: ${template} is already present, skipped\n`)
-    } else {
-      emit(`$ ${hfChatTemplateCommand(template, modelDir, useHubCache)}\n`)
-      const download = await localInfer.downloadChatTemplate(template, modelDir, {
-        useHubCache,
-        ...(signal !== undefined ? { signal } : {}),
-      })
-      if (!download.ok) {
-        emit(`!! ${download.detail ?? 'chat template download failed'}\n`)
-        return {
-          ok: false,
-          logs: chunks.join(''),
-          detail: download.detail ?? 'a chat template download failed',
-        }
-      }
-    }
-  }
-
-  emit('get complete\n')
+  ctx.emit('get complete\n')
   return { ok: true, logs: chunks.join('') }
 }

@@ -8,5 +8,14 @@
  * from the config.
  */
 export class EngineAdapter {
+    /**
+     * planKey is the children-map key an adapter tracks a spawned engine
+     * process under: the plan's engine id and port, the pair that identifies
+     * one running engine. The base class owns the rule, so every adapter
+     * tracks and stops the exact process it started.
+     */
+    planKey(plan) {
+        return `${plan.engineId}:${plan.port}`;
+    }
 }
 //# sourceMappingURL=adapter.js.map

@@ -20,10 +20,10 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname } from 'node:path';
-import { formatLaunchCommand, launchRecordFromPlan, resolveLogPath, } from '../../../core/lib/index.js';
+import { LOG_TAIL_BYTES, formatLaunchCommand, launchRecordFromPlan, resolveLogPath, } from '../../../core/lib/index.js';
 import { nodeLifecycleHost } from '../../../providers/lib/index.js';
-import { readConfig, writeConfig } from "../config.js";
-import { persistStopLog } from "./logs.js";
+import { readConfig, writeStored } from "../config.js";
+import { persistProcessLog } from "./logs.js";
 import { resolveEngineDirectory, runGetSteps } from "./get-steps.js";
 import { RouteError } from "../route.js";
 /**
@@ -78,7 +78,43 @@ function applyComposeArgs(plan, localInfer, engineId) {
  */
 function persistStoredLogs(logs) {
     const stored = readConfig();
-    writeConfig(stored.engine, stored.config, stored.allowRunDeps, stored.platform, stored.showHelp, stored.providers, stored.logPath, logs);
+    writeStored(stored, { lastLogs: logs });
+}
+/**
+ * resolveStoredRequest resolves a route request's engine and config against
+ * the stored config: the request's fields win, and an absent field falls back
+ * to the stored value, the same rule every route applies.
+ */
+function resolveStoredRequest(request) {
+    const stored = readConfig();
+    return {
+        stored,
+        engineId: request.engine ?? stored.engine,
+        config: request.config ?? stored.config,
+    };
+}
+/**
+ * registerLaunchPlatform registers the request's platform override (the
+ * card's unsaved Engine Directory / Engine Fork edits) with the service
+ * registry, and returns the effective platform entry the Get steps and the
+ * deploy step read. A request with no Engine Directory override falls back
+ * to the per-engine folder inside the model directory, so the deploy step
+ * resolves a relative launch path (the NInfer Windows build tree) against a
+ * real checkout; the fallback is registered so the service's launch reads
+ * it, and a stored entry that already names a directory is left as-is. An
+ * absent request platform keeps the stored entry, which the save route and
+ * route registration already synced.
+ */
+function registerLaunchPlatform(localInfer, request, stored, engineId, config) {
+    if (request.platform !== undefined) {
+        setPlatformConfig(localInfer, engineId, request.platform);
+    }
+    const platform = request.platform ?? stored.platform[engineId];
+    if (platform?.engineDirectory === undefined || platform.engineDirectory.trim() === '') {
+        const engineDirectory = resolveEngineDirectory(localInfer, config, engineId, platform);
+        setPlatformConfig(localInfer, engineId, { ...platform, engineDirectory });
+    }
+    return platform;
 }
 /**
  * launchEngine runs the shared Get-steps routine (idempotent: deps, git sync,
@@ -99,28 +135,10 @@ function persistStoredLogs(logs) {
  * child, and the persisted run carries a "Canceled" line.
  */
 export async function launchEngine(localInfer, request, onProgress, host = nodeLifecycleHost, signal) {
-    const stored = readConfig();
-    const engineId = request.engine ?? stored.engine;
-    const config = request.config ?? stored.config;
+    const { stored, engineId, config } = resolveStoredRequest(request);
     const adapter = resolveAdapter(localInfer, engineId);
     const hardware = await localInfer.detectHardware();
-    // Register the request's platform override (the card's unsaved Engine
-    // Directory / Engine Fork edits) so the service's launch resolves it against
-    // the adapter's deploy step. An absent platform keeps the stored entry,
-    // which the save route and route registration already synced.
-    if (request.platform !== undefined) {
-        setPlatformConfig(localInfer, engineId, request.platform);
-    }
-    // A launch with no Engine Directory override falls back to the per-engine
-    // folder inside the model directory, so the deploy step resolves a relative
-    // launch path (the NInfer Windows build tree) against a real checkout. The
-    // override is registered so the service's launch reads it; a stored entry
-    // that already names a directory is left as-is.
-    const platform = request.platform ?? stored.platform[engineId];
-    if (platform?.engineDirectory === undefined || platform.engineDirectory.trim() === '') {
-        const engineDirectory = resolveEngineDirectory(localInfer, config, engineId, platform);
-        setPlatformConfig(localInfer, engineId, { ...platform, engineDirectory });
-    }
+    const platform = registerLaunchPlatform(localInfer, request, stored, engineId, config);
     // The prereqs phase: the system-dependency install the Get-steps routine
     // runs. It runs only while the Play/Run trust gate is on, the same rule the
     // Get step applies. The card's button reads "Prereqs..." for this phase, so
@@ -239,7 +257,7 @@ function persistLaunchRecord(result, engineId, config, providerId) {
         return;
     const record = launchRecordFromPlan(result.plan, result.pid, result.parentPid, target.launch?.previousPids ?? []);
     const providers = stored.providers.map((entry) => entry.id === target.id ? { ...entry, launch: record } : entry);
-    writeConfig(stored.engine, stored.config, stored.allowRunDeps, stored.platform, stored.showHelp, providers, stored.logPath, stored.lastLogs);
+    writeStored(stored, { providers });
 }
 /**
  * clearLaunchRecord removes the target provider entry's launch record (the
@@ -259,7 +277,7 @@ function clearLaunchRecord(engineId, config, providerId) {
         // previous-pid list) is gone from the file, not just ignored.
         return { id: entry.id, engine: entry.engine, config: entry.config, platform: entry.platform };
     });
-    writeConfig(stored.engine, stored.config, stored.allowRunDeps, stored.platform, stored.showHelp, providers, stored.logPath, stored.lastLogs);
+    writeStored(stored, { providers });
 }
 /**
  * handleEngineDeath persists a provider entry's state when its engine process
@@ -298,9 +316,11 @@ export function handleEngineDeath(event) {
         `${event.port !== undefined ? ` (port ${event.port})` : ''}` +
         ` pid ${event.pid ?? 'unknown'} exited${signalNote}` +
         `${event.detail !== undefined ? `: ${event.detail}` : ''}\n`;
-    writeConfig(stored.engine, stored.config, stored.allowRunDeps, stored.platform, stored.showHelp, providers, stored.logPath,
-    // Keep the last-run tail bounded, the same rule the launch logs cap uses.
-    (stored.lastLogs + note).slice(-65536));
+    writeStored(stored, {
+        providers,
+        // Keep the last-run tail bounded, the same rule the launch logs cap uses.
+        lastLogs: (stored.lastLogs + note).slice(-LOG_TAIL_BYTES),
+    });
 }
 /**
  * persistLaunchLogs stores a launch's captured output as the last run and
@@ -319,7 +339,7 @@ export function persistLaunchLogs(result, engineId, config, getLogs = '') {
     // same line the card writes when a Launch button is clicked.
     const body = getLogs + (result.logs === undefined ? '' : result.logs);
     const logs = body === '' ? '' : `--- Launching...\n${body}`;
-    writeConfig(stored.engine, stored.config, stored.allowRunDeps, stored.platform, stored.showHelp, stored.providers, stored.logPath, logs);
+    writeStored(stored, { lastLogs: logs });
     if (logs === '') {
         return;
     }
@@ -348,9 +368,7 @@ export function persistLaunchLogs(result, engineId, config, getLogs = '') {
  * deadline settles the entry to the red Logs state.
  */
 export async function stopEngine(localInfer, request) {
-    const stored = readConfig();
-    const engineId = request.engine ?? stored.engine;
-    const config = request.config ?? stored.config;
+    const { stored, engineId, config } = resolveStoredRequest(request);
     const adapter = resolveAdapter(localInfer, engineId);
     const hardware = await localInfer.detectHardware();
     const plan = adapter.renderLaunch(config, hardware);
@@ -382,7 +400,7 @@ function persistStopFailure(engineId, config, error) {
     const modelId = typeof config.model === 'string' ? config.model : undefined;
     const note = `[local-infer] stop failed for ${engineId}` +
         `${modelId !== undefined ? ` (${modelId})` : ''}: ${detail}\n`;
-    persistStopLog(note);
+    persistProcessLog(note);
 }
 /**
  * relinkStoredProviders prices every stored provider launch record against the
@@ -416,7 +434,7 @@ export async function relinkStoredProviders(localInfer, stored) {
             platform: provider.platform,
         };
     });
-    writeConfig(stored.engine, stored.config, stored.allowRunDeps, stored.platform, stored.showHelp, providers, stored.logPath, stored.lastLogs);
+    writeStored(stored, { providers });
     return providers;
 }
 /**
@@ -431,15 +449,10 @@ export async function relinkStoredProviders(localInfer, stored) {
  * blob resumes on the re-run.
  */
 export async function getEngine(localInfer, request, log, host = nodeLifecycleHost, signal) {
-    const stored = readConfig();
-    const engineId = request.engine ?? stored.engine;
-    const config = request.config ?? stored.config;
+    const { stored, engineId, config } = resolveStoredRequest(request);
     // Register the request's platform override the same way launchEngine does,
     // so the next launch reads the Engine Directory / Engine Fork the Get used.
-    if (request.platform !== undefined) {
-        setPlatformConfig(localInfer, engineId, request.platform);
-    }
-    const platform = request.platform ?? stored.platform[engineId];
+    const platform = registerLaunchPlatform(localInfer, request, stored, engineId, config);
     const result = await runGetSteps(localInfer, {
         engineId,
         config,

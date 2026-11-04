@@ -34,12 +34,12 @@ export { CHAT_TEMPLATE_OPTIONS, DEVICE_PROFILE_OPTIONS, KV_DTYPE_OPTIONS, NINFER
 export { BASALT_VRAM_MODELS, NINFER_VRAM_MODELS, basaltVramModel, ninferVramModel, } from "./vram.js";
 export { BUILTIN_GUIDELINES, HOST_STATE_IMAGE_BYTES } from "./guidelines.js";
 export { ENGINES } from "./engines.js";
-export { ENGINE_SOURCES, FORK_REMOTE, buildEngineRepo, engineBuildSteps, engineSource, syncAndRebuildEngine, syncEngineRepo, } from "./acquire.js";
+export { ENGINE_SOURCES, FORK_REMOTE, buildEngineRepo, engineBuildSteps, engineSource, syncAndRebuildEngine, syncEngineForDeploy, syncEngineRepo, } from "./acquire.js";
 export { ENGINE_DEP_PLANS, SYSTEM_DEPS, engineLocalDeps } from "./deps.js";
 export { ENGINE_PLATFORM_DEFAULTS, enginePlatformDefaults } from "./platform.js";
 export { BUILTIN_PRESETS, PRESET_SOURCES, extractJsonBlock } from "./presets.js";
 export { DEFAULT_MODELS, defaultModelFor, defaultModelsForEngine } from "./model-defaults.js";
-export { customArgEnv, customArgFlags, envFromSpecs, flagsFromSpecs, nodeLifecycleHost, pollHealth, } from "./adapters.js";
+export { customArgEnv, customArgFlags, envFromSpecs, flagsFromSpecs, nodeLifecycleHost, pollHealth, resolveLaunchArgv, } from "./adapters.js";
 export { HyperQwenAdapter } from "./engines/hyperqwen/hyperqwenAdapter.js";
 export { InfernixAdapter } from "./engines/infernix/infernixAdapter.js";
 export { LLAMACPP_DOCKER_IMAGE, LlamaCppAdapter } from "./engines/llamacpp/llamacppAdapter.js";

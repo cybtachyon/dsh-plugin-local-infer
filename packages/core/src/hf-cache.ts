@@ -37,6 +37,33 @@ export function hfHubCacheDirectory(): string {
 }
 
 /**
+ * ModelDownloadTarget is the resolved download target for one model
+ * directory: the base directory the hf CLI writes into and whether the
+ * hub-cache layout (no --local-dir, the models--{ns}--{name} directories)
+ * applies. The rule is the single source the adapters' deploy steps and the
+ * download routes share: a named model directory keeps the flat --local-dir
+ * target, and the plugin default (an absent or blank directory) downloads
+ * into the hub cache.
+ */
+export interface ModelDownloadTarget {
+  baseDir: string
+  useHubCache: boolean
+}
+
+/**
+ * modelDownloadTarget resolves the download target for a model directory
+ * field: a named directory is the flat --local-dir base, and an absent or
+ * blank directory is the hub-cache layout (the hf CLI writes its
+ * models--{ns}--{name} directories into the hub cache root).
+ */
+export function modelDownloadTarget(
+  modelDirectory: string | undefined,
+): ModelDownloadTarget {
+  const useHubCache = modelDirectory === undefined || modelDirectory === ''
+  return { baseDir: useHubCache ? hfHubCacheDirectory() : modelDirectory, useHubCache }
+}
+
+/**
  * hfDatasetsCacheDirectory resolves the Hugging Face datasets cache
  * directory: HF_DATASETS_CACHE when set, else $HF_HOME/datasets when HF_HOME
  * is set, else ~/.cache/huggingface/datasets.

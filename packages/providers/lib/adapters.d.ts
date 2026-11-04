@@ -109,6 +109,15 @@ export declare const nodeLifecycleHost: LifecycleHost;
  */
 export declare function trackChild(children: Map<string, ProcessHandle>, key: string, handle: ProcessHandle): void;
 /**
+ * resolveLaunchArgv resolves a plan's launch argv against the engine
+ * directory the spawn runs in: a relative path that carries a separator (a
+ * build-tree binary, the NInfer Windows tree) is joined into an absolute
+ * path, and a bare name (a binary on the path after the rebuild's symlink
+ * step) is left as-is, so the spawn resolves the right command on every
+ * platform.
+ */
+export declare function resolveLaunchArgv(engineDir: string | undefined, argv: readonly string[] | undefined): string[];
+/**
  * stopProcessPlan signals the engine process a stop targets when the adapter
  * tracks no child handle for it: an engine a DSH restart re-adopted from a
  * stored launch record carries no in-memory handle, so the stop signals the
@@ -118,6 +127,14 @@ export declare function trackChild(children: Map<string, ProcessHandle>, key: st
  * stop route names the broken step in the card's Logs section.
  */
 export declare function stopProcessPlan(host: LifecycleHost, plan: LaunchPlan): Promise<void>;
+/**
+ * The health poll's defaults: the interval between attempts in ms and the
+ * attempt cap. The service passes the config's healthPollMs and
+ * healthMaxAttempts through, and an adapter that polls without options (or
+ * with a partial one) reads these, so the defaults have one home.
+ */
+export declare const HEALTH_POLL_DEFAULT_MS = 1000;
+export declare const HEALTH_POLL_MAX_ATTEMPTS = 120;
 /**
  * pollHealth polls a plan's health URL until a 200 or the attempt cap, the
  * same loop the qwen-ninfer launcher runs. A poll interval of 0 skips the

@@ -11,6 +11,13 @@
 
 import type { Config, ModelRow, RegisterResult, VramModel } from 'dsh-plugin-local-infer/core'
 import { buildModelEntry, providerIdFor } from '../../../core/lib/index.js'
+
+/**
+ * DEFAULT_CONTEXT_WINDOW is the context window the registrar publishes when
+ * neither the config nor the resolved VramModel names one: the 32K spec
+ * default, a context the engines can serve without a measured ceiling.
+ */
+const DEFAULT_CONTEXT_WINDOW = 32_768
 import type { LocalInferService, RegisterModelOptions } from 'dsh-plugin-local-infer/service'
 import { readConfig } from '../config.ts'
 import type { RegisterRequest } from '../request.ts'
@@ -35,7 +42,7 @@ export function resolveContextWindow(config: Config, models: readonly VramModel[
   } else if (models.length === 1) {
     model = models[0]
   }
-  return model?.nativeMaxContext ?? 32768
+  return model?.nativeMaxContext ?? DEFAULT_CONTEXT_WINDOW
 }
 
 /**

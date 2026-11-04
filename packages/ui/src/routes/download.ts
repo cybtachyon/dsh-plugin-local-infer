@@ -12,7 +12,7 @@ import { defineRoute } from '../route.ts'
 import type { LocalInferRoute } from '../route.ts'
 import type { DownloadRequest } from '../request.ts'
 import { downloadFor } from '../ops/hf.ts'
-import { persistDownloadLog } from '../ops/logs.ts'
+import { persistProcessLog } from '../ops/logs.ts'
 
 /**
  * downloadRoute builds the POST /local-infer/download route definition the
@@ -45,7 +45,7 @@ export function downloadRoute(localInfer: LocalInferService): LocalInferRoute {
       const line = result.ok
         ? 'download complete\n'
         : `!! download failed${result.detail !== undefined ? `: ${result.detail}` : ''}\n`
-      persistDownloadLog(`--- Downloading...\n${line}`)
+      persistProcessLog(`--- Downloading...\n${line}`)
       res.json(200, result)
     },
   })

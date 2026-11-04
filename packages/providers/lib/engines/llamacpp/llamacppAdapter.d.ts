@@ -45,7 +45,6 @@ export declare class LlamaCppAdapter extends EngineAdapter {
     stop(plan: LaunchPlan): Promise<void>;
     private buildMode;
     private port;
-    private planKey;
     private downloadModel;
 }
 //# sourceMappingURL=llamacppAdapter.d.ts.map

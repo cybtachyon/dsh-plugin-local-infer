@@ -57,6 +57,5 @@ export declare class BasaltAdapter extends EngineAdapter {
     healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;
     stop(plan: LaunchPlan): Promise<void>;
     private port;
-    private planKey;
 }
 //# sourceMappingURL=basaltAdapter.d.ts.map

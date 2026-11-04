@@ -13,7 +13,8 @@ import { exec, spawn as nodeSpawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { mkdir, writeFile as fsWriteFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { dirname } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
+import { LOG_TAIL_BYTES } from '../../core/lib/index.js'
 import type {
   CommandOutcome,
   Config,
@@ -263,6 +264,28 @@ function renderYaml(object: Record<string, unknown>): string {
 const RUN_ABORT_GRACE_MS = 5_000
 
 /**
+ * The plain-run cap in ms: a 10-minute ceiling, so a hung CUDA build cannot
+ * hang the panel. The streaming surface carries no overall cap (a full CUDA
+ * build legitimately runs long), so the ceiling applies to run only.
+ */
+const RUN_TIMEOUT_MS = 600_000
+
+/**
+ * The tail kept of a failed command's combined output: the detail a
+ * CommandOutcome carries is the last KiB of stdout plus stderr, so a chatty
+ * failure stays readable without growing the host's memory.
+ */
+const COMMAND_DETAIL_TAIL = 1_024
+
+/**
+ * The streaming output's high-water mark and tail: a streamed command's
+ * collected output is trimmed to the last KiB once it passes the mark, so a
+ * long build's stream cannot grow the host's memory without bound.
+ */
+const STREAM_OUTPUT_HIGH_WATER = 2_048
+const STREAM_OUTPUT_TAIL = 1_024
+
+/**
  * watchChildAbort kills the in-flight child when the RunOptions signal
  * aborts (the card's cancel of a Get/Launch download): SIGINT first, SIGTERM
  * after the grace period if the child is still alive. A signal that is already
@@ -310,13 +333,15 @@ export function createNodeLifecycleHost(debug?: DebugLogger): LifecycleHost {
         // command line in that shell; absent keeps the system default.
         const child = exec(
           command,
-          { timeout: 600_000, shell: options?.shell },
+          { timeout: RUN_TIMEOUT_MS, shell: options?.shell },
           (error, stdout, stderr) => {
             if (error === null) {
               resolve({ ok: true })
               return
             }
-            const detail = `${stderr ?? ''}${stdout ?? ''}${String(error)}`.trim().slice(-1024)
+            const detail = `${stderr ?? ''}${stdout ?? ''}${String(error)}`.trim().slice(
+              -COMMAND_DETAIL_TAIL,
+            )
             resolve({ ok: false, detail })
           },
         )
@@ -344,8 +369,8 @@ export function createNodeLifecycleHost(debug?: DebugLogger): LifecycleHost {
           const text = chunk.toString('utf8')
           onOutput(text)
           output += text
-          if (output.length > 2048) {
-            output = output.slice(-1024)
+          if (output.length > STREAM_OUTPUT_HIGH_WATER) {
+            output = output.slice(-STREAM_OUTPUT_TAIL)
           }
         }
         child.stdout.on('data', append)
@@ -358,7 +383,10 @@ export function createNodeLifecycleHost(debug?: DebugLogger): LifecycleHost {
             resolve({ ok: true })
             return
           }
-          resolve({ ok: false, detail: `exit ${code}: ${output.trim().slice(-1024)}` })
+          resolve({
+            ok: false,
+            detail: `exit ${code}: ${output.trim().slice(-COMMAND_DETAIL_TAIL)}`,
+          })
         })
       })
     },
@@ -395,7 +423,7 @@ export function createNodeLifecycleHost(debug?: DebugLogger): LifecycleHost {
       // bound; the tail is what the log file and the card keep.
       let logs = ''
       const append = (chunk: Buffer): void => {
-        logs = (logs + chunk.toString('utf8')).slice(-65536)
+        logs = (logs + chunk.toString('utf8')).slice(-LOG_TAIL_BYTES)
       }
       child.stdout?.on('data', append)
       child.stderr?.on('data', append)
@@ -405,10 +433,10 @@ export function createNodeLifecycleHost(debug?: DebugLogger): LifecycleHost {
       // breaks on a crashing child both emit 'error' here, so every path gets
       // a listener and the failure lands in the logs instead of the crash.
       child.stdout?.on('error', (error: Error) => {
-        logs = (logs + `stdout error: ${error.message}\n`).slice(-65536)
+        logs = (logs + `stdout error: ${error.message}\n`).slice(-LOG_TAIL_BYTES)
       })
       child.stderr?.on('error', (error: Error) => {
-        logs = (logs + `stderr error: ${error.message}\n`).slice(-65536)
+        logs = (logs + `stderr error: ${error.message}\n`).slice(-LOG_TAIL_BYTES)
       })
       // The one-shot exit contract: 'error' names a child that never ran,
       // 'exit' carries the code or signal, and 'close' follows once the pipes
@@ -431,7 +459,7 @@ export function createNodeLifecycleHost(debug?: DebugLogger): LifecycleHost {
       }
       let exitSignal: string | null = null
       child.on('error', (error: Error) => {
-        logs = (logs + `spawn error: ${error.message}\n`).slice(-65536)
+        logs = (logs + `spawn error: ${error.message}\n`).slice(-LOG_TAIL_BYTES)
         // The error fires before the stdio drains; settle immediately so a
         // launch of a missing binary reports rather than hangs the watcher.
         settle({ code: null, signal: null, error: error.message })
@@ -513,6 +541,31 @@ export function trackChild(
 }
 
 /**
+ * resolveLaunchArgv resolves a plan's launch argv against the engine
+ * directory the spawn runs in: a relative path that carries a separator (a
+ * build-tree binary, the NInfer Windows tree) is joined into an absolute
+ * path, and a bare name (a binary on the path after the rebuild's symlink
+ * step) is left as-is, so the spawn resolves the right command on every
+ * platform.
+ */
+export function resolveLaunchArgv(
+  engineDir: string | undefined,
+  argv: readonly string[] | undefined,
+): string[] {
+  const resolved = [...(argv ?? [])]
+  const first = resolved[0]
+  if (
+    engineDir !== undefined &&
+    first !== undefined &&
+    !isAbsolute(first) &&
+    (first.includes('\\') || first.includes('/'))
+  ) {
+    resolved[0] = join(engineDir, first)
+  }
+  return resolved
+}
+
+/**
  * stopProcessPlan signals the engine process a stop targets when the adapter
  * tracks no child handle for it: an engine a DSH restart re-adopted from a
  * stored launch record carries no in-memory handle, so the stop signals the
@@ -531,6 +584,15 @@ export async function stopProcessPlan(host: LifecycleHost, plan: LaunchPlan): Pr
 }
 
 /**
+ * The health poll's defaults: the interval between attempts in ms and the
+ * attempt cap. The service passes the config's healthPollMs and
+ * healthMaxAttempts through, and an adapter that polls without options (or
+ * with a partial one) reads these, so the defaults have one home.
+ */
+export const HEALTH_POLL_DEFAULT_MS = 1_000
+export const HEALTH_POLL_MAX_ATTEMPTS = 120
+
+/**
  * pollHealth polls a plan's health URL until a 200 or the attempt cap, the
  * same loop the qwen-ninfer launcher runs. A poll interval of 0 skips the
  * delay, which the tests use to run the loop without a real sleep.
@@ -540,8 +602,8 @@ export async function pollHealth(
   plan: LaunchPlan,
   options?: HealthCheckOptions,
 ): Promise<HealthResult> {
-  const pollMs = options?.pollMs ?? 1000
-  const maxAttempts = options?.maxAttempts ?? 120
+  const pollMs = options?.pollMs ?? HEALTH_POLL_DEFAULT_MS
+  const maxAttempts = options?.maxAttempts ?? HEALTH_POLL_MAX_ATTEMPTS
   let last: FetchResult = { status: 0, ok: false }
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     last = await host.fetch(plan.healthUrl)

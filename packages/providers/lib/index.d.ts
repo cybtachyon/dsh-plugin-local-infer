@@ -24,14 +24,14 @@ export { BASALT_VRAM_MODELS, NINFER_VRAM_MODELS, basaltVramModel, ninferVramMode
 export { BUILTIN_GUIDELINES, HOST_STATE_IMAGE_BYTES } from './guidelines.ts';
 export { ENGINES } from './engines.ts';
 export type { EngineInfo } from './engines.ts';
-export { ENGINE_SOURCES, FORK_REMOTE, buildEngineRepo, engineBuildSteps, engineSource, syncAndRebuildEngine, syncEngineRepo, } from './acquire.ts';
-export type { AcquireLog, EngineSource, EngineStepResult, SyncRebuildRequest, SyncRebuildResult, } from './acquire.ts';
+export { ENGINE_SOURCES, FORK_REMOTE, buildEngineRepo, engineBuildSteps, engineSource, syncAndRebuildEngine, syncEngineForDeploy, syncEngineRepo, } from './acquire.ts';
+export type { AcquireLog, EngineDeploySync, EngineSource, EngineStepResult, SyncRebuildRequest, SyncRebuildResult, } from './acquire.ts';
 export { ENGINE_DEP_PLANS, SYSTEM_DEPS, engineLocalDeps } from './deps.ts';
 export { ENGINE_PLATFORM_DEFAULTS, enginePlatformDefaults } from './platform.ts';
 export type { EnginePlatformDefaults } from './platform.ts';
 export { BUILTIN_PRESETS, PRESET_SOURCES, extractJsonBlock } from './presets.ts';
 export { DEFAULT_MODELS, defaultModelFor, defaultModelsForEngine } from './model-defaults.ts';
-export { customArgEnv, customArgFlags, envFromSpecs, flagsFromSpecs, nodeLifecycleHost, pollHealth, } from './adapters.ts';
+export { customArgEnv, customArgFlags, envFromSpecs, flagsFromSpecs, nodeLifecycleHost, pollHealth, resolveLaunchArgv, } from './adapters.ts';
 export { HyperQwenAdapter } from './engines/hyperqwen/hyperqwenAdapter.ts';
 export { InfernixAdapter } from './engines/infernix/infernixAdapter.ts';
 export { LLAMACPP_DOCKER_IMAGE, LlamaCppAdapter } from './engines/llamacpp/llamacppAdapter.ts';

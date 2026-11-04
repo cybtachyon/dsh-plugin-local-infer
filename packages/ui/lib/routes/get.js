@@ -7,7 +7,7 @@
  */
 import { parseStoredPlatformConfig } from "../config.js";
 import { CANCELED_LINE, getEngine } from "../ops/engine.js";
-import { persistGetLogs } from "../ops/logs.js";
+import { persistProcessLog } from "../ops/logs.js";
 import { defineRoute } from "../route.js";
 /**
  * getRoute builds the POST /local-infer/get route definition the register
@@ -68,7 +68,7 @@ export function getRoute(localInfer, getHost) {
             // so the Logs section and the log file read the run as a fresh process
             // section, the same line the card writes when the Get button is
             // clicked.
-            persistGetLogs(`--- Getting engine and model...\n${collected}`);
+            persistProcessLog(`--- Getting engine and model...\n${collected}`);
             res.end();
         },
     });

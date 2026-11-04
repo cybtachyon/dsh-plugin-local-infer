@@ -1,31 +1,17 @@
 /**
- * The last-run log persistence the card's process steps use: appendProcessLog
+ * The last-run log persistence the card's process steps use: persistProcessLog
  * appends one run's output (a Get's commands and output, a model download's
- * result) to the stored last-run logs (the card's Logs section shows it after a
- * reload) and writes the run to the configured log file, the same per-run file
- * rule the launch step applies. persistGetLogs and persistDownloadLog are the
- * step-specific wrappers.
+ * result, a stop's failure note) to the stored last-run logs (the card's Logs
+ * section shows it after a reload) and writes the run to the configured log
+ * file, the same per-run file rule the launch step applies.
  * @module dsh-plugin-local-infer/ui/ops/logs
  */
 /**
- * persistGetLogs appends one Get run's streamed output (the commands and their
- * output) to the stored last-run logs and writes the run to the configured log
- * file, the same per-run file rule the launch step applies.
+ * persistProcessLog appends one process run's output to the stored last-run
+ * logs (capped to the launch logs' tail, so a long build cannot grow the
+ * config without bound) and writes the run to the configured log file. A
+ * missing log location (the field is optional) skips the file, the same rule
+ * the launch step uses. An empty output is a no-op.
  */
-export declare function persistGetLogs(output: string): void;
-/**
- * persistDownloadLog appends one model or chat-template download's result to the
- * stored last-run logs and writes the run to the configured log file, so the
- * card's Logs section and the log file show the download beside the Get and
- * launch runs.
- */
-export declare function persistDownloadLog(output: string): void;
-/**
- * persistStopLog appends one stop's failure note to the stored last-run logs
- * and writes the note to the configured log file, so the card's Logs section
- * and the log file name the broken stop beside the launch and get runs. The
- * note is the stop route's own detail (the engine, the model, and the host's
- * failure message), newline-terminated.
- */
-export declare function persistStopLog(output: string): void;
+export declare function persistProcessLog(output: string): void;
 //# sourceMappingURL=logs.d.ts.map

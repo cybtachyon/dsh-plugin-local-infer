@@ -10,7 +10,7 @@ import type { Config, LifecycleHost } from 'dsh-plugin-local-infer/core'
 import type { LocalInferService } from 'dsh-plugin-local-infer/service'
 import { parseStoredPlatformConfig } from '../config.ts'
 import { CANCELED_LINE, getEngine } from '../ops/engine.ts'
-import { persistGetLogs } from '../ops/logs.ts'
+import { persistProcessLog } from '../ops/logs.ts'
 import { defineRoute } from '../route.ts'
 import type { LocalInferRoute } from '../route.ts'
 import type { GetRequest } from '../request.ts'
@@ -76,7 +76,7 @@ export function getRoute(
       // so the Logs section and the log file read the run as a fresh process
       // section, the same line the card writes when the Get button is
       // clicked.
-      persistGetLogs(`--- Getting engine and model...\n${collected}`)
+      persistProcessLog(`--- Getting engine and model...\n${collected}`)
       res.end()
     },
   })

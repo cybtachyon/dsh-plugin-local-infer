@@ -1,8 +1,9 @@
 /**
  * The hf CLI download operations: downloadFor runs the download for a default
  * model, and chatTemplateDownloadFor pulls a selected chat template into the
- * model directory. Both resolve the directory against the request, the
- * stored config, and the plugin's default model directory in that order.
+ * model directory. Both resolve the directory through resolveDownloadTarget
+ * (the request, the stored config, and the plugin's default model directory
+ * in that order), so the hub-cache layout rule has one home.
  * @module dsh-plugin-local-infer/ui/ops/hf
  */
 import { defaultModelFor } from '../../../providers/lib/index.js';
@@ -10,11 +11,30 @@ import { readConfig } from "../config.js";
 import { RouteError } from "../route.js";
 import { isHfRepoReference } from "../viewmodels/summaryHelpers.js";
 /**
+ * resolveDownloadTarget resolves the directory a download route targets: the
+ * request's directory, the stored config's model directory, and the plugin's
+ * default model directory, in that order. The hub-cache layout applies only
+ * when the directory fell back to the plugin default (neither the request nor
+ * the stored config names one); a named directory keeps the flat --local-dir
+ * target.
+ */
+function resolveDownloadTarget(localInfer, requestDirectory, stored) {
+    const requestDir = typeof requestDirectory === 'string' && requestDirectory.trim() !== ''
+        ? requestDirectory
+        : undefined;
+    const storedDir = stored.config.modelDirectory;
+    const storedDirValue = typeof storedDir === 'string' && storedDir.trim() !== '' ? storedDir : undefined;
+    const directory = requestDir ?? storedDirValue ?? localInfer.defaultModelDirectory();
+    // A named directory (the request or the stored config) keeps the flat
+    // --local-dir target; only the plugin default downloads into the hub cache.
+    const useHubCache = requestDir === undefined && storedDirValue === undefined;
+    return { directory, useHubCache };
+}
+/**
  * downloadFor runs the hf CLI download for the request's default model: it
  * resolves the entry through the providers' default list (a 404 when no
- * entry names the pair), resolves the directory against the request, the
- * stored config, and the plugin's default model directory in that order, and
- * runs the download through the service.
+ * entry names the pair), resolves the directory through
+ * resolveDownloadTarget, and runs the download through the service.
  */
 export async function downloadFor(localInfer, request) {
     const stored = readConfig();
@@ -24,26 +44,15 @@ export async function downloadFor(localInfer, request) {
     if (entry === undefined) {
         throw new RouteError(404, `no default model is registered for "${engineId}/${modelId}"`);
     }
-    const storedDir = stored.config.modelDirectory;
-    const directory = typeof request.directory === 'string' && request.directory.trim() !== ''
-        ? request.directory
-        : typeof storedDir === 'string' && storedDir.trim() !== ''
-            ? storedDir
-            : localInfer.defaultModelDirectory();
-    // The hub-cache layout applies only when the directory fell back to the
-    // plugin default (neither the request nor the stored config names one); a
-    // named directory keeps the flat --local-dir target.
-    const useHubCache = !(typeof request.directory === 'string' && request.directory.trim() !== '') &&
-        !(typeof storedDir === 'string' && storedDir.trim() !== '');
+    const { directory, useHubCache } = resolveDownloadTarget(localInfer, request.directory, stored);
     return localInfer.downloadModel(entry, directory, { useHubCache });
 }
 /**
  * chatTemplateDownloadFor runs the hf CLI download for the request's chat
  * template: it resolves the template repo reference from the request or the
  * stored config's chatTemplate (a 400 when neither names an HF repo
- * reference), resolves the directory against the request, the stored config,
- * and the plugin's default model directory in that order, and runs the
- * download through the service.
+ * reference), resolves the directory through resolveDownloadTarget, and
+ * runs the download through the service.
  */
 export async function chatTemplateDownloadFor(localInfer, request) {
     const stored = readConfig();
@@ -54,17 +63,7 @@ export async function chatTemplateDownloadFor(localInfer, request) {
     if (!isHfRepoReference(template)) {
         throw new RouteError(400, `the chat template must be an HF repo reference, got "${template || '(none)'}"`);
     }
-    const storedDir = stored.config.modelDirectory;
-    const directory = typeof request.directory === 'string' && request.directory.trim() !== ''
-        ? request.directory
-        : typeof storedDir === 'string' && storedDir.trim() !== ''
-            ? storedDir
-            : localInfer.defaultModelDirectory();
-    // The hub-cache layout applies only when the directory fell back to the
-    // plugin default (neither the request nor the stored config names one); a
-    // named directory keeps the flat --local-dir target.
-    const useHubCache = !(typeof request.directory === 'string' && request.directory.trim() !== '') &&
-        !(typeof storedDir === 'string' && storedDir.trim() !== '');
+    const { directory, useHubCache } = resolveDownloadTarget(localInfer, request.directory, stored);
     return localInfer.downloadChatTemplate(template, directory, { useHubCache });
 }
 //# sourceMappingURL=hf.js.map

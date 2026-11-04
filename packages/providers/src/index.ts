@@ -65,10 +65,12 @@ export {
   engineBuildSteps,
   engineSource,
   syncAndRebuildEngine,
+  syncEngineForDeploy,
   syncEngineRepo,
 } from './acquire.ts'
 export type {
   AcquireLog,
+  EngineDeploySync,
   EngineSource,
   EngineStepResult,
   SyncRebuildRequest,
@@ -86,6 +88,7 @@ export {
   flagsFromSpecs,
   nodeLifecycleHost,
   pollHealth,
+  resolveLaunchArgv,
 } from './adapters.ts'
 export { HyperQwenAdapter } from './engines/hyperqwen/hyperqwenAdapter.ts'
 export { InfernixAdapter } from './engines/infernix/infernixAdapter.ts'

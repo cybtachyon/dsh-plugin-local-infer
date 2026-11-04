@@ -47,7 +47,6 @@ export declare class InfernixAdapter extends EngineAdapter {
     healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;
     stop(plan: LaunchPlan): Promise<void>;
     private port;
-    private planKey;
     private downloadModel;
 }
 //# sourceMappingURL=infernixAdapter.d.ts.map

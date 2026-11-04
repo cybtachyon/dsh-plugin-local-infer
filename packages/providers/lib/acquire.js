@@ -425,6 +425,51 @@ export async function syncAndRebuildEngine(host, request, log) {
     return { ok: true, rebuilt, logs: chunks.join('') };
 }
 /**
+ * syncEngineForDeploy runs the deploy step's git sync (the shared
+ * syncAndRebuildEngine) with the option shape every adapter's deploy step
+ * assembles: the platform entry's fork and build-command override, the
+ * Play/Run trust gate, the plan's host OS (the Windows vcpkg route when the
+ * user carries no build-command override), and the progress sink the card's
+ * button reads (the git sync reports "Downloading...", the build step
+ * reports "Building..." the moment it starts). The captured build output is
+ * returned as buildLogs, so a caller threads it to the card's Logs section
+ * without re-running the steps.
+ */
+export async function syncEngineForDeploy(host, request) {
+    // The git sync is the checkout download: the card's button reads
+    // "Downloading..." for it, not "Building...".
+    request.onProgress?.('download');
+    const sync = await syncAndRebuildEngine(host, {
+        engineId: request.engineId,
+        directory: request.directory,
+        ...(request.platform?.engineFork !== undefined
+            ? { fork: request.platform.engineFork }
+            : {}),
+        ...(request.options?.allowRunDeps !== undefined
+            ? { allowRunDeps: request.options.allowRunDeps }
+            : {}),
+        ...(request.platform?.buildCommands !== undefined
+            ? { buildCommands: request.platform.buildCommands }
+            : {}),
+        ...(request.os !== undefined ? { os: request.os } : {}),
+        // Report the build phase the moment the build steps start, so the
+        // card's button reads "Building..." while the build is in flight.
+        onBuildStart: () => request.onProgress?.('build'),
+    }, () => { });
+    // The build output reads as a fresh Logs section: a "Building..."
+    // separator leads the rebuild decision and output, the same line the card
+    // writes when the build step event lands.
+    let buildLogs = sync.logs;
+    if (sync.rebuilt && buildLogs !== '') {
+        buildLogs = `--- Building...\n${buildLogs}`;
+    }
+    return {
+        ok: sync.ok,
+        ...(sync.detail !== undefined ? { detail: sync.detail } : {}),
+        buildLogs,
+    };
+}
+/**
  * buildEngineRepo runs the engine's build steps in the checkout, streaming
  * each step's output through log. An engine with no build steps (the compose
  * engines) passes through with a note; a failing step stops the build with

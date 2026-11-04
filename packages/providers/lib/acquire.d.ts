@@ -8,7 +8,7 @@
  * local changes aborts, because a rebase would eat the user's work.
  * @module dsh-plugin-local-infer/providers/acquire
  */
-import type { LifecycleHost } from '../../core/lib/index.js';
+import type { DeployOptions, EnginePlatformConfig, LaunchProgress, LifecycleHost } from '../../core/lib/index.js';
 import type { EngineOsProfile } from './engines/engineOs.ts';
 /**
  * EngineSource is the per-engine acquisition data: the upstream git repo the
@@ -149,6 +149,37 @@ export interface SyncRebuildResult {
  * added (run when the trust gate is on, written to the logs when it is off).
  */
 export declare function syncAndRebuildEngine(host: LifecycleHost, request: SyncRebuildRequest, log: AcquireLog): Promise<SyncRebuildResult>;
+/**
+ * EngineDeploySync reports the deploy step's git sync (the shared
+ * syncAndRebuildEngine): whether it passed, a detail for a failure, and the
+ * captured build output the deploy step threads to the card's Logs section
+ * (a "Building..." separator leads a rebuild's output, the same line the
+ * card writes when the build step event lands).
+ */
+export interface EngineDeploySync {
+    ok: boolean;
+    detail?: string;
+    buildLogs: string;
+}
+/**
+ * syncEngineForDeploy runs the deploy step's git sync (the shared
+ * syncAndRebuildEngine) with the option shape every adapter's deploy step
+ * assembles: the platform entry's fork and build-command override, the
+ * Play/Run trust gate, the plan's host OS (the Windows vcpkg route when the
+ * user carries no build-command override), and the progress sink the card's
+ * button reads (the git sync reports "Downloading...", the build step
+ * reports "Building..." the moment it starts). The captured build output is
+ * returned as buildLogs, so a caller threads it to the card's Logs section
+ * without re-running the steps.
+ */
+export declare function syncEngineForDeploy(host: LifecycleHost, request: {
+    engineId: string;
+    directory: string;
+    platform?: EnginePlatformConfig;
+    options?: DeployOptions;
+    os?: 'linux' | 'windows' | 'macos';
+    onProgress?: LaunchProgress;
+}): Promise<EngineDeploySync>;
 /**
  * buildEngineRepo runs the engine's build steps in the checkout, streaming
  * each step's output through log. An engine with no build steps (the compose

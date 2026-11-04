@@ -66,7 +66,6 @@ export declare class NInferAdapter extends EngineAdapter {
     stop(plan: LaunchPlan): Promise<void>;
     private buildMode;
     private port;
-    private planKey;
     private downloadModel;
     /**
      * resolveChatTemplate rewrites a --chat-template flag that carries an HF repo

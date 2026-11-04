@@ -1656,6 +1656,7 @@ function cancelInFlightRuns(providerId) {
 
 // packages/client/src/store/deps.ts
 var GET_IDLE_MS = 12e4;
+var COPY_NOTE_MS = 2e3;
 function repriceDeps(store, query) {
   return fetchDeps(query).then((deps) => {
     store.dispatch({ type: "deps/ack", deps });
@@ -1681,7 +1682,7 @@ function copyInstallString(store, t) {
     store.dispatch({ type: "note/set", key: "copy", note: ok ? t.copied : t.copyFailed });
     setTimeout(() => {
       store.dispatch({ type: "note/clear", key: "copy" });
-    }, 2e3);
+    }, COPY_NOTE_MS);
   };
   if (typeof navigator !== "undefined" && navigator.clipboard !== void 0) {
     navigator.clipboard.writeText(text).then(() => done(true)).catch(() => done(false));

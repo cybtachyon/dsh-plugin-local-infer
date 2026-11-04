@@ -79,6 +79,7 @@ export type {
 export {
   DEFAULT_LOG_PATH_TEMPLATE,
   LOG_FILE_NAME_TEMPLATE,
+  LOG_TAIL_BYTES,
   LOG_TEMPLATE_ENGINE,
   LOG_TEMPLATE_HOME,
   LOG_TEMPLATE_MODEL,
@@ -184,7 +185,9 @@ export type {
 export {
   hfDatasetsCacheDirectory,
   hfHubCacheDirectory,
+  modelDownloadTarget,
 } from './hf-cache.ts'
+export type { ModelDownloadTarget } from './hf-cache.ts'
 export type {
   CommandOutcome,
   CommandRunner,

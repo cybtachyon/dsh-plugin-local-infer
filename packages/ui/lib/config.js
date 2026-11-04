@@ -164,6 +164,17 @@ export function writeConfig(engine, config, allowRunDeps, platform, showHelp, pr
     }, null, 2));
 }
 /**
+ * writeStored persists a read StoredConfig with a patch over one or more of
+ * its fields, leaving every unpatched field as the read returned it. The
+ * eight stored fields travel as one value through the ops, so a caller names
+ * only the field it changes (the providers list, the last-run logs) instead
+ * of re-passing every field the read returned.
+ */
+export function writeStored(stored, patch = {}) {
+    const next = { ...stored, ...patch };
+    writeConfig(next.engine, next.config, next.allowRunDeps, next.platform, next.showHelp, next.providers, next.logPath, next.lastLogs);
+}
+/**
  * parsePlatformConfigs reads the stored platform map, keeping only entries
  * whose fields are strings. A non-object map or a non-object entry reads as
  * absent, so the deploy step never sees a platform config it cannot price.
