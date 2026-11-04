@@ -215,10 +215,12 @@ describe('Basalt OS profiles', () => {
     expect(BASALT_WINDOWS.buildSteps[0]).toContain('cmake --build {dir}/build -j')
   })
 
-  it('leaves the binary in the build directory with the per-OS name', () => {
-    expect(BASALT_LINUX.buildDir).toBe('build')
+  it('leaves the binary in the bin directory with the per-OS name', () => {
+    // CMake sets RUNTIME_OUTPUT_DIRECTORY to the repo's bin/ folder, so the
+    // profile's buildDir names bin/, not the CMake build/ tree.
+    expect(BASALT_LINUX.buildDir).toBe('bin')
     expect(BASALT_LINUX.binary).toBe('basalt')
-    expect(BASALT_WINDOWS.buildDir).toBe('build')
+    expect(BASALT_WINDOWS.buildDir).toBe('bin')
     expect(BASALT_WINDOWS.binary).toBe('basalt.exe')
   })
 
@@ -226,12 +228,19 @@ describe('Basalt OS profiles', () => {
     expect(BASALT_MACOS).toBe(BASALT_LINUX)
   })
 
-  it('rides the CUDA toolkit and the C++20 compiler on the Linux toolchain', () => {
+  it('rides the CUDA toolkit, the C++20 compiler, and the serve pip packages on the Linux toolchain', () => {
     const ids = BASALT_LINUX.deps?.map((dep) => dep.id) ?? []
-    expect(ids).toEqual(['cmake', 'compiler', 'cuda-toolkit', 'python', 'hf-cli'])
+    expect(ids).toEqual([
+      'cmake',
+      'compiler',
+      'cuda-toolkit',
+      'python',
+      'basalt-pip',
+      'hf-cli',
+    ])
   })
 
-  it('rides Ninja and the MSVC workload on the Windows toolchain', () => {
+  it('rides Ninja, the MSVC workload, and the serve pip packages on the Windows toolchain', () => {
     const ids = BASALT_WINDOWS.deps?.map((dep) => dep.id) ?? []
     expect(ids).toEqual([
       'cmake',
@@ -239,6 +248,7 @@ describe('Basalt OS profiles', () => {
       'visual-studio',
       'cuda-toolkit',
       'python',
+      'basalt-pip',
       'hf-cli',
     ])
   })
@@ -425,7 +435,9 @@ describe('BasaltAdapter.renderLaunch', () => {
     expect(plan.port).toBe(8090)
     expect(plan.healthUrl).toBe('http://127.0.0.1:8090/health')
     const argv = plan.argv ?? []
-    expect(argv[0]).toBe('basalt')
+    // The binary is spelled as a build-tree relative path (CMake's bin/
+    // output dir), so the deploy step joins it against the engine directory.
+    expect(argv[0]).toBe(join('bin', 'basalt'))
     expect(argv).toContain('serve')
     expect(argv).toContain('--config')
     // The config file content is exactly what the surface renders, and the
@@ -457,7 +469,7 @@ describe('BasaltAdapter.renderLaunch', () => {
     const adapter = new BasaltAdapter(host)
     const windows: HardwareProfile = { ...ADAPTER_HW, os: 'windows' }
     const plan = adapter.renderLaunch({}, windows)
-    expect(plan.argv?.[0]).toBe('basalt.exe')
+    expect(plan.argv?.[0]).toBe(join('bin', 'basalt.exe'))
   })
 })
 
@@ -495,13 +507,18 @@ describe('BasaltAdapter.deploy', () => {
     expect(state.run).toContain(
       `hf download ${BASALT_MODEL_REPO} ${BASALT_MODEL_FILE} --local-dir models --format human`,
     )
+    // The relative config path is written into the engine directory the spawn
+    // runs in, so the engine's --config flag (resolved against its cwd) finds
+    // the file.
     expect(state.writeFile).toHaveLength(1)
-    expect(state.writeFile[0]?.path).toBe(join('models', BASALT_CONFIG_FILE))
+    expect(state.writeFile[0]?.path).toBe(join('/src/basalt', 'models', BASALT_CONFIG_FILE))
     // The spawn runs the serve command with the config flag, in the engine
-    // directory.
+    // directory. The binary is the build-tree path joined against the engine
+    // directory (CMake's bin/ output dir), so the spawn resolves the real
+    // binary without the PATH.
     expect(state.spawn).toHaveLength(1)
     expect(state.spawn[0]?.argv).toEqual([
-      'basalt',
+      join('/src/basalt', 'bin', 'basalt'),
       'serve',
       '--config',
       join('models', BASALT_CONFIG_FILE),
@@ -538,9 +555,10 @@ describe('BasaltAdapter.deploy', () => {
     const { host, state } = basaltStubHost()
     state.runOutput['rev-list'] = '0'
     const adapter = new BasaltAdapter(host)
-    // A relative launch path (a build-tree binary) is joined against the
-    // engine directory, so the spawn resolves an absolute path.
-    const relativeBinary = join('build', 'basalt')
+    // A relative launch path (a build-tree binary, CMake's bin/ output dir)
+    // is joined against the engine directory, so the spawn resolves an
+    // absolute path.
+    const relativeBinary = join('bin', 'basalt')
     const plan: LaunchPlan = {
       engineId: 'basalt',
       kind: 'process',

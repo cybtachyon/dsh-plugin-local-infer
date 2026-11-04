@@ -15,7 +15,7 @@
  */
 
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import {
   EngineAdapter,
   hfDownloadCommand,
@@ -47,7 +47,7 @@ import {
   stopProcessPlan,
   trackChild,
 } from '../../adapters.ts'
-import { syncEngineForDeploy } from '../../acquire.ts'
+import { engineBuildDir, syncEngineForDeploy } from '../../acquire.ts'
 import { BASALT_PARAMETERS, basaltModelKey } from './basalt.ts'
 import { basaltLinuxBinary } from './basaltLinux.ts'
 import { basaltMacOSBinary } from './basaltMacOS.ts'
@@ -143,12 +143,19 @@ export class BasaltAdapter extends EngineAdapter {
     const configPath =
       modelDirectory === '' ? BASALT_CONFIG_FILE : join(modelDirectory, BASALT_CONFIG_FILE)
     // The engine binary is OS-specific (the .exe on Windows), so the name
-    // comes from the host OS's binary function.
+    // comes from the host OS's binary function. CMake writes it into the
+    // profile's buildDir (the repo's bin/ folder), so the launch spells it as
+    // a build-tree relative path. The deploy step joins it against the engine
+    // directory, so the spawn resolves the real binary without relying on the
+    // PATH (a bare name would ENOENT when the rebuild's symlink step has not
+    // put it on the path).
     const binary = BASALT_BINARY[_hw.os]()
+    const buildDir = engineBuildDir(this.id, _hw.os)
+    const binaryPath = buildDir === '' ? binary : join(buildDir, binary)
     return {
       engineId: this.id,
       kind: 'process',
-      argv: [binary, 'serve', '--config', configPath],
+      argv: [binaryPath, 'serve', '--config', configPath],
       env: {},
       ...(modelDirectory === '' ? {} : { modelDirectory }),
       port,
@@ -234,7 +241,16 @@ export class BasaltAdapter extends EngineAdapter {
       if (this.host.writeFile === undefined) {
         return withLogs({ ok: false, detail: 'the host cannot write the config file' })
       }
-      await this.host.writeFile(plan.configFile.path, plan.configFile.content)
+      // A relative config path (a bare config, no model directory) is written
+      // into the engine directory the spawn runs in, so the engine's --config
+      // flag (resolved against its cwd) finds the file. An absolute path (a
+      // user model directory) is written as-is.
+      const configPath = isAbsolute(plan.configFile.path)
+        ? plan.configFile.path
+        : engineDir !== undefined
+          ? join(engineDir, plan.configFile.path)
+          : plan.configFile.path
+      await this.host.writeFile(configPath, plan.configFile.content)
     }
     // A relative launch path (a build-tree binary) is joined against the
     // engine directory the spawn runs in, so the spawn resolves an absolute

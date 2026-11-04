@@ -205,6 +205,7 @@ describe('dep plan registration', () => {
     const { apply } = await import('../src/index.ts')
     apply(ctx)
     expect([...ctx.localInfer.registeredDepPlans().keys()].sort()).toEqual([
+      'basalt',
       'hyperqwen',
       'infernix',
       'llamacpp',

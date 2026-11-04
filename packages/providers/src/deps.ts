@@ -94,4 +94,15 @@ export const ENGINE_DEP_PLANS: Record<string, EngineDepPlan> = {
     docker: [SYSTEM_DEPS.docker, SYSTEM_DEPS.nvidiaContainerToolkit],
     binary: [SYSTEM_DEPS.curl],
   },
+  basalt: {
+    // The CMake source build needs the C++/CUDA toolchain, the Python
+    // interpreter plus the serve/ server's pip requirements, and the hf CLI
+    // for the model artifact. Basalt ships no container image, so the docker
+    // list stays empty.
+    local: {
+      linux: engineLocalDeps('basalt', 'linux'),
+      windows: engineLocalDeps('basalt', 'windows'),
+    },
+    docker: [],
+  },
 }

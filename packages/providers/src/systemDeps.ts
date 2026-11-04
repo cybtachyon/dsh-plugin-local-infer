@@ -189,19 +189,18 @@ export const SYSTEM_DEPS = {
     },
   },
   // The Python 3.10+ interpreter the serve/ server and its pip requirements
-  // need. The probe reads python3, which every distro and macOS ship or
-  // install under that name.
+  // need. The probe reads uv Python manager.
   python: {
     id: 'python',
-    purpose: 'runs the Python server and its pip requirements',
+    purpose: 'runs the uv Python server and its pip requirements',
     requiresSudo: true,
-    detect: probe('python3', ['--version']),
+    detect: probe('uv', ['--version']),
     install: {
-      apt: { commands: ['sudo apt install python3 python3-pip'] },
-      dnf: { commands: ['sudo dnf install python3 python3-pip'] },
-      pacman: { commands: ['sudo pacman -S --noconfirm python python-pip'] },
-      brew: { commands: ['brew install python'] },
-      winget: { commands: ['winget install Python.Python.3.12'] },
+      apt: { commands: ['curl -LsSf https://astral.sh/uv/install.sh | sh'] },
+      dnf: { commands: ['curl -LsSf https://astral.sh/uv/install.sh | sh'] },
+      pacman: { commands: ['sudo pacman -S --noconfirm uv'] },
+      brew: { commands: ['brew install uv'] },
+      winget: { commands: ['winget install --id=astral-sh.uv -e'] },
     },
   },
   git: {
@@ -268,6 +267,24 @@ export const SYSTEM_DEPS = {
       winget: {
         commands: ['powershell -ExecutionPolicy ByPass -c "irm https://hf.co/cli/install.ps1 | iex"'],
       },
+    },
+  },
+  // The Python packages the Basalt serve/ server imports (numpy, jinja2,
+  // regex, pyyaml, tqdm, pillow, psutil). The C++ basalt binary launches the
+  // Python server, which fails at import when a module is missing, so the
+  // launch reads as a 120-attempt health-poll timeout. The probe imports the
+  // modules the server needs; the install pulls them through pip.
+  basaltPip: {
+    id: 'basalt-pip',
+    purpose: 'installs the Basalt serve server Python requirements',
+    requiresSudo: true,
+    detect: probe('uv run python', ['-c', 'import regex, numpy, jinja2, yaml, tqdm, PIL, psutil']),
+    install: {
+      apt: { commands: ['uv pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
+      dnf: { commands: ['uv pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
+      pacman: { commands: ['uv pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
+      brew: { commands: ['uv pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
+      winget: { commands: ['uv pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
     },
   },
 } satisfies Record<string, SystemDep>

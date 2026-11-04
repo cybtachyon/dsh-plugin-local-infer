@@ -3,8 +3,9 @@
  * CMake build with the Ninja generator, run inside the MSVC developer shell:
  * the step calls vcvars64.bat (the Visual Studio 2022 Community C++ toolchain)
  * to put cl, cmake, and ninja on the path, then configures a Release build
- * into the `build` directory and compiles it. The `basalt.exe` binary lands in
- * that directory.
+ * into the `build` directory and compiles it. CMake sets the target's
+ * RUNTIME_OUTPUT_DIRECTORY to the repo's `bin` folder, so the `basalt.exe`
+ * binary lands in `bin/`, not the CMake `build/` tree.
  *
  * The Windows toolchain is the winget route: CMake, Ninja (the -G Ninja
  * generator), the Visual Studio C++ workload (the MSVC C++20 compiler), the
@@ -20,7 +21,9 @@ export const BASALT_WINDOWS: EngineOsProfile = {
   buildSteps: [
     'cmd /c "call "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat" && cmake -S {dir} -B {dir}/build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build {dir}/build -j"',
   ],
-  buildDir: 'build',
+  // The CMake target sets RUNTIME_OUTPUT_DIRECTORY to the repo's bin/ folder,
+  // so the basalt.exe lands in bin/, not the CMake build/ tree.
+  buildDir: 'bin',
   binary: 'basalt.exe',
   // The Windows local build is the winget route: the CMake toolchain, Ninja
   // (the -G Ninja generator), the Visual Studio C++ workload (the MSVC C++20
@@ -32,6 +35,10 @@ export const BASALT_WINDOWS: EngineOsProfile = {
     SYSTEM_DEPS.visualStudio,
     SYSTEM_DEPS.cudaToolkit,
     SYSTEM_DEPS.python,
+    // The serve/ server is Python; its pip requirements land with the
+    // interpreter, so the launch's health poll does not time out on a missing
+    // module import.
+    SYSTEM_DEPS.basaltPip,
     SYSTEM_DEPS.hfCli,
   ],
 }

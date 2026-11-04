@@ -309,5 +309,28 @@ export declare const SYSTEM_DEPS: {
             };
         };
     };
+    basaltPip: {
+        id: string;
+        purpose: string;
+        requiresSudo: true;
+        detect: (hw: HardwareProfile) => Promise<boolean>;
+        install: {
+            apt: {
+                commands: string[];
+            };
+            dnf: {
+                commands: string[];
+            };
+            pacman: {
+                commands: string[];
+            };
+            brew: {
+                commands: string[];
+            };
+            winget: {
+                commands: string[];
+            };
+        };
+    };
 };
 //# sourceMappingURL=systemDeps.d.ts.map

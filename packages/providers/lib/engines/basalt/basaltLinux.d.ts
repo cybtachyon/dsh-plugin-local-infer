@@ -1,9 +1,10 @@
 /**
  * The Basalt shared Linux build profile. Every Linux distro (Arch, Debian,
  * Fedora) builds Basalt through the engine's own CMake route: configure a
- * Release build into the `build` directory, then compile it. The `basalt`
- * binary lands in that directory. The distro profiles reuse this profile, so
- * a distro carries no build steps of its own.
+ * Release build into the `build` directory, then compile it. CMake sets the
+ * target's RUNTIME_OUTPUT_DIRECTORY to the repo's `bin` folder, so the
+ * `basalt` binary lands in `bin/`, not the CMake `build/` tree. The distro
+ * profiles reuse this profile, so a distro carries no build steps of its own.
  *
  * Basalt is Blackwell-only (sm_120): the engine is compiled for the NVIDIA
  * Blackwell GPU, so the CUDA 13 toolkit and a C++20 compiler are hard
