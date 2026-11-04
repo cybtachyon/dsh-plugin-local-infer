@@ -68,7 +68,7 @@ system prompt when enabled. Document the feature in README.md.
 - [x] [TASK-001-package-scaffold](docs/PLAN-orchestrator-TASK-001-package-scaffold.md)
 - [x] [TASK-001b-basalt-spec-fix](docs/PLAN-orchestrator-TASK-001b-basalt-spec-fix.md)
 - [x] [TASK-002-config-and-default-prompt](docs/PLAN-orchestrator-TASK-002-config-and-default-prompt.md)
-- [ ] [TASK-003-system-prompt-injection](docs/PLAN-orchestrator-TASK-003-system-prompt-injection.md)
+- [x] [TASK-003-system-prompt-injection](docs/PLAN-orchestrator-TASK-003-system-prompt-injection.md)
 - [ ] [TASK-004-settings-routes](docs/PLAN-orchestrator-TASK-004-settings-routes.md)
 - [ ] [TASK-005-refactor-host-half](docs/PLAN-orchestrator-TASK-005-refactor-host-half.md)
 
