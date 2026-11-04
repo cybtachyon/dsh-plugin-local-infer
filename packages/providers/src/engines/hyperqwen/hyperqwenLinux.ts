@@ -10,4 +10,7 @@ import type { EngineOsProfile } from '../engineOs.ts'
 
 export const HYPERQWEN_LINUX: EngineOsProfile = {
   buildSteps: [],
+  // Hyper-Qwen is docker-only: the compose up pulls the vLLM image, so the
+  // local build needs nothing outside the host.
+  deps: [],
 }

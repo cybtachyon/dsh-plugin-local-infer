@@ -8,6 +8,7 @@
  */
 
 import type { EngineOsProfile } from '../engineOs.ts'
+import { SYSTEM_DEPS } from '../../systemDeps.ts'
 
 export const LLAMACPP_LINUX: EngineOsProfile = {
   buildSteps: [
@@ -15,6 +16,9 @@ export const LLAMACPP_LINUX: EngineOsProfile = {
   ],
   buildDir: 'build',
   binary: 'llama-server',
+  // The llama.cpp local build is a thin cmake route: the compiler and the hf
+  // CLI to download the model.
+  deps: [SYSTEM_DEPS.cmake, SYSTEM_DEPS.hfCli],
 }
 
 /**

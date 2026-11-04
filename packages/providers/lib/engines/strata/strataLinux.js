@@ -10,9 +10,14 @@
  * @module dsh-plugin-local-infer/providers/engines/strata/strataLinux
  */
 import { strataSourceLaunchArgs } from "./strata.js";
+import { SYSTEM_DEPS } from "../../systemDeps.js";
 export const STRATA_LINUX = {
     buildSteps: ['cd {dir} && ./setup.sh --yes --no-start'],
     binary: 'strata',
+    // The Strata source build git-clones the repo and runs setup.sh, which
+    // downloads what it needs; the only host deps are git (the clone) and curl
+    // (the model download).
+    deps: [SYSTEM_DEPS.git, SYSTEM_DEPS.curl],
 };
 /**
  * strataLinuxSourceLaunch renders the source-build launch argv for the Linux

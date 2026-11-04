@@ -16,6 +16,7 @@
 
 import { join } from 'node:path'
 import type { EngineOsProfile } from '../engineOs.ts'
+import { SYSTEM_DEPS } from '../../systemDeps.ts'
 
 export const NINFER_WINDOWS: EngineOsProfile = {
   buildSteps: [
@@ -29,7 +30,19 @@ export const NINFER_WINDOWS: EngineOsProfile = {
   binary: 'ninfer-serve.exe',
   // pwsh.exe (PowerShell 7+) is the modern shell the vcpkg build tooling
   // expects; the legacy powershell.exe (Windows PowerShell 5.1) lacks it.
-  shell: 'pwsh.exe'
+  shell: 'pwsh.exe',
+  // The Windows local build is the vcpkg route: the winget toolchain (CMake,
+  // Ninja, the MSVC compiler, the CUDA toolkit) plus the hf CLI and git. The
+  // vcpkg manifest pulls the ffmpeg and curl dev libraries, so the Linux
+  // pkg-config/ffmpeg/curl deps do not ride the Windows list.
+  deps: [
+    SYSTEM_DEPS.cmake,
+    SYSTEM_DEPS.ninja,
+    SYSTEM_DEPS.visualStudio,
+    SYSTEM_DEPS.cudaToolkit,
+    SYSTEM_DEPS.hfCli,
+    SYSTEM_DEPS.git,
+  ],
 }
 
 /**

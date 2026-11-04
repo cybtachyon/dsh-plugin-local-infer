@@ -6,10 +6,22 @@
  * @module dsh-plugin-local-infer/providers/engines/infernix/infernixWindows
  */
 import { INFERNIX_LINUX } from "./infernixLinux.js";
+import { SYSTEM_DEPS } from "../../systemDeps.js";
 export const INFERNIX_WINDOWS = {
     buildSteps: INFERNIX_LINUX.buildSteps,
     buildDir: 'build',
     binary: 'infernix-serve.exe',
+    // Infernix builds through the engine's own cmake preset, so its Windows
+    // local list is the same winget toolchain as NInfer's: CMake, Ninja, the
+    // MSVC compiler, the CUDA toolkit, the hf CLI, and git.
+    deps: [
+        SYSTEM_DEPS.cmake,
+        SYSTEM_DEPS.ninja,
+        SYSTEM_DEPS.visualStudio,
+        SYSTEM_DEPS.cudaToolkit,
+        SYSTEM_DEPS.hfCli,
+        SYSTEM_DEPS.git,
+    ],
 };
 /**
  * infernixWindowsBinary returns the Infernix engine binary name on Windows:

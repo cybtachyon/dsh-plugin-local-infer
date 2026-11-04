@@ -1,267 +1,18 @@
 /**
- * The per-OS SystemDep install command data. Each dep declares its purpose,
- * the which/version probe that reads "already installed", and its install
- * block keyed by package manager, mirroring the qwen-ninfer launcher header
- * (apt and the CUDA keyring on Debian/Ubuntu, pacman on Arch). The engine
- * dep plans map (engine, build mode) to these deps: a local NInfer build
- * needs the compile toolchain and the CUDA toolkit, a docker engine needs the
- * container runtime, and every engine downloads its model through the hf CLI.
+ * The per-engine dep plans, keyed by engine id. The local build-mode list is
+ * sourced from the engine OS profile's deps (the Windows profile carries the
+ * winget/MSVC toolchain, the shared Linux profile the apt/dnf/pacman/brew
+ * toolchain), so the per-platform local lists have one home in the profiles.
+ * The docker and binary lists stay central here: they are build modes, not
+ * platform-specific, so they do not ride the OS profiles.
  *
- * The dnf and brew blocks are the plan's "flagged when untested" sets: they
- * name the right packages but have not been run on a live host.
+ * The shared SystemDep install command catalog (the named host deps every
+ * list composes) lives in systemDeps.ts; it is re-exported here so the
+ * catalog keeps its public home in this module.
  * @module dsh-plugin-local-infer/providers/deps
  */
-import type { EngineDepPlan, HardwareProfile } from 'dsh-plugin-local-infer/core';
-/**
- * The named host deps every engine plan composes. The install blocks are the
- * copy/paste commands the user runs; envAfter carries the per-manager export
- * lines (the CUDA paths differ between Debian and Arch).
- */
-export declare const SYSTEM_DEPS: {
-    cmake: {
-        id: string;
-        purpose: string;
-        requiresSudo: true;
-        detect: (hw: HardwareProfile) => Promise<boolean>;
-        install: {
-            apt: {
-                commands: string[];
-            };
-            dnf: {
-                commands: string[];
-            };
-            pacman: {
-                commands: string[];
-            };
-            brew: {
-                commands: string[];
-            };
-            winget: {
-                commands: string[];
-            };
-        };
-    };
-    ninja: {
-        id: string;
-        purpose: string;
-        requiresSudo: true;
-        detect: (hw: HardwareProfile) => Promise<boolean>;
-        install: {
-            apt: {
-                commands: string[];
-            };
-            dnf: {
-                commands: string[];
-            };
-            pacman: {
-                commands: string[];
-            };
-            brew: {
-                commands: string[];
-            };
-            winget: {
-                commands: string[];
-            };
-        };
-    };
-    visualStudio: {
-        id: string;
-        purpose: string;
-        requiresSudo: false;
-        detect: (hw: HardwareProfile) => Promise<boolean>;
-        install: {
-            winget: {
-                commands: string[];
-            };
-        };
-    };
-    pkgConfig: {
-        id: string;
-        purpose: string;
-        requiresSudo: true;
-        detect: (hw: HardwareProfile) => Promise<boolean>;
-        install: {
-            apt: {
-                commands: string[];
-            };
-            dnf: {
-                commands: string[];
-            };
-            pacman: {
-                commands: string[];
-            };
-            brew: {
-                commands: string[];
-            };
-        };
-    };
-    ffmpeg: {
-        id: string;
-        purpose: string;
-        requiresSudo: true;
-        detect: (hw: HardwareProfile) => Promise<boolean>;
-        install: {
-            apt: {
-                commands: string[];
-            };
-            dnf: {
-                commands: string[];
-            };
-            pacman: {
-                commands: string[];
-            };
-            brew: {
-                commands: string[];
-            };
-        };
-    };
-    curl: {
-        id: string;
-        purpose: string;
-        requiresSudo: true;
-        detect: (hw: HardwareProfile) => Promise<boolean>;
-        install: {
-            apt: {
-                commands: string[];
-            };
-            dnf: {
-                commands: string[];
-            };
-            pacman: {
-                commands: string[];
-            };
-            brew: {
-                commands: string[];
-            };
-        };
-    };
-    cudaToolkit: {
-        id: string;
-        purpose: string;
-        requiresSudo: true;
-        detect: (hw: HardwareProfile) => Promise<boolean>;
-        install: {
-            apt: {
-                commands: string[];
-                envAfter: {
-                    CUDACXX: string;
-                };
-            };
-            dnf: {
-                commands: string[];
-                envAfter: {
-                    CUDACXX: string;
-                };
-            };
-            pacman: {
-                commands: string[];
-                envAfter: {
-                    CUDAToolkit_ROOT: string;
-                    CUDACXX: string;
-                    TORCH_CUDA_ARCH_LIST: string;
-                };
-            };
-            brew: {
-                commands: string[];
-                envAfter: {
-                    CUDACXX: string;
-                };
-            };
-            winget: {
-                commands: string[];
-            };
-        };
-    };
-    git: {
-        id: string;
-        purpose: string;
-        requiresSudo: true;
-        detect: (hw: HardwareProfile) => Promise<boolean>;
-        install: {
-            apt: {
-                commands: string[];
-            };
-            dnf: {
-                commands: string[];
-            };
-            pacman: {
-                commands: string[];
-            };
-            brew: {
-                commands: string[];
-            };
-            winget: {
-                commands: string[];
-            };
-        };
-    };
-    docker: {
-        id: string;
-        purpose: string;
-        requiresSudo: true;
-        detect: (hw: HardwareProfile) => Promise<boolean>;
-        install: {
-            apt: {
-                commands: string[];
-            };
-            dnf: {
-                commands: string[];
-            };
-            pacman: {
-                commands: string[];
-            };
-            brew: {
-                commands: string[];
-            };
-            winget: {
-                commands: string[];
-            };
-        };
-    };
-    nvidiaContainerToolkit: {
-        id: string;
-        purpose: string;
-        requiresSudo: true;
-        detect: (hw: HardwareProfile) => Promise<boolean>;
-        install: {
-            apt: {
-                commands: string[];
-            };
-            dnf: {
-                commands: string[];
-            };
-            pacman: {
-                commands: string[];
-            };
-            brew: {
-                commands: never[];
-            };
-        };
-    };
-    hfCli: {
-        id: string;
-        purpose: string;
-        requiresSudo: false;
-        detect: (hw: HardwareProfile) => Promise<boolean>;
-        install: {
-            apt: {
-                commands: string[];
-            };
-            dnf: {
-                commands: string[];
-            };
-            pacman: {
-                commands: string[];
-            };
-            brew: {
-                commands: string[];
-            };
-            winget: {
-                commands: string[];
-            };
-        };
-    };
-};
+import type { EngineDepPlan } from 'dsh-plugin-local-infer/core';
+export { SYSTEM_DEPS } from './systemDeps.ts';
 /**
  * The per-engine dep plans, keyed by engine id. The local NInfer list is the
  * qwen-ninfer header's toolchain plus the CUDA toolkit and the hf CLI; the
@@ -272,6 +23,13 @@ export declare const SYSTEM_DEPS: {
  * cmake-plus-hf list. Strata carries one list per build mode: the source
  * build needs git and curl, the binary install needs curl, and the docker
  * mode needs the container runtime plus the GPU toolkit.
+ *
+ * The local lists are read from the engine OS profile's deps, so the
+ * per-platform toolchain (the apt/dnf/pacman/brew route on Linux, the
+ * winget/MSVC route on Windows) has one home in the profiles. The Windows
+ * variant of a build mode's list is the Windows profile's deps; an engine
+ * with no Windows profile of its own (hyperqwen, llamacpp, strata) falls
+ * back to the shared Linux profile's deps.
  */
 export declare const ENGINE_DEP_PLANS: Record<string, EngineDepPlan>;
 //# sourceMappingURL=deps.d.ts.map

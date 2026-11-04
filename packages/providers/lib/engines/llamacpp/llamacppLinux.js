@@ -6,12 +6,16 @@
  * build steps of its own.
  * @module dsh-plugin-local-infer/providers/engines/llamacpp/llamacppLinux
  */
+import { SYSTEM_DEPS } from "../../systemDeps.js";
 export const LLAMACPP_LINUX = {
     buildSteps: [
         'cmake -S {dir} -B {dir}/build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build {dir}/build -j',
     ],
     buildDir: 'build',
     binary: 'llama-server',
+    // The llama.cpp local build is a thin cmake route: the compiler and the hf
+    // CLI to download the model.
+    deps: [SYSTEM_DEPS.cmake, SYSTEM_DEPS.hfCli],
 };
 /**
  * llamacppLinuxBinary returns the llama.cpp engine binary name on Linux: the

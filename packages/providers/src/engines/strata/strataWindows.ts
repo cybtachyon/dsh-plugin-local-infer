@@ -16,12 +16,16 @@
 
 import type { EngineOsProfile } from '../engineOs.ts'
 import { strataSourceLaunchArgs, type StrataSourceLaunchArgs } from './strata.ts'
+import { SYSTEM_DEPS } from '../../systemDeps.ts'
 
 export const STRATA_WINDOWS: EngineOsProfile = {
   buildSteps: ['cd {dir} && .\\START-HERE.bat --yes'],
   // The engine command is the strata Terminal on every platform (a
   // PowerShell command on Windows), so the name stays plain.
   binary: 'strata',
+  // The Windows source route is the engine's own START-HERE.bat wrapper; the
+  // host deps are the same git-plus-curl list as the Linux route.
+  deps: [SYSTEM_DEPS.git, SYSTEM_DEPS.curl],
 }
 
 /**

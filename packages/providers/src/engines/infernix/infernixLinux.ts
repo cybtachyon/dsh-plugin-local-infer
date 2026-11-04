@@ -8,11 +8,24 @@
  */
 
 import type { EngineOsProfile } from '../engineOs.ts'
+import { SYSTEM_DEPS } from '../../systemDeps.ts'
 
 export const INFERNIX_LINUX: EngineOsProfile = {
   buildSteps: ['cd {dir} && cmake --preset release && cmake --build build -j'],
   buildDir: 'build',
   binary: 'infernix-serve',
+  // Infernix builds through the engine's own cmake preset, so its local list
+  // is the same toolchain as NInfer's: the compile toolchain, the ffmpeg and
+  // curl dev libraries, the CUDA toolkit, and the hf CLI.
+  deps: [
+    SYSTEM_DEPS.cmake,
+    SYSTEM_DEPS.ninja,
+    SYSTEM_DEPS.pkgConfig,
+    SYSTEM_DEPS.ffmpeg,
+    SYSTEM_DEPS.curl,
+    SYSTEM_DEPS.cudaToolkit,
+    SYSTEM_DEPS.hfCli,
+  ],
 }
 
 /**

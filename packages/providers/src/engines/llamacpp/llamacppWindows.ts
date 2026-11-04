@@ -7,11 +7,16 @@
 
 import type { EngineOsProfile } from '../engineOs.ts'
 import { LLAMACPP_LINUX } from './llamacppLinux.ts'
+import { SYSTEM_DEPS } from '../../systemDeps.ts'
 
 export const LLAMACPP_WINDOWS: EngineOsProfile = {
   buildSteps: LLAMACPP_LINUX.buildSteps,
   buildDir: 'build',
   binary: 'llama-server.exe',
+  // llama.cpp carries no dedicated Windows build route, so a Windows host
+  // reads the shared Linux cmake steps; the local build deps are the same thin
+  // cmake-plus-hf list.
+  deps: [SYSTEM_DEPS.cmake, SYSTEM_DEPS.hfCli],
 }
 
 /**

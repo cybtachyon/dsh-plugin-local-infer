@@ -14,6 +14,7 @@
  * @module dsh-plugin-local-infer/providers/engines/ninfer/ninferWindows
  */
 import { join } from 'node:path';
+import { SYSTEM_DEPS } from "../../systemDeps.js";
 export const NINFER_WINDOWS = {
     buildSteps: [
         '$env:PATH="C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\vcpkg;$env:PATH"; $env:NINFER_VCPKG_ROOT="C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\vcpkg"; cd {dir} && vcpkg install && .\\scripts\\build-native.bat configure && .\\scripts\\build-native.bat build && .\\scripts\\build-native.bat build',
@@ -26,7 +27,19 @@ export const NINFER_WINDOWS = {
     binary: 'ninfer-serve.exe',
     // pwsh.exe (PowerShell 7+) is the modern shell the vcpkg build tooling
     // expects; the legacy powershell.exe (Windows PowerShell 5.1) lacks it.
-    shell: 'pwsh.exe'
+    shell: 'pwsh.exe',
+    // The Windows local build is the vcpkg route: the winget toolchain (CMake,
+    // Ninja, the MSVC compiler, the CUDA toolkit) plus the hf CLI and git. The
+    // vcpkg manifest pulls the ffmpeg and curl dev libraries, so the Linux
+    // pkg-config/ffmpeg/curl deps do not ride the Windows list.
+    deps: [
+        SYSTEM_DEPS.cmake,
+        SYSTEM_DEPS.ninja,
+        SYSTEM_DEPS.visualStudio,
+        SYSTEM_DEPS.cudaToolkit,
+        SYSTEM_DEPS.hfCli,
+        SYSTEM_DEPS.git,
+    ],
 };
 /**
  * ninferWindowsBinary returns the NInfer launch binary on Windows: the path
