@@ -35,6 +35,7 @@ and makes the health poll stop early when the spawned engine process has exited.
 ## Task dependencies
 
 - TASK-002 (hasExited) depends on TASK-001 (dep fix, independent).
+- TASK-001b (build block) depends on TASK-001 (dep fix).
 - TASK-003 (early-exit poll) depends on TASK-002 (hasExited).
 - TASK-004 (tests) depends on TASK-001, TASK-003.
 - TASK-005 (build/test/lint) depends on TASK-004.
@@ -44,6 +45,7 @@ and makes the health poll stop early when the spawned engine process has exited.
 ### Phase 1: Dep fix
 
 - [x] [TASK-001-basalt-pip-system-python](docs/PLAN-basalt-serve-dep-TASK-001-basalt-pip-system-python.md)
+- [ ] [TASK-001b-basalt-linux-build-system-python](docs/PLAN-basalt-serve-dep-TASK-001b-basalt-linux-build-system-python.md)
 
 ### Phase 2: Early-exit health poll
 
