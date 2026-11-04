@@ -172,6 +172,10 @@ export {
   repoNameFromUrl,
 } from './models.ts'
 export type { DefaultModel, ModelDirectoryEntry } from './models.ts'
+export {
+  hfDatasetsCacheDirectory,
+  hfHubCacheDirectory,
+} from './hf-cache.ts'
 export type {
   CommandOutcome,
   CommandRunner,

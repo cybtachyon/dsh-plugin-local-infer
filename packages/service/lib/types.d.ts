@@ -264,6 +264,7 @@ export interface LocalInferService {
     resolveDefaults(engineId: string, modelId: string, hw: HardwareProfile, explicit?: Config): Promise<ResolvedDefaults>;
     fetchPreset(source: PresetSource, options?: FetchPresetOptions): Promise<FetchPresetResult>;
     defaultModelDirectory(): string;
+    defaultDatasetDirectory(): string;
     hfCliAvailable(options?: HfCliOptions): Promise<string | null>;
     downloadModel(entry: DefaultModel, directory: string, options?: DownloadModelOptions): Promise<DownloadResult>;
     downloadChatTemplate(repo: string, directory: string, options?: DownloadModelOptions): Promise<DownloadResult>;

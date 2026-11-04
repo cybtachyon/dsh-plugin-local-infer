@@ -334,7 +334,14 @@ export interface LocalInferService {
     explicit?: Config,
   ): Promise<ResolvedDefaults>
   fetchPreset(source: PresetSource, options?: FetchPresetOptions): Promise<FetchPresetResult>
+  // The plugin's model download directory: the Hugging Face hub cache
+  // (HF_HUB_CACHE, then $HF_HOME/hub, then ~/.cache/huggingface/hub),
+  // created when absent.
   defaultModelDirectory(): string
+  // The plugin's dataset download directory: the Hugging Face datasets cache
+  // (HF_DATASETS_CACHE, then $HF_HOME/datasets, then
+  // ~/.cache/huggingface/datasets), created when absent.
+  defaultDatasetDirectory(): string
   hfCliAvailable(options?: HfCliOptions): Promise<string | null>
   downloadModel(
     entry: DefaultModel,

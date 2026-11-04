@@ -314,12 +314,21 @@ export declare class LocalInfer extends Service implements LocalInferService {
      */
     fetchPreset(source: PresetSource, options?: FetchPresetOptions): Promise<FetchPresetResult>;
     /**
-     * defaultModelDirectory is the plugin's model download directory: under
-     * the dsh home so a web user and a CLI user share one location, the way the
-     * config file does. The directory is created when absent, so the field's
-     * default is always a real path the deploy step can target.
+     * defaultModelDirectory is the plugin's model download directory: the
+     * Hugging Face hub cache the hf CLI and huggingface_hub share (HF_HUB_CACHE
+     * when set, then $HF_HOME/hub, then ~/.cache/huggingface/hub), so a model
+     * the plugin pulls lands where every other HF tooling looks. The directory
+     * is created when absent, so the field's default is always a real path the
+     * deploy step can target.
      */
     defaultModelDirectory(): string;
+    /**
+     * defaultDatasetDirectory is the plugin's dataset download directory: the
+     * Hugging Face datasets cache (HF_DATASETS_CACHE when set, then
+     * $HF_HOME/datasets, then ~/.cache/huggingface/datasets). Created when
+     * absent, for the same reason the model directory is.
+     */
+    defaultDatasetDirectory(): string;
     /**
      * hfCliAvailable probes for the hf CLI the model download runs: an
      * injected cliPath wins, then the `hf` binary on PATH. None found reads as

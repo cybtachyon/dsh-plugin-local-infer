@@ -19,4 +19,5 @@ export { hardwareClass, presetFromFetch, resolveDefaults, WILDCARD_HARDWARE_CLAS
 export { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, apiKeyEnvFor, buildModelEntry, defaultApiKeyFor, LLM_PI_AI_NAMESPACE, modelRowsFrom, modelSlug, providerIdFor, providerRegistrationOps, providerRemovalOps, removeModelRow, upsertModelRow, } from "./registrar.js";
 export { checkDeps, detectPackageManager, osLabel, planDeps, renderInstallString, runInstall, } from "./deps.js";
 export { CHAT_TEMPLATE_FILE, hfChatTemplateCommand, hfDownloadCommand, modelArtifactPath, modelEntriesForEngine, repoIdFromUrl, repoNameFromUrl, } from "./models.js";
+export { hfDatasetsCacheDirectory, hfHubCacheDirectory, } from "./hf-cache.js";
 //# sourceMappingURL=index.js.map

@@ -34,9 +34,9 @@ export async function buildSummary(localInfer, request) {
     // ENGINES is a known non-empty constant, so the fallback is always defined.
     const engine = ENGINES.find((entry) => entry.id === engineId) ?? ENGINES[0];
     // The Model Directory field defaults to the plugin's model download
-    // directory (~/.dsh/models, created when absent), so the card always
-    // seeds a real path the deploy step can target. A stored or requested
-    // directory that is a non-blank string wins over the default.
+    // directory (the Hugging Face hub cache, created when absent), so the card
+    // always seeds a real path the deploy step can target. A stored or
+    // requested directory that is a non-blank string wins over the default.
     const modelDirectory = localInfer.defaultModelDirectory();
     const rawConfig = request?.config ?? stored.config;
     const config = typeof rawConfig.modelDirectory === 'string' && rawConfig.modelDirectory.trim() !== ''

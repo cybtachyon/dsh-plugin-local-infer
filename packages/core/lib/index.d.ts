@@ -32,5 +32,6 @@ export type { DshModelEntry, DshModelRegistrar, ModelRow, RegisterResult, Settin
 export { checkDeps, detectPackageManager, osLabel, planDeps, renderInstallString, runInstall, } from './deps.ts';
 export { CHAT_TEMPLATE_FILE, hfChatTemplateCommand, hfDownloadCommand, modelArtifactPath, modelEntriesForEngine, repoIdFromUrl, repoNameFromUrl, } from './models.ts';
 export type { DefaultModel, ModelDirectoryEntry } from './models.ts';
+export { hfDatasetsCacheDirectory, hfHubCacheDirectory, } from './hf-cache.ts';
 export type { CommandOutcome, CommandRunner, DepCheck, DepStatus, EngineDepPlan, InstallCommands, InstallResult, PackageManager, PackageManagerProbes, SystemDep, SystemDepProvisioner, } from './deps.ts';
 //# sourceMappingURL=index.d.ts.map

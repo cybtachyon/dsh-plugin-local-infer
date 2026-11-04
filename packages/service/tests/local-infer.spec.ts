@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 // The service reads the host OS through node:os's platform. The ESM namespace
 // is not configurable, so a per-test spyOn cannot redefine it. This module
@@ -1952,26 +1952,67 @@ describe('ctx.localInfer engine death watching', () => {
 
 describe('model directory, hf CLI, and model download', () => {
   let home: string
+  const hfKeys = ['HF_HOME', 'HF_HUB_CACHE', 'HF_DATASETS_CACHE'] as const
+  const savedHfEnv = {} as Record<(typeof hfKeys)[number], string | undefined>
 
   beforeAll(() => {
     // defaultModelDirectory keys on homedir(), so the suite points the home at
     // a scratch dir and never touches the real one. homedir() reads HOME on
-    // POSIX and USERPROFILE on Windows, so both are set.
+    // POSIX and USERPROFILE on Windows, so both are set. The HF cache
+    // resolvers also read HF_HOME, HF_HUB_CACHE, and HF_DATASETS_CACHE, so
+    // the suite clears them and restores them after.
     home = mkdtempSync(join(tmpdir(), 'local-infer-service-'))
     process.env.HOME = home
     process.env.USERPROFILE = home
+    for (const key of hfKeys) {
+      savedHfEnv[key] = process.env[key]
+      delete process.env[key]
+    }
+  })
+
+  afterEach(() => {
+    // A test that arms an override clears it for the next test, so the
+    // platform-default tests never read a leaked value.
+    for (const key of hfKeys) delete process.env[key]
   })
 
   afterAll(() => {
+    for (const key of hfKeys) {
+      if (savedHfEnv[key] === undefined) delete process.env[key]
+      else process.env[key] = savedHfEnv[key]
+    }
     delete process.env.USERPROFILE
     rmSync(home, { recursive: true, force: true })
   })
 
-  it('resolves the default model directory under the dsh home and creates it', async () => {
+  it('resolves the default model directory at the HF hub cache and creates it', async () => {
     const ctx = await seam()
     const directory = ctx.localInfer.defaultModelDirectory()
-    expect(directory).toBe(join(home, '.dsh', 'models'))
+    expect(directory).toBe(join(home, '.cache', 'huggingface', 'hub'))
     expect(existsSync(directory)).toBe(true)
+  })
+
+  it('resolves the default dataset directory at the HF datasets cache and creates it', async () => {
+    const ctx = await seam()
+    const directory = ctx.localInfer.defaultDatasetDirectory()
+    expect(directory).toBe(join(home, '.cache', 'huggingface', 'datasets'))
+    expect(existsSync(directory)).toBe(true)
+  })
+
+  it('moves both directories under an HF_HOME global override', async () => {
+    const ctx = await seam()
+    process.env.HF_HOME = join(home, 'hf-home')
+    expect(ctx.localInfer.defaultModelDirectory()).toBe(join(home, 'hf-home', 'hub'))
+    expect(ctx.localInfer.defaultDatasetDirectory()).toBe(join(home, 'hf-home', 'datasets'))
+  })
+
+  it('lets the per-store overrides win over HF_HOME', async () => {
+    const ctx = await seam()
+    process.env.HF_HOME = join(home, 'hf-home')
+    process.env.HF_HUB_CACHE = join(home, 'hub-cache')
+    process.env.HF_DATASETS_CACHE = join(home, 'datasets-cache')
+    expect(ctx.localInfer.defaultModelDirectory()).toBe(join(home, 'hub-cache'))
+    expect(ctx.localInfer.defaultDatasetDirectory()).toBe(join(home, 'datasets-cache'))
   })
 
   it('lets an injected cliPath win in the hf CLI probe', async () => {

@@ -79,8 +79,9 @@ export interface LocalInferSummary {
   // The resolved defaults for the selected engine and model: the starting
   // config and the per-key provenance the card shows as "sourced from X".
   defaults: DefaultsModel
-  // The plugin's model download directory (~/.dsh/models, created when
-  // absent), the value the card's Model Directory field seeds from.
+  // The plugin's model download directory (the Hugging Face hub cache,
+  // created when absent), the value the card's Model Directory field seeds
+  // from.
   modelDirectory: string
   // The default model list for the selected engine: the entries the card's
   // Model dropdown offers, in list order. An engine with no entry (Strata)
@@ -214,9 +215,9 @@ export async function buildSummary(
   // ENGINES is a known non-empty constant, so the fallback is always defined.
   const engine = ENGINES.find((entry) => entry.id === engineId) ?? ENGINES[0]!
   // The Model Directory field defaults to the plugin's model download
-  // directory (~/.dsh/models, created when absent), so the card always
-  // seeds a real path the deploy step can target. A stored or requested
-  // directory that is a non-blank string wins over the default.
+  // directory (the Hugging Face hub cache, created when absent), so the card
+  // always seeds a real path the deploy step can target. A stored or
+  // requested directory that is a non-blank string wins over the default.
   const modelDirectory = localInfer.defaultModelDirectory()
   const rawConfig = request?.config ?? stored.config
   const config: Config =

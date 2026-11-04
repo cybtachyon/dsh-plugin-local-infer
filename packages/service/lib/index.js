@@ -25,7 +25,7 @@ import { Service } from '@deepseek-ai/cordis';
 // Relative, not the root package subpath: a self-referencing bare specifier
 // only resolves when the package sits inside a node_modules tree, so a
 // local-path or pnpm-linked install of this repo would fail the import.
-import { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, buildModelEntry, detectHardware as detectHardwareFromProbes, detectPackageManager, evaluateGuidelines, estimateVram, hfChatTemplateCommand, hfDownloadCommand, isGpuBusy, LLM_PI_AI_NAMESPACE, matchLaunchSignature, modelGuidelines, reLinkRecord, computeProviderStatuses, modelRowsFrom, parseNvidiaSmiGpu, parseNvidiaSmiGpuUsage, presetFromFetch, providerRegistrationOps, providerRemovalOps, removeModelRow, renderInstallString, resolveDefaults as resolveDefaultsFromPresets, resolveOsReserve, runInstall, } from '../../core/lib/index.js';
+import { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, buildModelEntry, detectHardware as detectHardwareFromProbes, detectPackageManager, evaluateGuidelines, estimateVram, hfChatTemplateCommand, hfDatasetsCacheDirectory, hfDownloadCommand, hfHubCacheDirectory, isGpuBusy, LLM_PI_AI_NAMESPACE, matchLaunchSignature, modelGuidelines, reLinkRecord, computeProviderStatuses, modelRowsFrom, parseNvidiaSmiGpu, parseNvidiaSmiGpuUsage, presetFromFetch, providerRegistrationOps, providerRemovalOps, removeModelRow, renderInstallString, resolveDefaults as resolveDefaultsFromPresets, resolveOsReserve, runInstall, } from '../../core/lib/index.js';
 /**
  * Local-inference failure. Extends Error with a stable `code`
  * (`LOCAL_INFER_CONFLICT`, `LOCAL_INFER_INVALID_ENGINE`,
@@ -947,13 +947,26 @@ export class LocalInfer extends Service {
         return { preset, stored: true, degraded: false };
     }
     /**
-     * defaultModelDirectory is the plugin's model download directory: under
-     * the dsh home so a web user and a CLI user share one location, the way the
-     * config file does. The directory is created when absent, so the field's
-     * default is always a real path the deploy step can target.
+     * defaultModelDirectory is the plugin's model download directory: the
+     * Hugging Face hub cache the hf CLI and huggingface_hub share (HF_HUB_CACHE
+     * when set, then $HF_HOME/hub, then ~/.cache/huggingface/hub), so a model
+     * the plugin pulls lands where every other HF tooling looks. The directory
+     * is created when absent, so the field's default is always a real path the
+     * deploy step can target.
      */
     defaultModelDirectory() {
-        const directory = join(homedir(), '.dsh', 'models');
+        const directory = hfHubCacheDirectory();
+        mkdirSync(directory, { recursive: true });
+        return directory;
+    }
+    /**
+     * defaultDatasetDirectory is the plugin's dataset download directory: the
+     * Hugging Face datasets cache (HF_DATASETS_CACHE when set, then
+     * $HF_HOME/datasets, then ~/.cache/huggingface/datasets). Created when
+     * absent, for the same reason the model directory is.
+     */
+    defaultDatasetDirectory() {
+        const directory = hfDatasetsCacheDirectory();
         mkdirSync(directory, { recursive: true });
         return directory;
     }

@@ -38,7 +38,9 @@ import {
   evaluateGuidelines,
   estimateVram,
   hfChatTemplateCommand,
+  hfDatasetsCacheDirectory,
   hfDownloadCommand,
+  hfHubCacheDirectory,
   isGpuBusy,
   LLM_PI_AI_NAMESPACE,
   matchLaunchSignature,
@@ -1146,13 +1148,27 @@ export class LocalInfer extends Service implements LocalInferService {
   }
 
   /**
-   * defaultModelDirectory is the plugin's model download directory: under
-   * the dsh home so a web user and a CLI user share one location, the way the
-   * config file does. The directory is created when absent, so the field's
-   * default is always a real path the deploy step can target.
+   * defaultModelDirectory is the plugin's model download directory: the
+   * Hugging Face hub cache the hf CLI and huggingface_hub share (HF_HUB_CACHE
+   * when set, then $HF_HOME/hub, then ~/.cache/huggingface/hub), so a model
+   * the plugin pulls lands where every other HF tooling looks. The directory
+   * is created when absent, so the field's default is always a real path the
+   * deploy step can target.
    */
   defaultModelDirectory(): string {
-    const directory = join(homedir(), '.dsh', 'models')
+    const directory = hfHubCacheDirectory()
+    mkdirSync(directory, { recursive: true })
+    return directory
+  }
+
+  /**
+   * defaultDatasetDirectory is the plugin's dataset download directory: the
+   * Hugging Face datasets cache (HF_DATASETS_CACHE when set, then
+   * $HF_HOME/datasets, then ~/.cache/huggingface/datasets). Created when
+   * absent, for the same reason the model directory is.
+   */
+  defaultDatasetDirectory(): string {
+    const directory = hfDatasetsCacheDirectory()
     mkdirSync(directory, { recursive: true })
     return directory
   }
