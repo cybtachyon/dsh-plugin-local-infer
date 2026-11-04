@@ -150,6 +150,9 @@ declare const en: {
     customArgRemove: string;
     customArgClear: string;
     customArgHelp: string;
+    orchestratorSection: string;
+    orchestratorPrompt: string;
+    orchestratorDefaultNote: string;
 };
 export type TextTable = Record<keyof typeof en, string>;
 /** The card's copy tables, keyed by language. */

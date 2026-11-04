@@ -5,8 +5,9 @@
  * Every wrapper is a thin typed round trip over the global fetch: the GET
  * routes (summary, deps) price the card's draft, and the POST routes
  * (save, install, register, unregister, launch, stop, get, download,
- * chat-template, provider-delete) mutate the host. A JSON answer that is
- * not OK throws with the route's error field, so the caller's catch reads
+ * chat-template, provider-delete, orchestrator-save) mutate the host. A
+ * JSON answer that is not OK throws with the route's error field, so the
+ * caller's catch reads
  * the host's own message. The launch route streams NDJSON (a step event as
  * each phase begins, a progress event when the Get-steps hf download's tqdm
  * output folds into a structured state, then a final result event), and the
@@ -238,5 +239,30 @@ export function postChatTemplate(request) {
 /** postProviderDelete removes a saved provider entry and answers with the fresh summary. */
 export function postProviderDelete(request) {
     return postJson('/local-infer/provider-delete', request);
+}
+/**
+ * orchestratorRouteExists probes whether the orchestrator's GET route is
+ * mounted: the same rule as routeExists (any response other than a 404 or a
+ * network failure proves presence). The orchestrator component ships
+ * disabled, and its routes live and die with the component, so the probe is
+ * the card's enablement read.
+ */
+export async function orchestratorRouteExists() {
+    try {
+        const response = await fetch('/local-infer/orchestrator');
+        return response.status !== 404;
+    }
+    catch {
+        // A network failure (the host is unreachable) reads as absent.
+        return false;
+    }
+}
+/** fetchOrchestrator reads the orchestrator prompt model (the GET /local-infer/orchestrator route). */
+export function fetchOrchestrator() {
+    return getJson('/local-infer/orchestrator');
+}
+/** postOrchestratorSave persists the prompt and answers with the fresh model. */
+export function postOrchestratorSave(request) {
+    return postJson('/local-infer/orchestrator/save', request);
 }
 //# sourceMappingURL=routes.js.map

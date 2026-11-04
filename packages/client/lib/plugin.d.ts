@@ -1,5 +1,6 @@
 /**
- * The browser card bootstrap: apply, registerCard, and mountCard.
+ * The browser card bootstrap: apply, registerCard, mountCard, and
+ * mountOrchestratorCard.
  *
  * dsh web users have no terminal, so the local-inference config (engine,
  * model, parameters) had no way in from the browser. The card is contributed
@@ -10,12 +11,20 @@
  * /local-infer/save), which owns ~/.dsh/local-infer/config.json, so the
  * browser never sees a value it did not store.
  *
+ * The Orchestrator card is a second, independent mount: it is probed on its
+ * own route (GET /local-infer/orchestrator, mounted only while the
+ * disabled-by-default orchestrator component row is enabled) and registered
+ * into the `plugins.row.config` slot under the
+ * `dsh-plugin-local-infer#local-infer-orchestrator` key, the configuration
+ * cell of that row. It shares the card's runtime-externals resolution but
+ * not its store, its routes, or its slot.
+ *
  * React and @deepseek-ai/dsh-client-ui-primitives come from the shell's
  * frozen platform module table (PLATFORM_MODULES), the same baseline every
  * dynamic bundle resolves against, so the card draws the DSH selector menus,
  * buttons, checkboxes, and state dots its host Settings pages use. Hosts
  * whose table predates the primitives seed keep the native controls through
- * the require fallback in mountCard.
+ * the require fallback in the mount functions.
  * @module dsh-plugin-local-infer/client/plugin
  */
 import type { Context } from '@deepseek-ai/cordis';
