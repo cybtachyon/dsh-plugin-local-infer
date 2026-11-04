@@ -6,6 +6,7 @@ import {
   renderCheckbox,
   renderHelpRow,
   renderProcessButton,
+  renderProgressStrip,
   renderSelect,
   renderStateDot,
   renderThrobber,
@@ -15,7 +16,8 @@ import {
 import { react as shim } from '../src/render/react.ts'
 import { SelectPill } from '../src/render/SelectPill.tsx'
 import { setReactModule, type ReactLike } from '../src/store/useCardStore.ts'
-import { GHOST_BUTTON, PRIMARY_BUTTON } from '../src/styles.ts'
+import type { GetProgressState } from '../src/store/progress.ts'
+import { GHOST_BUTTON, PRIMARY_BUTTON, PROGRESS_STRIP_TRACK } from '../src/styles.ts'
 
 // A renderer returns a React element (a plain object) or null. The tests
 // inspect the element's type and props without a renderer, so no react-dom is
@@ -231,6 +233,60 @@ describe('client primitive renderers (render/primitives.tsx)', () => {
     expect(getPrimitivesModule()).toBe(seed)
     setPrimitivesModule(null)
     expect(getPrimitivesModule()).toBe(null)
+  })
+})
+
+describe('the progress strip renderer (renderProgressStrip)', () => {
+  const progress: GetProgressState = {
+    step: 'Downloading a.safetensors',
+    percent: 42,
+    doneBytes: 4,
+    totalBytes: 10,
+    etaSeconds: 60,
+    unit: 'bytes',
+  }
+
+  it('renders nothing when the progress state is null or undefined', () => {
+    setPrimitivesModule(null)
+    expect(renderProgressStrip(null)).toBe(null)
+    expect(renderProgressStrip(undefined)).toBe(null)
+  })
+
+  it('degrades to a native track div when the seed is absent', () => {
+    setPrimitivesModule(null)
+    const e = el(renderProgressStrip(progress))
+    expect(e.type).toBe('div')
+    expect(e.props.style).toBe(PROGRESS_STRIP_TRACK)
+    expect(e.props.role).toBe('progressbar')
+  })
+
+  it('draws a fill whose width style tracks the percent', () => {
+    setPrimitivesModule(null)
+    const e = el(renderProgressStrip(progress))
+    const fill = e.props.children as El
+    expect(fill.type).toBe('div')
+    expect(fill.props.style).toEqual({
+      height: '100%',
+      width: '42%',
+      background: 'var(--dsw-alias-accent, #0a84ff)',
+    })
+  })
+
+  it('clamps the fill width to the 0-100 range', () => {
+    setPrimitivesModule(null)
+    const over = el(renderProgressStrip({ ...progress, percent: 150 }))
+    expect((over.props.children as El).props.style).toMatchObject({ width: '100%' })
+    const under = el(renderProgressStrip({ ...progress, percent: -5 }))
+    expect((under.props.children as El).props.style).toMatchObject({ width: '0%' })
+  })
+
+  it('draws the seed Progress when the host provides one', () => {
+    const ProgressMarker = () => null
+    setPrimitivesModule({ Progress: ProgressMarker })
+    const e = el(renderProgressStrip(progress))
+    expect(e.type).toBe(ProgressMarker)
+    expect(e.props.value).toBe(42)
+    setPrimitivesModule(null)
   })
 })
 

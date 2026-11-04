@@ -13,7 +13,15 @@
  */
 
 import type { ReactNode } from 'react'
-import { GHOST_BUTTON, HELP_ROW_STYLE, INPUT_STYLE, PRIMARY_BUTTON } from '../styles.ts'
+import {
+  GHOST_BUTTON,
+  HELP_ROW_STYLE,
+  INPUT_STYLE,
+  PRIMARY_BUTTON,
+  PROGRESS_STRIP_TRACK,
+  progressStripFillStyle,
+} from '../styles.ts'
+import type { GetProgressState } from '../store/progress.ts'
 import { react } from './react.ts'
 import { injectStyles, SelectPill, type SelectItem } from './SelectPill.tsx'
 
@@ -24,6 +32,7 @@ export interface PrimitivesModule {
   Button?: unknown
   Checkbox?: unknown
   StateDot?: unknown
+  Progress?: unknown
   IconChevronDownOutlineRegular?: unknown
   IconRefreshOutlineRegular?: unknown
 }
@@ -170,6 +179,32 @@ export function renderThrobber(): ReactNode {
       }}
       aria-hidden="true"
     />
+  )
+}
+
+// The 'getting' control's thin progress strip: the seed Progress when the
+// host provides one (the current primitives package exports no Progress, so
+// the guard stays a fallback for a future seed), the native track-and-fill
+// divs on the --dsw tokens otherwise. A null state renders nothing: the
+// readout alone carries the branch before the first bar update lands.
+export function renderProgressStrip(progress: GetProgressState | null | undefined): ReactNode {
+  if (progress === null || progress === undefined) {
+    return null
+  }
+  const primitives = getPrimitivesModule()
+  if (primitives && typeof primitives.Progress === 'function') {
+    return react.createElement(primitives.Progress, { value: progress.percent }) as ReactNode
+  }
+  return (
+    <div
+      style={PROGRESS_STRIP_TRACK}
+      role="progressbar"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.max(0, Math.min(100, progress.percent))}
+    >
+      <div style={progressStripFillStyle(progress.percent)} />
+    </div>
   )
 }
 

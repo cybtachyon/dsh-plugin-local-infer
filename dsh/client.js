@@ -189,6 +189,22 @@ function HELP_BUTTON_STYLE(active) {
     color: active ? "#fff" : "var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))"
   };
 }
+var PROGRESS_STRIP_TRACK = {
+  flex: 1,
+  minWidth: 80,
+  height: 4,
+  borderRadius: 2,
+  overflow: "hidden",
+  background: "var(--dsw-alias-bg-layer-1, var(--dsw-alias-background-tertiary, rgba(128,128,128,0.12)))"
+};
+function progressStripFillStyle(percent) {
+  const clamped = Math.max(0, Math.min(100, percent));
+  return {
+    height: "100%",
+    width: clamped + "%",
+    background: "var(--dsw-alias-accent, #0a84ff)"
+  };
+}
 var HELP_ROW_STYLE = {
   fontSize: 11,
   lineHeight: 1.4,
@@ -975,6 +991,26 @@ function renderThrobber() {
       },
       "aria-hidden": "true"
     }
+  );
+}
+function renderProgressStrip(progress) {
+  if (progress === null || progress === void 0) {
+    return null;
+  }
+  const primitives = getPrimitivesModule();
+  if (primitives && typeof primitives.Progress === "function") {
+    return react.createElement(primitives.Progress, { value: progress.percent });
+  }
+  return /* @__PURE__ */ react.createElement(
+    "div",
+    {
+      style: PROGRESS_STRIP_TRACK,
+      role: "progressbar",
+      "aria-valuemin": 0,
+      "aria-valuemax": 100,
+      "aria-valuenow": Math.max(0, Math.min(100, progress.percent))
+    },
+    /* @__PURE__ */ react.createElement("div", { style: progressStripFillStyle(progress.percent) })
   );
 }
 function renderProcessButton(opts) {
@@ -3545,6 +3581,18 @@ function card(_react, localeRef, _primitives) {
         "aria-label": control.label
       },
       control.label
+    ) : control.kind === "getting" ? (
+      // The getting throbber and the thin progress strip
+      // render as one flex row: the readout button on the
+      // left, the strip stretching the remaining width.
+      /* @__PURE__ */ react.createElement(react.Fragment, null, renderProcessButton({
+        busy: control.busy,
+        label: control.label,
+        busyLabel: control.busyLabel,
+        variant: control.variant,
+        onClick: onControlClick,
+        disabled: control.disabled
+      }), renderProgressStrip(control.progress))
     ) : renderProcessButton({
       busy: control.busy,
       label: control.label,

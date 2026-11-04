@@ -21,7 +21,7 @@
  */
 import { BANNER_STYLE, CARD_STYLE, FOOTER_STYLE, GHOST_BUTTON, HELP_BUTTON_STYLE, INLINE_WARNING_STYLE, INPUT_STYLE, LABEL_STYLE, ROW_STYLE, SECTION_STYLE, WARNING_BANNER_STYLE, } from "./styles.js";
 import { labels } from "./text.js";
-import { renderButton, renderCheckbox, renderHelpRow, renderProcessButton, renderSelect, } from "./render/primitives.js";
+import { renderButton, renderCheckbox, renderHelpRow, renderProcessButton, renderProgressStrip, renderSelect, } from "./render/primitives.js";
 import { react } from "./render/react.js";
 import { NumberField } from "./render/NumberField.js";
 import { ChatTemplateField, ChatTemplateStatusRow, useChatTemplateAutoDownload, } from "./render/ChatTemplateField.js";
@@ -591,14 +591,29 @@ export function card(_react, localeRef, _primitives) {
                             ? renderButton('ghost', { onClick: onControlClick }, control.label)
                             : control.kind === 'logs'
                                 ? (react.createElement("button", { type: "button", onClick: onControlClick, style: { color: 'var(--dsw-alias-label-error, #ff3b30)', ...GHOST_BUTTON }, "aria-label": control.label }, control.label))
-                                : renderProcessButton({
-                                    busy: control.busy,
-                                    label: control.label,
-                                    busyLabel: control.busyLabel,
-                                    variant: control.variant,
-                                    onClick: onControlClick,
-                                    disabled: control.disabled,
-                                }),
+                                : control.kind === 'getting'
+                                    ? (
+                                    // The getting throbber and the thin progress strip
+                                    // render as one flex row: the readout button on the
+                                    // left, the strip stretching the remaining width.
+                                    react.createElement(react.Fragment, null,
+                                        renderProcessButton({
+                                            busy: control.busy,
+                                            label: control.label,
+                                            busyLabel: control.busyLabel,
+                                            variant: control.variant,
+                                            onClick: onControlClick,
+                                            disabled: control.disabled,
+                                        }),
+                                        renderProgressStrip(control.progress)))
+                                    : renderProcessButton({
+                                        busy: control.busy,
+                                        label: control.label,
+                                        busyLabel: control.busyLabel,
+                                        variant: control.variant,
+                                        onClick: onControlClick,
+                                        disabled: control.disabled,
+                                    }),
                     renderCheckbox({
                         checked: state.ui.autoRebuild,
                         onChange: (next) => {

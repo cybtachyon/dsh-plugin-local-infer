@@ -227,6 +227,31 @@ export function HELP_BUTTON_STYLE(active) {
         color: active ? '#fff' : 'var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))',
     };
 }
+// The thin progress strip the 'getting' title-bar control renders: a 4px
+// rounded track the download fill grows through. The track reads the layer-1
+// background token the inputs read, the fill reads the accent token, so the
+// strip sits in the page with the card's own controls in both themes. The
+// primitives package exports no Progress component, so the strip is a custom
+// native control on these tokens (render/primitives.tsx guards a future seed
+// Progress member against it).
+export const PROGRESS_STRIP_TRACK = {
+    flex: 1,
+    minWidth: 80,
+    height: 4,
+    borderRadius: 2,
+    overflow: 'hidden',
+    background: 'var(--dsw-alias-bg-layer-1, var(--dsw-alias-background-tertiary, rgba(128,128,128,0.12)))',
+};
+// progressStripFillStyle renders the strip's fill: the accent bar whose width
+// is the percent complete, clamped to the 0-100 range the track spans.
+export function progressStripFillStyle(percent) {
+    const clamped = Math.max(0, Math.min(100, percent));
+    return {
+        height: '100%',
+        width: clamped + '%',
+        background: 'var(--dsw-alias-accent, #0a84ff)',
+    };
+}
 // The per-field description line: it sits under the input column (the
 // 120px label plus the 8px row gap) in the tertiary label the disabled
 // reason reads, so a two-line description stays a quiet annotation.

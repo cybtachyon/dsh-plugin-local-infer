@@ -494,6 +494,40 @@ describe('the card composer (src/Card.tsx)', () => {
     }
   })
 
+  it('renders the getting throbber with the progress strip while a Get run is in flight', () => {
+    const { store, rerender } = renderCard({ summary: fullSummary(), draft: fullDraft() })
+    store.dispatch({
+      type: 'ui/patch',
+      patch: {
+        getProgress: {
+          step: 'Downloading a.safetensors',
+          percent: 42,
+          doneBytes: 4,
+          totalBytes: 10,
+          etaSeconds: 60,
+          unit: 'bytes',
+        },
+      },
+    })
+    store.dispatch({ type: 'action/start', key: 'get' })
+    const tree = rerender()
+    // The getting throbber reads the live readout (the download verb + percent).
+    expect(text(tree)).toContain(t.gettingVerb + ' 42%')
+    // The strip renders next to the throbber with its fill at the percent.
+    const strip = find(tree, (e) => e.type === 'div' && e.props?.role === 'progressbar')
+    expect(strip).toBeDefined()
+    expect((strip?.props?.children as El).props?.style).toMatchObject({ width: '42%' })
+  })
+
+  it('renders the getting throbber without a strip when no progress state has landed', () => {
+    const { store, rerender } = renderCard({ summary: fullSummary(), draft: fullDraft() })
+    store.dispatch({ type: 'action/start', key: 'get' })
+    const tree = rerender()
+    // The readout falls back to the getting label, and the strip is absent.
+    expect(text(tree)).toContain(t.gettingReadout)
+    expect(find(tree, (e) => e.type === 'div' && e.props?.role === 'progressbar')).toBeUndefined()
+  })
+
   it('renders the unsure banner with the kill commands', () => {
     const summary = fullSummary({
       unsureBanner: {

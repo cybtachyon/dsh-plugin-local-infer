@@ -41,6 +41,7 @@ import {
   renderCheckbox,
   renderHelpRow,
   renderProcessButton,
+  renderProgressStrip,
   renderSelect,
   type PrimitivesModule,
 } from './render/primitives.tsx'
@@ -962,14 +963,31 @@ export function card(
                         {control.label}
                       </button>
                     )
-                    : renderProcessButton({
-                        busy: control.busy,
-                        label: control.label,
-                        busyLabel: control.busyLabel,
-                        variant: control.variant,
-                        onClick: onControlClick,
-                        disabled: control.disabled,
-                      })}
+                    : control.kind === 'getting'
+                      ? (
+                        // The getting throbber and the thin progress strip
+                        // render as one flex row: the readout button on the
+                        // left, the strip stretching the remaining width.
+                        <>
+                          {renderProcessButton({
+                            busy: control.busy,
+                            label: control.label,
+                            busyLabel: control.busyLabel,
+                            variant: control.variant,
+                            onClick: onControlClick,
+                            disabled: control.disabled,
+                          })}
+                          {renderProgressStrip(control.progress)}
+                        </>
+                      )
+                      : renderProcessButton({
+                          busy: control.busy,
+                          label: control.label,
+                          busyLabel: control.busyLabel,
+                          variant: control.variant,
+                          onClick: onControlClick,
+                          disabled: control.disabled,
+                        })}
               {renderCheckbox({
                 checked: state.ui.autoRebuild,
                 onChange: (next) => {
