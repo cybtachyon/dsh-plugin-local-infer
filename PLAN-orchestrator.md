@@ -70,7 +70,7 @@ system prompt when enabled. Document the feature in README.md.
 - [x] [TASK-002-config-and-default-prompt](docs/PLAN-orchestrator-TASK-002-config-and-default-prompt.md)
 - [x] [TASK-003-system-prompt-injection](docs/PLAN-orchestrator-TASK-003-system-prompt-injection.md)
 - [x] [TASK-004-settings-routes](docs/PLAN-orchestrator-TASK-004-settings-routes.md)
-- [ ] [TASK-005-refactor-host-half](docs/PLAN-orchestrator-TASK-005-refactor-host-half.md)
+- [x] [TASK-005-refactor-host-half](docs/PLAN-orchestrator-TASK-005-refactor-host-half.md)
 
 ### Phase 2: Bundle wiring (disabled by default)
 

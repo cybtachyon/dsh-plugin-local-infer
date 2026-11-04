@@ -8,11 +8,14 @@
  * are held by an effect, so they go when the component does.
  *
  * The HTTP plumbing is a minimal local mirror of the ui package's defineRoute
- * template (method guard 405, bounded body 413, JSON answer): the ui package
- * does not export its template, and the orchestrator package keeps no
- * dependency on ui, so the shared shape is copied rather than imported. The
- * stream helpers the ui template carries are dropped; these two routes only
- * ever answer with one JSON body.
+ * template (method guard 405, bounded body 413, JSON answer). The ui package
+ * does export its template, but this package deliberately keeps no dependency
+ * on ui: importing ui's route module would load its whole route graph (the
+ * service, providers, and core packages) into a component that ships disabled
+ * and must stay loadable headless, so the shared shape is copied rather than
+ * imported, and the two copies change together by hand. The stream helpers
+ * the ui template carries are dropped; these two routes only ever answer with
+ * one JSON body.
  * @module dsh-plugin-local-infer/orchestrator/route
  */
 
@@ -20,7 +23,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import {
   defaultOrchestratorPrompt,
   getOrchestratorPrompt,
-  readOrchestratorConfig,
+  hasSavedOrchestratorPrompt,
   setOrchestratorPrompt,
 } from './config.js'
 
@@ -74,8 +77,9 @@ class RouteError extends Error {
 /**
  * The request body size cap the save route enforces: a prompt is a few
  * kilobytes at most, so a body past 64 KiB is a client bug, not a prompt.
- * Same cap the ui routes hold, so one malformed client misbehaves the same
- * on every /local-infer route.
+ * Deliberately mirrors the cap in packages/ui/src/route.ts (ui is not a
+ * dependency here): one malformed client misbehaves the same on every
+ * /local-infer route, so edit the two together.
  */
 const MAX_BODY_BYTES = 64 * 1024
 
@@ -190,7 +194,7 @@ function orchestratorPayload(): OrchestratorPayload {
   return {
     prompt: getOrchestratorPrompt(),
     defaultPrompt: defaultOrchestratorPrompt(),
-    saved: readOrchestratorConfig().prompt !== '',
+    saved: hasSavedOrchestratorPrompt(),
   }
 }
 

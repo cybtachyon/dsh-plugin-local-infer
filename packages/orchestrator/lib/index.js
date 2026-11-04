@@ -11,7 +11,7 @@
  */
 import { getOrchestratorPrompt } from './config.js';
 import { registerOrchestratorRoutes } from './route.js';
-export { defaultOrchestratorPrompt, getOrchestratorPrompt, orchestratorConfigPath, readOrchestratorConfig, setOrchestratorPrompt, writeOrchestratorConfig, } from './config.js';
+export { defaultOrchestratorPrompt, getOrchestratorPrompt, hasSavedOrchestratorPrompt, orchestratorConfigPath, readOrchestratorConfig, setOrchestratorPrompt, writeOrchestratorConfig, } from './config.js';
 export const name = 'local-infer-orchestrator';
 // No required top-level services: the `systemPrompt` and `webServer` seams
 // are pulled with scoped injects in their own effects, so the component
@@ -24,6 +24,22 @@ export const inject = [];
 // 500, and external contributions may pick any finite order.
 const orchestratorSectionOrder = 100;
 /**
+ * mountSeam pulls one optional service through a scoped inject and mounts
+ * the half that needs it. A profile without the seam never runs the
+ * callback, and a mount failure is logged and swallowed so the component
+ * still loads without that half. `skipped` names the half in the catch log.
+ */
+function mountSeam(ctx, service, skipped, mount) {
+    ctx.inject([service], (scope) => {
+        try {
+            mount(scope);
+        }
+        catch (error) {
+            console.error(`[local-infer] orchestrator ${skipped}: ${error}`);
+        }
+    });
+}
+/**
  * Mount the Orchestrator prompt. The scoped `systemPrompt` inject registers
  * the one global `orchestrator` section where the seam exists; the effect
  * scope ties the registration to the plugin, so it unregisters with the
@@ -35,31 +51,21 @@ export function apply(ctx) {
     if (typeof ctx.inject !== 'function') {
         return;
     }
-    ctx.inject(['systemPrompt'], (scope) => {
+    mountSeam(ctx, 'systemPrompt', 'prompt section skipped', (scope) => {
         const systemPrompt = scope.systemPrompt;
-        try {
-            systemPrompt.section({
-                name: 'orchestrator',
-                order: orchestratorSectionOrder,
-                // The prompt is user-editable text: a stray {{var}} stays literal
-                // instead of failing every later prompt assembly.
-                interpolate: false,
-                // Provider form re-reads the holder per assembly, so a settings
-                // Save reaches the next assembly without a host restart.
-                text: () => getOrchestratorPrompt(),
-            });
-        }
-        catch (error) {
-            console.error(`[local-infer] orchestrator prompt section skipped: ${error}`);
-        }
+        systemPrompt.section({
+            name: 'orchestrator',
+            order: orchestratorSectionOrder,
+            // The prompt is user-editable text: a stray {{var}} stays literal
+            // instead of failing every later prompt assembly.
+            interpolate: false,
+            // Provider form re-reads the holder per assembly, so a settings
+            // Save reaches the next assembly without a host restart.
+            text: () => getOrchestratorPrompt(),
+        });
     });
-    ctx.inject(['webServer'], (scope) => {
-        try {
-            registerOrchestratorRoutes(scope);
-        }
-        catch (error) {
-            console.error(`[local-infer] orchestrator settings routes skipped: ${error}`);
-        }
+    mountSeam(ctx, 'webServer', 'settings routes skipped', (scope) => {
+        registerOrchestratorRoutes(scope);
     });
 }
 const plugin = { name, inject, apply };

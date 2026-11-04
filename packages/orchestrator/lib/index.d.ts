@@ -10,7 +10,7 @@
  * @module dsh-plugin-local-infer/orchestrator
  */
 import type { Context } from '@deepseek-ai/cordis';
-export { defaultOrchestratorPrompt, getOrchestratorPrompt, orchestratorConfigPath, readOrchestratorConfig, setOrchestratorPrompt, writeOrchestratorConfig, } from './config.js';
+export { defaultOrchestratorPrompt, getOrchestratorPrompt, hasSavedOrchestratorPrompt, orchestratorConfigPath, readOrchestratorConfig, setOrchestratorPrompt, writeOrchestratorConfig, } from './config.js';
 export type { StoredOrchestratorConfig } from './config.js';
 export declare const name = "local-infer-orchestrator";
 export declare const inject: string[];
