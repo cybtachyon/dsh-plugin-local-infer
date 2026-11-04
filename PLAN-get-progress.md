@@ -87,7 +87,7 @@ by the previous commits in their phase and resolve the named code risks.
 
 ### Phase 2 — Client store progress state
 
-- [ ] [TASK-006-parse-hf-progress](docs/PLAN-get-progress-TASK-006-parse-hf-progress.md)
+- [x] [TASK-006-parse-hf-progress](docs/PLAN-get-progress-TASK-006-parse-hf-progress.md)
 - [ ] [TASK-007-getprogress-state](docs/PLAN-get-progress-TASK-007-getprogress-state.md)
 - [ ] [TASK-008-performget-throttle](docs/PLAN-get-progress-TASK-008-performget-throttle.md)
 - [ ] [TASK-009-refactor-phase2](docs/PLAN-get-progress-TASK-009-refactor-phase2.md)
