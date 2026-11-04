@@ -2,7 +2,7 @@
 
 Refactor:
 
-Review the files touched by the previous 3 commits and identify the following code risks:
+Review the files touched by the previous 4 commits and identify the following code risks:
  - **Multiple Sources of Truth**: Same calculations done in multiple places.
  - **Duplicate Code**: Nearly-identical code in multiple methods.
  - **Bloaters**: Too many things done in a single method or class.
@@ -14,10 +14,17 @@ Then address and resolve each risk.
 
 ## Context
 
-The previous 3 commits are the Basalt fix (TASK-002 config path, TASK-003
-`--model`/`--engine-bin` flags, TASK-004 model path resolution), all in
+The previous 4 commits are the Basalt fix (TASK-002 config path, TASK-003
+`--model`/`--engine-bin` flags, TASK-004 model path resolution, TASK-004b
+download the selected model file), all in
 `packages/providers/src/engines/basalt/basaltAdapter.ts`. Review that file for
 the risks above and resolve each one.
+
+Design note from TASK-004b: the deploy step derives the model file name from the
+`--model` argv token (the basename of the placeholder `renderLaunch` wrote),
+which couples deploy to renderLaunch's argv format. A `modelFile` field on
+`LaunchPlan` (set by renderLaunch) would decouple it; weigh that against the
+current minimal approach that guarantees download == `--model` target.
 
 ## Definition of Done
 
