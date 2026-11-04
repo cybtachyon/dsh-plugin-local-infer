@@ -184,6 +184,36 @@ export function renderTextShimmer(children) {
     }
     return react.createElement("span", { style: SHIMMER_TEXT_STYLE }, children);
 }
+// The native Pill fallback's chrome: a compact rounded pill the Cancel
+// affordance reads as on a host without the seed. It is a button, not a
+// span, so the click the seed's Pill carries (the cancel handler) stays
+// wired through the fallback.
+const PILL_BUTTON_STYLE = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    height: 20,
+    padding: '0 8px',
+    borderRadius: 10,
+    whiteSpace: 'nowrap',
+    font: 'inherit',
+    fontSize: 11,
+    lineHeight: 1,
+    cursor: 'pointer',
+    border: '1px solid var(--dsw-alias-border-secondary, rgba(128,128,128,0.24))',
+    background: 'transparent',
+    color: 'inherit',
+};
+// The DSH Pill atom (a compact rounded label) with the card's native pill
+// button as the fallback a host without the seed keeps. The seed's Pill
+// takes the same label contract; the props (the click handler, the disabled
+// state) pass through to it.
+export function renderPill(label, pillProps) {
+    const primitives = getPrimitivesModule();
+    if (primitives && typeof primitives.Pill === 'function') {
+        return react.createElement(primitives.Pill, { ...pillProps }, label);
+    }
+    return react.createElement('button', { type: 'button', style: PILL_BUTTON_STYLE, ...pillProps }, label);
+}
 export function renderProcessButton(opts) {
     if (opts.busy === true) {
         return (react.createElement("button", { type: "button", disabled: true, style: { display: 'inline-flex', alignItems: 'center', gap: 4, opacity: 0.7, ...GHOST_BUTTON }, "aria-label": opts.busyLabel },

@@ -79,6 +79,7 @@ import {
   performSave,
   performUnregister,
 } from './store/actions.ts'
+import { performGetCancel } from './store/deps.ts'
 import { downloadTemplate } from './store/template.ts'
 
 /**
@@ -316,14 +317,17 @@ function renderField(props: FieldProps): ReactNode {
 
 // renderTitleBarControl draws the title-bar Launch/Stop control from the
 // lifecycle spec: the phase throbber (no click), the ghost Stop, the red
-// Logs, the getting throbber with the progress strip, and the draft
-// Launch/Stop. The 'getting' branch renders the throbber and the thin
-// progress strip as one flex row: the readout button on the left, the strip
-// stretching the remaining width. A null progress renders no strip (the
-// readout alone carries the branch).
+// Logs, the getting throbber with the progress strip and the ghost Cancel,
+// and the draft Launch/Stop. The 'getting' branch renders the throbber and
+// the thin progress strip as one flex row: the readout button on the left,
+// the strip stretching the remaining width, and the ghost Cancel (the
+// performGetCancel driver) after the strip. A null progress renders no
+// strip (the readout alone carries the branch).
 function renderTitleBarControl(
   control: LifecycleControl,
   onControlClick: () => void,
+  onCancel: () => void,
+  cancelLabel: string,
 ): ReactNode {
   if (control.kind === 'phase') {
     return renderProcessButton({
@@ -361,6 +365,7 @@ function renderTitleBarControl(
           disabled: control.disabled,
         })}
         {renderProgressStrip(control.progress)}
+        {renderButton('ghost', { onClick: onCancel }, cancelLabel)}
       </>
     )
   }
@@ -1006,7 +1011,12 @@ export function card(
             <DepsPanel store={store} t={t} />
             <LogsPanel store={store} t={t} />
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
-              {renderTitleBarControl(control, onControlClick)}
+              {renderTitleBarControl(
+                control,
+                onControlClick,
+                () => performGetCancel(store),
+                t.cancel,
+              )}
               {renderCheckbox({
                 checked: state.ui.autoRebuild,
                 onChange: (next) => {

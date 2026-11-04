@@ -42,6 +42,10 @@ export interface PrimitivesModule {
   // for a future seed (TASK-017 adds the members).
   Tag?: unknown
   TextShimmer?: unknown
+  // Forward-looking: the installed primitives seed exports no Pill, so
+  // renderPill's guard stays a fallback for a future seed (TASK-017 adds the
+  // member).
+  Pill?: unknown
   IconChevronDownOutlineRegular?: unknown
   IconRefreshOutlineRegular?: unknown
 }
@@ -286,6 +290,42 @@ export function renderTextShimmer(children: ReactNode): ReactNode {
     return react.createElement(primitives.TextShimmer, null, children) as ReactNode
   }
   return <span style={SHIMMER_TEXT_STYLE}>{children}</span>
+}
+
+// The native Pill fallback's chrome: a compact rounded pill the Cancel
+// affordance reads as on a host without the seed. It is a button, not a
+// span, so the click the seed's Pill carries (the cancel handler) stays
+// wired through the fallback.
+const PILL_BUTTON_STYLE: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  height: 20,
+  padding: '0 8px',
+  borderRadius: 10,
+  whiteSpace: 'nowrap',
+  font: 'inherit',
+  fontSize: 11,
+  lineHeight: 1,
+  cursor: 'pointer',
+  border: '1px solid var(--dsw-alias-border-secondary, rgba(128,128,128,0.24))',
+  background: 'transparent',
+  color: 'inherit',
+}
+
+// The DSH Pill atom (a compact rounded label) with the card's native pill
+// button as the fallback a host without the seed keeps. The seed's Pill
+// takes the same label contract; the props (the click handler, the disabled
+// state) pass through to it.
+export function renderPill(label: string, pillProps: Record<string, unknown>): ReactNode {
+  const primitives = getPrimitivesModule()
+  if (primitives && typeof primitives.Pill === 'function') {
+    return react.createElement(primitives.Pill, { ...pillProps }, label) as ReactNode
+  }
+  return react.createElement(
+    'button',
+    { type: 'button', style: PILL_BUTTON_STYLE, ...pillProps },
+    label,
+  ) as ReactNode
 }
 
 // The reusable stateful process button: the Disable/Throbber/Reset lifecycle

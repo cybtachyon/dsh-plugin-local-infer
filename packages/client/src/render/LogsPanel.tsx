@@ -1,9 +1,10 @@
 /**
  * The Logs section: the last run's captured output in a read-only textarea,
  * the log-file location the launch writes to, the diagonal chevron drag
- * handle that resizes the textarea, and the five Get step chips (deps /
+ * handle that resizes the textarea, the five Get step chips (deps /
  * clone / build / model / template) that head the pane while a Get run is in
- * flight.
+ * flight, and the compact Cancel pill (the performGetCancel driver) that
+ * heads the pane beside the chips while a run is in flight.
  *
  * The pane state lives in the store (ui.logs: the streamed Get buffer, the
  * chevron-resized height, and the auto-scroll mode), so the section keeps no
@@ -20,10 +21,11 @@ import type { CSSProperties, ReactNode } from 'react'
 import { INPUT_STYLE, LABEL_STYLE, ROW_STYLE } from '../styles.ts'
 import type { TextTable } from '../text.ts'
 import { deriveDisplayedLogs, isGettingInFlight } from '../store/derive.ts'
+import { performGetCancel } from '../store/deps.ts'
 import { deriveGetStepTones, type StepTone } from '../store/progress.ts'
 import type { CardStore } from '../store/sync.ts'
 import type { LogsPaneState } from '../store/types.ts'
-import { getPrimitivesModule, renderTag, renderTextShimmer } from './primitives.tsx'
+import { getPrimitivesModule, renderPill, renderTag, renderTextShimmer } from './primitives.tsx'
 import { react } from './react.ts'
 
 // The in-flight chevron drag: the pointer's starting Y and the height it
@@ -81,10 +83,12 @@ export function LogsPanel(props: LogsPanelProps): ReactNode {
   // buffer is active and the get cell or the in-flight registry reads in
   // flight, the TASK-010 detection), or while the run has just settled
   // failed (the buffer is still active, so the failed step reads as danger).
-  // With no run in flight the header shows nothing.
+  // The Cancel pill (the performGetCancel driver) renders only while a run
+  // is in flight, beside the chips. With no run in flight the header shows
+  // nothing.
   const getFailed = state.actions.get.status === 'error'
-  const chipsVisible =
-    state.ui.logs.getLogs !== null && (isGettingInFlight(state) || getFailed)
+  const gettingInFlight = isGettingInFlight(state)
+  const chipsVisible = state.ui.logs.getLogs !== null && (gettingInFlight || getFailed)
   const stepTones: StepTone[] | null = chipsVisible
     ? deriveGetStepTones(displayedLogs, getFailed)
     : null
@@ -174,16 +178,23 @@ export function LogsPanel(props: LogsPanelProps): ReactNode {
   return (
     <div style={{ marginTop: 8 }}>
       <div style={LABEL_STYLE}>{t.logs}</div>
-      {stepTones !== null ? (
+      {stepTones !== null || gettingInFlight ? (
         <div style={STEP_CHIPS_ROW_STYLE}>
-          {stepTones.map((tone, index) => (
-            <span key={index}>
-              {renderTag(
-                tone,
-                tone === 'info' ? renderTextShimmer(stepLabels[index]!) : stepLabels[index]!,
-              )}
-            </span>
-          ))}
+          {stepTones !== null
+            ? stepTones.map((tone, index) => (
+                <span key={index}>
+                  {renderTag(
+                    tone,
+                    tone === 'info'
+                      ? renderTextShimmer(stepLabels[index]!)
+                      : stepLabels[index]!,
+                  )}
+                </span>
+              ))
+            : null}
+          {gettingInFlight
+            ? renderPill(t.cancel, { onClick: () => performGetCancel(store) })
+            : null}
         </div>
       ) : null}
       <div style={{ position: 'relative' }}>

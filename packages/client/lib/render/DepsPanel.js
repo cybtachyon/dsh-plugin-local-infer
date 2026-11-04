@@ -1,15 +1,17 @@
 /**
  * The System dependencies panel: the per-dep status list, the copy/paste
  * install block, the allow-run trust gate, the Play/Run arrow (only while
- * the trust gate is on), and the "Get" gate that stays disabled until every
- * dep reports satisfied. The panel is a pure draw of the store's deps model
+ * the trust gate is on), the "Get" gate that stays disabled until every
+ * dep reports satisfied, and the ghost Cancel (the performGetCancel driver)
+ * that shows only while a Get run is in flight. The panel is a pure draw of the store's deps model
  * (the /local-infer/deps route's answer); the copy, allow-run, install, and
  * Get actions ride the store's deps + notes cells through the store/deps.ts
  * drivers, so the panel keeps no state of its own.
  * @module dsh-plugin-local-infer/client/render/DepsPanel
  */
 import { DEPS_ROW_STYLE, INSTALL_BLOCK_STYLE, SECTION_STYLE } from "../styles.js";
-import { copyInstallString, performAllowRun, performGet, performInstall, } from "../store/deps.js";
+import { copyInstallString, performAllowRun, performGet, performGetCancel, performInstall, } from "../store/deps.js";
+import { isGettingInFlight } from "../store/derive.js";
 import { renderButton, renderCheckbox, renderProcessButton, renderStateDot, } from "./primitives.js";
 import { react } from "./react.js";
 // stateForStatus maps a dep's status onto the DSH state-dot semantics the
@@ -103,7 +105,10 @@ export function DepsPanel(props) {
                     void performGet(store, t);
                 },
                 disabled: !deps.allSatisfied,
-            })),
+            }),
+            isGettingInFlight(state)
+                ? renderButton('ghost', { onClick: () => performGetCancel(store) }, t.cancel)
+                : null),
         note !== '' ? (react.createElement("div", { style: {
                 fontSize: 12,
                 marginTop: 4,

@@ -1,8 +1,9 @@
 /**
  * The System dependencies panel: the per-dep status list, the copy/paste
  * install block, the allow-run trust gate, the Play/Run arrow (only while
- * the trust gate is on), and the "Get" gate that stays disabled until every
- * dep reports satisfied. The panel is a pure draw of the store's deps model
+ * the trust gate is on), the "Get" gate that stays disabled until every
+ * dep reports satisfied, and the ghost Cancel (the performGetCancel driver)
+ * that shows only while a Get run is in flight. The panel is a pure draw of the store's deps model
  * (the /local-infer/deps route's answer); the copy, allow-run, install, and
  * Get actions ride the store's deps + notes cells through the store/deps.ts
  * drivers, so the panel keeps no state of its own.

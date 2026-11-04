@@ -35,6 +35,7 @@ import { deriveLifecycleControl, deriveProviderFormMode, } from "./store/derive.
 import { repriceDeps, repriceSummary } from "./store/deps.js";
 import { openEntryLogs, performDraftLaunch, performDraftStop, performEntryLaunch, performEntryStop, } from "./store/providers.js";
 import { performDiscard, performDownload, performRegister, performSave, performUnregister, } from "./store/actions.js";
+import { performGetCancel } from "./store/deps.js";
 import { downloadTemplate } from "./store/template.js";
 // renderField draws one form-model field: the control the field's control
 // kind names (checkbox, dropdown, slider plus number, the chat-template combo,
@@ -167,12 +168,13 @@ function renderField(props) {
 }
 // renderTitleBarControl draws the title-bar Launch/Stop control from the
 // lifecycle spec: the phase throbber (no click), the ghost Stop, the red
-// Logs, the getting throbber with the progress strip, and the draft
-// Launch/Stop. The 'getting' branch renders the throbber and the thin
-// progress strip as one flex row: the readout button on the left, the strip
-// stretching the remaining width. A null progress renders no strip (the
-// readout alone carries the branch).
-function renderTitleBarControl(control, onControlClick) {
+// Logs, the getting throbber with the progress strip and the ghost Cancel,
+// and the draft Launch/Stop. The 'getting' branch renders the throbber and
+// the thin progress strip as one flex row: the readout button on the left,
+// the strip stretching the remaining width, and the ghost Cancel (the
+// performGetCancel driver) after the strip. A null progress renders no
+// strip (the readout alone carries the branch).
+function renderTitleBarControl(control, onControlClick, onCancel, cancelLabel) {
     if (control.kind === 'phase') {
         return renderProcessButton({
             busy: true,
@@ -198,7 +200,8 @@ function renderTitleBarControl(control, onControlClick) {
                 onClick: onControlClick,
                 disabled: control.disabled,
             }),
-            renderProgressStrip(control.progress)));
+            renderProgressStrip(control.progress),
+            renderButton('ghost', { onClick: onCancel }, cancelLabel)));
     }
     return renderProcessButton({
         busy: control.busy,
@@ -624,7 +627,7 @@ export function card(_react, localeRef, _primitives) {
                 react.createElement(DepsPanel, { store: store, t: t }),
                 react.createElement(LogsPanel, { store: store, t: t }),
                 react.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 } },
-                    renderTitleBarControl(control, onControlClick),
+                    renderTitleBarControl(control, onControlClick, () => performGetCancel(store), t.cancel),
                     renderCheckbox({
                         checked: state.ui.autoRebuild,
                         onChange: (next) => {

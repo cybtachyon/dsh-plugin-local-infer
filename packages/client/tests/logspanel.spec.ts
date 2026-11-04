@@ -3,6 +3,7 @@ import type { LocalInferSummary } from 'dsh-plugin-local-infer/ui'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { LogsPanel } from '../src/render/LogsPanel.tsx'
 import { setPrimitivesModule } from '../src/render/primitives.tsx'
+import { clearInFlightRuns, trackGetAbort } from '../src/store/abort.ts'
 import { cardReducer } from '../src/store/reducer.ts'
 import type { CardStore } from '../src/store/sync.ts'
 import { initialCardState, type CardState } from '../src/store/types.ts'
@@ -37,6 +38,16 @@ function text(e: El): string {
   return list
     .map((x) => (typeof x === 'object' && x !== null ? text(el(x)) : String(x ?? '')))
     .join('')
+}
+// findAll walks the element tree and collects every element matching the
+// predicate, in render order.
+function findAll(node: unknown, pred: (e: El) => boolean): El[] {
+  if (node === null || node === undefined || typeof node !== 'object') {
+    return []
+  }
+  const e = node as El
+  const own = pred(e) ? [e] : []
+  return [...own, ...children(e).flatMap((c) => findAll(c, pred))]
 }
 
 // makeStore builds a test store over the real reducer, the way the card's
@@ -436,7 +447,8 @@ describe('the Logs section (render/LogsPanel.tsx)', () => {
     const row = chipRow(root)
     expect(row).not.toBeNull()
     const chips = children(row!)
-    expect(chips.length).toBe(5)
+    // The five chips plus the Cancel pill (the native pill button fallback).
+    expect(chips.length).toBe(6)
     // The completed steps (deps, clone, build) read as success.
     for (const index of [0, 1, 2]) {
       expect(tagTone(chips[index]!)).toBe('var(--dsw-alias-label-success, #34c38f)')
@@ -450,6 +462,10 @@ describe('the Logs section (render/LogsPanel.tsx)', () => {
     )
     // The not-started template step reads as quiet.
     expect(tagTone(chips[4]!)).toBe('var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))')
+    // The Cancel pill (the native pill button fallback) sits after the chips.
+    const pill = chips[5]!
+    expect(pill.type).toBe('button')
+    expect(text(pill)).toBe(t.cancel)
   })
 
   it('tones the failed step danger when the run settles failed before it completes', () => {
@@ -484,5 +500,49 @@ describe('the Logs section (render/LogsPanel.tsx)', () => {
     const d = makeDispatcher()
     const root = render(d, store, t)
     expect(chipRow(root)).toBeNull()
+  })
+
+  it('hides the Cancel pill with no run in flight', () => {
+    const { store } = makeStore()
+    const d = makeDispatcher()
+    const root = render(d, store, t)
+    // No run in flight: the header row is absent, so the pill has no home.
+    expect(findAll(root, (e) => e.type === 'button' && text(e) === t.cancel)).toHaveLength(0)
+  })
+
+  it('the Cancel pill dispatches performGetCancel', () => {
+    const { store, state } = makeStore()
+    // A tracked run in flight: the cancel aborts it through the registry.
+    const controller = new AbortController()
+    trackGetAbort(controller)
+    store.dispatch({ type: 'action/start', key: 'get' })
+    store.dispatch({
+      type: 'ui/patch',
+      patch: {
+        getProgress: {
+          step: 'Downloading a.safetensors',
+          percent: 42,
+          doneBytes: 4,
+          totalBytes: 10,
+          etaSeconds: 60,
+          unit: 'bytes',
+        },
+        logs: {
+          ...store.getSnapshot().ui.logs,
+          getLogs: 'model download: a-model\n',
+        },
+      },
+    })
+    const d = makeDispatcher()
+    const root = render(d, store, t)
+    const row = chipRow(root)
+    expect(row).not.toBeNull()
+    const pill = children(row!).find((e) => e.type === 'button')
+    expect(pill).toBeDefined()
+    ;(pill!.props.onClick as () => void)()
+    // performGetCancel aborted the tracked run and cleared the readout.
+    expect(controller.signal.aborted).toBe(true)
+    expect(state().ui.getProgress).toBeNull()
+    clearInFlightRuns()
   })
 })

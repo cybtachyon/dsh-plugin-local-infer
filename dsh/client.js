@@ -1076,6 +1076,32 @@ function renderTextShimmer(children) {
   }
   return /* @__PURE__ */ react.createElement("span", { style: SHIMMER_TEXT_STYLE }, children);
 }
+var PILL_BUTTON_STYLE = {
+  display: "inline-flex",
+  alignItems: "center",
+  height: 20,
+  padding: "0 8px",
+  borderRadius: 10,
+  whiteSpace: "nowrap",
+  font: "inherit",
+  fontSize: 11,
+  lineHeight: 1,
+  cursor: "pointer",
+  border: "1px solid var(--dsw-alias-border-secondary, rgba(128,128,128,0.24))",
+  background: "transparent",
+  color: "inherit"
+};
+function renderPill(label, pillProps) {
+  const primitives = getPrimitivesModule();
+  if (primitives && typeof primitives.Pill === "function") {
+    return react.createElement(primitives.Pill, { ...pillProps }, label);
+  }
+  return react.createElement(
+    "button",
+    { type: "button", style: PILL_BUTTON_STYLE, ...pillProps },
+    label
+  );
+}
 function renderProcessButton(opts) {
   if (opts.busy === true) {
     return /* @__PURE__ */ react.createElement(
@@ -2443,93 +2469,12 @@ function performGet(store, t) {
     ACTION_TIMEOUTS.get
   );
 }
-
-// packages/client/src/render/DepsPanel.tsx
-var STATE_FOR_STATUS = {
-  satisfied: "done",
-  missing: "warning",
-  failed: "error",
-  installing: "ongoing"
-};
-function DepsPanel(props) {
-  const { store, t } = props;
-  const state = store.getSnapshot();
-  const deps = state.deps;
-  if (deps === null) {
-    return null;
+function performGetCancel(store) {
+  const aborted = cancelInFlightRuns();
+  if (aborted) {
+    appendCanceledLog(store);
   }
-  const installCell = state.actions.install;
-  const getCell = state.actions.get;
-  const note = installCell.status === "error" ? installCell.detail : state.notes.deps;
-  const rows = deps.deps.map((dep) => /* @__PURE__ */ react.createElement("div", { key: dep.id, style: DEPS_ROW_STYLE }, renderStateDot(STATE_FOR_STATUS[dep.status] ?? "idle"), /* @__PURE__ */ react.createElement("span", { style: { fontWeight: 600 } }, dep.id), /* @__PURE__ */ react.createElement(
-    "span",
-    {
-      style: {
-        color: "var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))"
-      }
-    },
-    "// The sudo hint is a Linux/macOS concept; a winget (Windows) host // installs without elevation, so the hint is suppressed there.",
-    dep.purpose + (dep.requiresSudo && deps.packageManager !== "winget" ? " (sudo)" : "")
-  )));
-  return /* @__PURE__ */ react.createElement("div", { style: { marginTop: 8 } }, /* @__PURE__ */ react.createElement("div", { style: { display: "flex", alignItems: "baseline", gap: 8 } }, /* @__PURE__ */ react.createElement("div", { style: SECTION_STYLE }, t.depsTitle), deps.packageManager === null ? /* @__PURE__ */ react.createElement(
-    "span",
-    {
-      style: {
-        fontSize: 11,
-        color: "var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))"
-      }
-    },
-    t.pmUnknown
-  ) : null), deps.deps.length > 0 ? /* @__PURE__ */ react.createElement("div", null, rows) : /* @__PURE__ */ react.createElement("div", { style: { fontSize: 12, opacity: 0.7, marginTop: 4 } }, t.depsNone), deps.installString !== "" ? /* @__PURE__ */ react.createElement("div", null, /* @__PURE__ */ react.createElement("pre", { style: INSTALL_BLOCK_STYLE }, deps.installString), renderButton(
-    "ghost",
-    {
-      onClick: () => copyInstallString(store, t)
-    },
-    state.notes.copy !== "" ? state.notes.copy : t.copy
-  )) : null, deps.chatTemplate !== void 0 ? /* @__PURE__ */ react.createElement("div", { style: { marginTop: 8 } }, /* @__PURE__ */ react.createElement(
-    "div",
-    {
-      style: {
-        fontSize: 12,
-        fontWeight: 600,
-        color: "var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))"
-      }
-    },
-    t.templateAbsent
-  ), /* @__PURE__ */ react.createElement("div", { style: { fontSize: 12, marginTop: 4 } }, t.templateInstructions), /* @__PURE__ */ react.createElement("pre", { style: INSTALL_BLOCK_STYLE }, deps.chatTemplate.downloadCommand)) : null, /* @__PURE__ */ react.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 8 } }, renderCheckbox({
-    checked: deps.runAllowed === true,
-    onChange: (checked) => {
-      void performAllowRun(store, checked);
-    },
-    label: t.allowRun
-  }), deps.runAllowed && !deps.allSatisfied ? renderProcessButton({
-    busy: installCell.status === "pending",
-    label: "\u25B6 " + t.run,
-    busyLabel: t.running,
-    variant: "ghost",
-    onClick: () => {
-      void performInstall(store, t);
-    }
-  }) : null, renderProcessButton({
-    busy: getCell.status === "pending",
-    label: t.get,
-    busyLabel: t.getting,
-    variant: "primary",
-    onClick: () => {
-      void performGet(store, t);
-    },
-    disabled: !deps.allSatisfied
-  })), note !== "" ? /* @__PURE__ */ react.createElement(
-    "div",
-    {
-      style: {
-        fontSize: 12,
-        marginTop: 4,
-        color: "var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))"
-      }
-    },
-    note
-  ) : null);
+  store.dispatch({ type: "ui/patch", patch: { getProgress: null } });
 }
 
 // packages/client/src/store/derive.ts
@@ -2678,6 +2623,94 @@ function deriveProviderFormMode(state) {
     return "new";
   }
   return state.ui.providerFormMode;
+}
+
+// packages/client/src/render/DepsPanel.tsx
+var STATE_FOR_STATUS = {
+  satisfied: "done",
+  missing: "warning",
+  failed: "error",
+  installing: "ongoing"
+};
+function DepsPanel(props) {
+  const { store, t } = props;
+  const state = store.getSnapshot();
+  const deps = state.deps;
+  if (deps === null) {
+    return null;
+  }
+  const installCell = state.actions.install;
+  const getCell = state.actions.get;
+  const note = installCell.status === "error" ? installCell.detail : state.notes.deps;
+  const rows = deps.deps.map((dep) => /* @__PURE__ */ react.createElement("div", { key: dep.id, style: DEPS_ROW_STYLE }, renderStateDot(STATE_FOR_STATUS[dep.status] ?? "idle"), /* @__PURE__ */ react.createElement("span", { style: { fontWeight: 600 } }, dep.id), /* @__PURE__ */ react.createElement(
+    "span",
+    {
+      style: {
+        color: "var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))"
+      }
+    },
+    "// The sudo hint is a Linux/macOS concept; a winget (Windows) host // installs without elevation, so the hint is suppressed there.",
+    dep.purpose + (dep.requiresSudo && deps.packageManager !== "winget" ? " (sudo)" : "")
+  )));
+  return /* @__PURE__ */ react.createElement("div", { style: { marginTop: 8 } }, /* @__PURE__ */ react.createElement("div", { style: { display: "flex", alignItems: "baseline", gap: 8 } }, /* @__PURE__ */ react.createElement("div", { style: SECTION_STYLE }, t.depsTitle), deps.packageManager === null ? /* @__PURE__ */ react.createElement(
+    "span",
+    {
+      style: {
+        fontSize: 11,
+        color: "var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))"
+      }
+    },
+    t.pmUnknown
+  ) : null), deps.deps.length > 0 ? /* @__PURE__ */ react.createElement("div", null, rows) : /* @__PURE__ */ react.createElement("div", { style: { fontSize: 12, opacity: 0.7, marginTop: 4 } }, t.depsNone), deps.installString !== "" ? /* @__PURE__ */ react.createElement("div", null, /* @__PURE__ */ react.createElement("pre", { style: INSTALL_BLOCK_STYLE }, deps.installString), renderButton(
+    "ghost",
+    {
+      onClick: () => copyInstallString(store, t)
+    },
+    state.notes.copy !== "" ? state.notes.copy : t.copy
+  )) : null, deps.chatTemplate !== void 0 ? /* @__PURE__ */ react.createElement("div", { style: { marginTop: 8 } }, /* @__PURE__ */ react.createElement(
+    "div",
+    {
+      style: {
+        fontSize: 12,
+        fontWeight: 600,
+        color: "var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))"
+      }
+    },
+    t.templateAbsent
+  ), /* @__PURE__ */ react.createElement("div", { style: { fontSize: 12, marginTop: 4 } }, t.templateInstructions), /* @__PURE__ */ react.createElement("pre", { style: INSTALL_BLOCK_STYLE }, deps.chatTemplate.downloadCommand)) : null, /* @__PURE__ */ react.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 8 } }, renderCheckbox({
+    checked: deps.runAllowed === true,
+    onChange: (checked) => {
+      void performAllowRun(store, checked);
+    },
+    label: t.allowRun
+  }), deps.runAllowed && !deps.allSatisfied ? renderProcessButton({
+    busy: installCell.status === "pending",
+    label: "\u25B6 " + t.run,
+    busyLabel: t.running,
+    variant: "ghost",
+    onClick: () => {
+      void performInstall(store, t);
+    }
+  }) : null, renderProcessButton({
+    busy: getCell.status === "pending",
+    label: t.get,
+    busyLabel: t.getting,
+    variant: "primary",
+    onClick: () => {
+      void performGet(store, t);
+    },
+    disabled: !deps.allSatisfied
+  }), isGettingInFlight(state) ? renderButton("ghost", { onClick: () => performGetCancel(store) }, t.cancel) : null), note !== "" ? /* @__PURE__ */ react.createElement(
+    "div",
+    {
+      style: {
+        fontSize: 12,
+        marginTop: 4,
+        color: "var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))"
+      }
+    },
+    note
+  ) : null);
 }
 
 // packages/client/src/render/ProviderList.tsx
@@ -2900,7 +2933,8 @@ function LogsPanel(props) {
   const textareaRef = react.useRef(null);
   const dragRef = react.useRef(null);
   const getFailed = state.actions.get.status === "error";
-  const chipsVisible = state.ui.logs.getLogs !== null && (isGettingInFlight(state) || getFailed);
+  const gettingInFlight = isGettingInFlight(state);
+  const chipsVisible = state.ui.logs.getLogs !== null && (gettingInFlight || getFailed);
   const stepTones = chipsVisible ? deriveGetStepTones(displayedLogs, getFailed) : null;
   const stepLabels = [t.stepDeps, t.stepClone, t.stepBuild, t.stepModel, t.stepTemplate];
   const patchLogs = (patch) => {
@@ -2952,10 +2986,10 @@ function LogsPanel(props) {
   };
   const chevron = getPrimitivesModule()?.IconChevronDownOutlineRegular;
   const chevronGlyph = typeof chevron === "function" ? /* @__PURE__ */ react.createElement("span", { style: { display: "inline-flex", transform: "rotate(-45deg)" } }, react.createElement(chevron, { size: 12 })) : "\u231F";
-  return /* @__PURE__ */ react.createElement("div", { style: { marginTop: 8 } }, /* @__PURE__ */ react.createElement("div", { style: LABEL_STYLE }, t.logs), stepTones !== null ? /* @__PURE__ */ react.createElement("div", { style: STEP_CHIPS_ROW_STYLE }, stepTones.map((tone, index) => /* @__PURE__ */ react.createElement("span", { key: index }, renderTag(
+  return /* @__PURE__ */ react.createElement("div", { style: { marginTop: 8 } }, /* @__PURE__ */ react.createElement("div", { style: LABEL_STYLE }, t.logs), stepTones !== null || gettingInFlight ? /* @__PURE__ */ react.createElement("div", { style: STEP_CHIPS_ROW_STYLE }, stepTones !== null ? stepTones.map((tone, index) => /* @__PURE__ */ react.createElement("span", { key: index }, renderTag(
     tone,
     tone === "info" ? renderTextShimmer(stepLabels[index]) : stepLabels[index]
-  )))) : null, /* @__PURE__ */ react.createElement("div", { style: { position: "relative" } }, /* @__PURE__ */ react.createElement(
+  ))) : null, gettingInFlight ? renderPill(t.cancel, { onClick: () => performGetCancel(store) }) : null) : null, /* @__PURE__ */ react.createElement("div", { style: { position: "relative" } }, /* @__PURE__ */ react.createElement(
     "textarea",
     {
       ref: textareaRef,
@@ -3258,7 +3292,7 @@ function renderField(props) {
   ) : null);
   return /* @__PURE__ */ react.createElement("div", { style: { marginTop: 6 } }, body, help ? renderHelpRow(field.description) : null, inlineWarnings.map((warning) => /* @__PURE__ */ react.createElement("div", { key: warning.id, style: INLINE_WARNING_STYLE(warning.tone) }, warning.message)));
 }
-function renderTitleBarControl(control, onControlClick) {
+function renderTitleBarControl(control, onControlClick, onCancel, cancelLabel) {
   if (control.kind === "phase") {
     return renderProcessButton({
       busy: true,
@@ -3292,7 +3326,7 @@ function renderTitleBarControl(control, onControlClick) {
       variant: control.variant,
       onClick: onControlClick,
       disabled: control.disabled
-    }), renderProgressStrip(control.progress));
+    }), renderProgressStrip(control.progress), renderButton("ghost", { onClick: onCancel }, cancelLabel));
   }
   return renderProcessButton({
     busy: control.busy,
@@ -3702,7 +3736,12 @@ function card(_react, localeRef, _primitives) {
         }
       },
       t.measureHint
-    ) : null, summary.verdict && (summary.verdict.status === "over" || summary.verdict.status === "tight") ? /* @__PURE__ */ react.createElement("div", { style: BANNER_STYLE(summary.verdict.status) }, (summary.verdict.status === "over" ? t.over : t.tight) + ": " + summary.verdict.detail) : null, /* @__PURE__ */ react.createElement(CustomArgsPanel, { store, t }), /* @__PURE__ */ react.createElement(DepsPanel, { store, t }), /* @__PURE__ */ react.createElement(LogsPanel, { store, t }), /* @__PURE__ */ react.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 8 } }, renderTitleBarControl(control, onControlClick), renderCheckbox({
+    ) : null, summary.verdict && (summary.verdict.status === "over" || summary.verdict.status === "tight") ? /* @__PURE__ */ react.createElement("div", { style: BANNER_STYLE(summary.verdict.status) }, (summary.verdict.status === "over" ? t.over : t.tight) + ": " + summary.verdict.detail) : null, /* @__PURE__ */ react.createElement(CustomArgsPanel, { store, t }), /* @__PURE__ */ react.createElement(DepsPanel, { store, t }), /* @__PURE__ */ react.createElement(LogsPanel, { store, t }), /* @__PURE__ */ react.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 8 } }, renderTitleBarControl(
+      control,
+      onControlClick,
+      () => performGetCancel(store),
+      t.cancel
+    ), renderCheckbox({
       checked: state.ui.autoRebuild,
       onChange: (next) => {
         store.dispatch({ type: "ui/patch", patch: { autoRebuild: next } });

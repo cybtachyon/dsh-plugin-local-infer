@@ -5,6 +5,7 @@ import {
   renderButton,
   renderCheckbox,
   renderHelpRow,
+  renderPill,
   renderProcessButton,
   renderProgressStrip,
   renderSelect,
@@ -33,11 +34,13 @@ const ButtonMarker = () => null
 const CheckboxMarker = () => null
 const StateDotMarker = () => null
 const ChevronMarker = () => null
+const PillMarker = () => null
 const seed: PrimitivesModule = {
   Menu: MenuMarker,
   Button: ButtonMarker,
   Checkbox: CheckboxMarker,
   StateDot: StateDotMarker,
+  Pill: PillMarker,
   IconChevronDownOutlineRegular: ChevronMarker,
 }
 
@@ -84,6 +87,25 @@ describe('client primitive renderers (render/primitives.tsx)', () => {
     const ghost = el(renderButton('ghost', {}, 'Discard'))
     expect(ghost.type).toBe('button')
     expect(ghost.props.style).toBe(GHOST_BUTTON)
+  })
+
+  it('renderPill draws the seed Pill when present', () => {
+    setPrimitivesModule(seed)
+    const onClick = () => {}
+    const e = el(renderPill('Cancel', { onClick }))
+    expect(e.type).toBe(PillMarker)
+    expect(e.props.onClick).toBe(onClick)
+    expect(e.props.children).toBe('Cancel')
+  })
+
+  it('renderPill falls back to a native pill button when the seed is absent', () => {
+    setPrimitivesModule(null)
+    const e = el(renderPill('Cancel', { onClick: () => {} }))
+    expect(e.type).toBe('button')
+    expect(e.props.type).toBe('button')
+    expect(e.props.children).toBe('Cancel')
+    const style = e.props.style as Record<string, unknown>
+    expect(style.borderRadius).toBe(10)
   })
 
   it('renderCheckbox draws the seed Checkbox when present', () => {

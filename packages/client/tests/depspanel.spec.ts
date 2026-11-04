@@ -2,6 +2,7 @@ import * as reactModule from 'react'
 import type { DepsModel } from 'dsh-plugin-local-infer/ui'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { DepsPanel } from '../src/render/DepsPanel.tsx'
+import { clearInFlightRuns, trackGetAbort } from '../src/store/abort.ts'
 import { cardReducer } from '../src/store/reducer.ts'
 import type { CardStore } from '../src/store/sync.ts'
 import { initialCardState, type CardState } from '../src/store/types.ts'
@@ -210,6 +211,25 @@ describe('the System dependencies panel (render/DepsPanel.tsx)', () => {
     expect(text(get)).toBe(t.getting)
     expect(el(get).props.disabled).toBe(true)
   })
+
+  it('shows the Cancel button only while a Get run is in flight', () => {
+    const { store } = makeStore()
+    store.dispatch({ type: 'deps/ack', deps: depsWith() })
+    let root = el(DepsPanel({ store, t }))
+    let controlRow = children(root)[3]
+    // No run in flight: the row carries the Run and Get buttons, no Cancel.
+    expect(buttons(controlRow).map((b) => text(b))).toEqual(['▶ ' + t.run, t.get])
+    // A Get run in flight (the get cell pending): the Cancel button shows,
+    // and the Get gate reads as its busy label.
+    store.dispatch({ type: 'action/start', key: 'get' })
+    root = el(DepsPanel({ store, t }))
+    controlRow = children(root)[3]
+    expect(buttons(controlRow).map((b) => text(b))).toEqual([
+      '▶ ' + t.run,
+      t.getting,
+      t.cancel,
+    ])
+  })
 })
 
 // The panel's control handlers: the copy button, the allow-run checkbox, and
@@ -400,5 +420,35 @@ describe('the deps panel control handlers (render/DepsPanel.tsx)', () => {
       vi.useRealTimers()
       vi.unstubAllGlobals()
     }
+  })
+
+  it('the Cancel button dispatches performGetCancel', () => {
+    const { store, state } = seedDepsAndDraft()
+    // A tracked run in flight: the cancel aborts it through the registry.
+    const controller = new AbortController()
+    trackGetAbort(controller)
+    store.dispatch({
+      type: 'ui/patch',
+      patch: {
+        getProgress: {
+          step: 'Downloading a.safetensors',
+          percent: 42,
+          doneBytes: 4,
+          totalBytes: 10,
+          etaSeconds: 60,
+          unit: 'bytes',
+        },
+      },
+    })
+    store.dispatch({ type: 'action/start', key: 'get' })
+    const root = el(DepsPanel({ store, t }))
+    const controlRow = children(root)[3]
+    const cancelButton = buttons(controlRow).find((b) => text(b) === t.cancel)
+    expect(cancelButton).toBeDefined()
+    ;(cancelButton!.props.onClick as () => void)()
+    // performGetCancel aborted the tracked run and cleared the readout.
+    expect(controller.signal.aborted).toBe(true)
+    expect(state().ui.getProgress).toBeNull()
+    clearInFlightRuns()
   })
 })

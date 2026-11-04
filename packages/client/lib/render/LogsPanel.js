@@ -1,9 +1,10 @@
 /**
  * The Logs section: the last run's captured output in a read-only textarea,
  * the log-file location the launch writes to, the diagonal chevron drag
- * handle that resizes the textarea, and the five Get step chips (deps /
+ * handle that resizes the textarea, the five Get step chips (deps /
  * clone / build / model / template) that head the pane while a Get run is in
- * flight.
+ * flight, and the compact Cancel pill (the performGetCancel driver) that
+ * heads the pane beside the chips while a run is in flight.
  *
  * The pane state lives in the store (ui.logs: the streamed Get buffer, the
  * chevron-resized height, and the auto-scroll mode), so the section keeps no
@@ -17,8 +18,9 @@
  */
 import { INPUT_STYLE, LABEL_STYLE, ROW_STYLE } from "../styles.js";
 import { deriveDisplayedLogs, isGettingInFlight } from "../store/derive.js";
+import { performGetCancel } from "../store/deps.js";
 import { deriveGetStepTones } from "../store/progress.js";
-import { getPrimitivesModule, renderTag, renderTextShimmer } from "./primitives.js";
+import { getPrimitivesModule, renderPill, renderTag, renderTextShimmer } from "./primitives.js";
 import { react } from "./react.js";
 // The readable height range the chevron drag clamps to, in px.
 const LOGS_MIN_HEIGHT = 96;
@@ -58,9 +60,12 @@ export function LogsPanel(props) {
     // buffer is active and the get cell or the in-flight registry reads in
     // flight, the TASK-010 detection), or while the run has just settled
     // failed (the buffer is still active, so the failed step reads as danger).
-    // With no run in flight the header shows nothing.
+    // The Cancel pill (the performGetCancel driver) renders only while a run
+    // is in flight, beside the chips. With no run in flight the header shows
+    // nothing.
     const getFailed = state.actions.get.status === 'error';
-    const chipsVisible = state.ui.logs.getLogs !== null && (isGettingInFlight(state) || getFailed);
+    const gettingInFlight = isGettingInFlight(state);
+    const chipsVisible = state.ui.logs.getLogs !== null && (gettingInFlight || getFailed);
     const stepTones = chipsVisible
         ? deriveGetStepTones(displayedLogs, getFailed)
         : null;
@@ -136,7 +141,15 @@ export function LogsPanel(props) {
     const chevronGlyph = typeof chevron === 'function' ? (react.createElement("span", { style: { display: 'inline-flex', transform: 'rotate(-45deg)' } }, react.createElement(chevron, { size: 12 }))) : ('\u231F');
     return (react.createElement("div", { style: { marginTop: 8 } },
         react.createElement("div", { style: LABEL_STYLE }, t.logs),
-        stepTones !== null ? (react.createElement("div", { style: STEP_CHIPS_ROW_STYLE }, stepTones.map((tone, index) => (react.createElement("span", { key: index }, renderTag(tone, tone === 'info' ? renderTextShimmer(stepLabels[index]) : stepLabels[index])))))) : null,
+        stepTones !== null || gettingInFlight ? (react.createElement("div", { style: STEP_CHIPS_ROW_STYLE },
+            stepTones !== null
+                ? stepTones.map((tone, index) => (react.createElement("span", { key: index }, renderTag(tone, tone === 'info'
+                    ? renderTextShimmer(stepLabels[index])
+                    : stepLabels[index]))))
+                : null,
+            gettingInFlight
+                ? renderPill(t.cancel, { onClick: () => performGetCancel(store) })
+                : null)) : null,
         react.createElement("div", { style: { position: 'relative' } },
             react.createElement("textarea", { ref: textareaRef, style: {
                     width: '100%',

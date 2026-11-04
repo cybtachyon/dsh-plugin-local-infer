@@ -22,6 +22,7 @@ export interface PrimitivesModule {
     Progress?: unknown;
     Tag?: unknown;
     TextShimmer?: unknown;
+    Pill?: unknown;
     IconChevronDownOutlineRegular?: unknown;
     IconRefreshOutlineRegular?: unknown;
 }
@@ -49,6 +50,7 @@ export declare function renderThrobber(): ReactNode;
 export declare function renderProgressStrip(progress: GetProgressState | null | undefined): ReactNode;
 export declare function renderTag(tone: StepTone, children: ReactNode): ReactNode;
 export declare function renderTextShimmer(children: ReactNode): ReactNode;
+export declare function renderPill(label: string, pillProps: Record<string, unknown>): ReactNode;
 export interface ProcessButtonOpts {
     busy?: boolean;
     label: string;

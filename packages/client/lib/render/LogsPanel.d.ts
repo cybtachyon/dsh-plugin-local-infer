@@ -1,9 +1,10 @@
 /**
  * The Logs section: the last run's captured output in a read-only textarea,
  * the log-file location the launch writes to, the diagonal chevron drag
- * handle that resizes the textarea, and the five Get step chips (deps /
+ * handle that resizes the textarea, the five Get step chips (deps /
  * clone / build / model / template) that head the pane while a Get run is in
- * flight.
+ * flight, and the compact Cancel pill (the performGetCancel driver) that
+ * heads the pane beside the chips while a run is in flight.
  *
  * The pane state lives in the store (ui.logs: the streamed Get buffer, the
  * chevron-resized height, and the auto-scroll mode), so the section keeps no

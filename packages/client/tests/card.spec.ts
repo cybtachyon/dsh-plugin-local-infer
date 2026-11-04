@@ -7,6 +7,7 @@ import {
   type CardStoreInstance,
   type ReactLike,
 } from '../src/store/useCardStore.ts'
+import { clearInFlightRuns, trackGetAbort } from '../src/store/abort.ts'
 import type { CardDraft } from '../src/store/types.ts'
 import { TEXT } from '../src/text.ts'
 
@@ -517,6 +518,44 @@ describe('the card composer (src/Card.tsx)', () => {
     const strip = find(tree, (e) => e.type === 'div' && e.props?.role === 'progressbar')
     expect(strip).toBeDefined()
     expect((strip?.props?.children as El).props?.style).toMatchObject({ width: '42%' })
+    // The ghost Cancel sits after the strip, wired to the cancel driver.
+    const cancelBtn = find(tree, (e) => e.type === 'button' && text(e) === t.cancel)
+    expect(cancelBtn).toBeDefined()
+    expect(typeof cancelBtn?.props?.onClick).toBe('function')
+  })
+
+  it('hides the title-bar Cancel button when no Get run is in flight', () => {
+    const { tree } = renderCard({ summary: fullSummary(), draft: fullDraft() })
+    expect(find(tree, (e) => e.type === 'button' && text(e) === t.cancel)).toBeUndefined()
+  })
+
+  it('the title-bar Cancel button dispatches performGetCancel', () => {
+    const { store, rerender } = renderCard({ summary: fullSummary(), draft: fullDraft() })
+    // A tracked run in flight: the cancel aborts it through the registry.
+    const controller = new AbortController()
+    trackGetAbort(controller)
+    store.dispatch({
+      type: 'ui/patch',
+      patch: {
+        getProgress: {
+          step: 'Downloading a.safetensors',
+          percent: 42,
+          doneBytes: 4,
+          totalBytes: 10,
+          etaSeconds: 60,
+          unit: 'bytes',
+        },
+      },
+    })
+    store.dispatch({ type: 'action/start', key: 'get' })
+    const tree = rerender()
+    const cancelBtn = find(tree, (e) => e.type === 'button' && text(e) === t.cancel)
+    expect(cancelBtn).toBeDefined()
+    ;(cancelBtn?.props?.onClick as () => void)()
+    // performGetCancel aborted the tracked run and cleared the readout.
+    expect(controller.signal.aborted).toBe(true)
+    expect(store.getSnapshot().ui.getProgress).toBeNull()
+    clearInFlightRuns()
   })
 
   it('renders the getting throbber without a strip when no progress state has landed', () => {
