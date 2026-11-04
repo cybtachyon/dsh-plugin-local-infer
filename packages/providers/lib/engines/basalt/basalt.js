@@ -38,6 +38,15 @@ export const BASALT_DEFAULT_PORT = 8080;
  */
 export const BASALT_DEFAULT_MODEL_ID = 'qwen38-flash-next';
 /**
+ * The model id the serve server actually runs the bundled artifact under:
+ * the `meta.name` stored inside the `.basalt` artifact file. The serve
+ * engine reads it as the served model name, advertises it on `/v1/models`,
+ * and accepts a request only when its model is that name or the artifact's
+ * own file name, so the registrar must publish this id for the bundled
+ * artifact; the registry key and the file path are never advertised.
+ */
+export const BASALT_SERVED_MODEL_ID = 'Qwen3.8-Flash-Next NVIDIA-NVFP4';
+/**
  * The KV cache storage formats Basalt serves, in the order the form
  * dropdown lists them. `note` carries the tradeoff text the dropdown shows
  * beside each choice.

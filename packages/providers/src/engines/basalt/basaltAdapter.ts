@@ -58,6 +58,7 @@ import {
   BASALT_MODEL_FILE,
   BASALT_MODEL_REPO,
   BASALT_PARAMETERS,
+  BASALT_SERVED_MODEL_ID,
   basaltModelKey,
 } from './basalt.ts'
 import { basaltLinuxBinary } from './basaltLinux.ts'
@@ -129,12 +130,20 @@ export class BasaltAdapter extends EngineAdapter {
   }
 
   override modelRef(config: Config): { id: string; name: string } {
-    // The engine serves the model file the config names (a .basalt path), so
-    // the registrar publishes that path and a chat turn routes to it. A bare
-    // config (the deploy step downloads the default artifact) reads as the
-    // engine name.
-    const model = basaltModelKey(config)
-    return model !== '' ? { id: model, name: model } : { id: 'basalt', name: 'Basalt' }
+    // The serve server accepts a request only when its model names the
+    // artifact's `meta.name` or the artifact's own file name, and `/v1/models`
+    // advertises only the `meta.name`. The config's model value resolves to
+    // the artifact file the launch serves (basaltModelFileName: registry key,
+    // .basalt path, or the engine default), so a bare config, the registry
+    // key, and the bundled file name all publish the served `meta.name`, and
+    // any other `.basalt` pick publishes its file name, which the engine also
+    // accepts. The registrar writes this id, so the chat turn routes to a
+    // name the engine lists.
+    const file = basename(basaltModelFileName(basaltModelKey(config)))
+    if (file === BASALT_MODEL_FILE) {
+      return { id: BASALT_SERVED_MODEL_ID, name: BASALT_SERVED_MODEL_ID }
+    }
+    return { id: file, name: file }
   }
 
   override modelInput(config: Config): string[] {
