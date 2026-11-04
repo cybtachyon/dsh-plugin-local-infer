@@ -56,6 +56,9 @@ declare const en: {
     running: string;
     get: string;
     getting: string;
+    gettingReadout: string;
+    gettingVerb: string;
+    gettingEta: string;
     getFailed: string;
     allowRun: string;
     depsSatisfied: string;

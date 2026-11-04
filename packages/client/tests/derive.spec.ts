@@ -1,11 +1,14 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import type { LocalInferSummary, ProviderSummaryEntry } from 'dsh-plugin-local-infer/ui'
+import { clearInFlightRuns, trackGetAbort } from '../src/store/abort.ts'
 import {
   deriveDisplayedLogs,
   deriveLaunchDisabled,
   deriveLifecycleControl,
   deriveProviderFormMode,
+  formatProgressReadout,
 } from '../src/store/derive.ts'
+import type { GetProgressState } from '../src/store/progress.ts'
 import {
   initialCardState,
   type CardState,
@@ -57,6 +60,23 @@ function launchEntry(
 function editingUi(providerId: string | null): CardState['ui'] {
   return { ...initialCardState().ui, editingProviderId: providerId }
 }
+
+// barState builds a GetProgressState the way the parser folds a byte bar.
+function barState(): GetProgressState {
+  return {
+    step: 'Downloading m.safetensors',
+    percent: 42,
+    doneBytes: 43.2e9,
+    totalBytes: 102.4e9,
+    etaSeconds: 751,
+  }
+}
+
+// The in-flight Get registry is module state: a clean registry keeps the
+// getting-branch tests from reading a run the other tests never started.
+beforeEach(() => {
+  clearInFlightRuns()
+})
 
 describe('client store derive (store/derive.ts)', () => {
   describe('deriveLifecycleControl', () => {
@@ -247,8 +267,81 @@ describe('client store derive (store/derive.ts)', () => {
       })
     })
 
+    describe('getting throbber (a Get run is in flight)', () => {
+      it('renders a busy throbber with the live readout while the get cell is pending', () => {
+        const progress = barState()
+        const state = makeState([], {
+          actions: {
+            ...initialCardState().actions,
+            get: { status: 'pending', detail: '' },
+          },
+          ui: { ...initialCardState().ui, editingProviderId: null, getProgress: progress },
+        })
+        const readout = 'Downloading… 42% · 43.2/102.4 GB · ETA 12:31'
+        expect(deriveLifecycleControl(state, t)).toEqual({
+          kind: 'getting',
+          label: readout,
+          variant: 'ghost',
+          busy: true,
+          busyLabel: readout,
+          disabled: false,
+          target: 'draft',
+          action: 'none',
+          progress,
+        })
+      })
+
+      it('renders the plain fallback label while no progress state has landed', () => {
+        const state = makeState([], {
+          actions: {
+            ...initialCardState().actions,
+            get: { status: 'pending', detail: '' },
+          },
+          ui: { ...initialCardState().ui, editingProviderId: null, getProgress: null },
+        })
+        expect(deriveLifecycleControl(state, t)).toEqual({
+          kind: 'getting',
+          label: t.gettingReadout,
+          variant: 'ghost',
+          busy: true,
+          busyLabel: t.gettingReadout,
+          disabled: false,
+          target: 'draft',
+          action: 'none',
+          progress: null,
+        })
+      })
+
+      it('renders the getting throbber while the in-flight registry reads true after the idle cap settled the cell', () => {
+        trackGetAbort(new AbortController())
+        const state = makeState([], { ui: editingUi(null) })
+        expect(deriveLifecycleControl(state, t)).toMatchObject({
+          kind: 'getting',
+          busy: true,
+          progress: null,
+        })
+      })
+
+      it('keeps the Stop side when the draft reads as running', () => {
+        const state = makeState([], {
+          actions: {
+            ...initialCardState().actions,
+            launch: { status: 'ok', detail: 'launched' },
+            get: { status: 'pending', detail: '' },
+          },
+          ui: editingUi(null),
+        })
+        expect(deriveLifecycleControl(state, t)).toMatchObject({
+          kind: 'launchStop',
+          label: t.stop,
+          action: 'stop',
+          disabled: false,
+        })
+      })
+    })
+
     describe('disabled gating (the launch side only)', () => {
-      it('disables while a Get run is in flight', () => {
+      it('renders the getting throbber (not a disabled Launch) while a Get run is in flight', () => {
         const state = makeState([], {
           actions: {
             ...initialCardState().actions,
@@ -256,7 +349,10 @@ describe('client store derive (store/derive.ts)', () => {
           },
           ui: editingUi(null),
         })
-        expect(deriveLifecycleControl(state, t).disabled).toBe(true)
+        expect(deriveLifecycleControl(state, t)).toMatchObject({
+          kind: 'getting',
+          disabled: false,
+        })
       })
 
       it('disables while the deps panel reports an unsatisfied dep', () => {
@@ -291,6 +387,25 @@ describe('client store derive (store/derive.ts)', () => {
           disabled: false,
         })
       })
+    })
+  })
+
+  describe('formatProgressReadout', () => {
+    it('renders the verb, percent, GB amounts, and ETA', () => {
+      expect(formatProgressReadout(barState(), t)).toBe(
+        'Downloading… 42% · 43.2/102.4 GB · ETA 12:31',
+      )
+    })
+
+    it('drops the ETA segment when the bar carries no tail', () => {
+      const state: GetProgressState = {
+        step: 'Downloading m.safetensors',
+        percent: 100,
+        doneBytes: 102.4e9,
+        totalBytes: 102.4e9,
+        etaSeconds: 0,
+      }
+      expect(formatProgressReadout(state, t)).toBe('Downloading… 100% · 102.4/102.4 GB')
     })
   })
 

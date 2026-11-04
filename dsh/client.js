@@ -246,6 +246,9 @@ var en = {
   running: "running...",
   get: "Get",
   getting: "Getting engine and model...",
+  gettingReadout: "Getting\u2026",
+  gettingVerb: "Downloading\u2026",
+  gettingEta: "ETA",
   getFailed: "get failed",
   allowRun: "Allow one-click install (sudo)",
   depsSatisfied: "All dependencies satisfied.",
@@ -380,6 +383,9 @@ var zh = {
   running: "\u8FD0\u884C\u4E2D\u2026",
   get: "\u83B7\u53D6",
   getting: "\u83B7\u53D6\u5F15\u64CE\u548C\u6A21\u578B\u4E2D\u2026",
+  gettingReadout: "\u83B7\u53D6\u4E2D\u2026",
+  gettingVerb: "\u4E0B\u8F7D\u4E2D\u2026",
+  gettingEta: "ETA",
   getFailed: "\u83B7\u53D6\u5931\u8D25",
   allowRun: "\u5141\u8BB8\u4E00\u952E\u5B89\u88C5 (sudo)",
   depsSatisfied: "\u6240\u6709\u4F9D\u8D56\u5DF2\u6EE1\u8DB3\u3002",
@@ -2100,6 +2106,24 @@ function deriveLaunchDisabled(state) {
   const depsUnsatisfied = state.deps !== null && state.deps.allSatisfied !== true;
   return getting || depsUnsatisfied;
 }
+function toGb(bytes) {
+  return (bytes / 1e9).toFixed(1);
+}
+function formatEtaClock(seconds) {
+  const minutes = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return minutes + ":" + String(secs).padStart(2, "0");
+}
+function formatProgressReadout(state, t) {
+  const parts = [
+    t.gettingVerb + " " + state.percent + "%",
+    toGb(state.doneBytes) + "/" + toGb(state.totalBytes) + " GB"
+  ];
+  if (state.etaSeconds > 0) {
+    parts.push(t.gettingEta + " " + formatEtaClock(state.etaSeconds));
+  }
+  return parts.join(" \xB7 ");
+}
 function deriveLifecycleControl(state, t) {
   const provider = editingProvider(state);
   const status = provider !== void 0 ? state.launch[provider.id]?.status : void 0;
@@ -2145,6 +2169,21 @@ function deriveLifecycleControl(state, t) {
   const stopPending = state.actions.stop.status === "pending";
   const draftRunning = state.actions.launch.status === "ok" && state.actions.stop.status !== "ok";
   const running = isFresh ? draftRunning : false;
+  if (!running && (state.actions.get.status === "pending" || hasInFlightGet())) {
+    const progress = state.ui.getProgress;
+    const busyLabel = progress !== null ? formatProgressReadout(progress, t) : t.gettingReadout;
+    return {
+      kind: "getting",
+      label: busyLabel,
+      variant: "ghost",
+      busy: true,
+      busyLabel,
+      disabled: false,
+      target: isFresh ? "draft" : "entry",
+      action: "none",
+      progress
+    };
+  }
   return {
     kind: "launchStop",
     label: running ? t.stop : t.launch,

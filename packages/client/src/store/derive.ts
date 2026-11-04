@@ -7,7 +7,11 @@
  * running" sources. It reads the per-provider launch machine (the only
  * lifecycle source) for the provider being edited, and falls back to the
  * draft's action cells for a fresh provider with no machine entry, so the
- * title-bar control and the provider entry's Launch button always agree.
+ * title-bar control and the provider entry's Launch button always agree. A
+ * Get run in flight (the get cell pending, or the in-flight registry true
+ * after the idle cap settled the cell) renders a 'getting' throbber with the
+ * live download readout. formatProgressReadout renders that readout from a
+ * GetProgressState, the single source the branch and the provider row share.
  * deriveDisplayedLogs, deriveProviderFormMode, and deriveLaunchDisabled are
  * the remaining render-time projections the card needs.
  * @module dsh-plugin-local-infer/client/store/derive
@@ -16,10 +20,12 @@
 import type { ProviderSummaryEntry } from 'dsh-plugin-local-infer/ui'
 import type { LaunchStatus } from '../machine/launch.ts'
 import type { TextTable } from '../text.ts'
+import { hasInFlightGet } from './abort.ts'
+import type { GetProgressState } from './progress.ts'
 import type { CardState, ProviderFormMode } from './types.ts'
 
 /** The title-bar control's branches, as the spec's kind reads them. */
-export type LifecycleControlKind = 'phase' | 'stop' | 'logs' | 'launchStop'
+export type LifecycleControlKind = 'phase' | 'stop' | 'logs' | 'launchStop' | 'getting'
 
 /** Where a control click routes: the provider entry's machine, or the draft. */
 export type LifecycleControlTarget = 'entry' | 'draft'
@@ -32,7 +38,9 @@ export type LifecycleControlAction = 'launch' | 'stop' | 'logs' | 'none'
  * renders from. kind names the branch, label and variant drive the render,
  * busy and busyLabel drive the throbber, disabled gates the click, and target
  * plus action route the click to the owning action (the provider entry's
- * machine, or the draft's action cells).
+ * machine, or the draft's action cells). progress carries the live download
+ * state the 'getting' branch renders as the progress strip; it is absent on
+ * every other branch.
  */
 export interface LifecycleControl {
   kind: LifecycleControlKind
@@ -43,6 +51,7 @@ export interface LifecycleControl {
   disabled: boolean
   target: LifecycleControlTarget
   action: LifecycleControlAction
+  progress?: GetProgressState | null
 }
 
 /**
@@ -99,6 +108,41 @@ export function deriveLaunchDisabled(state: CardState): boolean {
   return getting || depsUnsatisfied
 }
 
+// toGb renders a byte count as GB with one decimal, the readout's size unit.
+function toGb(bytes: number): string {
+  return (bytes / 1e9).toFixed(1)
+}
+
+// formatEtaClock renders a seconds count as the readout's mm:ss clock.
+function formatEtaClock(seconds: number): string {
+  const minutes = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return minutes + ':' + String(secs).padStart(2, '0')
+}
+
+/**
+ * formatProgressReadout renders a GetProgressState as the download readout:
+ * the download verb, the percent, the done and total amounts in GB, and the
+ * remaining time in mm:ss when the bar carries a tail (a finished bar drops
+ * the ETA segment). The 'getting' control branch and the provider row
+ * (TASK-011) share it, so the readout text has one source.
+ */
+export function formatProgressReadout(
+  state: GetProgressState,
+  t: TextTable,
+): string {
+  // The verb and the percent read as one segment (a space apart), the sizes
+  // and the ETA as the middle-dot-separated segments that follow.
+  const parts = [
+    t.gettingVerb + ' ' + state.percent + '%',
+    toGb(state.doneBytes) + '/' + toGb(state.totalBytes) + ' GB',
+  ]
+  if (state.etaSeconds > 0) {
+    parts.push(t.gettingEta + ' ' + formatEtaClock(state.etaSeconds))
+  }
+  return parts.join(' · ')
+}
+
 /**
  * deriveLifecycleControl computes the title-bar control spec from the store.
  * For the provider being edited it reads that provider's launch machine: a
@@ -107,7 +151,9 @@ export function deriveLaunchDisabled(state: CardState): boolean {
  * renders a red Logs. With no machine entry (a fresh provider, or an edited
  * provider at idle) it renders the draft-based Launch/Stop, reading the
  * draft's action cells for a fresh provider and routing the click to the
- * entry for an edited one.
+ * entry for an edited one. A Get run in flight renders the 'getting'
+ * throbber with the live readout instead of the greyed-out Launch the gate
+ * used to render.
  */
 export function deriveLifecycleControl(
   state: CardState,
@@ -169,6 +215,29 @@ export function deriveLifecycleControl(
   const draftRunning =
     state.actions.launch.status === 'ok' && state.actions.stop.status !== 'ok'
   const running = isFresh ? draftRunning : false
+
+  // A Get run in flight: a busy throbber with the live download readout,
+  // replacing the greyed-out Launch the gate used to render. The registry
+  // read covers the idle-cap settle (the cell reads as ok, the run keeps
+  // streaming in the background), and the draft reading as running keeps the
+  // Stop side, so the branch skips it.
+  if (!running && (state.actions.get.status === 'pending' || hasInFlightGet())) {
+    const progress = state.ui.getProgress
+    const busyLabel =
+      progress !== null ? formatProgressReadout(progress, t) : t.gettingReadout
+    return {
+      kind: 'getting',
+      label: busyLabel,
+      variant: 'ghost',
+      busy: true,
+      busyLabel,
+      disabled: false,
+      target: isFresh ? 'draft' : 'entry',
+      action: 'none',
+      progress,
+    }
+  }
+
   return {
     kind: 'launchStop',
     label: running ? t.stop : t.launch,
