@@ -97,7 +97,7 @@ commands and code style already live in `AGENTS.md`; not repeated here.)
 - [x] [TASK-003-ux-get-logs-resume-cancel](docs/PLAN-get-launch-TASK-003-ux-get-logs-resume-cancel.md)
 - [x] [TASK-004-refactor-code-risk-review](docs/PLAN-get-launch-TASK-004-refactor-code-risk-review.md)
 - [ ] [TASK-005-validate-basalt-get](docs/PLAN-get-launch-TASK-005-validate-basalt-get.md)
-- [ ] [TASK-006-visual-improvements](docs/PLAN-get-launch-TASK-006-visual-improvements.md)
+- [x] [TASK-006-visual-improvements](docs/PLAN-get-launch-TASK-006-visual-improvements.md)
 - [ ] Finalize: delete this plan and the `docs/` task files, commit the cleanup,
       close the session goals, and present the results.
 
