@@ -15,7 +15,7 @@
  * @module dsh-plugin-local-infer/providers/engines/basalt/basaltAdapter
  */
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { EngineAdapter, hfDownloadCommand, hubCacheSnapshotFilePath, modelArtifactPath, modelDownloadTarget, repoIdFromUrl, } from '../../../../core/lib/index.js';
 import { configFileFromSpecs, nodeLifecycleHost, pollHealth, resolveLaunchArgv, stopProcessPlan, trackChild, } from "../../adapters.js";
 import { engineBuildDir, syncEngineForDeploy } from "../../acquire.js";
@@ -203,12 +203,23 @@ export class BasaltAdapter extends EngineAdapter {
         // Get-steps routine already downloaded is on disk, so the deploy step
         // skips the re-fetch and a launch after a Get does no duplicate download.
         const { baseDir, useHubCache } = modelDownloadTarget(plan.modelDirectory);
+        // The .basalt artifact the --model flag names: the basename of the
+        // placeholder renderLaunch wrote (join(baseDir, basaltModelFileName(modelValue))),
+        // so the download fetches exactly the file the flag points at (a registry
+        // key's artifact, a directory-scan .basalt name, or the engine default). A
+        // plan with no --model flag (rendered before the flag existed) falls back
+        // to the engine default.
+        const planArgv = plan.argv ?? [];
+        const planModelFlag = planArgv.indexOf('--model');
+        const modelFile = planModelFlag >= 0 && basename(planArgv[planModelFlag + 1] ?? '') !== ''
+            ? basename(planArgv[planModelFlag + 1] ?? '')
+            : BASALT_MODEL_FILE;
         const entry = {
             engineId: this.id,
             modelId: 'basalt',
             label: 'Basalt',
             url: `https://huggingface.co/${BASALT_MODEL_REPO}`,
-            file: BASALT_MODEL_FILE,
+            file: modelFile,
         };
         if (!existsSync(modelArtifactPath(entry, baseDir, useHubCache))) {
             onProgress?.('download');
@@ -228,13 +239,13 @@ export class BasaltAdapter extends EngineAdapter {
         // known after the download, so the value swaps to the snapshot path.
         let spawnArgv = plan.argv ?? [];
         if (useHubCache) {
-            const snapshotPath = hubCacheSnapshotFilePath(baseDir, repoIdFromUrl(entry.url), BASALT_MODEL_FILE);
+            const snapshotPath = hubCacheSnapshotFilePath(baseDir, repoIdFromUrl(entry.url), modelFile);
             if (snapshotPath === null) {
                 // A download that left no snapshot (a failed or partial fetch the
                 // hf CLI reported as ok) leaves no artifact to serve.
                 return withLogs({
                     ok: false,
-                    detail: `model artifact missing: ${BASALT_MODEL_FILE} (no hub-cache snapshot after download)`,
+                    detail: `model artifact missing: ${modelFile} (no hub-cache snapshot after download)`,
                 });
             }
             // The swap builds a new array; plan.argv is shared with the launch
