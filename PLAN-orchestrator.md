@@ -29,7 +29,13 @@ system prompt when enabled. Document the feature in README.md.
   `@deepseek-ai/dsh-client-ui-primitives`); guard every primitive use and the
   react require, per the existing card pattern.
 - Client slot registrations must not displace the existing Engine settings
-  card; verify both cards render after the orchestrator card registers.
+  card. Keyed slots render one shadowing winner per cell (renderer:
+  `entriesOfSlot(...).find((e) => e.options.key === entryKey)`), so the
+  Orchestrator card mounts in `plugins.row.config` keyed
+  `dsh-plugin-local-infer#local-infer-orchestrator` (host's per-row
+  configuration slot; TASK-007 "Discovered constraint"). Verify the Engine
+  settings card stays the sole occupant of its cell and the Orchestrator row
+  shows its Configure control exactly while its route exists.
 
 ## Open questions (all answered, 2026-11-04)
 
@@ -39,7 +45,11 @@ system prompt when enabled. Document the feature in README.md.
    (`ctx.systemPrompt.section`).
 3. prompt.md location: A. `packages/orchestrator/prompt.md`, shipped in the
    package's `files`, read at runtime relative to the package module.
-4. Card slot: A. `plugins.bundle.config` only.
+4. Card slot: A. `plugins.bundle.config` only. Superseded at TASK-007
+   (accepted by the parent): that keyed cell cannot host two cards, so the
+   card mounts in the host's `plugins.row.config` for the
+   `local-infer-orchestrator` component row. Still no
+   `settings.plugin.item` registration.
 5. README scope: B. Both `README.md` and `docs/zh/README.md` (Chinese).
 
 ## Task dependencies
