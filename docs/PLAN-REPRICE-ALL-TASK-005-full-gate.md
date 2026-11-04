@@ -1,14 +1,14 @@
-# TASK-004: Full verification gate and bundle rebuild
+# TASK-005: Full verification gate and bundle rebuild
 
 1. Run `pnpm build` (runs `tsc -b`, then esbuild-bundles
    `packages/client/src/index.ts` to `dsh/client.js`).
 2. Run `pnpm test` (the full `vitest run` suite).
 3. Run `pnpm lint` (repo-wide `eslint .`).
-4. Commit the rebuilt `dsh/client.js` and the `packages/client/lib/**`
-   churn (about 70 `.js` / `.d.ts.map` files whose trailing newlines tsc
-   drops. The end-of-file-fixer hook normalizes them to no-ops) with the
-   message `chore(client): rebuild the card bundle for the repriceAll
-   adoption`.
+4. Commit the rebuilt `dsh/client.js` and the re-emitted
+   `packages/client/lib/**` artifacts of the changed source files (the
+   end-of-file-fixer hook can modify files during the commit, so a
+   re-stage and re-commit may be needed) with the message
+   `chore(client): rebuild the card bundle for the repriceAll adoption`.
 
 ## Definition of Done
 

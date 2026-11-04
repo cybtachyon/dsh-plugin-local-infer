@@ -52,9 +52,11 @@ the draft)
 - `packages/ui/tests/client.spec.ts` pins `repriceSummary` in the bundle
   source. The symbol stays in the bundle (defined in `deps.ts`, used by
   the stop-poll), so the pin keeps passing.
-- After `pnpm build`, expect trailing-newline churn across
-  `packages/client/lib/**` (about 70 `.js` / `.d.ts.map` files). Stage and
-  commit as-is. The end-of-file-fixer hook normalizes them to no-ops.
+- After `pnpm build`, `dsh/client.js` is rewritten and the
+  `packages/client/lib/**` artifacts of the changed source files are
+  re-emitted (a Card.tsx-only change touched 3 lib files, not the whole
+  tree). Stage and commit as-is. The end-of-file-fixer hook can modify
+  files during the commit, so a re-stage and re-commit may be needed.
 
 ## Tasks
 
