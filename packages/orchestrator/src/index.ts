@@ -11,6 +11,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { getOrchestratorPrompt } from './config.js'
 
 export {
   defaultOrchestratorPrompt,
@@ -30,14 +31,59 @@ export const name = 'local-infer-orchestrator'
 export const inject: string[] = []
 
 /**
- * Mount the Orchestrator prompt. The scaffold registers nothing so the bundle
- * stays loadable; the system-prompt section and the settings routes land in
- * TASK-003 and TASK-004.
+ * SystemPromptService narrows the dsh-system-prompt service to the one
+ * member this package uses. That package augments the cordis Context with
+ * `systemPrompt` and is not a dependency here, so the scoped inject casts
+ * the scope locally (same shape as the ui's WebServerService narrowing).
+ */
+export interface SystemPromptService {
+  /**
+   * Registers one ordered prompt section in the calling scope and returns
+   * the Cordis effect disposer. `text` may be a provider re-evaluated at
+   * each assembly.
+   */
+  section(section: {
+    name: string
+    order: number
+    text: string | (() => string)
+    interpolate?: boolean
+  }): () => void
+}
+
+// The section placement: the deployment persona prefix sits at 0 and the
+// first centrally allocated policy section (PLAN_POLICY) at 500, so 100
+// puts the Orchestrator instructions just after the persona and ahead of
+// first-party guidance. dsh-system-prompt allocates nothing between 0 and
+// 500, and external contributions may pick any finite order.
+const orchestratorSectionOrder = 100
+
+/**
+ * Mount the Orchestrator prompt. The scoped `systemPrompt` inject registers
+ * the one global `orchestrator` section where the seam exists; the effect
+ * scope ties the registration to the plugin, so it unregisters with the
+ * plugin. The /local-infer/orchestrator routes land in TASK-004.
  */
 export function apply(ctx: Context): void {
-  // The prompt holder registers its systemPrompt section and its
-  // /local-infer/orchestrator routes here.
-  void ctx
+  if (typeof ctx.inject !== 'function') {
+    return
+  }
+  ctx.inject(['systemPrompt'], (scope) => {
+    const systemPrompt = (scope as Context & { systemPrompt: SystemPromptService }).systemPrompt
+    try {
+      systemPrompt.section({
+        name: 'orchestrator',
+        order: orchestratorSectionOrder,
+        // The prompt is user-editable text: a stray {{var}} stays literal
+        // instead of failing every later prompt assembly.
+        interpolate: false,
+        // Provider form re-reads the holder per assembly, so a settings
+        // Save reaches the next assembly without a host restart.
+        text: () => getOrchestratorPrompt(),
+      })
+    } catch (error) {
+      console.error(`[local-infer] orchestrator prompt section skipped: ${error}`)
+    }
+  })
 }
 
 const plugin = { name, inject, apply }
