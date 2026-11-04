@@ -78,6 +78,8 @@ export const SYSTEM_DEPS = {
         requiresSudo: false,
         detect: probe('where', ['cl']),
         install: {
+            // The MSVC C++ workload the Windows Basalt build needs. Untested on a
+            // live host, so it rides the plan's "flagged when untested" rule.
             winget: {
                 commands: [
                     'winget install --id Microsoft.VisualStudio.Community --override "--passive --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"',
@@ -123,6 +125,10 @@ export const SYSTEM_DEPS = {
             brew: { commands: ['brew install curl'] },
         },
     },
+    // The CUDA 13 toolkit the Blackwell-only Basalt build needs. None of the
+    // manager blocks below has been run on a live host, so each rides the
+    // plan's "flagged when untested" rule: a later live-host run confirms the
+    // exact package names.
     cudaToolkit: {
         id: 'cuda-toolkit',
         purpose: 'compiles the CUDA kernels',
