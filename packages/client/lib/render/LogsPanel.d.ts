@@ -1,7 +1,9 @@
 /**
  * The Logs section: the last run's captured output in a read-only textarea,
- * the log-file location the launch writes to, and the diagonal chevron drag
- * handle that resizes the textarea.
+ * the log-file location the launch writes to, the diagonal chevron drag
+ * handle that resizes the textarea, and the five Get step chips (deps /
+ * clone / build / model / template) that head the pane while a Get run is in
+ * flight.
  *
  * The pane state lives in the store (ui.logs: the streamed Get buffer, the
  * chevron-resized height, and the auto-scroll mode), so the section keeps no
@@ -25,8 +27,11 @@ export interface LogsPanelProps {
  * (the streamed Get buffer while a run is in flight, else the summary's
  * lastLogs), the auto-scroll (the view pins to the bottom while the mode is
  * fresh or scrolling; a scroll up parks it at manual), the chevron resize
- * drag (clamped to 96-480 px), and the log-location field (a ui preference
- * the save route persists, not a synced value).
+ * drag (clamped to 96-480 px), the log-location field (a ui preference the
+ * save route persists, not a synced value), and the five Get step chips
+ * (the running step toned info and shimmered, the completed steps success,
+ * the not-started steps quiet, and the failed step danger) that head the
+ * pane while a Get run is in flight.
  */
 export declare function LogsPanel(props: LogsPanelProps): ReactNode;
 //# sourceMappingURL=LogsPanel.d.ts.map

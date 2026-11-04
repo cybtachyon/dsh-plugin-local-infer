@@ -8,6 +8,11 @@
  * share one derivation.
  * @module dsh-plugin-local-infer/client/store/progress
  */
+// The chip order the Logs header renders, matching the Get run's step
+// sequence. deriveGetStep names only the deps, model, template, and done
+// headers, so the clone and build chips read as completed the moment the
+// model header lands.
+const GET_STEP_ORDER = ['deps', 'clone', 'build', 'model', 'template'];
 // The file-count bar: `Fetching 102 files: 42%|...| 43/102 [00:01<00:02, ...]`.
 // The bar glyph run between the pipes is skipped, and the counts are plain
 // integers.
@@ -120,6 +125,25 @@ export function deriveGetStep(log) {
             current = step;
     }
     return current;
+}
+/**
+ * deriveGetStepTones maps the run's current step (deriveGetStep) and its
+ * settled-failed flag to the five step chips' tones, in chip order. Steps
+ * before the current one read as success; the current step reads as info (the
+ * running chip) or danger when the run settled failed at it; steps after it
+ * read as quiet. A null current step (no header seen) and the deps header
+ * read as the first chip running.
+ */
+export function deriveGetStepTones(log, failed) {
+    const current = deriveGetStep(log);
+    const runningIndex = current === 'model' ? 3 : current === 'template' ? 4 : current === 'done' ? 5 : 0;
+    return GET_STEP_ORDER.map((_step, index) => {
+        if (index < runningIndex)
+            return 'success';
+        if (index === runningIndex)
+            return failed ? 'danger' : 'info';
+        return 'quiet';
+    });
 }
 // stepForLine maps one log line to the Get step its header names, or null
 // for a line that is not a step header.

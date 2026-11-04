@@ -268,6 +268,11 @@ var en = {
   gettingVerb: "Downloading\u2026",
   gettingEta: "ETA",
   gettingFiles: "files",
+  stepDeps: "deps",
+  stepClone: "clone",
+  stepBuild: "build",
+  stepModel: "model",
+  stepTemplate: "template",
   getFailed: "get failed",
   allowRun: "Allow one-click install (sudo)",
   depsSatisfied: "All dependencies satisfied.",
@@ -406,6 +411,11 @@ var zh = {
   gettingVerb: "\u4E0B\u8F7D\u4E2D\u2026",
   gettingEta: "ETA",
   gettingFiles: "\u6587\u4EF6",
+  stepDeps: "\u4F9D\u8D56",
+  stepClone: "\u514B\u9686",
+  stepBuild: "\u6784\u5EFA",
+  stepModel: "\u6A21\u578B",
+  stepTemplate: "\u6A21\u677F",
   getFailed: "\u83B7\u53D6\u5931\u8D25",
   allowRun: "\u5141\u8BB8\u4E00\u952E\u5B89\u88C5 (sudo)",
   depsSatisfied: "\u6240\u6709\u4F9D\u8D56\u5DF2\u6EE1\u8DB3\u3002",
@@ -1014,6 +1024,57 @@ function renderProgressStrip(progress) {
     },
     /* @__PURE__ */ react.createElement("div", { style: progressStripFillStyle(progress.percent) })
   );
+}
+var TAG_BASE_STYLE = {
+  display: "inline-flex",
+  alignItems: "center",
+  height: 20,
+  padding: "0 8px",
+  borderRadius: 10,
+  fontSize: 11,
+  lineHeight: 1,
+  whiteSpace: "nowrap"
+};
+var TAG_TONE_STYLES = {
+  success: {
+    color: "var(--dsw-alias-label-success, #34c38f)",
+    background: "var(--dsw-alias-fill-success, rgba(52,195,143,0.12))"
+  },
+  info: {
+    color: "var(--dsw-alias-accent, #0a84ff)",
+    background: "var(--dsw-alias-fill-accent, rgba(10,132,255,0.12))"
+  },
+  quiet: {
+    color: "var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))",
+    background: "var(--dsw-alias-background-tertiary, rgba(128,128,128,0.08))"
+  },
+  danger: {
+    color: "var(--dsw-alias-label-error, #ff3b30)",
+    background: "var(--dsw-alias-fill-error, rgba(255,59,48,0.12))"
+  }
+};
+var SHIMMER_TEXT_STYLE = {
+  display: "inline-block",
+  background: "linear-gradient(90deg, var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8)) 30%, var(--dsw-alias-label-primary, #1d1d1f) 50%, var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8)) 70%)",
+  backgroundSize: "200% 100%",
+  WebkitBackgroundClip: "text",
+  backgroundClip: "text",
+  color: "transparent",
+  animation: "dsh-local-infer-shimmer 1.6s linear infinite"
+};
+function renderTag(tone, children) {
+  const primitives = getPrimitivesModule();
+  if (primitives && typeof primitives.Tag === "function") {
+    return react.createElement(primitives.Tag, { tone }, children);
+  }
+  return /* @__PURE__ */ react.createElement("span", { style: { ...TAG_BASE_STYLE, ...TAG_TONE_STYLES[tone] } }, children);
+}
+function renderTextShimmer(children) {
+  const primitives = getPrimitivesModule();
+  if (primitives && typeof primitives.TextShimmer === "function") {
+    return react.createElement(primitives.TextShimmer, null, children);
+  }
+  return /* @__PURE__ */ react.createElement("span", { style: SHIMMER_TEXT_STYLE }, children);
 }
 function renderProcessButton(opts) {
   if (opts.busy === true) {
@@ -1771,6 +1832,7 @@ var ProgressThrottle = class {
 };
 
 // packages/client/src/store/progress.ts
+var GET_STEP_ORDER = ["deps", "clone", "build", "model", "template"];
 var FILES_LINE = /^Fetching (\d+) files:\s*(\d+(?:\.\d+)?)%\|[^|]*\|\s*(\d+)\s*\/\s*(\d+)(?:\s*\[([^\]]*)\])?/;
 var BYTES_LINE = /^(?:Downloading|Fetching)\s+([^:]+):\s*(\d+(?:\.\d+)?)%\s*\|\s*(\d+(?:\.\d+)?[KMGTP]?i?B?)\s*\/\s*(\d+(?:\.\d+)?[KMGTP]?i?B?)\s*(?:\[([^\]]*)\])?/;
 var UNIT_EXPONENTS = { K: 1, M: 2, G: 3, T: 4, P: 5 };
@@ -1829,6 +1891,30 @@ function parseHfProgress(chunk, prior) {
     if (parsed !== null) folded = parsed;
   }
   return folded;
+}
+function deriveGetStep(log) {
+  let current = null;
+  for (const line of log.split("\n")) {
+    const step = stepForLine(line);
+    if (step !== null) current = step;
+  }
+  return current;
+}
+function deriveGetStepTones(log, failed) {
+  const current = deriveGetStep(log);
+  const runningIndex = current === "model" ? 3 : current === "template" ? 4 : current === "done" ? 5 : 0;
+  return GET_STEP_ORDER.map((_step, index) => {
+    if (index < runningIndex) return "success";
+    if (index === runningIndex) return failed ? "danger" : "info";
+    return "quiet";
+  });
+}
+function stepForLine(line) {
+  if (line.startsWith("system dependencies")) return "deps";
+  if (line.startsWith("model download:")) return "model";
+  if (line.startsWith("chat template:")) return "template";
+  if (line.trim() === "get complete") return "done";
+  return null;
 }
 
 // packages/client/src/store/deps.ts
@@ -2789,6 +2875,13 @@ function EntryLaunchButton(props) {
 var LOGS_MIN_HEIGHT = 96;
 var LOGS_MAX_HEIGHT = 480;
 var LOGS_BOTTOM_TOLERANCE = 4;
+var STEP_CHIPS_ROW_STYLE = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 6,
+  marginTop: 6,
+  marginBottom: 2
+};
 function LogsPanel(props) {
   const { store, t } = props;
   const state = store.getSnapshot();
@@ -2796,6 +2889,10 @@ function LogsPanel(props) {
   const displayedLogs = deriveDisplayedLogs(state);
   const textareaRef = react.useRef(null);
   const dragRef = react.useRef(null);
+  const getFailed = state.actions.get.status === "error";
+  const chipsVisible = state.ui.logs.getLogs !== null && (isGettingInFlight(state) || getFailed);
+  const stepTones = chipsVisible ? deriveGetStepTones(displayedLogs, getFailed) : null;
+  const stepLabels = [t.stepDeps, t.stepClone, t.stepBuild, t.stepModel, t.stepTemplate];
   const patchLogs = (patch) => {
     const current = store.getSnapshot().ui.logs;
     store.dispatch({ type: "ui/patch", patch: { logs: { ...current, ...patch } } });
@@ -2845,7 +2942,10 @@ function LogsPanel(props) {
   };
   const chevron = getPrimitivesModule()?.IconChevronDownOutlineRegular;
   const chevronGlyph = typeof chevron === "function" ? /* @__PURE__ */ react.createElement("span", { style: { display: "inline-flex", transform: "rotate(-45deg)" } }, react.createElement(chevron, { size: 12 })) : "\u231F";
-  return /* @__PURE__ */ react.createElement("div", { style: { marginTop: 8 } }, /* @__PURE__ */ react.createElement("div", { style: LABEL_STYLE }, t.logs), /* @__PURE__ */ react.createElement("div", { style: { position: "relative" } }, /* @__PURE__ */ react.createElement(
+  return /* @__PURE__ */ react.createElement("div", { style: { marginTop: 8 } }, /* @__PURE__ */ react.createElement("div", { style: LABEL_STYLE }, t.logs), stepTones !== null ? /* @__PURE__ */ react.createElement("div", { style: STEP_CHIPS_ROW_STYLE }, stepTones.map((tone, index) => /* @__PURE__ */ react.createElement("span", { key: index }, renderTag(
+    tone,
+    tone === "info" ? renderTextShimmer(stepLabels[index]) : stepLabels[index]
+  )))) : null, /* @__PURE__ */ react.createElement("div", { style: { position: "relative" } }, /* @__PURE__ */ react.createElement(
     "textarea",
     {
       ref: textareaRef,
@@ -3356,7 +3456,7 @@ function card(_react, localeRef, _primitives) {
     const unregisterCell = state.actions.unregister;
     const launchCell = state.actions.launch;
     const stopCell = state.actions.stop;
-    return /* @__PURE__ */ react.createElement("div", { style: CARD_STYLE }, /* @__PURE__ */ react.createElement("style", null, "@keyframes dsh-local-infer-spin { to { transform: rotate(360deg); } }"), summary.unsureBanner !== null && summary.unsureBanner !== void 0 ? /* @__PURE__ */ react.createElement(
+    return /* @__PURE__ */ react.createElement("div", { style: CARD_STYLE }, /* @__PURE__ */ react.createElement("style", null, "@keyframes dsh-local-infer-spin { to { transform: rotate(360deg); } }@keyframes dsh-local-infer-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }"), summary.unsureBanner !== null && summary.unsureBanner !== void 0 ? /* @__PURE__ */ react.createElement(
       "div",
       {
         style: {

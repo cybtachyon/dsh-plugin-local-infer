@@ -422,7 +422,8 @@ export function card(_react, localeRef, _primitives) {
         const launchCell = state.actions.launch;
         const stopCell = state.actions.stop;
         return (react.createElement("div", { style: CARD_STYLE },
-            react.createElement("style", null, '@keyframes dsh-local-infer-spin { to { transform: rotate(360deg); } }'),
+            react.createElement("style", null, '@keyframes dsh-local-infer-spin { to { transform: rotate(360deg); } }' +
+                '@keyframes dsh-local-infer-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }'),
             summary.unsureBanner !== null && summary.unsureBanner !== undefined ? (react.createElement("div", { style: {
                     marginBottom: 12,
                     padding: 12,

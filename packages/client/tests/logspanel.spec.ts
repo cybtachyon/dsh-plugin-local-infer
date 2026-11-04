@@ -176,6 +176,23 @@ function sectionParts(root: El) {
   return { label, textarea, chevron, input }
 }
 
+// chipRow pulls the step chip row out of the rendered tree (the div whose
+// children are the chip wrapper spans), or null while no run is in flight.
+function chipRow(root: El): El | null {
+  for (const child of children(root)) {
+    if (child.type === 'div' && children(child)[0]?.type === 'span') {
+      return child
+    }
+  }
+  return null
+}
+
+// tagTone reads the native Tag fallback's tone color off a chip's tag span.
+function tagTone(chip: El): string {
+  const tag = children(chip)[0]!
+  return (tag.props.style as Record<string, unknown>).color as string
+}
+
 beforeAll(() => {
   setReactModule(reactModule as unknown as ReactLike)
 })
@@ -400,5 +417,72 @@ describe('the Logs section (render/LogsPanel.tsx)', () => {
     } finally {
       setPrimitivesModule(null)
     }
+  })
+
+  it('renders the step chips with the running model chip toned info while a run is in flight', () => {
+    const { store } = makeStore()
+    store.dispatch({ type: 'action/start', key: 'get' })
+    store.dispatch({
+      type: 'ui/patch',
+      patch: {
+        logs: {
+          ...store.getSnapshot().ui.logs,
+          getLogs: 'system dependencies\nok\nmodel download: a-model\n',
+        },
+      },
+    })
+    const d = makeDispatcher()
+    const root = render(d, store, t)
+    const row = chipRow(root)
+    expect(row).not.toBeNull()
+    const chips = children(row!)
+    expect(chips.length).toBe(5)
+    // The completed steps (deps, clone, build) read as success.
+    for (const index of [0, 1, 2]) {
+      expect(tagTone(chips[index]!)).toBe('var(--dsw-alias-label-success, #34c38f)')
+    }
+    // The running model step reads as info and wraps its label in the shimmer.
+    expect(tagTone(chips[3]!)).toBe('var(--dsw-alias-accent, #0a84ff)')
+    const modelTag = children(chips[3]!)[0]!
+    const shimmer = children(modelTag)[0]!
+    expect(String((shimmer.props.style as Record<string, unknown>).animation)).toContain(
+      'dsh-local-infer-shimmer',
+    )
+    // The not-started template step reads as quiet.
+    expect(tagTone(chips[4]!)).toBe('var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))')
+  })
+
+  it('tones the failed step danger when the run settles failed before it completes', () => {
+    const { store } = makeStore()
+    store.dispatch({ type: 'action/start', key: 'get' })
+    store.dispatch({
+      type: 'ui/patch',
+      patch: {
+        logs: {
+          ...store.getSnapshot().ui.logs,
+          getLogs: 'system dependencies\nok\nmodel download: a-model\nget failed: timeout\n',
+        },
+      },
+    })
+    store.dispatch({ type: 'action/fail', key: 'get', detail: 'timeout' })
+    const d = makeDispatcher()
+    const root = render(d, store, t)
+    const row = chipRow(root)
+    expect(row).not.toBeNull()
+    const chips = children(row!)
+    // The completed steps read as success; the failed model step reads as
+    // danger; the not-started template step reads as quiet.
+    for (const index of [0, 1, 2]) {
+      expect(tagTone(chips[index]!)).toBe('var(--dsw-alias-label-success, #34c38f)')
+    }
+    expect(tagTone(chips[3]!)).toBe('var(--dsw-alias-label-error, #ff3b30)')
+    expect(tagTone(chips[4]!)).toBe('var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))')
+  })
+
+  it('hides the step chips with no run in flight', () => {
+    const { store } = makeStore()
+    const d = makeDispatcher()
+    const root = render(d, store, t)
+    expect(chipRow(root)).toBeNull()
   })
 })

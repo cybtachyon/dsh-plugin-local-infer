@@ -614,7 +614,10 @@ export function card(
 
     return (
       <div style={CARD_STYLE}>
-        <style>{'@keyframes dsh-local-infer-spin { to { transform: rotate(360deg); } }'}</style>
+        <style>
+          {'@keyframes dsh-local-infer-spin { to { transform: rotate(360deg); } }' +
+            '@keyframes dsh-local-infer-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }'}
+        </style>
         {summary.unsureBanner !== null && summary.unsureBanner !== undefined ? (
           <div
             style={{

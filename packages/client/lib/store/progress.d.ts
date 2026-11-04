@@ -23,6 +23,7 @@ import type { HfProgressShape } from '../api/routes.ts';
 export type GetProgressState = HfProgressShape;
 /** The Get step the step chips and the progress readout derive. */
 export type GetStep = 'deps' | 'clone' | 'build' | 'model' | 'template' | 'done';
+export type StepTone = 'success' | 'info' | 'quiet' | 'danger';
 /**
  * parseHfProgress folds a streamed chunk into the latest GetProgressState it
  * carries: the chunk splits on the line separators tqdm writes (carriage
@@ -40,4 +41,13 @@ export declare function parseHfProgress(chunk: string, prior: GetProgressState |
  * has not reached a step yet).
  */
 export declare function deriveGetStep(log: string): GetStep | null;
+/**
+ * deriveGetStepTones maps the run's current step (deriveGetStep) and its
+ * settled-failed flag to the five step chips' tones, in chip order. Steps
+ * before the current one read as success; the current step reads as info (the
+ * running chip) or danger when the run settled failed at it; steps after it
+ * read as quiet. A null current step (no header seen) and the deps header
+ * read as the first chip running.
+ */
+export declare function deriveGetStepTones(log: string, failed: boolean): StepTone[];
 //# sourceMappingURL=progress.d.ts.map

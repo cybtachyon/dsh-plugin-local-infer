@@ -1,7 +1,9 @@
 /**
  * The Logs section: the last run's captured output in a read-only textarea,
- * the log-file location the launch writes to, and the diagonal chevron drag
- * handle that resizes the textarea.
+ * the log-file location the launch writes to, the diagonal chevron drag
+ * handle that resizes the textarea, and the five Get step chips (deps /
+ * clone / build / model / template) that head the pane while a Get run is in
+ * flight.
  *
  * The pane state lives in the store (ui.logs: the streamed Get buffer, the
  * chevron-resized height, and the auto-scroll mode), so the section keeps no
@@ -14,8 +16,9 @@
  * @module dsh-plugin-local-infer/client/render/LogsPanel
  */
 import { INPUT_STYLE, LABEL_STYLE, ROW_STYLE } from "../styles.js";
-import { deriveDisplayedLogs } from "../store/derive.js";
-import { getPrimitivesModule } from "./primitives.js";
+import { deriveDisplayedLogs, isGettingInFlight } from "../store/derive.js";
+import { deriveGetStepTones } from "../store/progress.js";
+import { getPrimitivesModule, renderTag, renderTextShimmer } from "./primitives.js";
 import { react } from "./react.js";
 // The readable height range the chevron drag clamps to, in px.
 const LOGS_MIN_HEIGHT = 96;
@@ -23,13 +26,26 @@ const LOGS_MAX_HEIGHT = 480;
 // The scroll-to-bottom tolerance in px: it absorbs sub-pixel rounding at the
 // end of the scroll range, so the view reads as at the bottom.
 const LOGS_BOTTOM_TOLERANCE = 4;
+// The step chip row: the five Get step chips (deps / clone / build / model /
+// template) that sit above the textarea while a Get run is in flight, wrapping
+// to a second line on a narrow card.
+const STEP_CHIPS_ROW_STYLE = {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 6,
+    marginBottom: 2,
+};
 /**
  * LogsPanel renders the Logs section from the store: the read-only textarea
  * (the streamed Get buffer while a run is in flight, else the summary's
  * lastLogs), the auto-scroll (the view pins to the bottom while the mode is
  * fresh or scrolling; a scroll up parks it at manual), the chevron resize
- * drag (clamped to 96-480 px), and the log-location field (a ui preference
- * the save route persists, not a synced value).
+ * drag (clamped to 96-480 px), the log-location field (a ui preference the
+ * save route persists, not a synced value), and the five Get step chips
+ * (the running step toned info and shimmered, the completed steps success,
+ * the not-started steps quiet, and the failed step danger) that head the
+ * pane while a Get run is in flight.
  */
 export function LogsPanel(props) {
     const { store, t } = props;
@@ -38,6 +54,17 @@ export function LogsPanel(props) {
     const displayedLogs = deriveDisplayedLogs(state);
     const textareaRef = react.useRef(null);
     const dragRef = react.useRef(null);
+    // The step chips render only while a Get run is in flight (the streamed
+    // buffer is active and the get cell or the in-flight registry reads in
+    // flight, the TASK-010 detection), or while the run has just settled
+    // failed (the buffer is still active, so the failed step reads as danger).
+    // With no run in flight the header shows nothing.
+    const getFailed = state.actions.get.status === 'error';
+    const chipsVisible = state.ui.logs.getLogs !== null && (isGettingInFlight(state) || getFailed);
+    const stepTones = chipsVisible
+        ? deriveGetStepTones(displayedLogs, getFailed)
+        : null;
+    const stepLabels = [t.stepDeps, t.stepClone, t.stepBuild, t.stepModel, t.stepTemplate];
     // patchLogs merges a partial LogsPaneState patch into the store's live
     // logs object, so a concurrent edit (a drag while content updates) never
     // clobbers a field the patch does not name.
@@ -109,6 +136,7 @@ export function LogsPanel(props) {
     const chevronGlyph = typeof chevron === 'function' ? (react.createElement("span", { style: { display: 'inline-flex', transform: 'rotate(-45deg)' } }, react.createElement(chevron, { size: 12 }))) : ('\u231F');
     return (react.createElement("div", { style: { marginTop: 8 } },
         react.createElement("div", { style: LABEL_STYLE }, t.logs),
+        stepTones !== null ? (react.createElement("div", { style: STEP_CHIPS_ROW_STYLE }, stepTones.map((tone, index) => (react.createElement("span", { key: index }, renderTag(tone, tone === 'info' ? renderTextShimmer(stepLabels[index]) : stepLabels[index])))))) : null,
         react.createElement("div", { style: { position: 'relative' } },
             react.createElement("textarea", { ref: textareaRef, style: {
                     width: '100%',

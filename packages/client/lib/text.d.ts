@@ -60,6 +60,11 @@ declare const en: {
     gettingVerb: string;
     gettingEta: string;
     gettingFiles: string;
+    stepDeps: string;
+    stepClone: string;
+    stepBuild: string;
+    stepModel: string;
+    stepTemplate: string;
     getFailed: string;
     allowRun: string;
     depsSatisfied: string;

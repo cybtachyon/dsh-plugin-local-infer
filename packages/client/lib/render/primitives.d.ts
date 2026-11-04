@@ -12,7 +12,7 @@
  * @module dsh-plugin-local-infer/client/render/primitives
  */
 import type { ReactNode } from 'react';
-import type { GetProgressState } from '../store/progress.ts';
+import type { GetProgressState, StepTone } from '../store/progress.ts';
 import { type SelectItem } from './SelectPill.tsx';
 export interface PrimitivesModule {
     Menu?: unknown;
@@ -20,6 +20,8 @@ export interface PrimitivesModule {
     Checkbox?: unknown;
     StateDot?: unknown;
     Progress?: unknown;
+    Tag?: unknown;
+    TextShimmer?: unknown;
     IconChevronDownOutlineRegular?: unknown;
     IconRefreshOutlineRegular?: unknown;
 }
@@ -45,6 +47,8 @@ export declare function renderCheckbox(checkboxProps: CheckboxProps): ReactNode;
 export declare function renderStateDot(state: StateDotState): ReactNode;
 export declare function renderThrobber(): ReactNode;
 export declare function renderProgressStrip(progress: GetProgressState | null | undefined): ReactNode;
+export declare function renderTag(tone: StepTone, children: ReactNode): ReactNode;
+export declare function renderTextShimmer(children: ReactNode): ReactNode;
 export interface ProcessButtonOpts {
     busy?: boolean;
     label: string;

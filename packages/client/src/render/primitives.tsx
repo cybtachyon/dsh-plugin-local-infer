@@ -12,7 +12,7 @@
  * @module dsh-plugin-local-infer/client/render/primitives
  */
 
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import {
   GHOST_BUTTON,
   HELP_ROW_STYLE,
@@ -22,7 +22,7 @@ import {
   clampPercent,
   progressStripFillStyle,
 } from '../styles.ts'
-import type { GetProgressState } from '../store/progress.ts'
+import type { GetProgressState, StepTone } from '../store/progress.ts'
 import { react } from './react.ts'
 import { injectStyles, SelectPill, type SelectItem } from './SelectPill.tsx'
 
@@ -37,6 +37,11 @@ export interface PrimitivesModule {
   // component, so renderProgressStrip's guard stays a fallback for a future
   // seed. If the seed adds one, the guard picks it up automatically.
   Progress?: unknown
+  // Forward-looking: the installed primitives seed exports no Tag or
+  // TextShimmer, so renderTag and renderTextShimmer's guards stay fallbacks
+  // for a future seed (TASK-017 adds the members).
+  Tag?: unknown
+  TextShimmer?: unknown
   IconChevronDownOutlineRegular?: unknown
   IconRefreshOutlineRegular?: unknown
 }
@@ -210,6 +215,77 @@ export function renderProgressStrip(progress: GetProgressState | null | undefine
       <div style={progressStripFillStyle(progress.percent)} />
     </div>
   )
+}
+
+// The native Tag fallback's base chrome: a compact rounded pill the step
+// chips and any future tag read as. The tone layer (the tagToneStyle map)
+// paints the semantic color on top.
+const TAG_BASE_STYLE: CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  height: 20,
+  padding: '0 8px',
+  borderRadius: 10,
+  fontSize: 11,
+  lineHeight: 1,
+  whiteSpace: 'nowrap',
+}
+
+// The native Tag fallback's tone layer: the semantic fill and label the four
+// step tones read as, on the --dsw token families with a legacy fallback.
+const TAG_TONE_STYLES: Record<StepTone, CSSProperties> = {
+  success: {
+    color: 'var(--dsw-alias-label-success, #34c38f)',
+    background: 'var(--dsw-alias-fill-success, rgba(52,195,143,0.12))',
+  },
+  info: {
+    color: 'var(--dsw-alias-accent, #0a84ff)',
+    background: 'var(--dsw-alias-fill-accent, rgba(10,132,255,0.12))',
+  },
+  quiet: {
+    color: 'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))',
+    background: 'var(--dsw-alias-background-tertiary, rgba(128,128,128,0.08))',
+  },
+  danger: {
+    color: 'var(--dsw-alias-label-error, #ff3b30)',
+    background: 'var(--dsw-alias-fill-error, rgba(255,59,48,0.12))',
+  },
+}
+
+// The native TextShimmer fallback: a background-clip text gradient that
+// sweeps across the label, the running step chip's live read. The keyframe
+// (dsh-local-infer-shimmer) is injected by the card's style element.
+const SHIMMER_TEXT_STYLE: CSSProperties = {
+  display: 'inline-block',
+  background:
+    'linear-gradient(90deg, var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8)) 30%, var(--dsw-alias-label-primary, #1d1d1f) 50%, var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8)) 70%)',
+  backgroundSize: '200% 100%',
+  WebkitBackgroundClip: 'text',
+  backgroundClip: 'text',
+  color: 'transparent',
+  animation: 'dsh-local-infer-shimmer 1.6s linear infinite',
+}
+
+// The DSH Tag atom (a rounded semantic pill) with the card's native pill as
+// the fallback a host without the seed keeps. The tone drives the semantic
+// color; the seed's Tag takes the same tone contract.
+export function renderTag(tone: StepTone, children: ReactNode): ReactNode {
+  const primitives = getPrimitivesModule()
+  if (primitives && typeof primitives.Tag === 'function') {
+    return react.createElement(primitives.Tag, { tone }, children) as ReactNode
+  }
+  return <span style={{ ...TAG_BASE_STYLE, ...TAG_TONE_STYLES[tone] }}>{children}</span>
+}
+
+// The DSH TextShimmer atom (a label with a sweeping highlight) with the
+// card's CSS shimmer span as the fallback a host without the seed keeps. The
+// running step chip wraps its label in it, so the live step reads as moving.
+export function renderTextShimmer(children: ReactNode): ReactNode {
+  const primitives = getPrimitivesModule()
+  if (primitives && typeof primitives.TextShimmer === 'function') {
+    return react.createElement(primitives.TextShimmer, null, children) as ReactNode
+  }
+  return <span style={SHIMMER_TEXT_STYLE}>{children}</span>
 }
 
 // The reusable stateful process button: the Disable/Throbber/Reset lifecycle

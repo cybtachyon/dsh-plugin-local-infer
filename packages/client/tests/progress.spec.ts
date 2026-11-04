@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   deriveGetStep,
+  deriveGetStepTones,
   parseHfProgress,
   type GetProgressState,
 } from '../src/store/progress.ts'
@@ -220,5 +221,78 @@ describe('deriveGetStep', () => {
   it('returns null when the log carries no step header', () => {
     expect(deriveGetStep('')).toBeNull()
     expect(deriveGetStep('$ hf download org/repo model.bin\n')).toBeNull()
+  })
+})
+
+describe('deriveGetStepTones', () => {
+  it('tones the deps step running before any header lands', () => {
+    expect(deriveGetStepTones('', false)).toEqual(['info', 'quiet', 'quiet', 'quiet', 'quiet'])
+  })
+
+  it('tones the deps step running at the system dependencies header', () => {
+    expect(deriveGetStepTones('system dependencies (source)\n', false)).toEqual([
+      'info',
+      'quiet',
+      'quiet',
+      'quiet',
+      'quiet',
+    ])
+  })
+
+  it('tones the earlier steps success and the model step running at the model header', () => {
+    const log =
+      'system dependencies (source)\n' +
+      'model download: org/repo\n' +
+      'Fetching 102 files: 42%|▏| 43/102\n'
+    expect(deriveGetStepTones(log, false)).toEqual([
+      'success',
+      'success',
+      'success',
+      'info',
+      'quiet',
+    ])
+  })
+
+  it('tones the template step running at the chat template header', () => {
+    const log =
+      'system dependencies (source)\n' +
+      'model download: org/repo\n' +
+      'chat template: org/repo\n'
+    expect(deriveGetStepTones(log, false)).toEqual([
+      'success',
+      'success',
+      'success',
+      'success',
+      'info',
+    ])
+  })
+
+  it('tones every step success at the get complete header', () => {
+    const log =
+      'system dependencies (source)\n' +
+      'model download: org/repo\n' +
+      'chat template: org/repo\n' +
+      'get complete\n'
+    expect(deriveGetStepTones(log, false)).toEqual([
+      'success',
+      'success',
+      'success',
+      'success',
+      'success',
+    ])
+  })
+
+  it('tones the failed step danger and the later steps quiet when the run settles failed', () => {
+    const log =
+      'system dependencies (source)\n' +
+      'model download: org/repo\n' +
+      'get failed: timeout\n'
+    expect(deriveGetStepTones(log, true)).toEqual([
+      'success',
+      'success',
+      'success',
+      'danger',
+      'quiet',
+    ])
   })
 })
