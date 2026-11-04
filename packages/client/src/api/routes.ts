@@ -254,12 +254,15 @@ async function getJson<T>(path: string, query?: PriceQuery): Promise<T> {
 }
 
 // post sends a JSON POST body to a /local-infer route and returns the raw
-// response, so the stream readers can take it from there.
-async function post(path: string, body: unknown): Promise<Response> {
+// response, so the stream readers can take it from there. The optional signal
+// is the card's cancel: an abort closes the in-flight stream, and the route
+// interrupts the in-flight hf child on the host.
+async function post(path: string, body: unknown, signal?: AbortSignal): Promise<Response> {
   return fetch(path, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
+    ...(signal !== undefined ? { signal } : {}),
   })
 }
 
@@ -323,13 +326,16 @@ export function postUnregister(request: RegisterRequest): Promise<{ removed: boo
 /**
  * postLaunch runs the deploy and the health poll through the launch route's
  * NDJSON stream, handing each step event to onStep and returning the final
- * result event (null when the stream ended without one).
+ * result event (null when the stream ended without one). The optional signal
+ * is the card's cancel: an abort closes the in-flight stream, and the route
+ * interrupts the in-flight Get-step hf child on the host.
  */
 export async function postLaunch(
   request: LaunchRequest,
   onStep?: (step: string) => void,
+  signal?: AbortSignal,
 ): Promise<LaunchResultEvent | null> {
-  const response = await post('/local-infer/launch', request)
+  const response = await post('/local-infer/launch', request, signal)
   return readLaunchStream(response, onStep)
 }
 
@@ -340,13 +346,16 @@ export function postStop(request: LaunchRequest): Promise<{ stopped: boolean }> 
 
 /**
  * postGet runs the git sync, the dependency plan, and the build through the
- * get route's text stream, handing each chunk to onChunk as it lands.
+ * get route's text stream, handing each chunk to onChunk as it lands. The
+ * optional signal is the card's cancel: an abort closes the in-flight stream,
+ * and the route interrupts the in-flight hf child on the host.
  */
 export async function postGet(
   request: GetRequest,
   onChunk: (text: string) => void,
+  signal?: AbortSignal,
 ): Promise<void> {
-  const response = await post('/local-infer/get', request)
+  const response = await post('/local-infer/get', request, signal)
   await readTextStream(response, onChunk)
 }
 

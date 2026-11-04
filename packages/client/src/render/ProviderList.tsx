@@ -223,7 +223,7 @@ export function ProviderRow(props: ProviderRowProps): ReactNode {
         {title}
       </span>
       {editingId === provider.id
-        ? renderButton('ghost', { onClick: () => cancelProvider(store) }, t.cancel)
+        ? renderButton('ghost', { onClick: () => cancelProvider(store, provider.id) }, t.cancel)
         : renderButton('ghost', { onClick: () => editProvider(store, provider) }, t.edit)}
       {renderButton(
         'ghost',

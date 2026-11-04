@@ -94,7 +94,7 @@ commands and code style already live in `AGENTS.md`; not repeated here.)
 
 - [x] [TASK-001-get-subset-of-launch](docs/PLAN-get-launch-TASK-001-get-subset-of-launch.md)
 - [x] [TASK-002-fix-hf-download-paths](docs/PLAN-get-launch-TASK-002-fix-hf-download-paths.md)
-- [ ] [TASK-003-ux-get-logs-resume-cancel](docs/PLAN-get-launch-TASK-003-ux-get-logs-resume-cancel.md)
+- [x] [TASK-003-ux-get-logs-resume-cancel](docs/PLAN-get-launch-TASK-003-ux-get-logs-resume-cancel.md)
 - [ ] [TASK-004-refactor-code-risk-review](docs/PLAN-get-launch-TASK-004-refactor-code-risk-review.md)
 - [ ] [TASK-005-validate-basalt-get](docs/PLAN-get-launch-TASK-005-validate-basalt-get.md)
 - [ ] [TASK-006-visual-improvements](docs/PLAN-get-launch-TASK-006-visual-improvements.md)

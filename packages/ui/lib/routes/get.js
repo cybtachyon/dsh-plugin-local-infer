@@ -6,7 +6,7 @@
  * @module dsh-plugin-local-infer/ui/routes/get
  */
 import { parseStoredPlatformConfig } from "../config.js";
-import { getEngine } from "../ops/engine.js";
+import { CANCELED_LINE, getEngine } from "../ops/engine.js";
 import { persistGetLogs } from "../ops/logs.js";
 import { defineRoute } from "../route.js";
 /**
@@ -40,16 +40,35 @@ export function getRoute(localInfer, getHost) {
                 collected += text;
                 res.write(text);
             };
+            // The card's provider-form Cancel aborts the fetch, which closes the
+            // response: the abort interrupts the in-flight hf child (SIGINT, then
+            // SIGTERM), and the hub-cache .incomplete blob resumes on the re-run.
+            // A close after the run settled is the normal end, not a cancel.
+            const controller = new AbortController();
+            let finished = false;
+            res.onClose(() => {
+                if (!finished) {
+                    controller.abort();
+                }
+            });
             try {
-                await getEngine(localInfer, request, log, getHost);
+                await getEngine(localInfer, request, log, getHost, controller.signal);
             }
             catch (error) {
                 log(`!! get failed: ${String(error?.message ?? error)}\n`);
             }
-            // The "Getting..." separator leads the persisted run, so the Logs
-            // section and the log file read the run as a fresh process section, the
-            // same line the card writes when the Get button is clicked.
-            persistGetLogs(`--- Getting...\n${collected}`);
+            // A cancel that closed the stream appends the "Canceled" line, so the
+            // persisted run (and the log file) read the run as canceled, the same
+            // line the card writes to its Logs buffer on the Cancel.
+            if (controller.signal.aborted) {
+                log(`${CANCELED_LINE}`);
+            }
+            finished = true;
+            // The "Getting engine and model..." separator leads the persisted run,
+            // so the Logs section and the log file read the run as a fresh process
+            // section, the same line the card writes when the Get button is
+            // clicked.
+            persistGetLogs(`--- Getting engine and model...\n${collected}`);
             res.end();
         },
     });

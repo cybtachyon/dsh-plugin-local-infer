@@ -44,7 +44,7 @@ export function resolveEngineDirectory(localInfer, config, engineId, platform) {
  * step stops the run and names the broken step in the detail.
  */
 export async function runGetSteps(localInfer, request, log) {
-    const { engineId, config, platform, allowRunDeps, host } = request;
+    const { engineId, config, platform, allowRunDeps, host, signal } = request;
     const chunks = [];
     const emit = (chunk) => {
         chunks.push(chunk);
@@ -147,7 +147,10 @@ export async function runGetSteps(localInfer, request, log) {
             }
             else {
                 emit(`$ ${hfDownloadCommand(entry, modelDir, useHubCache)}\n`);
-                const download = await localInfer.downloadModel(entry, modelDir, { useHubCache });
+                const download = await localInfer.downloadModel(entry, modelDir, {
+                    useHubCache,
+                    ...(signal !== undefined ? { signal } : {}),
+                });
                 if (!download.ok) {
                     emit(`!! ${download.detail ?? 'model download failed'}\n`);
                     return {
@@ -169,7 +172,9 @@ export async function runGetSteps(localInfer, request, log) {
         for (const command of infernixGetDownloads(config, modelDir, useHubCache)) {
             emit(`$ ${command}\n`);
             const outcome = host.runStream !== undefined
-                ? await host.runStream(command, (chunk) => emit(chunk))
+                ? await host.runStream(command, (chunk) => emit(chunk), {
+                    ...(signal !== undefined ? { signal } : {}),
+                })
                 : await host.run(command);
             if (!outcome.ok) {
                 emit(`!! ${command} failed: ${outcome.detail ?? 'unknown'}\n`);
@@ -188,7 +193,10 @@ export async function runGetSteps(localInfer, request, log) {
         }
         else {
             emit(`$ ${hfChatTemplateCommand(template, modelDir, useHubCache)}\n`);
-            const download = await localInfer.downloadChatTemplate(template, modelDir, { useHubCache });
+            const download = await localInfer.downloadChatTemplate(template, modelDir, {
+                useHubCache,
+                ...(signal !== undefined ? { signal } : {}),
+            });
             if (!download.ok) {
                 emit(`!! ${download.detail ?? 'chat template download failed'}\n`);
                 return {

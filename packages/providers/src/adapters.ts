@@ -10,6 +10,7 @@
  */
 
 import { exec, spawn as nodeSpawn } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
 import { mkdir, writeFile as fsWriteFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname } from 'node:path'
@@ -255,6 +256,36 @@ function renderYaml(object: Record<string, unknown>): string {
 }
 
 /**
+ * The cancel grace period in ms: an aborted run gets SIGINT first, and a child
+ * still alive after the grace period gets SIGTERM, so a stuck child cannot
+ * keep the run open.
+ */
+const RUN_ABORT_GRACE_MS = 5_000
+
+/**
+ * watchChildAbort kills the in-flight child when the RunOptions signal
+ * aborts (the card's cancel of a Get/Launch download): SIGINT first, SIGTERM
+ * after the grace period if the child is still alive. A signal that is already
+ * aborted kills immediately.
+ */
+function watchChildAbort(child: ChildProcess, signal?: AbortSignal): void {
+  if (signal === undefined) return
+  const onAbort = (): void => {
+    if (child.killed || child.exitCode !== null) return
+    child.kill('SIGINT')
+    const escalate = setTimeout(() => {
+      if (!child.killed && child.exitCode === null) child.kill('SIGTERM')
+    }, RUN_ABORT_GRACE_MS)
+    escalate.unref()
+  }
+  if (signal.aborted) {
+    onAbort()
+    return
+  }
+  signal.addEventListener('abort', onAbort, { once: true })
+}
+
+/**
  * createNodeLifecycleHost builds the node `LifecycleHost`: `run` through the
  * system shell (a 10-minute cap, so a hung CUDA build cannot hang the panel),
  * `spawn` a detached child the stop step can signal, `writeFile` the config
@@ -277,14 +308,19 @@ export function createNodeLifecycleHost(debug?: DebugLogger): LifecycleHost {
       return new Promise(resolve => {
         // A profile shell (the Windows vcpkg route's pwsh.exe) runs the
         // command line in that shell; absent keeps the system default.
-        exec(command, { timeout: 600_000, shell: options?.shell }, (error, stdout, stderr) => {
-          if (error === null) {
-            resolve({ ok: true })
-            return
-          }
-          const detail = `${stderr ?? ''}${stdout ?? ''}${String(error)}`.trim().slice(-1024)
-          resolve({ ok: false, detail })
-        })
+        const child = exec(
+          command,
+          { timeout: 600_000, shell: options?.shell },
+          (error, stdout, stderr) => {
+            if (error === null) {
+              resolve({ ok: true })
+              return
+            }
+            const detail = `${stderr ?? ''}${stdout ?? ''}${String(error)}`.trim().slice(-1024)
+            resolve({ ok: false, detail })
+          },
+        )
+        watchChildAbort(child, options?.signal)
       })
     },
     async runStream(
@@ -302,6 +338,7 @@ export function createNodeLifecycleHost(debug?: DebugLogger): LifecycleHost {
           shell: options?.shell ?? true,
           stdio: ['ignore', 'pipe', 'pipe'],
         })
+        watchChildAbort(child, options?.signal)
         let output = ''
         const append = (chunk: Buffer): void => {
           const text = chunk.toString('utf8')

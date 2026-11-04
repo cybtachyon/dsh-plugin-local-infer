@@ -12,6 +12,7 @@
  * @module dsh-plugin-local-infer/client/store/deps
  */
 import { fetchDeps, fetchSummary, postGet, postInstall, postSave, } from "../api/routes.js";
+import { forgetGetAbort, trackGetAbort } from "./abort.js";
 import { performAction, ACTION_TIMEOUTS } from "./sync.js";
 /**
  * GET_IDLE_MS is the Get run's output-idle cap in ms. Two minutes without a
@@ -145,12 +146,16 @@ export function performInstall(store, t) {
 /**
  * performGet runs the git sync, the dependency plan, and the build through
  * the get route's text stream. The click seeds the Logs section's streamed
- * buffer from the persisted last-run logs with a "Getting..." separator, so
- * the run reads as a fresh Logs section. Each chunk appends to the buffer
- * and re-arms the idle cap: two minutes without a line settles the get cell
- * (the control re-enables) while the run keeps streaming in the background.
- * When the stream ends, the route has persisted the run as the last logs,
- * so a summary re-read hands the Logs section back to the stored value.
+ * buffer from the persisted last-run logs with a "Getting engine and
+ * model..." separator, so the run reads as a fresh Logs section. Each chunk
+ * appends to the buffer and re-arms the idle cap: two minutes without a line
+ * settles the get cell (the control re-enables) while the run keeps streaming
+ * in the background. When the stream ends, the route has persisted the run as
+ * the last logs, so a summary re-read hands the Logs section back to the
+ * stored value. The run registers its AbortController in the in-flight
+ * registry, so the provider form's Cancel closes the stream and the route
+ * interrupts the in-flight hf child; an aborted run settles without a
+ * failure line (the "Canceled" line the Cancel wrote is the run's tail).
  */
 export function performGet(store, t) {
     const state = store.getSnapshot();
@@ -214,6 +219,10 @@ export function performGet(store, t) {
     // cap the idle settle (the control re-enables, the run keeps streaming)
     // fires first and the deadline's timeout reads as a no-op.
     armIdle();
+    // The run's abort: the provider form's Cancel closes the stream through it,
+    // and the route's response close interrupts the in-flight hf child.
+    const controller = new AbortController();
+    trackGetAbort(controller);
     return performAction(store, 'get', () => new Promise((resolve, reject) => {
         resolveDetail = resolve;
         postGet({
@@ -223,14 +232,21 @@ export function performGet(store, t) {
         }, (chunk) => {
             append(chunk);
             armIdle();
-        })
+        }, controller.signal)
             .then(() => {
+            forgetGetAbort(controller);
             finish(true);
             resolve('ok');
         })
             .catch((error) => {
+            forgetGetAbort(controller);
             const message = error instanceof Error ? error.message : String(error);
-            append('\n' + t.getFailed + ': ' + message + '\n');
+            // An aborted run (the provider form's Cancel) reads as canceled,
+            // not failed: the "Canceled" line the Cancel wrote is the tail,
+            // so no failure line appends.
+            if (controller.signal.aborted !== true) {
+                append('\n' + t.getFailed + ': ' + message + '\n');
+            }
             finish(true);
             reject(new Error(message));
         });

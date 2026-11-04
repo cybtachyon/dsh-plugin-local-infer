@@ -243,7 +243,7 @@ var en = {
   run: "Run",
   running: "running...",
   get: "Get",
-  getting: "Getting...",
+  getting: "Getting engine and model...",
   getFailed: "get failed",
   allowRun: "Allow one-click install (sudo)",
   depsSatisfied: "All dependencies satisfied.",
@@ -377,7 +377,7 @@ var zh = {
   run: "\u8FD0\u884C",
   running: "\u8FD0\u884C\u4E2D\u2026",
   get: "\u83B7\u53D6",
-  getting: "\u83B7\u53D6\u4E2D\u2026",
+  getting: "\u83B7\u53D6\u5F15\u64CE\u548C\u6A21\u578B\u4E2D\u2026",
   getFailed: "\u83B7\u53D6\u5931\u8D25",
   allowRun: "\u5141\u8BB8\u4E00\u952E\u5B89\u88C5 (sudo)",
   depsSatisfied: "\u6240\u6709\u4F9D\u8D56\u5DF2\u6EE1\u8DB3\u3002",
@@ -1196,11 +1196,12 @@ async function getJson(path, query) {
   }
   return json;
 }
-async function post(path, body) {
+async function post(path, body, signal) {
   return fetch(path, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    ...signal !== void 0 ? { signal } : {}
   });
 }
 async function postJson(path, body) {
@@ -1237,15 +1238,15 @@ function postRegister(request) {
 function postUnregister(request) {
   return postJson("/local-infer/unregister", request);
 }
-async function postLaunch(request, onStep) {
-  const response = await post("/local-infer/launch", request);
+async function postLaunch(request, onStep, signal) {
+  const response = await post("/local-infer/launch", request, signal);
   return readLaunchStream(response, onStep);
 }
 function postStop(request) {
   return postJson("/local-infer/stop", request);
 }
-async function postGet(request, onChunk) {
-  const response = await post("/local-infer/get", request);
+async function postGet(request, onChunk, signal) {
+  const response = await post("/local-infer/get", request, signal);
   await readTextStream(response, onChunk);
 }
 function postDownload(request) {
@@ -1614,6 +1615,45 @@ function CustomArgsPanel(props) {
   return /* @__PURE__ */ react.createElement("div", { style: { marginTop: 8 } }, /* @__PURE__ */ react.createElement("div", { style: SECTION_STYLE }, t.customArgsTitle), state.ui.help ? renderHelpRow(t.customArgHelp) : null, /* @__PURE__ */ react.createElement("div", { style: { ...CUSTOM_ARGS_GRID_STYLE, gridTemplateRows: "auto" } }, /* @__PURE__ */ react.createElement("div", { style: CUSTOM_ARGS_HEADER_STYLE }, t.customArgKeyHeader), /* @__PURE__ */ react.createElement("div", { style: CUSTOM_ARGS_HEADER_STYLE }, t.customArgValueHeader), /* @__PURE__ */ react.createElement("div", { style: { ...CUSTOM_ARGS_HEADER_STYLE, textAlign: "right" } }, t.customArgAddRemoveHeader), body));
 }
 
+// packages/client/src/store/abort.ts
+var activeGets = /* @__PURE__ */ new Set();
+var activeLaunches = /* @__PURE__ */ new Map();
+function trackGetAbort(controller) {
+  activeGets.add(controller);
+}
+function forgetGetAbort(controller) {
+  activeGets.delete(controller);
+}
+function trackLaunchAbort(providerId, controller) {
+  activeLaunches.set(providerId, controller);
+}
+function forgetLaunchAbort(providerId) {
+  activeLaunches.delete(providerId);
+}
+function cancelInFlightRuns(providerId) {
+  let aborted = false;
+  for (const controller of activeGets) {
+    controller.abort();
+    aborted = true;
+  }
+  activeGets.clear();
+  if (providerId !== void 0) {
+    const controller = activeLaunches.get(providerId);
+    if (controller !== void 0) {
+      controller.abort();
+      activeLaunches.delete(providerId);
+      aborted = true;
+    }
+    return aborted;
+  }
+  for (const controller of activeLaunches.values()) {
+    controller.abort();
+    aborted = true;
+  }
+  activeLaunches.clear();
+  return aborted;
+}
+
 // packages/client/src/store/deps.ts
 var GET_IDLE_MS = 12e4;
 function repriceDeps(store, query) {
@@ -1758,6 +1798,8 @@ function performGet(store, t) {
     }, GET_IDLE_MS);
   };
   armIdle();
+  const controller = new AbortController();
+  trackGetAbort(controller);
   return performAction(
     store,
     "get",
@@ -1772,13 +1814,18 @@ function performGet(store, t) {
         (chunk) => {
           append(chunk);
           armIdle();
-        }
+        },
+        controller.signal
       ).then(() => {
+        forgetGetAbort(controller);
         finish(true);
         resolve("ok");
       }).catch((error) => {
+        forgetGetAbort(controller);
         const message = error instanceof Error ? error.message : String(error);
-        append("\n" + t.getFailed + ": " + message + "\n");
+        if (controller.signal.aborted !== true) {
+          append("\n" + t.getFailed + ": " + message + "\n");
+        }
         finish(true);
         reject(new Error(message));
       });
@@ -2005,6 +2052,9 @@ function appendProcessLog(store, line) {
     patch: { logs: { ...logs, getLogs: base + (base === "" ? "" : "\n") + line } }
   });
 }
+function appendCanceledLog(store) {
+  appendProcessLog(store, "--- Canceled\n");
+}
 function editProvider(store, provider) {
   const state = store.getSnapshot();
   store.dispatch({
@@ -2026,7 +2076,10 @@ function editProvider(store, provider) {
   void repriceSummary(store, { engine: provider.engine, config: provider.config });
   void repriceDeps(store, { engine: provider.engine, config: provider.config });
 }
-function cancelProvider(store) {
+function cancelProvider(store, providerId) {
+  if (cancelInFlightRuns(providerId)) {
+    appendCanceledLog(store);
+  }
   const state = store.getSnapshot();
   const hasProviders = (state.summary?.providers.length ?? 0) > 0;
   store.dispatch({
@@ -2099,6 +2152,8 @@ function performEntryLaunch(store, provider, t) {
       deadline = null;
     }
   };
+  const controller = new AbortController();
+  trackLaunchAbort(provider.id, controller);
   const handle = {
     cancel() {
       if (settled) {
@@ -2106,6 +2161,7 @@ function performEntryLaunch(store, provider, t) {
       }
       settled = true;
       clearDeadline();
+      forgetLaunchAbort(provider.id);
     }
   };
   const armDeadline = () => {
@@ -2136,13 +2192,15 @@ function performEntryLaunch(store, provider, t) {
       platform: { [provider.engine]: provider.platform },
       providerId: provider.id
     },
-    onStep
+    onStep,
+    controller.signal
   ).then((result) => {
     if (settled) {
       return;
     }
     settled = true;
     clearDeadline();
+    forgetLaunchAbort(provider.id);
     if (result === null) {
       move(store, provider.id, { type: "failed" });
     } else if (result.healthy === true) {
@@ -2159,6 +2217,7 @@ function performEntryLaunch(store, provider, t) {
     }
     settled = true;
     clearDeadline();
+    forgetLaunchAbort(provider.id);
     move(store, provider.id, { type: "failed" });
   });
   return handle;
@@ -2248,10 +2307,13 @@ function performDraftLaunch(store, t) {
     return Promise.resolve();
   }
   const draft = state.draft;
+  const abortKey = state.ui.editingProviderId ?? "draft";
+  const controller = new AbortController();
+  trackLaunchAbort(abortKey, controller);
   return performAction(
     store,
     "launch",
-    () => postLaunch(draftLaunchBody(store)).then((result) => {
+    () => postLaunch(draftLaunchBody(store), void 0, controller.signal).then((result) => {
       if (result !== null && result.healthy === true) {
         void repriceSummary(store, { engine: draft.engine, config: draft.config });
         return t.runningOn + " " + (result.plan !== void 0 ? String(result.plan.port) : "");
@@ -2260,6 +2322,9 @@ function performDraftLaunch(store, t) {
         throw new Error(t.notHealthy + (result.detail ? ": " + result.detail : ""));
       }
       throw new Error(t.launchFailed);
+    }).catch((error) => {
+      forgetLaunchAbort(abortKey);
+      throw error;
     }),
     ACTION_TIMEOUTS.launch
   );
@@ -2407,7 +2472,7 @@ function ProviderRow(props) {
       },
       title
     ),
-    editingId === provider.id ? renderButton("ghost", { onClick: () => cancelProvider(store) }, t.cancel) : renderButton("ghost", { onClick: () => editProvider(store, provider) }, t.edit),
+    editingId === provider.id ? renderButton("ghost", { onClick: () => cancelProvider(store, provider.id) }, t.cancel) : renderButton("ghost", { onClick: () => editProvider(store, provider) }, t.edit),
     renderButton(
       "ghost",
       {

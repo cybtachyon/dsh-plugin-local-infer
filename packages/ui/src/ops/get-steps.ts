@@ -43,7 +43,10 @@ import { resolveModelDirectory } from './model.ts'
  * whether the dependency install runs, and the lifecycle host the git and
  * build steps run through. `autoRebuild` false (the card's Auto Rebuild
  * checkbox off) skips the sync and build steps, so a launch reads the
- * checkout as-is, the same rule the adapter's deploy step applies.
+ * checkout as-is, the same rule the adapter's deploy step applies. `signal`
+ * is the card's cancel: an abort interrupts the in-flight hf download child
+ * (SIGINT, then SIGTERM), and the hub-cache `.incomplete` blob resumes on
+ * the re-run.
  */
 export interface GetStepsRequest {
   engineId: string
@@ -52,6 +55,7 @@ export interface GetStepsRequest {
   allowRunDeps: boolean
   autoRebuild?: boolean
   host: LifecycleHost
+  signal?: AbortSignal
 }
 
 /**
@@ -102,7 +106,7 @@ export async function runGetSteps(
   request: GetStepsRequest,
   log: (chunk: string) => void,
 ): Promise<GetStepsResult> {
-  const { engineId, config, platform, allowRunDeps, host } = request
+  const { engineId, config, platform, allowRunDeps, host, signal } = request
   const chunks: string[] = []
   const emit = (chunk: string): void => {
     chunks.push(chunk)
@@ -218,7 +222,10 @@ export async function runGetSteps(
         emit(`model download: ${modelId} is already present, skipped\n`)
       } else {
         emit(`$ ${hfDownloadCommand(entry, modelDir, useHubCache)}\n`)
-        const download = await localInfer.downloadModel(entry, modelDir, { useHubCache })
+        const download = await localInfer.downloadModel(entry, modelDir, {
+          useHubCache,
+          ...(signal !== undefined ? { signal } : {}),
+        })
         if (!download.ok) {
           emit(`!! ${download.detail ?? 'model download failed'}\n`)
           return {
@@ -240,7 +247,9 @@ export async function runGetSteps(
       emit(`$ ${command}\n`)
       const outcome =
         host.runStream !== undefined
-          ? await host.runStream(command, (chunk) => emit(chunk))
+          ? await host.runStream(command, (chunk) => emit(chunk), {
+              ...(signal !== undefined ? { signal } : {}),
+            })
           : await host.run(command)
       if (!outcome.ok) {
         emit(`!! ${command} failed: ${outcome.detail ?? 'unknown'}\n`)
@@ -259,7 +268,10 @@ export async function runGetSteps(
       emit(`chat template: ${template} is already present, skipped\n`)
     } else {
       emit(`$ ${hfChatTemplateCommand(template, modelDir, useHubCache)}\n`)
-      const download = await localInfer.downloadChatTemplate(template, modelDir, { useHubCache })
+      const download = await localInfer.downloadChatTemplate(template, modelDir, {
+        useHubCache,
+        ...(signal !== undefined ? { signal } : {}),
+      })
       if (!download.ok) {
         emit(`!! ${download.detail ?? 'chat template download failed'}\n`)
         return {

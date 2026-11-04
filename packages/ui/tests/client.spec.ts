@@ -358,11 +358,11 @@ describe('dsh/client.js browser carrier', () => {
     // The provider process buttons write a "--- {{label}}" separator to the
     // Logs buffer when clicked (appendProcessLog), so a new process reads as a
     // fresh section that appends its commands and output to the buffer and the
-    // log file. The Get button reads the title-cased "Getting..." in-progress
-    // label.
+    // log file. The Get button reads the "Getting engine and model..."
+    // in-progress label.
     expect(source).toContain('appendProcessLog')
     expect(source).toContain('"--- " + label')
-    expect(source).toContain('"Getting..."')
+    expect(source).toContain('"Getting engine and model..."')
   })
 
   it('pins the per-entry launch state machine and its phase labels', () => {

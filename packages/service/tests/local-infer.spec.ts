@@ -2191,4 +2191,27 @@ describe('model directory, hf CLI, and model download', () => {
       'hf download froggeric/Qwen-Fixed-Chat-Templates chat_template.jinja',
     ])
   })
+
+  it('threads the abort signal through to the download runner', async () => {
+    const ctx = await seam()
+    const entry: DefaultModel = {
+      engineId: 'ninfer',
+      modelId: 'qwen3-27b',
+      label: 'Ninfer Qwen3.8-27B',
+      url: 'https://huggingface.co/neroued/Qwen3.8-27B-nvfp4-NInfer',
+      file: 'qwen3_8_27b_nvfp4.ninfer',
+    }
+    let seenSignal: AbortSignal | undefined
+    const runner = async (_command: string, signal?: AbortSignal) => {
+      seenSignal = signal
+      return { ok: true }
+    }
+    const controller = new AbortController()
+    const result = await ctx.localInfer.downloadModel(entry, join(home, 'models'), {
+      runner,
+      signal: controller.signal,
+    })
+    expect(result).toEqual({ ok: true })
+    expect(seenSignal).toBe(controller.signal)
+  })
 })

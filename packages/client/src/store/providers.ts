@@ -30,6 +30,11 @@ import {
 } from '../machine/launch.ts'
 import type { ProviderSummaryEntry } from 'dsh-plugin-local-infer/ui'
 import type { TextTable } from '../text.ts'
+import {
+  cancelInFlightRuns,
+  forgetLaunchAbort,
+  trackLaunchAbort,
+} from './abort.ts'
 import { repriceDeps, repriceSummary } from './deps.ts'
 import { ACTION_TIMEOUTS, performAction, type CardStore } from './sync.ts'
 
@@ -79,6 +84,14 @@ function appendProcessLog(store: CardStore, line: string): void {
   })
 }
 
+// appendCanceledLog appends the "Canceled" line to the Logs buffer when the
+// provider form's Cancel aborts an in-flight run, so the textarea reads the
+// run as canceled the moment the Cancel is clicked, the same line the route
+// persists to the log file.
+function appendCanceledLog(store: CardStore): void {
+  appendProcessLog(store, '--- Canceled\n')
+}
+
 /**
  * editProvider loads a stored provider's engine, config, and platform into
  * the form (the next Save updates that entry in place). It caches the form's
@@ -112,9 +125,17 @@ export function editProvider(store: CardStore, provider: ProviderSummaryEntry): 
  * cancelProvider collapses the editing form back to the provider entry list
  * and discards the staged edit: the draft reverts to the summary's stored
  * values, so nothing the user typed in the edit is kept. With no stored
- * entries the form reads as new-provider mode.
+ * entries the form reads as new-provider mode. The Cancel is also the
+ * in-flight run's abort: it closes the in-flight Get run's stream and the
+ * named provider's in-flight Launch run (the route's response close
+ * interrupts the in-flight hf child on the host), and appends the "Canceled"
+ * line to the Logs buffer, so the run reads as canceled in the textarea and
+ * the log file.
  */
-export function cancelProvider(store: CardStore): void {
+export function cancelProvider(store: CardStore, providerId?: string): void {
+  if (cancelInFlightRuns(providerId)) {
+    appendCanceledLog(store)
+  }
   const state = store.getSnapshot()
   const hasProviders = (state.summary?.providers.length ?? 0) > 0
   store.dispatch({
@@ -236,6 +257,12 @@ export function performEntryLaunch(
       deadline = null
     }
   }
+  // The run's abort: the provider form's Cancel closes the stream through it,
+  // and the route's response close interrupts the in-flight Get-step hf child
+  // on the host. The unmount cancel clears the timers only, so the run keeps
+  // streaming in the background, the same rule the stop driver applies.
+  const controller = new AbortController()
+  trackLaunchAbort(provider.id, controller)
   const handle: EntryTimerHandle = {
     cancel() {
       if (settled) {
@@ -243,6 +270,7 @@ export function performEntryLaunch(
       }
       settled = true
       clearDeadline()
+      forgetLaunchAbort(provider.id)
     },
   }
   // The health-poll deadline arms only for the launch (health-poll) step; the
@@ -277,6 +305,7 @@ export function performEntryLaunch(
       providerId: provider.id,
     },
     onStep,
+    controller.signal,
   )
     .then((result) => {
       if (settled) {
@@ -284,6 +313,7 @@ export function performEntryLaunch(
       }
       settled = true
       clearDeadline()
+      forgetLaunchAbort(provider.id)
       if (result === null) {
         // The stream ended without a result event: settle to failed.
         move(store, provider.id, { type: 'failed' })
@@ -305,6 +335,10 @@ export function performEntryLaunch(
       }
       settled = true
       clearDeadline()
+      forgetLaunchAbort(provider.id)
+      // An aborted run (the provider form's Cancel) reads as failed, not a
+      // stream break: the "Canceled" line the Cancel wrote is the run's tail,
+      // and the red Logs control re-opens the entry for a re-launch.
       move(store, provider.id, { type: 'failed' })
     })
   return handle
@@ -423,7 +457,10 @@ function draftLaunchBody(store: CardStore): LaunchRequest {
  * event, the form's control shows no phase labels) and settles the draft's
  * launch cell. A healthy result reads as running (the control becomes Stop),
  * a not-healthy or missing result reads as the launch-failed note. The
- * summary re-fetches so the provider's status dot repaints.
+ * summary re-fetches so the provider's status dot repaints. The run registers
+ * its AbortController under the form's provider id (the "draft" key when the
+ * form is not a provider), so the provider form's Cancel closes the stream
+ * and the route interrupts the in-flight Get-step hf child on the host.
  */
 export function performDraftLaunch(store: CardStore, t: TextTable): Promise<void> {
   const state = store.getSnapshot()
@@ -431,20 +468,31 @@ export function performDraftLaunch(store: CardStore, t: TextTable): Promise<void
     return Promise.resolve()
   }
   const draft = state.draft
+  const abortKey = state.ui.editingProviderId ?? 'draft'
+  const controller = new AbortController()
+  trackLaunchAbort(abortKey, controller)
   return performAction(
     store,
     'launch',
     () =>
-      postLaunch(draftLaunchBody(store)).then((result) => {
-        if (result !== null && result.healthy === true) {
-          void repriceSummary(store, { engine: draft.engine, config: draft.config })
-          return t.runningOn + ' ' + (result.plan !== undefined ? String(result.plan.port) : '')
-        }
-        if (result !== null) {
-          throw new Error(t.notHealthy + (result.detail ? ': ' + result.detail : ''))
-        }
-        throw new Error(t.launchFailed)
-      }),
+      postLaunch(draftLaunchBody(store), undefined, controller.signal)
+        .then((result) => {
+          if (result !== null && result.healthy === true) {
+            void repriceSummary(store, { engine: draft.engine, config: draft.config })
+            return t.runningOn + ' ' + (result.plan !== undefined ? String(result.plan.port) : '')
+          }
+          if (result !== null) {
+            throw new Error(t.notHealthy + (result.detail ? ': ' + result.detail : ''))
+          }
+          throw new Error(t.launchFailed)
+        })
+        .catch((error: unknown) => {
+          // The run settled (a healthy ack throws nothing, a broken stream or
+          // the provider form's Cancel rejects): the controller is no longer
+          // in flight, so a later Cancel reads it as nothing to abort.
+          forgetLaunchAbort(abortKey)
+          throw error
+        }),
     ACTION_TIMEOUTS.launch,
   )
 }

@@ -60,6 +60,14 @@ interface OutgoingLike {
      */
     write?(chunk: string): unknown;
     end(body?: string): void;
+    /**
+     * Optional: watch the response for the client disconnecting (the node
+     * ServerResponse's 'close' before the route ends), so a stream route can
+     * abort the in-flight run when the card cancels it. The web server hands
+     * the handler a node ServerResponse; the tests' fake may omit it, and the
+     * route degrades to no abort.
+     */
+    on?(event: string, listener: (...args: unknown[]) => void): unknown;
 }
 /**
  * RouteError is a route failure that carries its own HTTP status, so the
@@ -87,6 +95,13 @@ export declare class RouteResponder {
     ndjsonStream(): void;
     /** Stream one chunk; a fake response without write() collects nothing. */
     write(chunk: string): void;
+    /**
+     * Watch the response's client disconnect (the node 'close' before the
+     * route ends): the listener fires once when the card's Cancel closes the
+     * stream, so the route aborts the in-flight run. A fake response without
+     * on() never fires it, and the run degrades to running to completion.
+     */
+    onClose(listener: () => void): void;
     /** End the response, optionally with a final body chunk. */
     end(body?: string): void;
 }

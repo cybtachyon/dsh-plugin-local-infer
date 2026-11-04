@@ -1,5 +1,6 @@
 import type { DepsModel, LocalInferSummary } from 'dsh-plugin-local-infer/ui'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { cancelInFlightRuns } from '../src/store/abort.ts'
 import {
   copyInstallString,
   GET_IDLE_MS,
@@ -394,6 +395,56 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       expect(state().ui.logs.getLogs).toBeNull()
       expect(state().actions.get).toEqual({ status: 'error', detail: 'the build broke' })
       expect(state().summary).toEqual(summary)
+    })
+
+    it('settles without a failure line when the Cancel aborts the run', async () => {
+      const { store, state } = makeStore()
+      prime(store, depsWith())
+      const stream = streamResponse()
+      // The summary re-read stays gated, so the buffer is observable before
+      // the re-read clears it.
+      let resolveSummary: (response: Response) => void = () => {}
+      const summaryGate = new Promise<Response>((resolve) => {
+        resolveSummary = resolve
+      })
+      const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+        if (url === '/local-infer/get') {
+          return new Promise<Response>((resolve) => {
+            // The card's provider-form Cancel closes the stream through the
+            // run's signal, the same way the live fetch errors the body
+            // stream on an abort.
+            init?.signal?.addEventListener(
+              'abort',
+              () => stream.fail('The operation was aborted.'),
+              { once: true },
+            )
+            resolve(stream.response())
+          })
+        }
+        return summaryGate
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const promise = performGet(store, t)
+      stream.enqueue('line one\n')
+      await vi.advanceTimersByTimeAsync(0)
+      // The provider form's Cancel: abort the in-flight run.
+      expect(cancelInFlightRuns()).toBe(true)
+      await vi.advanceTimersByTimeAsync(0)
+      await promise
+      // The aborted run settles the get cell to error with the abort message,
+      // and the buffer keeps the streamed lines without a failure line (the
+      // "Canceled" line the Cancel wrote is the run's tail).
+      expect(state().actions.get).toEqual({
+        status: 'error',
+        detail: 'The operation was aborted.',
+      })
+      expect(state().ui.logs.getLogs).toBe('--- ' + t.getting + '\nline one\n')
+      // The run is no longer in flight: a second cancel reads as nothing to
+      // abort.
+      expect(cancelInFlightRuns()).toBe(false)
+      resolveSummary(new Response('{}', { status: 200 }))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(state().ui.logs.getLogs).toBeNull()
     })
   })
 })

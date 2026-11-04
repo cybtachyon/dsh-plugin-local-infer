@@ -39,9 +39,14 @@ export declare function editProvider(store: CardStore, provider: ProviderSummary
  * cancelProvider collapses the editing form back to the provider entry list
  * and discards the staged edit: the draft reverts to the summary's stored
  * values, so nothing the user typed in the edit is kept. With no stored
- * entries the form reads as new-provider mode.
+ * entries the form reads as new-provider mode. The Cancel is also the
+ * in-flight run's abort: it closes the in-flight Get run's stream and the
+ * named provider's in-flight Launch run (the route's response close
+ * interrupts the in-flight hf child on the host), and appends the "Canceled"
+ * line to the Logs buffer, so the run reads as canceled in the textarea and
+ * the log file.
  */
-export declare function cancelProvider(store: CardStore): void;
+export declare function cancelProvider(store: CardStore, providerId?: string): void;
 /**
  * newProvider resets the form to a fresh provider (the next Save mints an id
  * and prepends it). It restores the cached in-progress values (the form state
@@ -97,7 +102,10 @@ export declare function performEntryStop(store: CardStore, provider: ProviderSum
  * event, the form's control shows no phase labels) and settles the draft's
  * launch cell. A healthy result reads as running (the control becomes Stop),
  * a not-healthy or missing result reads as the launch-failed note. The
- * summary re-fetches so the provider's status dot repaints.
+ * summary re-fetches so the provider's status dot repaints. The run registers
+ * its AbortController under the form's provider id (the "draft" key when the
+ * form is not a provider), so the provider form's Cancel closes the stream
+ * and the route interrupts the in-flight Get-step hf child on the host.
  */
 export declare function performDraftLaunch(store: CardStore, t: TextTable): Promise<void>;
 /**

@@ -1458,12 +1458,14 @@ describe('route handlers over a fake web server', () => {
   interface FakeRes {
     status: number
     body: string
+    closeListeners: Array<() => void>
   }
 
   function fakeRes(): FakeRes {
     const res = {
       status: 0,
       body: '',
+      closeListeners: [] as Array<() => void>,
       writeHead(status: number): FakeRes {
         res.status = status
         return res
@@ -1478,6 +1480,15 @@ describe('route handlers over a fake web server', () => {
         // A streamed body (the launch NDJSON) is already accumulated; a plain
         // end body replaces it.
         res.body = body !== undefined ? body : res.body
+        return res
+      },
+      // The stream routes watch the response's client disconnect (the node
+      // 'close' before the route ends); the fake captures the listener so a
+      // test simulates the card's Cancel closing the stream.
+      on(event: string, listener: (...args: unknown[]) => void): FakeRes {
+        if (event === 'close') {
+          res.closeListeners.push(listener as () => void)
+        }
         return res
       },
     }
@@ -1711,6 +1722,44 @@ describe('route handlers over a fake web server', () => {
       fakeRes(),
     )
     expect(seenAutoRebuild).toBeUndefined()
+  })
+
+  it('aborts the in-flight launch download on a client disconnect and persists the Canceled line', async () => {
+    writeConfig('ninfer', { model: 'qwen3-27b', modelDirectory: MODEL_DIR }, true)
+    // The model artifact starts absent, so the launch's Get-step download runs.
+    rmSync(join(MODEL_DIR, 'qwen3_8_27b_nvfp4.ninfer'), { force: true })
+    const service = stubService([])
+    // A download that hangs until the route's cancel aborts the signal: the
+    // in-flight hf child the cancel interrupts.
+    service.downloadModel = (_entry: DefaultModel, _directory: string, options?: { signal?: AbortSignal }) =>
+      new Promise<DownloadResult>((resolve) => {
+        options?.signal?.addEventListener(
+          'abort',
+          () => {
+            resolve({ ok: false, detail: 'download canceled' })
+          },
+          { once: true },
+        )
+      })
+    const routes = registeredRoutes(service, stubGetHost({ exists: false }).host)
+    const launchRoute = routes.find((route) => route.path === '/local-infer/launch')
+    const res = fakeRes()
+    const pending = launchRoute?.handler(
+      fakeReq(
+        'POST',
+        '/local-infer/launch',
+        JSON.stringify({ engine: 'ninfer', config: { model: 'qwen3-27b', modelDirectory: MODEL_DIR } }),
+      ),
+      res,
+    )
+    // Let the handler reach the hanging download, then the card's provider-form
+    // Cancel closes the stream: the route aborts the in-flight download.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    res.closeListeners[0]?.()
+    await pending
+    // The persisted run carries the "Canceled" line, so the Logs section and
+    // the log file read the launch as canceled.
+    expect(readConfig().lastLogs).toContain('--- Canceled')
   })
 })
 
@@ -2711,6 +2760,7 @@ describe('get route (git sync, deps, build)', () => {
       headers: {} as Record<string, string>,
       body: '',
       chunks: [] as string[],
+      closeListeners: [] as Array<() => void>,
       writeHead(status: number, headers?: Record<string, string>) {
         res.status = status
         Object.assign(res.headers, headers ?? {})
@@ -2724,11 +2774,20 @@ describe('get route (git sync, deps, build)', () => {
         res.body = body ?? ''
         return res
       },
+      // The get route watches the response's client disconnect (the node
+      // 'close' before the route ends); the fake captures the listener so a
+      // test simulates the card's Cancel closing the stream.
+      on(event: string, listener: (...args: unknown[]) => void) {
+        if (event === 'close') {
+          res.closeListeners.push(listener as () => void)
+        }
+        return res
+      },
     }
     return res
   }
 
-  function getRouteWith(host: LifecycleHost | undefined) {
+  function getRouteWith(host: LifecycleHost | undefined, service: LocalInferService = stubService([])) {
     const routes: { path: string; handler: (req: unknown, res: unknown) => Promise<void> }[] = []
     const scope = {
       webServer: {
@@ -2745,7 +2804,7 @@ describe('get route (git sync, deps, build)', () => {
       scope as unknown as import('@deepseek-ai/cordis').Context & {
         webServer: import('../src/route.ts').WebServerService
       },
-      stubService([]),
+      service,
       host,
     )
     return routes.find((route) => route.path === '/local-infer/get')!
@@ -2872,9 +2931,9 @@ describe('get route (git sync, deps, build)', () => {
     expect(streamed).toContain('$ git clone')
     expect(streamed).toContain('get complete')
     // The streamed run persists as the last logs the Logs section shows, under
-    // the "Getting..." separator the route writes when the Get button is
-    // clicked.
-    expect(readConfig().lastLogs).toContain('--- Getting...')
+    // the "Getting engine and model..." separator the route writes when the
+    // Get button is clicked.
+    expect(readConfig().lastLogs).toContain('--- Getting engine and model...')
     expect(readConfig().lastLogs).toContain('get complete')
   })
 
@@ -2888,13 +2947,14 @@ describe('get route (git sync, deps, build)', () => {
       res,
     )
     // The Get step owns a per-run log file too: the commands and their output
-    // land in the configured log directory under the "Getting..." separator.
+    // land in the configured log directory under the "Getting engine and
+    // model..." separator.
     const logDir = join(home, '.dsh', 'local-infer', 'logs')
     const entries = existsSync(logDir) ? readdirSync(logDir) : []
     const logFile = entries.find((name) => name.startsWith('ninfer-') && name.endsWith('.log'))
     expect(logFile).toBeDefined()
     const content = readFileSync(join(logDir, logFile!), 'utf8')
-    expect(content).toContain('--- Getting...')
+    expect(content).toContain('--- Getting engine and model...')
     expect(content).toContain('$ git clone')
     expect(content).toContain('get complete')
   })
@@ -2981,6 +3041,53 @@ describe('get route (git sync, deps, build)', () => {
     expect(res.status).toBe(200)
     expect(res.chunks.join('')).toContain('get failed: host exploded')
   })
+
+  it('aborts the in-flight download on a client disconnect and persists the Canceled line', async () => {
+    writeConfig('ninfer', { model: 'qwen3-27b', modelDirectory: MODEL_DIR }, true)
+    // The model artifact starts absent, so the download step runs.
+    rmSync(join(MODEL_DIR, 'qwen3_8_27b_nvfp4.ninfer'), { force: true })
+    const service = stubService([])
+    // A download that hangs until the route's cancel aborts the signal: the
+    // in-flight hf child the cancel interrupts.
+    service.downloadModel = (_entry: DefaultModel, _directory: string, options?: { signal?: AbortSignal }) =>
+      new Promise<DownloadResult>((resolve) => {
+        options?.signal?.addEventListener(
+          'abort',
+          () => {
+            resolve({ ok: false, detail: 'download canceled' })
+          },
+          { once: true },
+        )
+      })
+    const route = getRouteWith(stubGetHost({ exists: false }).host, service)
+    const res = fakeStreamRes()
+    const pending = route.handler(
+      fakePost(
+        JSON.stringify({
+          engine: 'ninfer',
+          config: { model: 'qwen3-27b', modelDirectory: MODEL_DIR },
+        }),
+      ),
+      res,
+    )
+    // Let the handler reach the hanging download, then the card's provider-form
+    // Cancel closes the stream: the route aborts the in-flight download, and
+    // the run persists with the "Canceled" line.
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    res.closeListeners[0]?.()
+    await pending
+    expect(readConfig().lastLogs).toContain('--- Canceled')
+    // The run's own log file (the model slug names it) carries the same line,
+    // so a reload reads the run as canceled, not as a fresh "Getting engine
+    // and model..." run.
+    const logDir = join(home, '.dsh', 'local-infer', 'logs')
+    const entries = existsSync(logDir) ? readdirSync(logDir) : []
+    const logFile = entries.find(
+      (name) => name.startsWith('ninfer-qwen3-27b-') && name.endsWith('.log'),
+    )
+    expect(logFile).toBeDefined()
+    expect(readFileSync(join(logDir, logFile!), 'utf8')).toContain('--- Canceled')
+  })
 })
 
 describe('shared Get-steps routine', () => {
@@ -3058,6 +3165,35 @@ describe('shared Get-steps routine', () => {
     expect(downloads).toHaveLength(1)
     expect(downloads[0]?.directory).toBe(MODEL_DIR)
     expect(templates).toEqual([{ repo: 'froggeric/Qwen-Fixed-Chat-Templates', directory: MODEL_DIR }])
+    expect(logged).toContain('get complete')
+  })
+
+  it('downloads into the hub-cache layout when the model directory is the default', async () => {
+    // No modelDirectory override: the hub-cache layout applies, so the
+    // download targets the cache root (no --local-dir), and an interrupted
+    // .incomplete blob resumes in place without a duplicate flat dir.
+    writeConfig('ninfer', { model: 'qwen3-27b' }, true)
+    const downloads: { entry: DefaultModel; directory: string }[] = []
+    const service = stubService([], { onDownload: (args) => downloads.push(args) })
+    const { host } = stubGetHost({ exists: false })
+    let logged = ''
+    const result = await getEngine(
+      service,
+      { engine: 'ninfer', config: { model: 'qwen3-27b' } },
+      (chunk) => {
+        logged += chunk
+      },
+      host,
+    )
+    expect(result.ok).toBe(true)
+    // The hub-cache command drops --local-dir, and the download targets the
+    // cache root (the stub's default model directory), not a flat subdir.
+    expect(logged).toContain(
+      '$ hf download neroued/Qwen3.8-27B-nvfp4-NInfer qwen3_8_27b_nvfp4.ninfer\n',
+    )
+    expect(logged).not.toContain('--local-dir')
+    expect(downloads).toHaveLength(1)
+    expect(downloads[0]?.directory).toBe(MODEL_DIR)
     expect(logged).toContain('get complete')
   })
 

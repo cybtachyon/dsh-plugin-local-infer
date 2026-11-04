@@ -999,7 +999,7 @@ export class LocalInfer extends Service {
     async downloadModel(entry, directory, options) {
         mkdirSync(directory, { recursive: true });
         const runner = options?.runner ?? downloadRunner;
-        const result = await runner(hfDownloadCommand(entry, directory, options?.useHubCache === true));
+        const result = await runner(hfDownloadCommand(entry, directory, options?.useHubCache === true), options?.signal);
         if (result.ok)
             return { ok: true };
         return { ok: false, detail: `model download failed: ${result.detail ?? 'unknown'}` };
@@ -1014,7 +1014,7 @@ export class LocalInfer extends Service {
     async downloadChatTemplate(repo, directory, options) {
         mkdirSync(directory, { recursive: true });
         const runner = options?.runner ?? downloadRunner;
-        const result = await runner(hfChatTemplateCommand(repo, directory, options?.useHubCache === true));
+        const result = await runner(hfChatTemplateCommand(repo, directory, options?.useHubCache === true), options?.signal);
         if (result.ok)
             return { ok: true };
         return { ok: false, detail: `chat template download failed: ${result.detail ?? 'unknown'}` };
@@ -1461,13 +1461,45 @@ const shellRunCommand = (command) => new Promise(resolve => {
  */
 const DOWNLOAD_TIMEOUT_MS = 7_200_000;
 /**
+ * The cancel grace period in ms: an aborted download gets SIGINT first, and a
+ * child still alive after the grace period gets SIGTERM, so a stuck hf CLI
+ * cannot keep the run open.
+ */
+const DOWNLOAD_ABORT_GRACE_MS = 5_000;
+/**
+ * watchChildAbort kills the in-flight child when the signal aborts (the card's
+ * cancel): SIGINT first, SIGTERM after the grace period if the child is still
+ * alive. A signal that is already aborted kills immediately.
+ */
+function watchChildAbort(child, signal) {
+    if (signal === undefined)
+        return;
+    const onAbort = () => {
+        if (child.killed || child.exitCode !== null)
+            return;
+        child.kill('SIGINT');
+        const escalate = setTimeout(() => {
+            if (!child.killed && child.exitCode === null)
+                child.kill('SIGTERM');
+        }, DOWNLOAD_ABORT_GRACE_MS);
+        escalate.unref();
+    };
+    if (signal.aborted) {
+        onAbort();
+        return;
+    }
+    signal.addEventListener('abort', onAbort, { once: true });
+}
+/**
  * downloadRunner is the model-download runner: it runs the rendered hf CLI
  * command through the system shell and reports the exit. The output tail keeps
  * the last kilobyte, the same rule the install runner uses, so a failure names
- * the broken line.
+ * the broken line. An abort on the optional signal interrupts the in-flight
+ * child (SIGINT, then SIGTERM), so a canceled download stops instead of
+ * running to the timeout.
  */
-const downloadRunner = (command) => new Promise(resolve => {
-    exec(command, { timeout: DOWNLOAD_TIMEOUT_MS }, (error, stdout, stderr) => {
+const downloadRunner = (command, signal) => new Promise(resolve => {
+    const child = exec(command, { timeout: DOWNLOAD_TIMEOUT_MS }, (error, stdout, stderr) => {
         if (error === null) {
             resolve({ ok: true });
             return;
@@ -1475,6 +1507,7 @@ const downloadRunner = (command) => new Promise(resolve => {
         const detail = `${stderr ?? ''}${stdout ?? ''}`.trim().slice(-INSTALL_OUTPUT_TAIL);
         resolve({ ok: false, detail: detail === '' ? String(error) : detail });
     });
+    watchChildAbort(child, signal);
 });
 /**
  * hasSafetensorsIn reports whether one directory holds a `.safetensors`

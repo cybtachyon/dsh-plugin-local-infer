@@ -34,8 +34,19 @@ export function launchRoute(localInfer, launchHost = nodeLifecycleHost) {
             const onProgress = (step) => {
                 writeLine({ step });
             };
+            // The card's provider-form Cancel aborts the fetch, which closes the
+            // response: the abort interrupts the in-flight Get-step hf child
+            // (SIGINT, then SIGTERM), and the persisted run carries the "Canceled"
+            // line. A close after the run settled is the normal end, not a cancel.
+            const controller = new AbortController();
+            let finished = false;
+            res.onClose(() => {
+                if (!finished) {
+                    controller.abort();
+                }
+            });
             try {
-                const result = await launchEngine(localInfer, launchRequestFromBody(body), onProgress, launchHost);
+                const result = await launchEngine(localInfer, launchRequestFromBody(body), onProgress, launchHost, controller.signal);
                 writeLine({ result });
             }
             catch (error) {
@@ -47,6 +58,7 @@ export function launchRoute(localInfer, launchHost = nodeLifecycleHost) {
                     : String(error?.message ?? error);
                 writeLine({ result: { healthy: false, detail } });
             }
+            finished = true;
             res.end();
         },
     });

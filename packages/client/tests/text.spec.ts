@@ -65,4 +65,12 @@ describe('client text (text.ts)', () => {
   it('keeps the zh table key-complete against en', () => {
     expect(Object.keys(TEXT.zh).sort()).toEqual(Object.keys(TEXT.en).sort())
   })
+
+  it('reads the Get separator as "Getting engine and model..."', () => {
+    // The separator the Get button seeds and the get route persists to the
+    // log file, so the Logs section and the log file read the run as a fresh
+    // process section.
+    expect(TEXT.en.getting).toBe('Getting engine and model...')
+    expect(TEXT.zh.getting).toBe('获取引擎和模型中…')
+  })
 })

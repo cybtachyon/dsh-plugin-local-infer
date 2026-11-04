@@ -27,6 +27,12 @@ import { persistStopLog } from "./logs.js";
 import { resolveEngineDirectory, runGetSteps } from "./get-steps.js";
 import { RouteError } from "../route.js";
 /**
+ * CANCELED_LINE is the "Canceled" line a client-disconnect cancel appends to
+ * the persisted run, so the Logs section and the log file read the run as
+ * canceled, the same line the card writes to its Logs buffer on the Cancel.
+ */
+export const CANCELED_LINE = '--- Canceled\n';
+/**
  * resolveAdapter picks the registered engine adapter an engine id routes to. A
  * card that names an engine no adapter serves gets a 404, not a blank panel.
  */
@@ -88,9 +94,11 @@ function persistStoredLogs(logs) {
  * wiped, by the launch's persistence. The launch step persists the
  * launch record (the engine pid, start time, launch arguments, and the DSH
  * process pid that launched it) on the request's provider entry, so a DSH
- * restart can re-link a surviving engine to its config.
+ * restart can re-link a surviving engine to its config. The optional signal
+ * is the card's cancel: an abort interrupts the in-flight Get-step download
+ * child, and the persisted run carries a "Canceled" line.
  */
-export async function launchEngine(localInfer, request, onProgress, host = nodeLifecycleHost) {
+export async function launchEngine(localInfer, request, onProgress, host = nodeLifecycleHost, signal) {
     const stored = readConfig();
     const engineId = request.engine ?? stored.engine;
     const config = request.config ?? stored.config;
@@ -134,6 +142,7 @@ export async function launchEngine(localInfer, request, onProgress, host = nodeL
         allowRunDeps: stored.allowRunDeps,
         ...(request.autoRebuild !== undefined ? { autoRebuild: request.autoRebuild } : {}),
         host,
+        ...(signal !== undefined ? { signal } : {}),
     }, (chunk) => {
         getLogs += chunk;
     });
@@ -141,13 +150,15 @@ export async function launchEngine(localInfer, request, onProgress, host = nodeL
     if (!get.ok) {
         // A Get step that failed aborts the launch before the deploy starts, and
         // the persisted run carries the Get-step output that named the broken
-        // step, so the Logs section diagnoses it after a reload.
+        // step, so the Logs section diagnoses it after a reload. A cancel that
+        // landed while the Get steps ran (the card's provider-form Cancel closed
+        // the stream) adds the "Canceled" line, so the run reads as canceled.
         const result = {
             plan,
             healthy: false,
             detail: get.detail ?? 'a Get step failed',
         };
-        persistLaunchLogs(result, engineId, config, getLogs);
+        persistLaunchLogs(result, engineId, config, signal?.aborted === true ? getLogs + CANCELED_LINE : getLogs);
         persistLaunchRecord(result, engineId, config, request.providerId);
         return result;
     }
@@ -180,6 +191,12 @@ export async function launchEngine(localInfer, request, onProgress, host = nodeL
     result.logs = getLogs + buildLogs + (commandNote ?? '') + engineLogs;
     if (result.buildLogs !== undefined) {
         delete result.buildLogs;
+    }
+    // A cancel that landed after the Get steps (the card's provider-form Cancel
+    // closed the stream during the deploy or health poll) adds the "Canceled"
+    // line, so the persisted run reads as canceled.
+    if (signal?.aborted === true) {
+        result.logs += CANCELED_LINE;
     }
     persistLaunchLogs(result, engineId, config, getLogs);
     persistLaunchRecord(result, engineId, config, request.providerId);
@@ -409,8 +426,11 @@ export async function relinkStoredProviders(localInfer, stored) {
  * so the card appends it to the Logs section live. The dependency install
  * only runs while the Play/Run trust gate is on; with the gate off the deps
  * are re-checked and a missing one aborts the step with the copy/paste note.
+ * The optional signal is the card's cancel: an abort interrupts the in-flight
+ * hf download child (SIGINT, then SIGTERM), and the hub-cache `.incomplete`
+ * blob resumes on the re-run.
  */
-export async function getEngine(localInfer, request, log, host = nodeLifecycleHost) {
+export async function getEngine(localInfer, request, log, host = nodeLifecycleHost, signal) {
     const stored = readConfig();
     const engineId = request.engine ?? stored.engine;
     const config = request.config ?? stored.config;
@@ -426,6 +446,7 @@ export async function getEngine(localInfer, request, log, host = nodeLifecycleHo
         ...(platform !== undefined ? { platform } : {}),
         allowRunDeps: stored.allowRunDeps,
         host,
+        ...(signal !== undefined ? { signal } : {}),
     }, log);
     return { ok: result.ok, ...(result.detail !== undefined ? { detail: result.detail } : {}) };
 }

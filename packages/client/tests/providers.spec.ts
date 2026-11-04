@@ -111,6 +111,9 @@ function launchStream() {
       }),
     enqueue: (line: string) => controller.enqueue(encoder.encode(line + '\n')),
     close: () => controller.close(),
+    // The card's Cancel closes the stream through the run's signal, the same
+    // way the live fetch errors the body stream on an abort.
+    fail: (error: Error) => controller.error(error),
   }
 }
 
@@ -213,6 +216,53 @@ describe('the provider list drivers (store/providers.ts)', () => {
       cancelProvider(store)
       await flush()
       expect(state().ui.providerFormMode).toBe('new')
+    })
+
+    it('aborts the in-flight launch and appends the Canceled line to the Logs buffer', async () => {
+      const { store, state } = makeStore()
+      const provider = providerWith()
+      store.dispatch({
+        type: 'summary/ack',
+        summary: summaryWith([provider], 'old logs'),
+      })
+      store.dispatch({
+        type: 'ui/patch',
+        patch: { editingProviderId: 'p1', providerFormMode: 'editing' },
+      })
+      const stream = launchStream()
+      const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+        if (url === '/local-infer/launch') {
+          return new Promise<Response>((resolve) => {
+            // The provider form's Cancel closes the stream through the run's
+            // signal, the same way the live fetch errors the body stream on
+            // an abort.
+            init?.signal?.addEventListener(
+              'abort',
+              () => stream.fail(new DOMException('The operation was aborted.', 'AbortError')),
+              { once: true },
+            )
+            resolve(stream.response())
+          })
+        }
+        if (url.startsWith('/local-infer/summary')) {
+          return jsonAnswer(summaryWith([provider]))
+        }
+        return jsonAnswer({ engineId: 'ninfer' })
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      performEntryLaunch(store, provider, t)
+      await flush()
+      expect(state().launch['p1']?.status).toBe('prereqs')
+      // The provider form's Cancel: abort the in-flight launch and append the
+      // "Canceled" line to the Logs buffer.
+      cancelProvider(store, 'p1')
+      expect(state().ui.logs.getLogs).toBe('old logs\n--- ' + t.entryLaunching + '\n\n--- Canceled\n')
+      // The form collapsed, and the aborted run settles the machine to
+      // failed (the red Logs control re-opens the entry for a re-launch).
+      expect(state().ui.editingProviderId).toBeNull()
+      expect(state().ui.providerFormMode).toBe('collapsed')
+      await flush(50)
+      expect(state().launch['p1']?.status).toBe('failed')
     })
   })
 

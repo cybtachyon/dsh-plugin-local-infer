@@ -104,6 +104,15 @@ export class RouteResponder {
             this.res.write(chunk);
         }
     }
+    /**
+     * Watch the response's client disconnect (the node 'close' before the
+     * route ends): the listener fires once when the card's Cancel closes the
+     * stream, so the route aborts the in-flight run. A fake response without
+     * on() never fires it, and the run degrades to running to completion.
+     */
+    onClose(listener) {
+        this.res.on?.('close', listener);
+    }
     /** End the response, optionally with a final body chunk. */
     end(body) {
         this.res.end(body);

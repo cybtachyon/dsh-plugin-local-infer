@@ -136,18 +136,22 @@ export declare function postUnregister(request: RegisterRequest): Promise<{
 /**
  * postLaunch runs the deploy and the health poll through the launch route's
  * NDJSON stream, handing each step event to onStep and returning the final
- * result event (null when the stream ended without one).
+ * result event (null when the stream ended without one). The optional signal
+ * is the card's cancel: an abort closes the in-flight stream, and the route
+ * interrupts the in-flight Get-step hf child on the host.
  */
-export declare function postLaunch(request: LaunchRequest, onStep?: (step: string) => void): Promise<LaunchResultEvent | null>;
+export declare function postLaunch(request: LaunchRequest, onStep?: (step: string) => void, signal?: AbortSignal): Promise<LaunchResultEvent | null>;
 /** postStop signals the tracked process or container. */
 export declare function postStop(request: LaunchRequest): Promise<{
     stopped: boolean;
 }>;
 /**
  * postGet runs the git sync, the dependency plan, and the build through the
- * get route's text stream, handing each chunk to onChunk as it lands.
+ * get route's text stream, handing each chunk to onChunk as it lands. The
+ * optional signal is the card's cancel: an abort closes the in-flight stream,
+ * and the route interrupts the in-flight hf child on the host.
  */
-export declare function postGet(request: GetRequest, onChunk: (text: string) => void): Promise<void>;
+export declare function postGet(request: GetRequest, onChunk: (text: string) => void, signal?: AbortSignal): Promise<void>;
 /** postDownload pulls the selected model into the model directory. */
 export declare function postDownload(request: DownloadRequest): Promise<DownloadResult>;
 /** postChatTemplate pulls the selected chat template into the model directory. */

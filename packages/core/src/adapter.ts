@@ -124,10 +124,13 @@ export interface FetchResult {
  * RunOptions tunes a host command run: `shell` names the shell the command
  * line runs in, read from the engine OS profile (the Windows vcpkg build route
  * names pwsh.exe, because its steps set $env: variables). Absent runs
- * the host's default shell.
+ * the host's default shell. `signal` is the card's cancel: an abort kills the
+ * in-flight child (SIGINT, then SIGTERM), so a canceled Get/Launch download
+ * stops instead of running on behind the card.
  */
 export interface RunOptions {
   shell?: string
+  signal?: AbortSignal
 }
 
 /**

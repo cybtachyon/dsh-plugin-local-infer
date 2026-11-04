@@ -22,6 +22,12 @@ import type { EngineDeathEvent, LaunchResult, LocalInferService } from 'dsh-plug
 import type { StoredConfig, StoredProviderConfig } from '../config.ts';
 import type { GetRequest, LaunchRequest } from '../request.ts';
 /**
+ * CANCELED_LINE is the "Canceled" line a client-disconnect cancel appends to
+ * the persisted run, so the Logs section and the log file read the run as
+ * canceled, the same line the card writes to its Logs buffer on the Cancel.
+ */
+export declare const CANCELED_LINE = "--- Canceled\n";
+/**
  * resolveAdapter picks the registered engine adapter an engine id routes to. A
  * card that names an engine no adapter serves gets a 404, not a blank panel.
  */
@@ -40,9 +46,11 @@ export declare function resolveAdapter(localInfer: LocalInferService, engineId: 
  * wiped, by the launch's persistence. The launch step persists the
  * launch record (the engine pid, start time, launch arguments, and the DSH
  * process pid that launched it) on the request's provider entry, so a DSH
- * restart can re-link a surviving engine to its config.
+ * restart can re-link a surviving engine to its config. The optional signal
+ * is the card's cancel: an abort interrupts the in-flight Get-step download
+ * child, and the persisted run carries a "Canceled" line.
  */
-export declare function launchEngine(localInfer: LocalInferService, request: LaunchRequest, onProgress?: (step: LaunchStep) => void, host?: LifecycleHost): Promise<LaunchResult>;
+export declare function launchEngine(localInfer: LocalInferService, request: LaunchRequest, onProgress?: (step: LaunchStep) => void, host?: LifecycleHost, signal?: AbortSignal): Promise<LaunchResult>;
 /**
  * handleEngineDeath persists a provider entry's state when its engine process
  * dies outside the plugin's stop path: a crash, a pkill of a plugin-launched
@@ -111,8 +119,11 @@ export type GetOutcome = {
  * so the card appends it to the Logs section live. The dependency install
  * only runs while the Play/Run trust gate is on; with the gate off the deps
  * are re-checked and a missing one aborts the step with the copy/paste note.
+ * The optional signal is the card's cancel: an abort interrupts the in-flight
+ * hf download child (SIGINT, then SIGTERM), and the hub-cache `.incomplete`
+ * blob resumes on the re-run.
  */
-export declare function getEngine(localInfer: LocalInferService, request: GetRequest, log: (chunk: string) => void, host?: LifecycleHost): Promise<GetOutcome>;
+export declare function getEngine(localInfer: LocalInferService, request: GetRequest, log: (chunk: string) => void, host?: LifecycleHost, signal?: AbortSignal): Promise<GetOutcome>;
 /**
  * syncPlatformConfigs re-syncs the service registry with the stored platform
  * map: it registers (or re-registers) every engine that carries a config, and

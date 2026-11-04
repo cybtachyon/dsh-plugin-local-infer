@@ -152,10 +152,14 @@ export interface DownloadResult {
  * useHubCache selects the hub-cache layout (no `--local-dir`, the
  * `models--{ns}--{name}` directories) when the model directory is the plugin
  * default; a user-overridden directory keeps the flat `--local-dir` target.
+ * signal is the card's cancel: an abort interrupts the in-flight hf child
+ * (SIGINT, then SIGTERM), and the hub-cache `.incomplete` blob resumes on the
+ * re-run.
  */
 export interface DownloadModelOptions {
-    runner?: (command: string) => Promise<CommandOutcome>;
+    runner?: (command: string, signal?: AbortSignal) => Promise<CommandOutcome>;
     useHubCache?: boolean;
+    signal?: AbortSignal;
 }
 /**
  * SettingsNamespaceDescriptor is the structural view of one profile plugin

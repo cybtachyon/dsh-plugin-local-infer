@@ -63,12 +63,16 @@ export declare function performInstall(store: CardStore, t: TextTable): Promise<
 /**
  * performGet runs the git sync, the dependency plan, and the build through
  * the get route's text stream. The click seeds the Logs section's streamed
- * buffer from the persisted last-run logs with a "Getting..." separator, so
- * the run reads as a fresh Logs section. Each chunk appends to the buffer
- * and re-arms the idle cap: two minutes without a line settles the get cell
- * (the control re-enables) while the run keeps streaming in the background.
- * When the stream ends, the route has persisted the run as the last logs,
- * so a summary re-read hands the Logs section back to the stored value.
+ * buffer from the persisted last-run logs with a "Getting engine and
+ * model..." separator, so the run reads as a fresh Logs section. Each chunk
+ * appends to the buffer and re-arms the idle cap: two minutes without a line
+ * settles the get cell (the control re-enables) while the run keeps streaming
+ * in the background. When the stream ends, the route has persisted the run as
+ * the last logs, so a summary re-read hands the Logs section back to the
+ * stored value. The run registers its AbortController in the in-flight
+ * registry, so the provider form's Cancel closes the stream and the route
+ * interrupts the in-flight hf child; an aborted run settles without a
+ * failure line (the "Canceled" line the Cancel wrote is the run's tail).
  */
 export declare function performGet(store: CardStore, t: TextTable): Promise<void>;
 //# sourceMappingURL=deps.d.ts.map

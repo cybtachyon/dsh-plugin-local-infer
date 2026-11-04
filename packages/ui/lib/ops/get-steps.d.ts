@@ -21,7 +21,10 @@ import type { StoredPlatformConfig } from '../config.ts';
  * whether the dependency install runs, and the lifecycle host the git and
  * build steps run through. `autoRebuild` false (the card's Auto Rebuild
  * checkbox off) skips the sync and build steps, so a launch reads the
- * checkout as-is, the same rule the adapter's deploy step applies.
+ * checkout as-is, the same rule the adapter's deploy step applies. `signal`
+ * is the card's cancel: an abort interrupts the in-flight hf download child
+ * (SIGINT, then SIGTERM), and the hub-cache `.incomplete` blob resumes on
+ * the re-run.
  */
 export interface GetStepsRequest {
     engineId: string;
@@ -30,6 +33,7 @@ export interface GetStepsRequest {
     allowRunDeps: boolean;
     autoRebuild?: boolean;
     host: LifecycleHost;
+    signal?: AbortSignal;
 }
 /**
  * GetStepsResult reports the run: whether every step passed, a detail the

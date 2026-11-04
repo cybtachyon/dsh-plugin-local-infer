@@ -130,12 +130,15 @@ async function getJson(path, query) {
     return json;
 }
 // post sends a JSON POST body to a /local-infer route and returns the raw
-// response, so the stream readers can take it from there.
-async function post(path, body) {
+// response, so the stream readers can take it from there. The optional signal
+// is the card's cancel: an abort closes the in-flight stream, and the route
+// interrupts the in-flight hf child on the host.
+async function post(path, body, signal) {
     return fetch(path, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
+        ...(signal !== undefined ? { signal } : {}),
     });
 }
 // postJson sends a JSON POST body and parses the typed JSON answer. A
@@ -191,10 +194,12 @@ export function postUnregister(request) {
 /**
  * postLaunch runs the deploy and the health poll through the launch route's
  * NDJSON stream, handing each step event to onStep and returning the final
- * result event (null when the stream ended without one).
+ * result event (null when the stream ended without one). The optional signal
+ * is the card's cancel: an abort closes the in-flight stream, and the route
+ * interrupts the in-flight Get-step hf child on the host.
  */
-export async function postLaunch(request, onStep) {
-    const response = await post('/local-infer/launch', request);
+export async function postLaunch(request, onStep, signal) {
+    const response = await post('/local-infer/launch', request, signal);
     return readLaunchStream(response, onStep);
 }
 /** postStop signals the tracked process or container. */
@@ -203,10 +208,12 @@ export function postStop(request) {
 }
 /**
  * postGet runs the git sync, the dependency plan, and the build through the
- * get route's text stream, handing each chunk to onChunk as it lands.
+ * get route's text stream, handing each chunk to onChunk as it lands. The
+ * optional signal is the card's cancel: an abort closes the in-flight stream,
+ * and the route interrupts the in-flight hf child on the host.
  */
-export async function postGet(request, onChunk) {
-    const response = await post('/local-infer/get', request);
+export async function postGet(request, onChunk, signal) {
+    const response = await post('/local-infer/get', request, signal);
     await readTextStream(response, onChunk);
 }
 /** postDownload pulls the selected model into the model directory. */
