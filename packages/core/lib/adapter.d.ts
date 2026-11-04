@@ -84,13 +84,19 @@ export interface ProcessExitInfo {
  * fired once with the ProcessExitInfo when the child ends (a crash, a signal
  * like a pkill, or a clean stop); a listener registered after the child has
  * already ended fires immediately. A host that cannot watch (a stub, or a
- * container it cannot read) omits it.
+ * container it cannot read) omits it. `hasExited`, when the host tracks the
+ * child's exit state, reports whether the child has settled (exited, been
+ * signalled, or failed to spawn): a state read a poll can check between
+ * attempts, separate from the one-shot onExit listener. A handle that cannot
+ * report its exit state (a stub) omits it, and a caller that cannot check
+ * falls back to the full poll.
  */
 export interface ProcessHandle {
     pid: number;
     kill(): void;
     logs?: string;
     onExit?(listener: (exit: ProcessExitInfo) => void): void;
+    hasExited?(): boolean;
 }
 /**
  * FetchResult is the answer to a health poll: the HTTP status and whether it

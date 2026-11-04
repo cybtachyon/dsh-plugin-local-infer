@@ -378,6 +378,9 @@ export function createNodeLifecycleHost(debug) {
                     onExit: (listener) => {
                         listener(info);
                     },
+                    // It settled with the spawn error at construction, so the state read
+                    // reports true from the start.
+                    hasExited: () => true,
                 };
             }
             const child = nodeSpawn(command, argv.slice(1), {
@@ -462,6 +465,10 @@ export function createNodeLifecycleHost(debug) {
                     }
                     listeners.add(listener);
                 },
+                // A state read of the settle state the onExit listener reads: a live
+                // child reports false, and a child that ended (a crash, a pkill, or
+                // a spawn failure) reports true.
+                hasExited: () => exitInfo !== null,
             };
         },
         async writeFile(path, content) {

@@ -49,7 +49,7 @@ and makes the health poll stop early when the spawned engine process has exited.
 
 ### Phase 2: Early-exit health poll
 
-- [ ] [TASK-002-process-handle-has-exited](docs/PLAN-basalt-serve-dep-TASK-002-process-handle-has-exited.md)
+- [x] [TASK-002-process-handle-has-exited](docs/PLAN-basalt-serve-dep-TASK-002-process-handle-has-exited.md)
 - [ ] [TASK-003-poll-health-early-exit](docs/PLAN-basalt-serve-dep-TASK-003-poll-health-early-exit.md)
 
 ### Phase 3: Tests and verification
