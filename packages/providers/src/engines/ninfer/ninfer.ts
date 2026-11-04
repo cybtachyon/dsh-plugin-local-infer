@@ -111,6 +111,7 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     // The port contributes no flag of its own: renderLaunch spells the local
     // `--port` and the docker host-port mapping from this value, and the
     // health URL and container name derive from it too.
+    deploy: { target: 'cli' },
   },
   {
     key: 'kvDtype',
@@ -133,6 +134,7 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
       return { ok: true }
     },
     toArgv: (value) => ['--kv-dtype', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'maxContext',
@@ -143,6 +145,7 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: 32768,
     group: 'Memory',
     toArgv: (value) => ['--max-context', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'kvCapacity',
@@ -162,6 +165,7 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     },
     group: 'Memory',
     toArgv: (value) => ['--kv-capacity', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'hostKvMib',
@@ -180,6 +184,7 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     },
     group: 'Memory',
     toArgv: (value) => ['--host-kv-mib', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'hostStateSlots',
@@ -189,6 +194,7 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     form: { kind: 'number', min: 0, step: 1, unit: 'slots' },
     group: 'Memory',
     toArgv: (value) => ['--host-state-slots', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'mediaLiveMib',
@@ -198,6 +204,7 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     form: { kind: 'number', min: 0, step: 1024, unit: 'MiB' },
     group: 'Memory',
     toArgv: (value) => ['--media-live-mib', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'gdnStateFp16',
@@ -207,6 +214,7 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: false,
     group: 'Memory',
     toArgv: (value) => (value === true ? ['--gdn-state-fp16'] : []),
+    deploy: { target: 'cli' },
   },
   {
     key: 'maxConcurrency',
@@ -217,6 +225,7 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: 1,
     group: 'Concurrency',
     toArgv: (value) => ['--max-concurrency', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'spec',
@@ -227,6 +236,7 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: 'none',
     group: 'Speculation',
     toArgv: (value) => (value === 'none' ? [] : ['--spec', String(value)]),
+    deploy: { target: 'cli' },
   },
   {
     key: 'draftTokens',
@@ -239,6 +249,7 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     requires: (config: Config) =>
       config.spec && config.spec !== 'none' ? null : SPEC_GATE_MESSAGE,
     toArgv: (value) => ['--draft-tokens', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'lmHeadDraft',
@@ -251,6 +262,7 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     requires: (config: Config) =>
       config.spec === 'mtp' ? null : LM_HEAD_DRAFT_GATE_MESSAGE,
     toArgv: (value) => (value === true ? ['--lm-head-draft'] : []),
+    deploy: { target: 'cli' },
   },
   {
     key: 'temperature',
@@ -261,6 +273,7 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: 0.9,
     group: 'Sampling',
     toArgv: (value) => ['--temperature', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'minP',
@@ -271,6 +284,7 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: 0.05,
     group: 'Sampling',
     toArgv: (value) => ['--min-p', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'defaultMaxTokens',
@@ -296,6 +310,7 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     },
     group: 'Sampling',
     toArgv: (value) => ['--default-max-tokens', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'defaultThinkingBudget',
@@ -305,6 +320,7 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     form: { kind: 'number', min: 0, step: 1, unit: 'tokens' },
     group: 'Sampling',
     toArgv: (value) => ['--default-thinking-budget', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'preserveThinking',
@@ -315,6 +331,7 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: false,
     group: 'Sampling',
     toArgv: (value) => (value === true ? ['--preserve-thinking'] : []),
+    deploy: { target: 'cli' },
   },
   {
     key: 'prefillChunk',
@@ -347,6 +364,7 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     },
     group: 'Engine',
     toArgv: (value) => ['--prefill-chunk', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'vision',
@@ -357,6 +375,7 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: false,
     group: 'Engine',
     toArgv: (value) => (value === true ? ['--vision'] : []),
+    deploy: { target: 'cli' },
   },
   {
     key: 'structuredOutput',
@@ -367,6 +386,7 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: false,
     group: 'Engine',
     toArgv: (value) => (value === true ? ['--structured-output'] : []),
+    deploy: { target: 'cli' },
   },
   {
     key: 'deviceProfile',
@@ -377,6 +397,7 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: 'auto',
     group: 'Engine',
     toArgv: (value) => (value === 'auto' ? [] : ['--device-profile', String(value)]),
+    deploy: { target: 'cli' },
   },
   {
     key: 'chatTemplate',
@@ -386,5 +407,6 @@ export const NINFER_PARAMETERS: readonly ParameterSpec[] = [
     form: { kind: 'combo', options: [...CHAT_TEMPLATE_OPTIONS] },
     group: 'Engine',
     toArgv: (value) => (value ? ['--chat-template', String(value)] : []),
+    deploy: { target: 'cli' },
   },
 ]

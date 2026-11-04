@@ -100,6 +100,7 @@ export const STRATA_PARAMETERS: readonly ParameterSpec[] = [
     // The port contributes no flag of its own: renderLaunch spells the local
     // --port and the docker host-port mapping from this value, and the health
     // URL and container name derive from it too.
+    deploy: { target: 'cli' },
   },
   {
     key: 'family',
@@ -111,6 +112,7 @@ export const STRATA_PARAMETERS: readonly ParameterSpec[] = [
     group: 'Model',
     toArgv: (value) => ['--family', String(value)],
     toEnv: (value) => ['FAMILY', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'context',
@@ -123,6 +125,7 @@ export const STRATA_PARAMETERS: readonly ParameterSpec[] = [
     // envFromSpecs only calls toEnv when the value is set, so the pair is
     // always well-formed here.
     toEnv: (value) => ['CONTEXT', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'vision',
@@ -134,6 +137,7 @@ export const STRATA_PARAMETERS: readonly ParameterSpec[] = [
     group: 'Engine',
     toArgv: (value) => ['--vision', String(value)],
     toEnv: (value) => ['VISION', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'parallel',
@@ -144,6 +148,7 @@ export const STRATA_PARAMETERS: readonly ParameterSpec[] = [
     group: 'Concurrency',
     toArgv: (value) => (value === undefined ? [] : ['--parallel', String(value)]),
     toEnv: (value) => ['PARALLEL', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'gpu',
@@ -154,6 +159,7 @@ export const STRATA_PARAMETERS: readonly ParameterSpec[] = [
     group: 'Engine',
     toArgv: (value) => (value ? ['--gpu', String(value)] : []),
     toEnv: (value) => ['GPU', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'tune',
@@ -165,6 +171,7 @@ export const STRATA_PARAMETERS: readonly ParameterSpec[] = [
     group: 'Engine',
     toArgv: (value) => ['--tune', String(value)],
     toEnv: (value) => ['TUNE', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'access',
@@ -176,6 +183,7 @@ export const STRATA_PARAMETERS: readonly ParameterSpec[] = [
     group: 'Engine',
     // local is the engine default, so the bare value spells no flag.
     toArgv: (value) => (value === 'local' ? [] : ['--access', String(value)]),
+    deploy: { target: 'cli' },
   },
   {
     key: 'apiKey',
@@ -186,6 +194,7 @@ export const STRATA_PARAMETERS: readonly ParameterSpec[] = [
     group: 'Engine',
     toArgv: (value) => (value ? ['--api-key', String(value)] : []),
     toEnv: (value) => ['API_KEY', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'modelPath',
@@ -196,6 +205,7 @@ export const STRATA_PARAMETERS: readonly ParameterSpec[] = [
     group: 'Artifacts',
     toArgv: (value) => (value ? ['--model-path', String(value)] : []),
     toEnv: (value) => ['MODEL_PATH', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'dataDir',
@@ -205,6 +215,7 @@ export const STRATA_PARAMETERS: readonly ParameterSpec[] = [
     form: { kind: 'path' },
     group: 'Artifacts',
     toArgv: (value) => (value ? ['--data-dir', String(value)] : []),
+    deploy: { target: 'cli' },
   },
 ]
 

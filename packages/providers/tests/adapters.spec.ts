@@ -22,13 +22,16 @@ import {
   strataPreReadyState,
   strataServedModelId,
 } from '../src/engines/strata/strataAdapter.ts'
+import { ENGINES } from '../src/engines.ts'
 import { HYPERQWEN_PARAMETERS } from '../src/engines/hyperqwen/hyperqwen.ts'
-import { INFERNIX_MODEL_ARTIFACTS } from '../src/engines/infernix/infernix.ts'
+import { INFERNIX_MODEL_ARTIFACTS, INFERNIX_PARAMETERS } from '../src/engines/infernix/infernix.ts'
 import { LLAMACPP_PARAMETERS } from '../src/engines/llamacpp/llamacpp.ts'
 import { NINFER_PARAMETERS } from '../src/engines/ninfer/ninfer.ts'
+import { STRATA_PARAMETERS } from '../src/engines/strata/strata.ts'
 import { parse as parseYaml } from 'yaml'
 import type {
   CommandOutcome,
+  Config,
   FetchResult,
   HardwareProfile,
   LaunchPlan,
@@ -1146,6 +1149,95 @@ describe('spec flag and env helpers', () => {
   it('customArgEnv reads a missing or non-array customArgs as an empty map', () => {
     expect(customArgEnv({})).toEqual({})
     expect(customArgEnv({ customArgs: 5 })).toEqual({})
+  })
+})
+
+describe('deploy target migration (TASK 005)', () => {
+  // The pre-migration helpers keyed off the toArgv / toEnv presence. These
+  // references capture that legacy behavior so the migration is proven
+  // output-preserving without hardcoding every spelling.
+  function legacyFlags(specs: readonly ParameterSpec[], config: Config): string[] {
+    const flags: string[] = []
+    for (const spec of specs) {
+      if (spec.toArgv === undefined) continue
+      const value = config[spec.key] ?? spec.defaultValue
+      if (value === undefined) continue
+      flags.push(...spec.toArgv(value))
+    }
+    return flags
+  }
+  function legacyEnv(specs: readonly ParameterSpec[], config: Config): Record<string, string> {
+    const env: Record<string, string> = {}
+    for (const spec of specs) {
+      if (spec.toEnv === undefined) continue
+      const value = config[spec.key] ?? spec.defaultValue
+      if (value === undefined) continue
+      const [key, valueString] = spec.toEnv(value)
+      env[key] = valueString
+    }
+    return env
+  }
+
+  it('every spec in ENGINES carries a deploy target', () => {
+    for (const engine of ENGINES) {
+      for (const spec of engine.parameters) {
+        expect(spec.deploy, `${engine.id}/${spec.key} has no deploy target`).toBeDefined()
+      }
+    }
+  })
+
+  it('flagsFromSpecs matches the legacy toArgv-presence output for a representative config of each CLI engine', () => {
+    const cases: Array<[string, readonly ParameterSpec[], Config]> = [
+      ['ninfer', NINFER_PARAMETERS, { kvDtype: 'int8', maxContext: 4096 }],
+      ['llamacpp', LLAMACPP_PARAMETERS, { ctxSize: 8192, kvCacheType: 'q4_0' }],
+      ['infernix', INFERNIX_PARAMETERS, { kvDtype: 'int8', maxContext: 4096 }],
+      // Strata's binary (cli) path is the preserved one: the dual specs deploy
+      // as cli, so the binary argv keeps every flag the legacy helper spelled.
+      ['strata', STRATA_PARAMETERS, { port: 8090, vision: 'gpu', parallel: 4 }],
+    ]
+    for (const [id, specs, config] of cases) {
+      expect(flagsFromSpecs(specs, config), id).toEqual(legacyFlags(specs, config))
+    }
+  })
+
+  it('envFromSpecs matches the legacy toEnv-presence output for the env engine', () => {
+    // Hyper-Qwen is the pure env engine: every spec deploys to the env, so the
+    // env map is unchanged by the migration.
+    const config: Config = { spec: 'dflash2', draftTokens: 7 }
+    expect(envFromSpecs(HYPERQWEN_PARAMETERS, config)).toEqual(
+      legacyEnv(HYPERQWEN_PARAMETERS, config),
+    )
+  })
+
+  it('a deploy target gates the spelling: a non-matching target contributes nothing', () => {
+    // A spec that spells a flag but deploys to the env contributes no flag, and
+    // a spec that spells an env var but deploys to the cli contributes no var.
+    // This is the gating the migration adds on top of the spelling presence.
+    const specs: readonly ParameterSpec[] = [
+      {
+        key: 'cliOnly',
+        label: 'cli',
+        description: 'deploys to the cli',
+        form: { kind: 'text' },
+        toArgv: (value) => ['--cli-only', String(value)],
+        toEnv: (value) => ['CLI_ONLY', String(value)],
+        deploy: { target: 'cli' },
+      },
+      {
+        key: 'envOnly',
+        label: 'env',
+        description: 'deploys to the env',
+        form: { kind: 'text' },
+        toArgv: (value) => ['--env-only', String(value)],
+        toEnv: (value) => ['ENV_ONLY', String(value)],
+        deploy: { target: 'env' },
+      },
+    ]
+    const config: Config = { cliOnly: 'a', envOnly: 'b' }
+    // The cli spec spells its flag; the env spec spells no flag.
+    expect(flagsFromSpecs(specs, config)).toEqual(['--cli-only', 'a'])
+    // The env spec spells its var; the cli spec spells no var.
+    expect(envFromSpecs(specs, config)).toEqual({ ENV_ONLY: 'b' })
   })
 })
 

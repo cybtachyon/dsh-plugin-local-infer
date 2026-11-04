@@ -57,6 +57,7 @@ export const HYPERQWEN_PARAMETERS = [
         defaultValue: 'mtp',
         group: 'Speculation',
         toEnv: (value) => ['SPEC', String(value)],
+        deploy: { target: 'env' },
     },
     {
         key: 'draftTokens',
@@ -69,6 +70,7 @@ export const HYPERQWEN_PARAMETERS = [
             ? null
             : 'SPEC must be dflash or dflash2; mtp uses its fixed draft count',
         toEnv: (value) => ['DFLASH_TOKENS', String(value)],
+        deploy: { target: 'env' },
     },
     {
         key: 'ctx',
@@ -78,6 +80,7 @@ export const HYPERQWEN_PARAMETERS = [
         defaultValue: 'fast',
         group: 'Memory',
         toEnv: (value) => ['CTX', String(value)],
+        deploy: { target: 'env' },
     },
     {
         key: 'kv',
@@ -87,6 +90,7 @@ export const HYPERQWEN_PARAMETERS = [
         defaultValue: 'fp8',
         group: 'Memory',
         toEnv: (value) => ['KV', String(value)],
+        deploy: { target: 'env' },
     },
     {
         key: 'gpuUtil',
@@ -96,6 +100,7 @@ export const HYPERQWEN_PARAMETERS = [
         defaultValue: 0.93,
         group: 'Memory',
         toEnv: (value) => ['GPU_UTIL', String(value)],
+        deploy: { target: 'env' },
     },
     {
         key: 'maxLen',
@@ -104,6 +109,7 @@ export const HYPERQWEN_PARAMETERS = [
         form: { kind: 'number', min: 2048, step: 1024, unit: 'tokens' },
         group: 'Memory',
         toEnv: (value) => ['MAX_LEN', String(value)],
+        deploy: { target: 'env' },
     },
     {
         key: 'maxSeqs',
@@ -112,6 +118,7 @@ export const HYPERQWEN_PARAMETERS = [
         form: { kind: 'number', min: 1, max: 8, step: 1, unit: 'sequences' },
         group: 'Concurrency',
         toEnv: (value) => ['MAX_SEQS', String(value)],
+        deploy: { target: 'env' },
     },
     {
         key: 'vision',
@@ -121,6 +128,7 @@ export const HYPERQWEN_PARAMETERS = [
         defaultValue: false,
         group: 'Engine',
         toEnv: (value) => ['VISION', value === true ? '1' : '0'],
+        deploy: { target: 'env' },
     },
     {
         key: 'pinMemory',
@@ -130,6 +138,7 @@ export const HYPERQWEN_PARAMETERS = [
         defaultValue: false,
         group: 'Engine',
         toEnv: (value) => ['VLLM_WSL2_ENABLE_PIN_MEMORY', value === true ? '1' : '0'],
+        deploy: { target: 'env' },
     },
     {
         key: 'prefixCache',
@@ -139,6 +148,7 @@ export const HYPERQWEN_PARAMETERS = [
         defaultValue: true,
         group: 'Engine',
         toEnv: (value) => ['PREFIX_CACHE', value === true ? '1' : '0'],
+        deploy: { target: 'env' },
     },
     {
         key: 'apiKey',
@@ -147,6 +157,7 @@ export const HYPERQWEN_PARAMETERS = [
         form: { kind: 'text', placeholder: 'openssl rand -hex 24' },
         group: 'Network',
         toEnv: (value) => ['VLLM_API_KEY', String(value ?? '')],
+        deploy: { target: 'env' },
     },
     {
         key: 'port',
@@ -156,6 +167,7 @@ export const HYPERQWEN_PARAMETERS = [
         defaultValue: 18020,
         group: 'Network',
         toEnv: (value) => ['PORT', String(value)],
+        deploy: { target: 'env' },
     },
 ];
 //# sourceMappingURL=hyperqwen.js.map

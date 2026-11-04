@@ -32,7 +32,10 @@ import type {
  * flagsFromSpecs turns a spec surface and a config into the CLI flag list: each
  * spec's `toArgv` runs over the config value (falling back to the spec
  * default), and empty results are skipped. A spec with no `toArgv` contributes
- * nothing.
+ * nothing. A declared `deploy` target gates the spelling: only a `cli` target
+ * (or no target, the un-migrated fallback that reads the `toArgv` presence)
+ * spells CLI flags, so a spec that deploys to the env or a config file
+ * contributes no flag even when it carries a `toArgv` spelling.
  */
 export function flagsFromSpecs(
   specs: readonly ParameterSpec[],
@@ -41,6 +44,7 @@ export function flagsFromSpecs(
   const flags: string[] = []
   for (const spec of specs) {
     if (spec.toArgv === undefined) continue
+    if (spec.deploy !== undefined && spec.deploy.target !== 'cli') continue
     const value = config[spec.key] ?? spec.defaultValue
     if (value === undefined) continue
     flags.push(...spec.toArgv(value))
@@ -98,8 +102,12 @@ export function customArgEnv(config: Config): Record<string, string> {
 
 /**
  * envFromSpecs turns a spec surface and a config into the environment map: each
- * spec's `toEnv` runs over the config value (falling back to the spec
- * default). A spec with no `toEnv` contributes nothing.
+ * spec's `toEnv` runs over the config value (falling back to the spec default).
+ * A spec with no `toEnv` contributes nothing. A declared `deploy` target gates
+ * the spelling: only an `env` target (or no target, the un-migrated fallback
+ * that reads the `toEnv` presence) spells env vars, so a spec that deploys to
+ * the CLI or a config file contributes no var even when it carries a `toEnv`
+ * spelling.
  */
 export function envFromSpecs(
   specs: readonly ParameterSpec[],
@@ -108,6 +116,7 @@ export function envFromSpecs(
   const env: Record<string, string> = {}
   for (const spec of specs) {
     if (spec.toEnv === undefined) continue
+    if (spec.deploy !== undefined && spec.deploy.target !== 'env') continue
     const value = config[spec.key] ?? spec.defaultValue
     if (value === undefined) continue
     const [key, valueString] = spec.toEnv(value)

@@ -308,6 +308,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     group: 'Engine',
     // The port contributes no flag of its own: renderLaunch spells the local
     // `--port` from this value, and the health URL derives from it too.
+    deploy: { target: 'cli' },
   },
   {
     key: 'kvDtype',
@@ -330,6 +331,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
       return { ok: true }
     },
     toArgv: (value) => ['--kv-dtype', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'maxContext',
@@ -340,6 +342,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: 32768,
     group: 'Memory',
     toArgv: (value) => ['--max-context', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'kvCapacity',
@@ -359,6 +362,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     },
     group: 'Memory',
     toArgv: (value) => ['--kv-capacity', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'hostContextMib',
@@ -380,6 +384,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     // cache on the device only, which the engine still accepts.
     defaultValue: 16384,
     toArgv: (value) => ['--host-context-mib', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'mediaLiveMib',
@@ -389,6 +394,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     form: { kind: 'number', min: 0, step: 1024, unit: 'MiB' },
     group: 'Memory',
     toArgv: (value) => ['--media-live-mib', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'ramHeadroomMib',
@@ -399,6 +405,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: 8192,
     group: 'Memory',
     toArgv: (value) => ['--ram-headroom-mib', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'vramHeadroomMib',
@@ -409,6 +416,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     group: 'Memory',
     // The engine defaults to auto, so a bare value spells no flag.
     toArgv: (value) => ['--vram-headroom-mib', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'expertRamMib',
@@ -420,6 +428,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     // The engine defaults to auto (what the RAM ledger leaves), so a bare
     // value spells no flag.
     toArgv: (value) => ['--expert-ram-mib', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'expertPinMib',
@@ -431,6 +440,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     // The engine defaults to auto (what the OS lets the GPU page-lock), so a
     // bare value spells no flag.
     toArgv: (value) => ['--expert-pin-mib', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'ngramResidency',
@@ -442,6 +452,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     group: 'Memory',
     // auto is the engine default, so the bare value spells no flag.
     toArgv: (value) => (value === 'auto' ? [] : ['--ngram-residency', String(value)]),
+    deploy: { target: 'cli' },
   },
   {
     key: 'maxConcurrency',
@@ -452,6 +463,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: 1,
     group: 'Concurrency',
     toArgv: (value) => ['--max-concurrency', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'maxPendingRequests',
@@ -461,6 +473,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     form: { kind: 'number', min: 0, step: 1, unit: 'requests' },
     group: 'Concurrency',
     toArgv: (value) => ['--max-pending-requests', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'spec',
@@ -471,6 +484,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: 'none',
     group: 'Speculation',
     toArgv: (value) => (value === 'none' ? [] : ['--spec', String(value)]),
+    deploy: { target: 'cli' },
   },
   {
     key: 'draftTokens',
@@ -483,6 +497,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     requires: (config: Config) =>
       config.spec && config.spec !== 'none' ? null : SPEC_GATE_MESSAGE,
     toArgv: (value) => ['--draft-tokens', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'lmHeadDraft',
@@ -495,6 +510,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     requires: (config: Config) =>
       config.spec === 'mtp' ? null : LM_HEAD_DRAFT_GATE_MESSAGE,
     toArgv: (value) => (value === true ? ['--lm-head-draft'] : []),
+    deploy: { target: 'cli' },
   },
   {
     key: 'draftModelPreset',
@@ -512,6 +528,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
       config.spec === 'dflash2' ? null : DFLASH2_GATE_MESSAGE,
     // No toArgv: the adapter resolves the effective --draft-model path from
     // this selection (or the Custom Draft model field) and spells the flag.
+    deploy: { target: 'cli' },
   },
   {
     key: 'draftModel',
@@ -533,6 +550,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     },
     // No toArgv: the adapter resolves the effective --draft-model path and
     // spells the flag, so the preset and the custom path share one source.
+    deploy: { target: 'cli' },
   },
   {
     key: 'ngramDraftTokens',
@@ -542,6 +560,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     form: { kind: 'number', min: 0, max: 63, step: 1, unit: 'proposals' },
     group: 'Speculation',
     toArgv: (value) => (value === 0 ? [] : ['--ngram-draft-tokens', String(value)]),
+    deploy: { target: 'cli' },
   },
   {
     key: 'ngramMinMatch',
@@ -558,6 +577,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
         ? null
         : 'Enable n-gram copy proposals first (n-gram draft tokens above 0)',
     toArgv: (value) => ['--ngram-min-match', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'ngramVolume',
@@ -567,6 +587,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     form: { kind: 'path' },
     group: 'Artifacts',
     toArgv: (value) => (value ? ['--ngram-volume', String(value)] : []),
+    deploy: { target: 'cli' },
   },
   {
     key: 'expertState',
@@ -578,6 +599,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     // The engine defaults to the artifact-named state file, so a bare value
     // spells no flag.
     toArgv: (value) => (value ? ['--expert-state', String(value)] : []),
+    deploy: { target: 'cli' },
   },
   {
     key: 'prefixCacheFile',
@@ -587,6 +609,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     form: { kind: 'path' },
     group: 'Artifacts',
     toArgv: (value) => (value ? ['--prefix-cache-file', String(value)] : []),
+    deploy: { target: 'cli' },
   },
   {
     key: 'prefillChunk',
@@ -607,6 +630,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: 2048,
     group: 'Engine',
     toArgv: (value) => ['--prefill-chunk', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'vision',
@@ -617,6 +641,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: false,
     group: 'Engine',
     toArgv: (value) => (value === true ? ['--vision'] : []),
+    deploy: { target: 'cli' },
   },
   {
     key: 'noCudaGraph',
@@ -627,6 +652,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: false,
     group: 'Engine',
     toArgv: (value) => (value === true ? ['--no-cuda-graph'] : []),
+    deploy: { target: 'cli' },
   },
   {
     key: 'reproducible',
@@ -637,6 +663,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: false,
     group: 'Engine',
     toArgv: (value) => (value === true ? ['--reproducible'] : []),
+    deploy: { target: 'cli' },
   },
   {
     key: 'lossless',
@@ -647,6 +674,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: false,
     group: 'Engine',
     toArgv: (value) => (value === true ? ['--lossless'] : []),
+    deploy: { target: 'cli' },
   },
   {
     key: 'ropeYarnFactor',
@@ -658,6 +686,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     group: 'Engine',
     // 1 leaves the native RoPE unchanged, so the bare value spells no flag.
     toArgv: (value) => (value === 1 ? [] : ['--rope-yarn-factor', String(value)]),
+    deploy: { target: 'cli' },
   },
   {
     key: 'chatTemplate',
@@ -667,6 +696,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     form: { kind: 'combo', options: [...CHAT_TEMPLATE_OPTIONS] },
     group: 'Engine',
     toArgv: (value) => (value ? ['--chat-template', String(value)] : []),
+    deploy: { target: 'cli' },
   },
   {
     key: 'temperature',
@@ -677,6 +707,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: 0.9,
     group: 'Sampling',
     toArgv: (value) => ['--temperature', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'minP',
@@ -687,6 +718,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: 0.05,
     group: 'Sampling',
     toArgv: (value) => ['--min-p', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'defaultMaxTokens',
@@ -711,6 +743,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     },
     group: 'Sampling',
     toArgv: (value) => ['--default-max-tokens', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'defaultThinkingBudget',
@@ -720,6 +753,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     form: { kind: 'number', min: 0, step: 1, unit: 'tokens' },
     group: 'Sampling',
     toArgv: (value) => ['--default-thinking-budget', String(value)],
+    deploy: { target: 'cli' },
   },
   {
     key: 'preserveThinking',
@@ -730,6 +764,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: false,
     group: 'Sampling',
     toArgv: (value) => (value === true ? ['--preserve-thinking'] : []),
+    deploy: { target: 'cli' },
   },
   {
     key: 'tolerantToolCalls',
@@ -740,6 +775,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     defaultValue: false,
     group: 'Sampling',
     toArgv: (value) => (value === true ? ['--tolerant-tool-calls'] : []),
+    deploy: { target: 'cli' },
   },
   {
     key: 'reasoningLoop',
@@ -751,6 +787,7 @@ export const INFERNIX_PARAMETERS: readonly ParameterSpec[] = [
     group: 'Sampling',
     // off is the engine default, so the bare value spells no flag.
     toArgv: (value) => (value === 'off' ? [] : ['--reasoning-loop', String(value)]),
+    deploy: { target: 'cli' },
   },
 ]
 

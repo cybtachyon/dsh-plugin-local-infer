@@ -57,6 +57,7 @@ export const LLAMACPP_PARAMETERS = [
         defaultValue: 4096,
         group: 'Memory',
         toArgv: (value) => ['--ctx-size', String(value)],
+        deploy: { target: 'cli' },
     },
     {
         key: 'gpuLayers',
@@ -66,6 +67,7 @@ export const LLAMACPP_PARAMETERS = [
         defaultValue: 99,
         group: 'Memory',
         toArgv: (value) => ['--n-gpu-layers', String(value)],
+        deploy: { target: 'cli' },
     },
     {
         key: 'kvCacheType',
@@ -77,6 +79,7 @@ export const LLAMACPP_PARAMETERS = [
         // llama.cpp prices the key and value caches separately; the engine serves
         // both from the same tier, so one value spells both flags.
         toArgv: (value) => ['--cache-type-k', String(value), '--cache-type-v', String(value)],
+        deploy: { target: 'cli' },
     },
     {
         key: 'threads',
@@ -85,6 +88,7 @@ export const LLAMACPP_PARAMETERS = [
         form: { kind: 'number', min: 1, step: 1, unit: 'threads' },
         group: 'Engine',
         toArgv: (value) => ['--threads', String(value)],
+        deploy: { target: 'cli' },
     },
     {
         key: 'batchSize',
@@ -93,6 +97,7 @@ export const LLAMACPP_PARAMETERS = [
         form: { kind: 'number', min: 32, step: 32, unit: 'tokens' },
         group: 'Engine',
         toArgv: (value) => ['--batch-size', String(value)],
+        deploy: { target: 'cli' },
     },
     {
         key: 'parallel',
@@ -102,6 +107,7 @@ export const LLAMACPP_PARAMETERS = [
         defaultValue: 1,
         group: 'Concurrency',
         toArgv: (value) => ['--parallel', String(value)],
+        deploy: { target: 'cli' },
     },
     {
         key: 'temp',
@@ -111,6 +117,7 @@ export const LLAMACPP_PARAMETERS = [
         defaultValue: 0.9,
         group: 'Sampling',
         toArgv: (value) => ['--temp', String(value)],
+        deploy: { target: 'cli' },
     },
     {
         key: 'topP',
@@ -120,6 +127,7 @@ export const LLAMACPP_PARAMETERS = [
         defaultValue: 0.95,
         group: 'Sampling',
         toArgv: (value) => ['--top-p', String(value)],
+        deploy: { target: 'cli' },
     },
     {
         key: 'flashAttn',
@@ -129,6 +137,7 @@ export const LLAMACPP_PARAMETERS = [
         defaultValue: false,
         group: 'Engine',
         toArgv: (value) => (value === true ? ['--flash-attn'] : []),
+        deploy: { target: 'cli' },
     },
     {
         key: 'jinja',
@@ -138,6 +147,7 @@ export const LLAMACPP_PARAMETERS = [
         defaultValue: true,
         group: 'Engine',
         toArgv: (value) => (value === true ? ['--jinja'] : []),
+        deploy: { target: 'cli' },
     },
 ];
 /**

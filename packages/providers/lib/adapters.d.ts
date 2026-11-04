@@ -13,7 +13,10 @@ import type { Config, DebugLogger, HealthCheckOptions, HealthResult, LaunchPlan,
  * flagsFromSpecs turns a spec surface and a config into the CLI flag list: each
  * spec's `toArgv` runs over the config value (falling back to the spec
  * default), and empty results are skipped. A spec with no `toArgv` contributes
- * nothing.
+ * nothing. A declared `deploy` target gates the spelling: only a `cli` target
+ * (or no target, the un-migrated fallback that reads the `toArgv` presence)
+ * spells CLI flags, so a spec that deploys to the env or a config file
+ * contributes no flag even when it carries a `toArgv` spelling.
  */
 export declare function flagsFromSpecs(specs: readonly ParameterSpec[], config: Config): string[];
 /**
@@ -36,8 +39,12 @@ export declare function customArgFlags(config: Config): string[];
 export declare function customArgEnv(config: Config): Record<string, string>;
 /**
  * envFromSpecs turns a spec surface and a config into the environment map: each
- * spec's `toEnv` runs over the config value (falling back to the spec
- * default). A spec with no `toEnv` contributes nothing.
+ * spec's `toEnv` runs over the config value (falling back to the spec default).
+ * A spec with no `toEnv` contributes nothing. A declared `deploy` target gates
+ * the spelling: only an `env` target (or no target, the un-migrated fallback
+ * that reads the `toEnv` presence) spells env vars, so a spec that deploys to
+ * the CLI or a config file contributes no var even when it carries a `toEnv`
+ * spelling.
  */
 export declare function envFromSpecs(specs: readonly ParameterSpec[], config: Config): Record<string, string>;
 /**
