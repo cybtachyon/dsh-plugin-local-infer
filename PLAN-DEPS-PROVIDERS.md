@@ -67,7 +67,7 @@ the new leaf module and the cycle disappears.
   Rewrite the comments to name the behavior, not the dead task id.
   Definition of done: no `TASK-0NN` references remain in
   `packages/client/src`; `pnpm build` and `pnpm test` pass.
-- [ ] TASK-003: Run the full gate set (`pnpm build`, `pnpm test`,
+- [x] TASK-003: Run the full gate set (`pnpm build`, `pnpm test`,
   `pnpm lint`) and confirm the client bundle (`dsh/client.js`) contains no
   import edge between the deps and providers store modules.
   Definition of done: all three gates pass; commit the verified state.
