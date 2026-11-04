@@ -45,7 +45,7 @@ and makes the health poll stop early when the spawned engine process has exited.
 ### Phase 1: Dep fix
 
 - [x] [TASK-001-basalt-pip-system-python](docs/PLAN-basalt-serve-dep-TASK-001-basalt-pip-system-python.md)
-- [ ] [TASK-001b-basalt-linux-build-system-python](docs/PLAN-basalt-serve-dep-TASK-001b-basalt-linux-build-system-python.md)
+- [x] [TASK-001b-basalt-linux-build-system-python](docs/PLAN-basalt-serve-dep-TASK-001b-basalt-linux-build-system-python.md)
 
 ### Phase 2: Early-exit health poll
 

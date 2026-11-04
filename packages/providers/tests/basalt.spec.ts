@@ -212,7 +212,7 @@ describe('Basalt OS profiles', () => {
     // build, so the launch's health poll does not time out on a missing module
     // import.
     expect(BASALT_LINUX.buildSteps).toEqual([
-      'cmake -S {dir} -B {dir}/build -DCMAKE_BUILD_TYPE=Release && cmake --build {dir}/build -j && uv pip install -r {dir}/requirements.txt',
+      'cmake -S {dir} -B {dir}/build -DCMAKE_BUILD_TYPE=Release && cmake --build {dir}/build -j && sudo python3 -m pip install -r {dir}/requirements.txt',
     ])
     // The Windows route adds the Ninja generator and runs in the MSVC
     // developer shell (vcvars64.bat) so cl, cmake, and ninja are on the path.
