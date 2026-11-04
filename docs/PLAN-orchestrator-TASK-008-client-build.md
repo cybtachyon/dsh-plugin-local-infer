@@ -15,3 +15,15 @@ Definition of Done: `dsh/client.js` regenerated and committed in one commit.
 ## Answered open questions
 
 (none specific to this task)
+
+## Carry-over notes from TASK-007 (2026-11-04)
+
+- After the rebuild, `packages/client/tests/carrier.spec.ts` needs its
+  slot-name expectations updated: the bootstrap now issues a second probe
+  (`/local-infer/orchestrator`) and, when both probes answer 200, the
+  recorded `slots.inject` names become `['plugins.bundle.config',
+  'settings.plugin.item', 'plugins.row.config']` (the Orchestrator card
+  registers into `plugins.row.config`, keyed
+  `dsh-plugin-local-infer#local-infer-orchestrator`; see the TASK-007 note).
+- `packages/client/lib/OrchestratorCard.*` are new tsc outputs; they land
+  with this task's artifact commit.

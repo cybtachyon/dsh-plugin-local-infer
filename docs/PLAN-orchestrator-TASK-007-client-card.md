@@ -21,7 +21,9 @@ In `packages/client/src`:
   the live slot topology through the client Slots inspect provider or the
   plugin-manager page's slot spec, and choose spec fields so the Engine
   settings card is unaffected). Mount the orchestrator card only when its
-  route exists; the main card's existing probe is unchanged.
+  route exists; the main card's existing probe is unchanged. (Superseded at
+  implementation: the keyed cell cannot render two cards; see "Discovered
+  constraint" below.)
 - Locale/title strings follow the existing `Card.tsx` locale seam.
 
 Tests: extend the client specs (`packages/client/tests/`): route-exists
@@ -35,3 +37,34 @@ behavior; one commit (sources only; the rebuilt artifact is TASK-008).
 
 - Slot scope: `plugins.bundle.config` only (decided); no
   `settings.plugin.item` registration for this card.
+
+## Discovered constraint (2026-11-04, implemented deviation)
+
+The decided mount is infeasible on the current host, and the task's own
+verification step surfaced why. Verified against the installed host
+(0.2.1-alpha.3 bundles, `@deepseek-ai/dsh-client-ui-slots` +
+`@deepseek-ai/dsh-client-ui-renderer` + the plugin-manager page):
+
+- `plugins.bundle.config` is a `kind: 'keyed'` slot. The renderer dispatches
+  it as `entriesOfSlot('plugins.bundle.config').find((e) => e.options.key ===
+  entryKey)` with `entryKey` the bundle's package name, and `entriesOfSlot`
+  projects one shadowing winner per cell. Two registrations keyed
+  `dsh-plugin-local-infer` therefore cannot coexist-render: at the same
+  default priority the second `register` throws (SlotCore's fail-loud
+  one-occupant-per-cell rule), and at a distinct priority the loser never
+  renders. No `id`/`order` fields exist for keyed entries.
+- The host's designed home for one component row's configuration is
+  `plugins.row.config`, keyed `<package name>#<row id>`. The Plugins page
+  gives the `local-infer-orchestrator` row a Configure control exactly while
+  that key is registered (its ledger reads `keysOf('plugins.row.config')`),
+  and renders the entry as the row page's body (`view: 'page'`). The row's
+  title and description come from the component's shipped
+  `packages/orchestrator/locale/en.json` meta (added in TASK-001).
+
+Implemented: the orchestrator card registers into `plugins.row.config` under
+`dsh-plugin-local-infer#local-infer-orchestrator`, still probed
+independently through `orchestratorRouteExists()` in the same `slots`
+scoped inject. The Engine settings card is unaffected (it stays the sole
+occupant of the bundle-config cell), and the decided "no
+`settings.plugin.item` registration" holds. TASK-012's walkthrough should
+confirm the live slot topology and the row's Configure control.
