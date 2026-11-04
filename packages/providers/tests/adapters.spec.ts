@@ -338,6 +338,34 @@ describe('NInferAdapter.deploy', () => {
     expect(state.spawn[0]?.cwd).toBe('/src/ninfer')
   })
 
+  it('writes the spawn argv back onto the plan for the launch record', async () => {
+    const { host, state } = stubHost()
+    state.runOutput['rev-list'] = '0'
+    const adapter = new NInferAdapter(host)
+    const relativeBinary = join('build-windows', 'apps', 'Release', 'ninfer-serve.exe')
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      argv: [relativeBinary, '/models/x.ninfer'],
+      env: {},
+      modelId: 'qwen3-27b',
+      modelDirectory: '/models',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    const result = await adapter.deploy(plan, {
+      engineId: 'ninfer',
+      engineDirectory: '/src/ninfer',
+    })
+    expect(result.ok).toBe(true)
+    // The plan is the launch record's argv source, and the re-link rule
+    // substring-matches every record argv token against the live command
+    // line, so deploy leaves the plan carrying exactly what it spawned: the
+    // engine-directory-joined binary, not the build-tree relative path.
+    expect(plan.argv).toEqual(state.spawn[0]?.argv)
+    expect(plan.argv?.[0]).toBe(join('/src/ninfer', relativeBinary))
+  })
+
   it('leaves a bare launch name for the path', async () => {
     const { host, state } = stubHost()
     state.runOutput['rev-list'] = '0'
