@@ -45,6 +45,9 @@ system prompt when enabled. Document the feature in README.md.
 ## Task dependencies
 
 - TASK-001 (package scaffold) is the foundation for every other task.
+- TASK-001b (basalt spec fix) is an interlude: it depends on nothing and
+  unblocks the repo-wide test gates that every later task's Definition of
+  Done relies on.
 - TASK-002 (config + default prompt) depends on TASK-001.
 - TASK-003 (system prompt injection) depends on TASK-002.
 - TASK-004 (settings routes) depends on TASK-002.
@@ -63,6 +66,7 @@ system prompt when enabled. Document the feature in README.md.
 ### Phase 1: Orchestrator host package
 
 - [x] [TASK-001-package-scaffold](docs/PLAN-orchestrator-TASK-001-package-scaffold.md)
+- [ ] [TASK-001b-basalt-spec-fix](docs/PLAN-orchestrator-TASK-001b-basalt-spec-fix.md)
 - [ ] [TASK-002-config-and-default-prompt](docs/PLAN-orchestrator-TASK-002-config-and-default-prompt.md)
 - [ ] [TASK-003-system-prompt-injection](docs/PLAN-orchestrator-TASK-003-system-prompt-injection.md)
 - [ ] [TASK-004-settings-routes](docs/PLAN-orchestrator-TASK-004-settings-routes.md)
