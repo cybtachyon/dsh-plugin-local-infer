@@ -67,12 +67,23 @@ describe('computeProviderStatuses', () => {
     expect(statuses).toEqual({ a: 'unsure', b: 'unsure', c: 'stopped' })
   })
 
-  it('reads a provider that names no model as unsure while its engine runs without a model', () => {
-    const noModel: ProviderRef[] = [{ id: 'x', engine: 'ninfer' }]
+  it('reads a no-model provider as running against a model-tied engine on its port', () => {
+    // Only the plugin's own launches and re-links stamp a model tie, so a
+    // model-tied engine on the provider's exact port is the provider's own
+    // engine: a provider that names no model still confirms against it.
+    const noModel: ProviderRef[] = [{ id: 'x', engine: 'ninfer', port: 18020 }]
     const running: RunningEngineRef[] = [{ engineId: 'ninfer', port: 18020, modelId: 'qwen3-27b' }]
     const statuses = computeProviderStatuses({ providers: noModel, running, gpuBusy: false })
-    // The provider names no model, so it cannot be confirmed against the
-    // running model: unsure, not a guess.
+    expect(statuses).toEqual({ x: 'running' })
+  })
+
+  it('reads a no-model provider as unsure while its engine runs untied to a model', () => {
+    // A ref without a modelId is a foreign engine the detector saw running but
+    // could not attribute, so a provider that names no model stays unsure, not
+    // a guess.
+    const noModel: ProviderRef[] = [{ id: 'x', engine: 'ninfer', port: 18020 }]
+    const running: RunningEngineRef[] = [{ engineId: 'ninfer', port: 18020 }]
+    const statuses = computeProviderStatuses({ providers: noModel, running, gpuBusy: false })
     expect(statuses).toEqual({ x: 'unsure' })
   })
 

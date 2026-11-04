@@ -13,8 +13,9 @@ export type ProviderStatus = 'running' | 'stopped' | 'unsure'
 /**
  * ProviderRef is the identity side of one saved provider config: the stable
  * id the card renders and the engine and model it serves. The model is
- * optional because a config that names no model cannot be confirmed against
- * a running engine, and reads as unsure rather than a guess. The config is
+ * optional: a config that names no model confirms against a plugin-launched
+ * engine the detector tied to any model on its port, and reads as unsure only
+ * while no running engine carries a model tie. The config is
  * optional and lets the detector price the provider's own launch signature
  * (the engine binary the build mode runs, the port it binds) rather than the
  * adapter's default-port signature; the port is the resolved bind port the
@@ -71,9 +72,13 @@ export function isGpuBusy(usage?: GpuUsageProbe | null): boolean {
  * the detector's answer. The order is the plan's contract:
  * 1. A provider whose engine the process probe confirmed running is running
  *    (green) when the detector tied that engine to the provider's exact model,
- *    and unsure (yellow) when the engine serves an unidentified or a
- *    different model. A running engine using its VRAM does not read as a busy
- *    card, so the dot is green, not the unattributable yellow.
+ *    or when the provider names no model and the detector tied the engine to
+ *    any model: only this plugin's launches and re-links stamp a model tie, so
+ *    a model-tied engine on the provider's port is that provider's own engine.
+ *    A provider reads as unsure (yellow) when the engine serves an
+ *    unidentified or a different model. A running engine using its VRAM does
+ *    not read as a busy card, so the dot is green, not the unattributable
+ *    yellow.
  * 2. A provider whose engine is not running falls back to the card state: a
  *    busy card (a foreign engine holding the VRAM at 75% or more) reads as
  *    unsure, because a full card cannot be attributed to a single model, and
@@ -100,15 +105,14 @@ export function computeProviderStatuses(
       const identified = matches.find((ref) => ref.modelId !== undefined && ref.modelId !== '')
       if (
         identified !== undefined &&
-        provider.model !== undefined &&
-        identified.modelId === provider.model
+        (provider.model === undefined || identified.modelId === provider.model)
       ) {
         statuses[provider.id] = 'running'
         continue
       }
-      // The engine is running but the model is not identified, the provider
-      // names no model, or the engine serves a different model: unsure, not
-      // a guess.
+      // The engine is running but the detector could not tie it to a model, or
+      // it serves a different model than the provider names: unsure, not a
+      // guess.
       statuses[provider.id] = 'unsure'
       continue
     }
