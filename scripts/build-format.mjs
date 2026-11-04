@@ -34,8 +34,20 @@ async function processDirectory(dir) {
             if (entry.isFile() && isEmitted) {
                 const content = await fs.readFile(fullPath, 'utf8');
 
-                if (!content.endsWith('\n')) {
-                    await fs.appendFile(fullPath, '\n', 'utf8');
+                // Strip per-line trailing whitespace (tsc emits some after
+                // collapsed multi-line calls) and keep the final newline, so
+                // the trailing-whitespace and end-of-file-fixer hooks stay
+                // no-ops for lib files.
+                let normalized = content
+                    .split('\n')
+                    .map(line => line.replace(/[ \t]+$/, ''))
+                    .join('\n');
+                if (!normalized.endsWith('\n')) {
+                    normalized += '\n';
+                }
+
+                if (normalized !== content) {
+                    await fs.writeFile(fullPath, normalized, 'utf8');
                 }
             }
         });
