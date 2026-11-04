@@ -377,6 +377,9 @@ function basaltStubHost() {
     // step (the model download) without failing the git sync.
     runFail: [] as string[],
     fetchStatus: 200,
+    // A test-driven spawn handle (e.g. one whose hasExited reports the child
+    // settled); undefined keeps the default live handle.
+    spawnHandle: undefined as ProcessHandle | undefined,
   }
   const fails = (command: string): boolean => state.runFail.some((key) => command.includes(key))
   const host: LifecycleHost = {
@@ -399,6 +402,7 @@ function basaltStubHost() {
     spawn(argv: readonly string[], env: Record<string, string>, cwd?: string): ProcessHandle {
       state.spawn.push({ argv: [...argv], env: { ...env }, cwd })
       state.sequence.push(`spawn: ${argv.join(' ')}`)
+      if (state.spawnHandle !== undefined) return state.spawnHandle
       return {
         pid: 4321,
         // A running engine that has printed output reads as starting.
@@ -772,6 +776,29 @@ describe('BasaltAdapter.healthCheck', () => {
     const result = await adapter.healthCheck(plan, { pollMs: 0, maxAttempts: 1 })
     expect(result.healthy).toBe(false)
     expect(result.state).toBe('failed')
+  })
+
+  it('reports failed immediately when the tracked child has exited', async () => {
+    const { host, state } = basaltStubHost()
+    state.fetchStatus = 503
+    // The tracked child settled (a crash), so the health poll ends before the
+    // first fetch and the health check reads as failed, not starting.
+    state.spawnHandle = {
+      pid: 4321,
+      logs: 'loading model',
+      kill: (): void => {
+        state.killed.push(4321)
+      },
+      onExit: (): void => {},
+      hasExited: (): boolean => true,
+    }
+    const adapter = new BasaltAdapter(host)
+    const plan = adapter.renderLaunch({ port: 8090, modelDirectory: 'models' }, ADAPTER_HW)
+    await adapter.deploy(plan, { engineId: 'basalt', engineDirectory: '/src/basalt' })
+    const result = await adapter.healthCheck(plan, { pollMs: 0, maxAttempts: 5 })
+    expect(result.healthy).toBe(false)
+    expect(result.state).toBe('failed')
+    expect(result.detail).toBe('the engine process exited before it reported ready')
   })
 })
 

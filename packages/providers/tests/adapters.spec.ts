@@ -1436,6 +1436,71 @@ describe('pollHealth', () => {
     expect(result.healthy).toBe(true)
     expect(state.fetch).toHaveLength(3)
   })
+
+  it('ends immediately with a failed result when the tracked handle has exited', async () => {
+    const { host, state } = stubHost()
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    // A handle that reports the child settled: the poll must not fetch at all
+    // and must return the failed result naming the exit, not the full
+    // attempt cap.
+    const handle: ProcessHandle = {
+      pid: 1234,
+      kill: (): void => {},
+      hasExited: (): boolean => true,
+    }
+    const result = await pollHealth(host, plan, { pollMs: 0, maxAttempts: 5 }, handle)
+    expect(result).toEqual({
+      healthy: false,
+      state: 'failed',
+      detail: 'the engine process exited before it reported ready',
+    })
+    expect(state.fetch).toHaveLength(0)
+  })
+
+  it('keeps polling while the tracked handle reports the child is live', async () => {
+    const { host, state } = stubHost()
+    state.fetchSequence = [503, 503, 200]
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    // A handle that reports the child is live: the state read never trips the
+    // early exit, so the poll runs its loop until the 200.
+    const handle: ProcessHandle = {
+      pid: 1234,
+      kill: (): void => {},
+      hasExited: (): boolean => false,
+    }
+    const result = await pollHealth(host, plan, { pollMs: 0, maxAttempts: 5 }, handle)
+    expect(result.healthy).toBe(true)
+    expect(result.status).toBe(200)
+    expect(state.fetch).toHaveLength(3)
+  })
+
+  it('keeps the full poll for a handle that cannot report its exit state', async () => {
+    const { host, state } = stubHost()
+    state.fetchStatus = 503
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    // A stub handle without hasExited: the poll cannot read the child's state,
+    // so it runs the full attempt cap and times out.
+    const handle: ProcessHandle = { pid: 1234, kill: (): void => {} }
+    const result = await pollHealth(host, plan, { pollMs: 0, maxAttempts: 3 }, handle)
+    expect(result.healthy).toBe(false)
+    expect(result.status).toBe(503)
+    expect(state.fetch).toHaveLength(3)
+  })
 })
 
 describe('LifecycleHost.writeFile', () => {
@@ -2435,6 +2500,8 @@ describe('nodeLifecycleHost (the live host the service wires in)', () => {
     const host = createNodeLifecycleHost()
     const handle = host.spawn([], {})
     expect(handle.pid).toBe(-1)
+    // No child ever started, so the state read reports true from the start.
+    expect(handle.hasExited?.()).toBe(true)
     const exit = await onceExit(handle)
     expect(exit.code).toBeNull()
     expect(exit.error).toContain('no command in argv')
@@ -2456,6 +2523,17 @@ describe('nodeLifecycleHost (the live host the service wires in)', () => {
     } else {
       expect(exit).toEqual({ code: null, signal: 'SIGKILL' })
     }
+  })
+
+  it('reports the child exit state through hasExited (live, then settled)', async () => {
+    const host = createNodeLifecycleHost()
+    // A live child reads as not-exited; once the child settles (a SIGKILL),
+    // the state read flips to true.
+    const handle = host.spawn(['node', '-e', 'setTimeout(() => {}, 30000)'], {})
+    expect(handle.hasExited?.()).toBe(false)
+    process.kill(handle.pid, 'SIGKILL')
+    await onceExit(handle)
+    expect(handle.hasExited?.()).toBe(true)
   })
 
   it('fires a listener registered after the child already ended immediately', async () => {
