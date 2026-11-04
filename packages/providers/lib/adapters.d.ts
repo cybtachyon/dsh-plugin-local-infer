@@ -90,7 +90,8 @@ export declare function configFileFromSpecs(specs: readonly ParameterSpec[], con
  * so a DSH debug-mode host captures the full build-to-launch sequence. A
  * `RunOptions.shell` (the engine OS profile's shell, e.g. pwsh.exe for
  * the Windows vcpkg route) runs the command line in that shell instead of the
- * system default.
+ * system default. A `RunOptions.graceMs` overrides the 5 s SIGTERM escalation
+ * window of the abort path for that run.
  */
 export declare function createNodeLifecycleHost(debug?: DebugLogger): LifecycleHost;
 /**

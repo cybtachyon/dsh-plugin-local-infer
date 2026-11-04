@@ -2353,6 +2353,49 @@ describe('nodeLifecycleHost (the live host the service wires in)', () => {
     expect(failed.detail?.length).toBeGreaterThan(0)
   })
 
+  it('SIGTERMs a SIGINT-ignoring child after the abort grace period (run)', async () => {
+    const host = createNodeLifecycleHost()
+    const controller = new AbortController()
+    // A node child that traps SIGINT and marks the SIGTERM: only the
+    // escalation can settle the run, and the marker in the detail proves the
+    // SIGTERM landed. A short grace keeps the test off the 5 s production
+    // constant.
+    const command =
+      "node -e \"process.on('SIGINT', () => {}); process.on('SIGTERM', () => { process.stdout.write('sigterm-landed'); process.exit(1) }); setInterval(() => {}, 1000)\""
+    const pending = host.run(command, { signal: controller.signal, graceMs: 100 })
+    // Abort after the child has started, so the kill lands on a live process.
+    setTimeout(() => controller.abort(), 200)
+    const result = await pending
+    expect(result.ok).toBe(false)
+    // Windows emulates signals by terminating the process on the first kill,
+    // so the marker is asserted on POSIX only.
+    if (process.platform !== 'win32') {
+      expect(result.detail).toContain('sigterm-landed')
+    }
+  }, 15000)
+
+  it('SIGTERMs a SIGINT-ignoring child after the abort grace period (runStream)', async () => {
+    const host = createNodeLifecycleHost()
+    const controller = new AbortController()
+    // The same SIGINT-trapping child, streamed: the close event settles the
+    // promise with the signal-killed detail, and the marker proves the
+    // SIGTERM escalation fired.
+    const command =
+      "node -e \"process.on('SIGINT', () => {}); process.on('SIGTERM', () => { process.stdout.write('sigterm-landed'); process.exit(1) }); setInterval(() => {}, 1000)\""
+    const chunks: string[] = []
+    const pending = host.runStream(command, (chunk) => chunks.push(chunk), {
+      signal: controller.signal,
+      graceMs: 100,
+    })
+    // Abort after the child has started, so the kill lands on a live process.
+    setTimeout(() => controller.abort(), 200)
+    const result = await pending
+    expect(result.ok).toBe(false)
+    if (process.platform !== 'win32') {
+      expect(result.detail).toContain('sigterm-landed')
+    }
+  }, 15000)
+
   it('spawns a detached child the stop step can signal', async () => {
     const { nodeLifecycleHost } = await import('../src/adapters.ts')
     // A real node child: a no-op that exits immediately. The handle carries a

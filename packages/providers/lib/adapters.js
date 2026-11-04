@@ -260,9 +260,10 @@ const STREAM_OUTPUT_TAIL = 1_024;
  * watchChildAbort kills the in-flight child when the RunOptions signal
  * aborts (the card's cancel of a Get/Launch download): SIGINT first, SIGTERM
  * after the grace period if the child is still alive. A signal that is already
- * aborted kills immediately.
+ * aborted kills immediately. The optional graceMs overrides the 5 s constant
+ * so a test can exercise the escalation without waiting.
  */
-function watchChildAbort(child, signal) {
+function watchChildAbort(child, signal, graceMs) {
     if (signal === undefined)
         return;
     const onAbort = () => {
@@ -270,9 +271,12 @@ function watchChildAbort(child, signal) {
             return;
         child.kill('SIGINT');
         const escalate = setTimeout(() => {
-            if (!child.killed && child.exitCode === null)
+            // child.killed is already true from the SIGINT, so the guard reads the
+            // exit state: a child that has neither exited nor been signalled is
+            // still alive and gets SIGTERM.
+            if (child.exitCode === null && child.signalCode === null)
                 child.kill('SIGTERM');
-        }, RUN_ABORT_GRACE_MS);
+        }, graceMs ?? RUN_ABORT_GRACE_MS);
         escalate.unref();
     };
     if (signal.aborted) {
@@ -292,7 +296,8 @@ function watchChildAbort(child, signal) {
  * so a DSH debug-mode host captures the full build-to-launch sequence. A
  * `RunOptions.shell` (the engine OS profile's shell, e.g. pwsh.exe for
  * the Windows vcpkg route) runs the command line in that shell instead of the
- * system default.
+ * system default. A `RunOptions.graceMs` overrides the 5 s SIGTERM escalation
+ * window of the abort path for that run.
  */
 export function createNodeLifecycleHost(debug) {
     // The debug logger is a no-op outside debug mode, so the guard reads as
@@ -312,7 +317,7 @@ export function createNodeLifecycleHost(debug) {
                     const detail = `${stderr ?? ''}${stdout ?? ''}${String(error)}`.trim().slice(-COMMAND_DETAIL_TAIL);
                     resolve({ ok: false, detail });
                 });
-                watchChildAbort(child, options?.signal);
+                watchChildAbort(child, options?.signal, options?.graceMs);
             });
         },
         async runStream(command, onOutput, options) {
@@ -326,7 +331,7 @@ export function createNodeLifecycleHost(debug) {
                     shell: options?.shell ?? true,
                     stdio: ['ignore', 'pipe', 'pipe'],
                 });
-                watchChildAbort(child, options?.signal);
+                watchChildAbort(child, options?.signal, options?.graceMs);
                 let output = '';
                 const append = (chunk) => {
                     const text = chunk.toString('utf8');

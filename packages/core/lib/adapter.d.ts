@@ -105,11 +105,14 @@ export interface FetchResult {
  * names pwsh.exe, because its steps set $env: variables). Absent runs
  * the host's default shell. `signal` is the card's cancel: an abort kills the
  * in-flight child (SIGINT, then SIGTERM), so a canceled Get/Launch download
- * stops instead of running on behind the card.
+ * stops instead of running on behind the card. `graceMs` overrides the 5 s
+ * SIGTERM escalation window of that abort path, so a test can exercise the
+ * escalation without waiting.
  */
 export interface RunOptions {
     shell?: string;
     signal?: AbortSignal;
+    graceMs?: number;
 }
 /**
  * LifecycleHost is the injectable execution surface an adapter drives its

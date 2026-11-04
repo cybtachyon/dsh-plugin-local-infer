@@ -78,6 +78,7 @@ by the previous commits in their phase and resolve the named code risks.
 - [x] [TASK-018-infernix-format-human](docs/PLAN-get-progress-TASK-018-infernix-format-human.md)
 - [x] [TASK-002-spawn-runner-onchunk](docs/PLAN-get-progress-TASK-002-spawn-runner-onchunk.md)
 - [x] [TASK-019-watchchildabort-sigterm](docs/PLAN-get-progress-TASK-019-watchchildabort-sigterm.md)
+- [x] [TASK-020-providers-watchchildabort-sigterm](docs/PLAN-get-progress-TASK-020-providers-watchchildabort-sigterm.md)
 - [ ] [TASK-003-getsteps-onchunk-sink](docs/PLAN-get-progress-TASK-003-getsteps-onchunk-sink.md)
 - [ ] [TASK-004-launch-route-progress-event](docs/PLAN-get-progress-TASK-004-launch-route-progress-event.md)
 - [ ] [TASK-005-refactor-phase1](docs/PLAN-get-progress-TASK-005-refactor-phase1.md)
@@ -115,6 +116,7 @@ by the previous commits in their phase and resolve the named code risks.
   core builders).
 - TASK-002 depends on TASK-001 (the runner streams the command TASK-001 renders).
 - TASK-019 depends on TASK-002 (the guard lives in the runner's abort wiring).
+- TASK-020 depends on TASK-019 (the providers guard mirrors the service fix).
 - TASK-003 depends on TASK-002 (the get-steps sink threads the onChunk the runner accepts).
 - TASK-004 depends on TASK-003 (the launch route emits progress from the get-steps run).
 - TASK-005 depends on TASK-001..TASK-004 (reviews their commits).
