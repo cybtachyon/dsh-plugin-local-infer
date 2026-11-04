@@ -89,8 +89,9 @@ export declare function performInstall(store: CardStore, t: TextTable): Promise<
  * text parse of a log chunk, and the field clears when the run settles
  * (success, failure, or abort), so the readout never outlives the run. When
  * the stream ends, the route has
- * persisted the run as the last logs, so a summary re-read hands the Logs
- * section back to the stored value. The run registers its AbortController in the in-flight
+ * persisted the run as the last logs, so a re-read of both read models (the
+ * summary and the deps panel) hands the Logs section back to the stored
+ * value. The run registers its AbortController in the in-flight
  * registry, so the provider form's Cancel closes the stream and the route
  * interrupts the in-flight hf child; an aborted run settles without a
  * failure line (the "Canceled" line the Cancel wrote is the run's tail). A

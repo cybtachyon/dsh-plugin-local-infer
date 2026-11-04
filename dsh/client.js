@@ -2122,7 +2122,7 @@ function performGet(store, t) {
       idleTimer = null;
     }
     if (reprice) {
-      fetchSummary({ engine: draft.engine, config: draft.config }).then((summary) => store.dispatch({ type: "summary/ack", summary })).catch(() => store.dispatch({ type: "summary/fail", note: "" }));
+      void repriceAll(store, { engine: draft.engine, config: draft.config });
     }
   };
   const armIdle = () => {

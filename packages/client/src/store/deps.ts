@@ -221,8 +221,9 @@ export function performInstall(store: CardStore, t: TextTable): Promise<void> {
  * text parse of a log chunk, and the field clears when the run settles
  * (success, failure, or abort), so the readout never outlives the run. When
  * the stream ends, the route has
- * persisted the run as the last logs, so a summary re-read hands the Logs
- * section back to the stored value. The run registers its AbortController in the in-flight
+ * persisted the run as the last logs, so a re-read of both read models (the
+ * summary and the deps panel) hands the Logs section back to the stored
+ * value. The run registers its AbortController in the in-flight
  * registry, so the provider form's Cancel closes the stream and the route
  * interrupts the in-flight hf child; an aborted run settles without a
  * failure line (the "Canceled" line the Cancel wrote is the run's tail). A
@@ -264,8 +265,8 @@ export function performGet(store: CardStore, t: TextTable): Promise<void> {
   let idleTimer: ReturnType<typeof setTimeout> | null = null
   let finished = false
   let resolveDetail: (detail: string) => void = () => {}
-  // finish settles the run's side effects (the idle timer, the summary
-  // re-read) once, whichever path lands first.
+  // finish settles the run's side effects (the idle timer, the re-read of
+  // both read models) once, whichever path lands first.
   const finish = (reprice: boolean): void => {
     if (finished) {
       return
@@ -276,11 +277,9 @@ export function performGet(store: CardStore, t: TextTable): Promise<void> {
       idleTimer = null
     }
     if (reprice) {
-      // The route persisted the run as the last logs; the summary re-read
-      // hands the Logs section back to the stored value.
-      fetchSummary({ engine: draft.engine, config: draft.config })
-        .then((summary) => store.dispatch({ type: 'summary/ack', summary }))
-        .catch(() => store.dispatch({ type: 'summary/fail', note: '' }))
+      // The route persisted the run as the last logs; the re-read of both
+      // read models hands the Logs section back to the stored value.
+      void repriceAll(store, { engine: draft.engine, config: draft.config })
     }
   }
   const armIdle = (): void => {
@@ -304,8 +303,8 @@ export function performGet(store: CardStore, t: TextTable): Promise<void> {
   const controller = new AbortController()
   trackGetAbort(controller)
   // settleRun lands the run's side effects (the abort registry entry, the
-  // progress settle, the summary re-read) once, whichever settle path lands
-  // first.
+  // progress settle, the re-read of both read models) once, whichever settle
+  // path lands first.
   const settleRun = (): void => {
     forgetGetAbort(controller)
     throttle.settle()
