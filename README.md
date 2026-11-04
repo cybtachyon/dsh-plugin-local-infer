@@ -55,6 +55,8 @@ The **Engine settings** card mounts on the Plugins page (older hosts: the Settin
 - **Launch / Stop.** `Launch` deploys the engine (builds the checkout, or pulls the image in docker mode), downloads the model, starts it, and polls its health endpoint. `Stop` shuts it down.
 - **Register / Remove.** `Register` publishes the confirmed-working engine to DSH as a model (optionally as the agent default model) through the settings service, so the change is revision-tracked and undoable. `Remove` pulls the entry back.
 
+When a parameter can be set both as a CLI argument and as a write to the engine's config file, the plugin prefers the CLI argument. The CLI arg is consumed for that launch only, so it leaves the on-disk config file (and any customization you made by hand in it) untouched where possible.
+
 All values persist to `~/.dsh/local-infer/config.json`; the browser never sees a value it did not store.
 
 ## Supported Platforms

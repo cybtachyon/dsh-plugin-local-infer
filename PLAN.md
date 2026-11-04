@@ -85,7 +85,26 @@ Order: 009 → 010 → 011 → 012 → 013 → 014, on top of both Phase 1 and P
 
 Order: 015 → 016 → 017, after the engine lands.
 
+## Phase 5 — Deploy target refinements
+
+TASK 005 declared a single `deploy` target per spec, which left the Strata
+docker build mode without its shared-spec env vars (the shared specs were
+declared `cli` to keep the binary path working). Phase 5 makes both the
+source/binary (CLI) and docker (env) build modes first-class, and establishes
+the "prefer CLI args over config writes" preference the Basalt engine applies.
+
+| # | Task | File |
+| --- | --- | --- |
+| 018 | Extend the `deploy` target to support multiple targets (Strata source + docker first-class) | [docs/PLAN-TASK018-deploy-multi-target.md](docs/PLAN-TASK018-deploy-multi-target.md) |
+| 019 | Establish and document the "prefer CLI args over config writes" preference | [docs/PLAN-TASK019-prefer-cli-over-config.md](docs/PLAN-TASK019-prefer-cli-over-config.md) |
+
+Order: 018 → 019. TASK 018 should land before Phase 3 so the Basalt surface
+can declare multi-target specs; TASK 019 establishes the CLI-over-config
+preference the Basalt adapter applies.
+
 ---
 
 Phases 1 and 2 are independent of each other and both precede Phase 3. Phase 4
-is independent and can land after Phase 3.
+is independent and can land after Phase 3. Phase 5 refines the Phase 1 deploy
+target and should land before Phase 3 (the Basalt engine) so the engine can
+declare multi-target specs and apply the CLI-over-config preference.
