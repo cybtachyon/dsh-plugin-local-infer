@@ -165,6 +165,39 @@ export const SYSTEM_DEPS = {
       winget: { commands: ['winget install --id=Nvidia.CUDA -e'] },
     },
   },
+  // The C++20 compiler the local build links against (GCC on Debian/Arch/
+  // Fedora, Clang on macOS). The winget block is empty: on Windows the C++20
+  // compiler is the MSVC toolchain the visual-studio dep installs, so the
+  // Windows profile rides that dep instead of this one.
+  compiler: {
+    id: 'compiler',
+    purpose: 'compiles the C++20 engine sources',
+    requiresSudo: true,
+    detect: probe('g++', ['--version']),
+    install: {
+      apt: { commands: ['sudo apt install g++'] },
+      dnf: { commands: ['sudo dnf install gcc-c++'] },
+      pacman: { commands: ['sudo pacman -S --noconfirm gcc'] },
+      brew: { commands: ['brew install gcc'] },
+      winget: { commands: [] },
+    },
+  },
+  // The Python 3.10+ interpreter the serve/ server and its pip requirements
+  // need. The probe reads python3, which every distro and macOS ship or
+  // install under that name.
+  python: {
+    id: 'python',
+    purpose: 'runs the Python server and its pip requirements',
+    requiresSudo: true,
+    detect: probe('python3', ['--version']),
+    install: {
+      apt: { commands: ['sudo apt install python3 python3-pip'] },
+      dnf: { commands: ['sudo dnf install python3 python3-pip'] },
+      pacman: { commands: ['sudo pacman -S --noconfirm python python-pip'] },
+      brew: { commands: ['brew install python'] },
+      winget: { commands: ['winget install Python.Python.3.12'] },
+    },
+  },
   git: {
     id: 'git',
     purpose: 'clones the engine source',
