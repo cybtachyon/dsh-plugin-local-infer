@@ -38,7 +38,7 @@ Execution order: TASK-001, TASK-002, TASK-004, TASK-003.
 
 ### Phase 2: Re-emit and verify
 
-- [ ] [TASK-002-reemit-verify-gates](docs/PLAN-summary-churn-TASK-002-reemit-verify-gates.md)
+- [x] [TASK-002-reemit-verify-gates](docs/PLAN-summary-churn-TASK-002-reemit-verify-gates.md)
 
 ### Phase 3: Build hardening
 
