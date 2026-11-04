@@ -1327,6 +1327,70 @@ describe('ctx.localInfer provider statuses', () => {
   })
 })
 
+describe('ctx.localInfer basalt config-carried port linking', () => {
+  // Regression for the reported "Unable to link to a provider" banner on a
+  // basalt provider the plugin launched itself. The basalt serve launcher
+  // execs into `python3 -m serve.server` and the engine binds its port from
+  // basalt_config.json, so the port number rides neither command line. The
+  // signature's portInArgv:false lets the binary marker (a substring of the
+  // cache paths) match, and the launch-time model tie confirms the provider
+  // that names no model.
+  const BASALT_SIG: EngineLaunchSignature = { binary: 'basalt', port: 18020, portInArgv: false }
+  const BASALT_LINE: ProcessLine = {
+    pid: 24680,
+    command:
+      'python3 -m serve.server --engine-bin /home/u/.cache/hf/basalt/bin/basalt' +
+      ' --config /home/u/.cache/hf/basalt_config.json' +
+      ' --model /home/u/.cache/hf/blobs/37/37daf5ca --engine-bin bin/basalt',
+  }
+  const GPU_IDLE: GpuUsageProbe = { usedMiB: 2048, totalMiB: 24576 }
+  // The live provider shape: engine basalt, no model named, port in the config.
+  const PROVIDERS: ProviderRef[] = [{ id: 'a', engine: 'basalt', config: { port: 18020 } }]
+
+  class BasaltSigningAdapter extends StubAdapter {
+    constructor() {
+      super('basalt')
+    }
+    launchSignature(): EngineLaunchSignature {
+      return BASALT_SIG
+    }
+  }
+
+  function plan(): LaunchPlan {
+    return {
+      engineId: 'basalt',
+      kind: 'process',
+      port: 18020,
+      modelId: 'qwen38-flash-next',
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+  }
+
+  it('links a portless basalt process to the no-model provider through the launch tie', async () => {
+    const ctx = await seam()
+    ctx.localInfer.registerEngine(new BasaltSigningAdapter())
+    // The launch stamps the model tie on port 18020 (the D2 fix).
+    await ctx.localInfer.launch(plan())
+    const statuses = await ctx.localInfer.providerStatuses(PROVIDERS, {
+      gpuUsage: GPU_IDLE,
+      processes: [BASALT_LINE],
+    })
+    expect(statuses).toEqual({ a: 'running' })
+  })
+
+  it('reads the same portless basalt process as unsure with no plugin launch', async () => {
+    // The tie fence: a foreign basalt the plugin never launched carries no
+    // model tie, so the marker-only match reads unsure, never running.
+    const ctx = await seam()
+    ctx.localInfer.registerEngine(new BasaltSigningAdapter())
+    const statuses = await ctx.localInfer.providerStatuses(PROVIDERS, {
+      gpuUsage: GPU_IDLE,
+      processes: [BASALT_LINE],
+    })
+    expect(statuses).toEqual({ a: 'unsure' })
+  })
+})
+
 describe('ctx.localInfer unsure banner kill commands', () => {
   const NINFER_SIG: EngineLaunchSignature = { binary: 'ninfer-serve', port: 18020 }
   // A Windows-shaped command line: the engine exe under a drive path. The
