@@ -34,7 +34,7 @@ Execution order: TASK-001, TASK-002, TASK-004, TASK-003.
 
 ### Phase 1: Source fix
 
-- [ ] [TASK-001-restructure-meter-call](docs/PLAN-summary-churn-TASK-001-restructure-meter-call.md)
+- [x] [TASK-001-restructure-meter-call](docs/PLAN-summary-churn-TASK-001-restructure-meter-call.md)
 
 ### Phase 2: Re-emit and verify
 

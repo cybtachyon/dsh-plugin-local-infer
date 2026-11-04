@@ -156,6 +156,12 @@ export async function buildSummary(localInfer, request) {
             killCommands: await localInfer.unsureBannerKillCommands(),
         }
         : null;
+    // The "Unknown Engine(s)" readout shows the VRAM the detector's foreign
+    // engine programs are holding: the OS-reserve segment is the GPU's used
+    // VRAM when a foreign engine is detected, so the readout names the
+    // footprint a provider launched in another session is eating off the
+    // card. Absent when no provider reads as unsure.
+    const unknownEngines = anyUnsure ? { bytes: estimate.breakdown.reserve } : null;
     // The registered flag tells the card whether the current config's provider
     // and model are already in the DSH settings, so the Remove button shows
     // only when there is something to remove. A profile without the settings
@@ -203,13 +209,7 @@ export async function buildSummary(localInfer, request) {
         // host-KV slider cap), so the render model and the meter agree on the
         // machine they run on.
         formModel: renderForm(engine.parameters, config, hardware),
-        meterModel: renderMeter(estimate.breakdown, estimate.verdict, hardware.gpu?.vramGiB ?? 0, estimate.source, estimate.reserveSource,
-        // The "Unknown Engine(s)" readout shows the VRAM the detector's foreign
-        // engine programs are holding: the OS-reserve segment is the GPU's used
-        // VRAM when a foreign engine is detected, so the readout names the
-        // footprint a provider launched in another session is eating off the
-        // card. Absent when no provider reads as unsure.
-        anyUnsure ? { bytes: estimate.breakdown.reserve } : null),
+        meterModel: renderMeter(estimate.breakdown, estimate.verdict, hardware.gpu?.vramGiB ?? 0, estimate.source, estimate.reserveSource, unknownEngines),
         verdict: estimate.verdict,
         warningsModel: renderWarnings(guidelineResults),
         config,
