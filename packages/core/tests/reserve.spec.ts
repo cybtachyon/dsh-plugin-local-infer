@@ -69,6 +69,35 @@ describe('matchLaunchSignature', () => {
     expect(matchLaunchSignature(line, signature)).toBe(false)
   })
 
+  it('skips the port element when portInArgv is false and the line carries no port', () => {
+    // Basalt binds its port from basalt_config.json, so the number never
+    // rides the command line: the binary alone decides the match.
+    const configPort: EngineLaunchSignature = { binary: 'basalt', port: 18020, portInArgv: false }
+    const line: ProcessLine = {
+      pid: 10,
+      command: 'basalt --config /home/u/.basalt/basalt_config.json',
+    }
+    expect(matchLaunchSignature(line, configPort)).toBe(true)
+  })
+
+  it('still requires the port in the command line when portInArgv is absent', () => {
+    const configPort: EngineLaunchSignature = { binary: 'basalt', port: 18020 }
+    const line: ProcessLine = {
+      pid: 11,
+      command: 'basalt --config /home/u/.basalt/basalt_config.json',
+    }
+    expect(matchLaunchSignature(line, configPort)).toBe(false)
+  })
+
+  it('keeps the binary element in force when portInArgv is false', () => {
+    const configPort: EngineLaunchSignature = { binary: 'basalt', port: 18020, portInArgv: false }
+    const line: ProcessLine = {
+      pid: 12,
+      command: 'other-engine --config /home/u/.engine/server.json',
+    }
+    expect(matchLaunchSignature(line, configPort)).toBe(false)
+  })
+
   it('matches on the binary alone when the signature declares no port', () => {
     const bare: EngineLaunchSignature = { binary: 'docker compose' }
     const line: ProcessLine = {

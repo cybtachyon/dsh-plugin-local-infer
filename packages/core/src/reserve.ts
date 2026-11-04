@@ -73,12 +73,15 @@ export interface ProcessLine {
  * signature. The binary marker must appear in the command line (the image
  * name for a docker plan, the engine binary for a local one); a declared port
  * must appear as a standalone number (the `--port N` flag or the docker
- * `-p host:port:port` mapping); a declared env key must be set when the line
- * carries env data, and is neutral when it does not.
+ * `-p host:port:port` mapping) unless `portInArgv` is false, which means the
+ * engine binds its port from a file; a declared env key must be set when the
+ * line carries env data, and is neutral when it does not.
  */
 export function matchLaunchSignature(line: ProcessLine, signature: EngineLaunchSignature): boolean {
   if (!line.command.includes(signature.binary)) return false
-  if (signature.port !== undefined && !portAppears(line.command, signature.port)) return false
+  if (signature.portInArgv !== false && signature.port !== undefined && !portAppears(line.command, signature.port)) {
+    return false
+  }
   if (signature.envKeys !== undefined && signature.envKeys.length > 0 && line.env !== undefined) {
     const hit = signature.envKeys.some(key => key in line.env!)
     if (!hit) return false

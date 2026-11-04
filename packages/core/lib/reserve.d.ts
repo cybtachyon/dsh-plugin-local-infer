@@ -25,6 +25,13 @@ export declare function parseNvidiaSmiGpuUsage(output: string): GpuUsageProbe | 
 export interface EngineLaunchSignature {
     binary: string;
     port?: number;
+    /**
+     * When false the engine binds its port from a file (Basalt's
+     * basalt_config.json server block), so the matcher never sees the number
+     * in the command line and must skip the port element. Undefined reads as
+     * true: the port must appear as a standalone number, the current rule.
+     */
+    portInArgv?: boolean;
     envKeys?: readonly string[];
 }
 /**
@@ -44,8 +51,9 @@ export interface ProcessLine {
  * signature. The binary marker must appear in the command line (the image
  * name for a docker plan, the engine binary for a local one); a declared port
  * must appear as a standalone number (the `--port N` flag or the docker
- * `-p host:port:port` mapping); a declared env key must be set when the line
- * carries env data, and is neutral when it does not.
+ * `-p host:port:port` mapping) unless `portInArgv` is false, which means the
+ * engine binds its port from a file; a declared env key must be set when the
+ * line carries env data, and is neutral when it does not.
  */
 export declare function matchLaunchSignature(line: ProcessLine, signature: EngineLaunchSignature): boolean;
 /**

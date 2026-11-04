@@ -58,7 +58,7 @@ runs, and `stopped` (killable from the card) when stopped.
 
 ### Phase 1: core link contract
 
- - [ ] [TASK-001-signature-port-match](docs/PLAN-basalt-link-TASK-001-signature-port-match.md)
+ - [x] [TASK-001-signature-port-match](docs/PLAN-basalt-link-TASK-001-signature-port-match.md)
  - [ ] [TASK-002-nomodel-provider-status](docs/PLAN-basalt-link-TASK-002-nomodel-provider-status.md)
 
 ### Phase 2: basalt adapter
