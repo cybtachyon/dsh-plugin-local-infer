@@ -188,21 +188,6 @@ export const SYSTEM_DEPS = {
       winget: { commands: [] },
     },
   },
-  // The Python 3.10+ interpreter the serve/ server and its pip requirements
-  // need. The probe reads uv Python manager.
-  python: {
-    id: 'python',
-    purpose: 'runs the uv Python server and its pip requirements',
-    requiresSudo: true,
-    detect: probe('uv', ['--version']),
-    install: {
-      apt: { commands: ['curl -LsSf https://astral.sh/uv/install.sh | sh'] },
-      dnf: { commands: ['curl -LsSf https://astral.sh/uv/install.sh | sh'] },
-      pacman: { commands: ['sudo pacman -S --noconfirm uv'] },
-      brew: { commands: ['brew install uv'] },
-      winget: { commands: ['winget install --id=astral-sh.uv -e'] },
-    },
-  },
   git: {
     id: 'git',
     purpose: 'clones the engine source',

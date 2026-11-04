@@ -197,29 +197,6 @@ export declare const SYSTEM_DEPS: {
             };
         };
     };
-    python: {
-        id: string;
-        purpose: string;
-        requiresSudo: true;
-        detect: (hw: HardwareProfile) => Promise<boolean>;
-        install: {
-            apt: {
-                commands: string[];
-            };
-            dnf: {
-                commands: string[];
-            };
-            pacman: {
-                commands: string[];
-            };
-            brew: {
-                commands: string[];
-            };
-            winget: {
-                commands: string[];
-            };
-        };
-    };
     git: {
         id: string;
         purpose: string;
