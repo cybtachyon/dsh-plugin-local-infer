@@ -67,6 +67,7 @@ runs, and `stopped` (killable from the card) when stopped.
  - [x] [TASK-004-plan-model-id](docs/PLAN-basalt-link-TASK-004-plan-model-id.md)
  - [x] [TASK-005-record-spawn-argv](docs/PLAN-basalt-link-TASK-005-record-spawn-argv.md)
  - [x] [TASK-006-refactor-review](docs/PLAN-basalt-link-TASK-006-refactor-review.md)
+ - [ ] [TASK-008-ninfer-spawn-argv](docs/PLAN-basalt-link-TASK-008-ninfer-spawn-argv.md)
 
 ### Phase 3: verification
 
@@ -78,7 +79,9 @@ runs, and `stopped` (killable from the card) when stopped.
 - TASK-004 depends on nothing; TASK-005 touches the same adapter file, so
   run after TASK-003/TASK-004.
 - TASK-006 reviews the Phase 1 + Phase 2 commits.
-- TASK-007 runs after every implementation task.
+- TASK-008 (found by TASK-006) applies the same spawn-argv write-back to
+  the ninfer adapter; run after TASK-006.
+- TASK-007 runs after every implementation task (TASK-008 included).
 
 ## Findings log
 
