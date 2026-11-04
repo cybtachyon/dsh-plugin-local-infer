@@ -9,7 +9,11 @@
  * The card is a thin composer: the panels (the provider list, the deps panel,
  * the logs pane, the meter, the custom-args table, the chat-template field)
  * are their own components that take the store as a prop, and the form fields
- * (the renderField renderer) are drawn inline. The card owns the store
+ * (the renderField renderer) are drawn inline. Every panel and field renders
+ * as a JSX element, never as a function call: a call would run the component's
+ * hooks in the card's own hook context, and the card's hook count would vary
+ * with the form model (a re-price that changes the field list then throws the
+ * hook-order invariants 308/310). The card owns the store
  * binding, the field-edit callbacks (the draft edits and the debounced
  * re-price), and the action wiring (the save, discard, register, unregister,
  * launch, stop, download, and chat-template drivers).
@@ -100,11 +104,11 @@ function renderField(props) {
         if (control.step !== undefined) {
             numberControl.step = control.step;
         }
-        const numberEntry = NumberField({
-            field: { key: field.key, value: numeric, disabled: field.disabled },
-            control: numberControl,
-            onValue,
-        });
+        // A JSX element, not a function call: a call would run NumberField's
+        // hooks in the card's own hook context, and the card's hook count would
+        // vary with the field list (a re-price that changes the form model then
+        // throws the hook-order invariants 308/310).
+        const numberEntry = (react.createElement(NumberField, { field: { key: field.key, value: numeric, disabled: field.disabled }, control: numberControl, onValue: onValue }));
         if (control.slider === false) {
             // A plain number entry: no range strip (the port field's case).
             input = (react.createElement("span", { style: { display: 'flex', alignItems: 'center', gap: 8, flex: 1 } },
@@ -128,22 +132,17 @@ function renderField(props) {
         // preset is Custom. The ChatTemplateField owns both rows and the single
         // effective value, so the finicky free-text combo is gone.
         comboField = true;
-        input = ChatTemplateField({
-            field: {
+        input = (react.createElement(ChatTemplateField, { field: {
                 key: field.key,
                 value: value === undefined || value === null ? '' : String(value),
                 disabled: field.disabled,
-            },
-            control: {
+            }, control: {
                 options: control.options.map((option) => ({
                     value: String(option.value),
                     label: option.label,
                     ...(option.note !== undefined ? { note: option.note } : {}),
                 })),
-            },
-            onValue,
-            t,
-        });
+            }, onValue: onValue, t: t }));
     }
     else {
         // text and picker both render a free-text input; the browser has no
@@ -497,17 +496,12 @@ export function card(_react, localeRef, _primitives) {
                 summary.chatTemplateStatus !== null &&
                     summary.chatTemplateStatus !== undefined &&
                     !summary.chatTemplateStatus.present
-                    ? ChatTemplateStatusRow({
-                        status: summary.chatTemplateStatus,
-                        cell: state.templateActions.download,
-                        onDownload: () => {
+                    ? (react.createElement(ChatTemplateStatusRow, { status: summary.chatTemplateStatus, cell: state.templateActions.download, onDownload: () => {
                             const status = store.getSnapshot().summary?.chatTemplateStatus;
                             if (status !== null && status !== undefined) {
                                 void downloadTemplate(store, status.repo);
                             }
-                        },
-                        t,
-                    })
+                        }, t: t }))
                     : null,
                 react.createElement("div", null,
                     react.createElement("div", { style: SECTION_STYLE }, t.enginePlatform),
@@ -571,7 +565,7 @@ export function card(_react, localeRef, _primitives) {
                         ' ' +
                         t.fired),
                     banner.warnings.map((warning) => (react.createElement("div", { key: warning.id }, warning.message))))) : null,
-                Meter({ meter: summary.meterModel, t }),
+                react.createElement(Meter, { meter: summary.meterModel, t: t }),
                 summary.meterModel.source === 'not-measured' &&
                     (summary.models ?? []).length > 0 &&
                     !currentDraft.config.model ? (react.createElement("div", { style: {
@@ -581,8 +575,8 @@ export function card(_react, localeRef, _primitives) {
                 summary.verdict && (summary.verdict.status === 'over' || summary.verdict.status === 'tight') ? (react.createElement("div", { style: BANNER_STYLE(summary.verdict.status) }, (summary.verdict.status === 'over' ? t.over : t.tight) +
                     ': ' +
                     summary.verdict.detail)) : null,
-                CustomArgsPanel({ store, t }),
-                DepsPanel({ store, t }),
+                react.createElement(CustomArgsPanel, { store: store, t: t }),
+                react.createElement(DepsPanel, { store: store, t: t }),
                 react.createElement(LogsPanel, { store: store, t: t }),
                 react.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 } },
                     control.kind === 'phase'

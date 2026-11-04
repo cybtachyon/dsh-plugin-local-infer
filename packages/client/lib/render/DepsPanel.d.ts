@@ -8,6 +8,7 @@
  * drivers, so the panel keeps no state of its own.
  * @module dsh-plugin-local-infer/client/render/DepsPanel
  */
+import type { ReactNode } from 'react';
 import type { TextTable } from '../text.ts';
 import type { CardStore } from '../store/sync.ts';
 export interface DepsPanelProps {
@@ -24,5 +25,5 @@ export interface DepsPanelProps {
  * re-checks the gate; the Get gate runs the build stream and stays disabled
  * until every dep is satisfied.
  */
-export declare function DepsPanel(props: DepsPanelProps): unknown;
+export declare function DepsPanel(props: DepsPanelProps): ReactNode;
 //# sourceMappingURL=DepsPanel.d.ts.map

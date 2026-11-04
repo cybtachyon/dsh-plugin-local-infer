@@ -27,6 +27,31 @@ function localeRef(active: string): LocaleRef {
 // A renderer returns a React element (a plain object). The tests drive the
 // element tree without a renderer, so no react-dom is needed.
 type El = { type: unknown; props?: Record<string, unknown> }
+
+// The dispatcher a tree walk plugs into when it renders a component element
+// (a function type): a stateless stub whose useState hands back the initial
+// value and whose useRef hands back a fresh ref, so a walk sees a component's
+// output (a NumberField's input, a ChatTemplateField's select) without a
+// mount.
+const walkDispatcher = {
+  useState: (initial: unknown) => [initial, () => {}],
+  useRef: (initialValue: unknown) => ({ current: initialValue }),
+  useEffect: () => {},
+  useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => unknown) => getSnapshot(),
+}
+
+// renderThrough renders an element's own output: a component element (a
+// function type) runs under the walk dispatcher and its return is the
+// element's content, a host element reads its children prop.
+function contentOf(e: El): unknown {
+  if (typeof e.type === 'function') {
+    return withDispatcher(walkDispatcher, () =>
+      (e.type as (props: Record<string, unknown>) => unknown)(e.props ?? {}),
+    )
+  }
+  return e.props?.children
+}
+
 // text reads the element tree's text content, flattening strings, numbers,
 // and nested element arrays (a JSX map array carries the rows).
 function text(node: unknown): string {
@@ -39,8 +64,7 @@ function text(node: unknown): string {
   if (Array.isArray(node)) {
     return node.map((x) => text(x)).join('')
   }
-  const e = node as El
-  const c = e.props?.children
+  const c = contentOf(node as El)
   if (c === undefined || c === null) {
     return ''
   }
@@ -48,9 +72,11 @@ function text(node: unknown): string {
   return list.map((x) => text(x)).join('')
 }
 // children flattens the element's children (a single child, an array, or a
-// nested JSX map array), dropping the null entries a conditional emits.
+// nested JSX map array), dropping the null entries a conditional emits. A
+// component element renders through the walk dispatcher first, so its inner
+// controls stay reachable.
 function children(e: El): El[] {
-  const c = e.props?.children
+  const c = contentOf(e)
   if (c === undefined || c === null) {
     return []
   }

@@ -19,6 +19,7 @@
  * hook state per field instead of remounting on every render.
  * @module dsh-plugin-local-infer/client/render/ChatTemplateField
  */
+import type { ReactNode } from 'react';
 import type { ChatTemplateStatusModel } from 'dsh-plugin-local-infer/ui';
 import type { TextTable } from '../text.ts';
 import type { ActionState } from '../store/types.ts';
@@ -48,7 +49,7 @@ export interface ChatTemplateFieldProps {
  * native select a host without the seed keeps); the custom row is a plain
  * text input the user types a local path or an HF repo reference into.
  */
-export declare function ChatTemplateField(props: ChatTemplateFieldProps): unknown;
+export declare function ChatTemplateField(props: ChatTemplateFieldProps): ReactNode;
 export interface ChatTemplateStatusRowProps {
     status: ChatTemplateStatusModel;
     cell: ActionState;
@@ -63,7 +64,7 @@ export interface ChatTemplateStatusRowProps {
  * shows the command as copyable text, the same command the System
  * dependencies box carries. A present template renders nothing.
  */
-export declare function ChatTemplateStatusRow(props: ChatTemplateStatusRowProps): unknown;
+export declare function ChatTemplateStatusRow(props: ChatTemplateStatusRowProps): ReactNode;
 /**
  * useChatTemplateAutoDownload fires the template download once when the
  * summary reports a selected template that is absent from the model

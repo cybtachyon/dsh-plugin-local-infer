@@ -10,6 +10,7 @@
  * @module dsh-plugin-local-infer/client/render/NumberField
  */
 
+import type { ReactNode } from 'react'
 import { react } from './react.ts'
 
 // The field the NumberField edits: its key, its current draft value, and the
@@ -42,7 +43,7 @@ export interface NumberFieldProps {
  * empty field commits undefined (the spec default), and a value that lands
  * from outside (a save, a discard, an engine switch) resyncs the text.
  */
-export function NumberField(props: NumberFieldProps): unknown {
+export function NumberField(props: NumberFieldProps): ReactNode {
   const { field, control, onValue } = props
   const numeric = typeof field.value === 'number' ? field.value : null
   const [text, setText] = react.useState(numeric !== null ? String(numeric) : '')

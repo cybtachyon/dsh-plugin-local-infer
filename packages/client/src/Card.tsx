@@ -9,7 +9,11 @@
  * The card is a thin composer: the panels (the provider list, the deps panel,
  * the logs pane, the meter, the custom-args table, the chat-template field)
  * are their own components that take the store as a prop, and the form fields
- * (the renderField renderer) are drawn inline. The card owns the store
+ * (the renderField renderer) are drawn inline. Every panel and field renders
+ * as a JSX element, never as a function call: a call would run the component's
+ * hooks in the card's own hook context, and the card's hook count would vary
+ * with the form model (a re-price that changes the field list then throws the
+ * hook-order invariants 308/310). The card owns the store
  * binding, the field-edit callbacks (the draft edits and the debounced
  * re-price), and the action wiring (the save, discard, register, unregister,
  * launch, stop, download, and chat-template drivers).
@@ -190,11 +194,17 @@ function renderField(props: FieldProps): ReactNode {
     if (control.step !== undefined) {
       numberControl.step = control.step
     }
-    const numberEntry: ReactNode = NumberField({
-      field: { key: field.key, value: numeric, disabled: field.disabled },
-      control: numberControl,
-      onValue,
-    }) as ReactNode
+    // A JSX element, not a function call: a call would run NumberField's
+    // hooks in the card's own hook context, and the card's hook count would
+    // vary with the field list (a re-price that changes the form model then
+    // throws the hook-order invariants 308/310).
+    const numberEntry: ReactNode = (
+      <NumberField
+        field={{ key: field.key, value: numeric, disabled: field.disabled }}
+        control={numberControl}
+        onValue={onValue}
+      />
+    )
     if (control.slider === false) {
       // A plain number entry: no range strip (the port field's case).
       input = (
@@ -235,22 +245,24 @@ function renderField(props: FieldProps): ReactNode {
     // preset is Custom. The ChatTemplateField owns both rows and the single
     // effective value, so the finicky free-text combo is gone.
     comboField = true
-    input = ChatTemplateField({
-      field: {
-        key: field.key,
-        value: value === undefined || value === null ? '' : String(value),
-        disabled: field.disabled,
-      },
-      control: {
-        options: control.options.map((option) => ({
-          value: String(option.value),
-          label: option.label,
-          ...(option.note !== undefined ? { note: option.note } : {}),
-        })),
-      },
-      onValue,
-      t,
-    }) as ReactNode
+    input = (
+      <ChatTemplateField
+        field={{
+          key: field.key,
+          value: value === undefined || value === null ? '' : String(value),
+          disabled: field.disabled,
+        }}
+        control={{
+          options: control.options.map((option) => ({
+            value: String(option.value),
+            label: option.label,
+            ...(option.note !== undefined ? { note: option.note } : {}),
+          })),
+        }}
+        onValue={onValue}
+        t={t}
+      />
+    )
   } else {
     // text and picker both render a free-text input; the browser has no
     // native directory picker, so the path is typed.
@@ -741,17 +753,19 @@ export function card(
             {summary.chatTemplateStatus !== null &&
             summary.chatTemplateStatus !== undefined &&
             !summary.chatTemplateStatus.present
-              ? (ChatTemplateStatusRow({
-                  status: summary.chatTemplateStatus,
-                  cell: state.templateActions.download,
-                  onDownload: () => {
+              ? (
+                <ChatTemplateStatusRow
+                  status={summary.chatTemplateStatus}
+                  cell={state.templateActions.download}
+                  onDownload={() => {
                     const status = store.getSnapshot().summary?.chatTemplateStatus
                     if (status !== null && status !== undefined) {
                       void downloadTemplate(store, status.repo)
                     }
-                  },
-                  t,
-                }) as ReactNode)
+                  }}
+                  t={t}
+                />
+              )
               : null}
             <div>
               <div style={SECTION_STYLE}>{t.enginePlatform}</div>
@@ -903,7 +917,7 @@ export function card(
                 ))}
               </div>
             ) : null}
-            {Meter({ meter: summary.meterModel, t }) as ReactNode}
+            <Meter meter={summary.meterModel} t={t} />
             {summary.meterModel.source === 'not-measured' &&
             (summary.models ?? []).length > 0 &&
             !currentDraft.config.model ? (
@@ -923,8 +937,8 @@ export function card(
                   summary.verdict.detail}
               </div>
             ) : null}
-            {CustomArgsPanel({ store, t }) as ReactNode}
-            {DepsPanel({ store, t }) as ReactNode}
+            <CustomArgsPanel store={store} t={t} />
+            <DepsPanel store={store} t={t} />
             <LogsPanel store={store} t={t} />
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
               {control.kind === 'phase'

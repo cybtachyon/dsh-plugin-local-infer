@@ -12,6 +12,7 @@
  * @module dsh-plugin-local-infer/client/render/CustomArgsPanel
  */
 
+import type { ReactNode } from 'react'
 import type { CustomArg } from 'dsh-plugin-local-infer/ui'
 import {
   CUSTOM_ARGS_BUTTONS_STYLE,
@@ -101,7 +102,7 @@ export interface CustomArgsPanelProps {
  * dispatches a draft/edit per row edit, so the rows survive a re-price and a
  * Save persists them. The help row shows while the card's help toggle is on.
  */
-export function CustomArgsPanel(props: CustomArgsPanelProps): unknown {
+export function CustomArgsPanel(props: CustomArgsPanelProps): ReactNode {
   const { store, t } = props
   const state = store.getSnapshot()
   const draft = state.draft

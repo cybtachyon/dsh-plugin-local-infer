@@ -9,6 +9,7 @@
  * hook state per field instead of remounting on every render.
  * @module dsh-plugin-local-infer/client/render/NumberField
  */
+import type { ReactNode } from 'react';
 export interface NumberFieldField {
     key: string;
     value: number | undefined;
@@ -31,5 +32,5 @@ export interface NumberFieldProps {
  * empty field commits undefined (the spec default), and a value that lands
  * from outside (a save, a discard, an engine switch) resyncs the text.
  */
-export declare function NumberField(props: NumberFieldProps): unknown;
+export declare function NumberField(props: NumberFieldProps): ReactNode;
 //# sourceMappingURL=NumberField.d.ts.map

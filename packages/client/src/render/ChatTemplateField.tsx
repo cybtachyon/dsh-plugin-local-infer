@@ -20,6 +20,7 @@
  * @module dsh-plugin-local-infer/client/render/ChatTemplateField
  */
 
+import type { ReactNode } from 'react'
 import type { ChatTemplateStatusModel } from 'dsh-plugin-local-infer/ui'
 import { INPUT_STYLE, LABEL_STYLE, ROW_STYLE } from '../styles.ts'
 import type { TextTable } from '../text.ts'
@@ -68,7 +69,7 @@ export interface ChatTemplateFieldProps {
  * native select a host without the seed keeps); the custom row is a plain
  * text input the user types a local path or an HF repo reference into.
  */
-export function ChatTemplateField(props: ChatTemplateFieldProps): unknown {
+export function ChatTemplateField(props: ChatTemplateFieldProps): ReactNode {
   const { field, control, onValue, t } = props
   const value = field.value
   const options = control.options ?? []
@@ -166,7 +167,7 @@ export interface ChatTemplateStatusRowProps {
  * shows the command as copyable text, the same command the System
  * dependencies box carries. A present template renders nothing.
  */
-export function ChatTemplateStatusRow(props: ChatTemplateStatusRowProps): unknown {
+export function ChatTemplateStatusRow(props: ChatTemplateStatusRowProps): ReactNode {
   const { status, cell, onDownload, t } = props
   if (status.present) {
     return null

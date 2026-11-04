@@ -9,6 +9,7 @@
  * @module dsh-plugin-local-infer/client/render/DepsPanel
  */
 
+import type { ReactNode } from 'react'
 import { DEPS_ROW_STYLE, INSTALL_BLOCK_STYLE, SECTION_STYLE } from '../styles.ts'
 import type { TextTable } from '../text.ts'
 import {
@@ -53,7 +54,7 @@ export interface DepsPanelProps {
  * re-checks the gate; the Get gate runs the build stream and stays disabled
  * until every dep is satisfied.
  */
-export function DepsPanel(props: DepsPanelProps): unknown {
+export function DepsPanel(props: DepsPanelProps): ReactNode {
   const { store, t } = props
   const state = store.getSnapshot()
   const deps = state.deps

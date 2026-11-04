@@ -9,7 +9,11 @@
  * The card is a thin composer: the panels (the provider list, the deps panel,
  * the logs pane, the meter, the custom-args table, the chat-template field)
  * are their own components that take the store as a prop, and the form fields
- * (the renderField renderer) are drawn inline. The card owns the store
+ * (the renderField renderer) are drawn inline. Every panel and field renders
+ * as a JSX element, never as a function call: a call would run the component's
+ * hooks in the card's own hook context, and the card's hook count would vary
+ * with the form model (a re-price that changes the field list then throws the
+ * hook-order invariants 308/310). The card owns the store
  * binding, the field-edit callbacks (the draft edits and the debounced
  * re-price), and the action wiring (the save, discard, register, unregister,
  * launch, stop, download, and chat-template drivers).

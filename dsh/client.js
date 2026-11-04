@@ -2785,11 +2785,14 @@ function renderField(props) {
     if (control.step !== void 0) {
       numberControl.step = control.step;
     }
-    const numberEntry = NumberField({
-      field: { key: field.key, value: numeric, disabled: field.disabled },
-      control: numberControl,
-      onValue
-    });
+    const numberEntry = /* @__PURE__ */ react.createElement(
+      NumberField,
+      {
+        field: { key: field.key, value: numeric, disabled: field.disabled },
+        control: numberControl,
+        onValue
+      }
+    );
     if (control.slider === false) {
       input = /* @__PURE__ */ react.createElement("span", { style: { display: "flex", alignItems: "center", gap: 8, flex: 1 } }, numberEntry, unitLabel);
     } else {
@@ -2813,22 +2816,25 @@ function renderField(props) {
     }
   } else if (control.kind === "combo") {
     comboField = true;
-    input = ChatTemplateField({
-      field: {
-        key: field.key,
-        value: value === void 0 || value === null ? "" : String(value),
-        disabled: field.disabled
-      },
-      control: {
-        options: control.options.map((option) => ({
-          value: String(option.value),
-          label: option.label,
-          ...option.note !== void 0 ? { note: option.note } : {}
-        }))
-      },
-      onValue,
-      t
-    });
+    input = /* @__PURE__ */ react.createElement(
+      ChatTemplateField,
+      {
+        field: {
+          key: field.key,
+          value: value === void 0 || value === null ? "" : String(value),
+          disabled: field.disabled
+        },
+        control: {
+          options: control.options.map((option) => ({
+            value: String(option.value),
+            label: option.label,
+            ...option.note !== void 0 ? { note: option.note } : {}
+          }))
+        },
+        onValue,
+        t
+      }
+    );
   } else {
     const placeholder = control.kind === "text" ? control.placeholder : void 0;
     input = /* @__PURE__ */ react.createElement(
@@ -3165,17 +3171,20 @@ function card(_react, localeRef, _primitives) {
         style: { color: "var(--dsw-alias-accent, #0a84ff)" }
       },
       summary.modelStatus.url
-    )) : null, downloadCell.status !== "idle" && downloadCell.detail !== "" ? /* @__PURE__ */ react.createElement("div", { style: { fontSize: 12 } }, downloadCell.status === "ok" ? t.downloaded : t.downloadFailed, downloadCell.detail !== t.downloaded && downloadCell.detail !== "" ? ": " + downloadCell.detail : "") : null, summary.chatTemplateStatus !== null && summary.chatTemplateStatus !== void 0 && !summary.chatTemplateStatus.present ? ChatTemplateStatusRow({
-      status: summary.chatTemplateStatus,
-      cell: state.templateActions.download,
-      onDownload: () => {
-        const status = store.getSnapshot().summary?.chatTemplateStatus;
-        if (status !== null && status !== void 0) {
-          void downloadTemplate(store, status.repo);
-        }
-      },
-      t
-    }) : null, /* @__PURE__ */ react.createElement("div", null, /* @__PURE__ */ react.createElement("div", { style: SECTION_STYLE }, t.enginePlatform), /* @__PURE__ */ react.createElement("div", { style: ROW_STYLE }, /* @__PURE__ */ react.createElement("label", { style: LABEL_STYLE }, t.engineDirectory), /* @__PURE__ */ react.createElement(
+    )) : null, downloadCell.status !== "idle" && downloadCell.detail !== "" ? /* @__PURE__ */ react.createElement("div", { style: { fontSize: 12 } }, downloadCell.status === "ok" ? t.downloaded : t.downloadFailed, downloadCell.detail !== t.downloaded && downloadCell.detail !== "" ? ": " + downloadCell.detail : "") : null, summary.chatTemplateStatus !== null && summary.chatTemplateStatus !== void 0 && !summary.chatTemplateStatus.present ? /* @__PURE__ */ react.createElement(
+      ChatTemplateStatusRow,
+      {
+        status: summary.chatTemplateStatus,
+        cell: state.templateActions.download,
+        onDownload: () => {
+          const status = store.getSnapshot().summary?.chatTemplateStatus;
+          if (status !== null && status !== void 0) {
+            void downloadTemplate(store, status.repo);
+          }
+        },
+        t
+      }
+    ) : null, /* @__PURE__ */ react.createElement("div", null, /* @__PURE__ */ react.createElement("div", { style: SECTION_STYLE }, t.enginePlatform), /* @__PURE__ */ react.createElement("div", { style: ROW_STYLE }, /* @__PURE__ */ react.createElement("label", { style: LABEL_STYLE }, t.engineDirectory), /* @__PURE__ */ react.createElement(
       "input",
       {
         style: INPUT_STYLE,
@@ -3242,7 +3251,7 @@ function card(_react, localeRef, _primitives) {
       },
       /* @__PURE__ */ react.createElement("div", { style: { fontWeight: 600, marginBottom: 4 } }, banner.count + " " + (banner.count === 1 ? t.guidelineOne : t.guidelineMany) + " " + t.fired),
       banner.warnings.map((warning) => /* @__PURE__ */ react.createElement("div", { key: warning.id }, warning.message))
-    ) : null, Meter({ meter: summary.meterModel, t }), summary.meterModel.source === "not-measured" && (summary.models ?? []).length > 0 && !currentDraft.config.model ? /* @__PURE__ */ react.createElement(
+    ) : null, /* @__PURE__ */ react.createElement(Meter, { meter: summary.meterModel, t }), summary.meterModel.source === "not-measured" && (summary.models ?? []).length > 0 && !currentDraft.config.model ? /* @__PURE__ */ react.createElement(
       "div",
       {
         style: {
@@ -3251,7 +3260,7 @@ function card(_react, localeRef, _primitives) {
         }
       },
       t.measureHint
-    ) : null, summary.verdict && (summary.verdict.status === "over" || summary.verdict.status === "tight") ? /* @__PURE__ */ react.createElement("div", { style: BANNER_STYLE(summary.verdict.status) }, (summary.verdict.status === "over" ? t.over : t.tight) + ": " + summary.verdict.detail) : null, CustomArgsPanel({ store, t }), DepsPanel({ store, t }), /* @__PURE__ */ react.createElement(LogsPanel, { store, t }), /* @__PURE__ */ react.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 8 } }, control.kind === "phase" ? renderProcessButton({
+    ) : null, summary.verdict && (summary.verdict.status === "over" || summary.verdict.status === "tight") ? /* @__PURE__ */ react.createElement("div", { style: BANNER_STYLE(summary.verdict.status) }, (summary.verdict.status === "over" ? t.over : t.tight) + ": " + summary.verdict.detail) : null, /* @__PURE__ */ react.createElement(CustomArgsPanel, { store, t }), /* @__PURE__ */ react.createElement(DepsPanel, { store, t }), /* @__PURE__ */ react.createElement(LogsPanel, { store, t }), /* @__PURE__ */ react.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 8 } }, control.kind === "phase" ? renderProcessButton({
       busy: true,
       label: control.label,
       busyLabel: control.busyLabel,

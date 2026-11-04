@@ -11,6 +11,7 @@
  * "-" removes that row entirely. Every row's "+" appends a fresh row.
  * @module dsh-plugin-local-infer/client/render/CustomArgsPanel
  */
+import type { ReactNode } from 'react';
 import type { CustomArg } from 'dsh-plugin-local-infer/ui';
 import type { TextTable } from '../text.ts';
 import type { CardStore } from '../store/sync.ts';
@@ -45,5 +46,5 @@ export interface CustomArgsPanelProps {
  * dispatches a draft/edit per row edit, so the rows survive a re-price and a
  * Save persists them. The help row shows while the card's help toggle is on.
  */
-export declare function CustomArgsPanel(props: CustomArgsPanelProps): unknown;
+export declare function CustomArgsPanel(props: CustomArgsPanelProps): ReactNode;
 //# sourceMappingURL=CustomArgsPanel.d.ts.map
