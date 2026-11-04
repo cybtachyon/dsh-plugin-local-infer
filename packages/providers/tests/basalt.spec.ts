@@ -244,7 +244,6 @@ describe('Basalt OS profiles', () => {
       'cmake',
       'compiler',
       'cuda-toolkit',
-      'python',
       'basalt-pip',
       'hf-cli',
     ])
@@ -257,7 +256,6 @@ describe('Basalt OS profiles', () => {
       'ninja',
       'visual-studio',
       'cuda-toolkit',
-      'python',
       'basalt-pip',
       'hf-cli',
     ])

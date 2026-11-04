@@ -8,8 +8,8 @@
  *
  * Basalt is Blackwell-only (sm_120): the engine is compiled for the NVIDIA
  * Blackwell GPU, so the CUDA 13 toolkit and a C++20 compiler are hard
- * requirements. The Python 3.10+ interpreter runs the serve/ server and its
- * pip requirements, and the hf CLI downloads the .basalt model artifact.
+ * requirements. The serve/ server's pip requirements install into the system
+ * Python, and the hf CLI downloads the .basalt model artifact.
  * @module dsh-plugin-local-infer/providers/engines/basalt/basaltLinux
  */
 import { SYSTEM_DEPS } from "../../systemDeps.js";
@@ -22,16 +22,16 @@ export const BASALT_LINUX = {
     buildDir: 'bin',
     binary: 'basalt',
     // The local build is the engine's own CMake route: the CMake toolchain, the
-    // C++20 compiler, the CUDA 13 toolkit (Blackwell-only), the Python 3.10+
-    // interpreter for the serve/ server, and the hf CLI to download the model.
+    // C++20 compiler, the CUDA 13 toolkit (Blackwell-only), the serve/
+    // server's pip requirements in the system Python, and the hf CLI to
+    // download the model.
     deps: [
         SYSTEM_DEPS.cmake,
         SYSTEM_DEPS.compiler,
         SYSTEM_DEPS.cudaToolkit,
-        SYSTEM_DEPS.python,
-        // The serve/ server is Python; its pip requirements land with the
-        // interpreter, so the launch's health poll does not time out on a missing
-        // module import.
+        // The serve/ server is Python; its pip requirements land in the system
+        // Python the serve CLI falls back to, so the launch's health poll does not
+        // time out on a missing module import.
         SYSTEM_DEPS.basaltPip,
         SYSTEM_DEPS.hfCli,
     ],

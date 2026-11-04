@@ -9,8 +9,8 @@
  *
  * The Windows toolchain is the winget route: CMake, Ninja (the -G Ninja
  * generator), the Visual Studio C++ workload (the MSVC C++20 compiler), the
- * CUDA 13 toolkit (Blackwell-only), the Python 3.10+ interpreter for the
- * serve/ server, and the hf CLI to download the model.
+ * CUDA 13 toolkit (Blackwell-only), the serve/ server's pip requirements in
+ * the system Python, and the hf CLI to download the model.
  * @module dsh-plugin-local-infer/providers/engines/basalt/basaltWindows
  */
 
@@ -27,17 +27,16 @@ export const BASALT_WINDOWS: EngineOsProfile = {
   binary: 'basalt.exe',
   // The Windows local build is the winget route: the CMake toolchain, Ninja
   // (the -G Ninja generator), the Visual Studio C++ workload (the MSVC C++20
-  // compiler), the CUDA 13 toolkit (Blackwell-only), the Python 3.10+
-  // interpreter for the serve/ server, and the hf CLI to download the model.
+  // compiler), the CUDA 13 toolkit (Blackwell-only), the serve/ server's pip
+  // requirements in the system Python, and the hf CLI to download the model.
   deps: [
     SYSTEM_DEPS.cmake,
     SYSTEM_DEPS.ninja,
     SYSTEM_DEPS.visualStudio,
     SYSTEM_DEPS.cudaToolkit,
-    SYSTEM_DEPS.python,
-    // The serve/ server is Python; its pip requirements land with the
-    // interpreter, so the launch's health poll does not time out on a missing
-    // module import.
+    // The serve/ server is Python; its pip requirements land in the system
+    // Python the serve CLI falls back to, so the launch's health poll does not
+    // time out on a missing module import.
     SYSTEM_DEPS.basaltPip,
     SYSTEM_DEPS.hfCli,
   ],
