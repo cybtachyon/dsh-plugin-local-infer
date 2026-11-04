@@ -9,8 +9,8 @@
  *
  * The Windows toolchain is the winget route: CMake, Ninja (the -G Ninja
  * generator), the Visual Studio C++ workload (the MSVC C++20 compiler), the
- * CUDA 13 toolkit (Blackwell-only), the Python 3.10+ interpreter for the
- * serve/ server, and the hf CLI to download the model.
+ * CUDA 13 toolkit (Blackwell-only), the serve/ server's pip requirements in
+ * the system Python, and the hf CLI to download the model.
  * @module dsh-plugin-local-infer/providers/engines/basalt/basaltWindows
  */
 import type { EngineOsProfile } from '../engineOs.ts';

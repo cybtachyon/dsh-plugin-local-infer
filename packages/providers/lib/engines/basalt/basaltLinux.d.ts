@@ -8,8 +8,8 @@
  *
  * Basalt is Blackwell-only (sm_120): the engine is compiled for the NVIDIA
  * Blackwell GPU, so the CUDA 13 toolkit and a C++20 compiler are hard
- * requirements. The Python 3.10+ interpreter runs the serve/ server and its
- * pip requirements, and the hf CLI downloads the .basalt model artifact.
+ * requirements. The serve/ server's pip requirements install into the system
+ * Python, and the hf CLI downloads the .basalt model artifact.
  * @module dsh-plugin-local-infer/providers/engines/basalt/basaltLinux
  */
 import type { EngineOsProfile } from '../engineOs.ts';
