@@ -37,6 +37,7 @@ and makes the health poll stop early when the spawned engine process has exited.
 - TASK-002 (hasExited) depends on TASK-001 (dep fix, independent).
 - TASK-001b (build block) depends on TASK-001 (dep fix).
 - TASK-001c (windows python) depends on TASK-001 (dep fix).
+- TASK-001d (drop uv python) depends on TASK-001 (dep fix).
 - TASK-003 (early-exit poll) depends on TASK-002 (hasExited).
 - TASK-004 (tests) depends on TASK-001, TASK-003.
 - TASK-005 (build/test/lint) depends on TASK-004.
@@ -48,6 +49,7 @@ and makes the health poll stop early when the spawned engine process has exited.
 - [x] [TASK-001-basalt-pip-system-python](docs/PLAN-basalt-serve-dep-TASK-001-basalt-pip-system-python.md)
 - [x] [TASK-001b-basalt-linux-build-system-python](docs/PLAN-basalt-serve-dep-TASK-001b-basalt-linux-build-system-python.md)
 - [x] [TASK-001c-basalt-pip-windows-python](docs/PLAN-basalt-serve-dep-TASK-001c-basalt-pip-windows-python.md)
+- [ ] [TASK-001d-basalt-plans-drop-uv-python](docs/PLAN-basalt-serve-dep-TASK-001d-basalt-plans-drop-uv-python.md)
 
 ### Phase 2: Early-exit health poll
 
