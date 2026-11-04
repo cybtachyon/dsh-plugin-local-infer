@@ -68,3 +68,8 @@ scoped inject. The Engine settings card is unaffected (it stays the sole
 occupant of the bundle-config cell), and the decided "no
 `settings.plugin.item` registration" holds. TASK-012's walkthrough should
 confirm the live slot topology and the row's Configure control.
+
+Parent decision (2026-11-04): deviation ACCEPTED. The parent re-verified the
+single-winner dispatch in the installed renderer; the row-config slot also
+matches the requirement's wording (a card exposed from the Plugin Components
+row, exactly while enabled) better than `plugins.detail.section` would.
