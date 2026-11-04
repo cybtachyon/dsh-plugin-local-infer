@@ -57,7 +57,7 @@ CLI contract and the existing model-download-target rule)
 
 - [x] [TASK-002-config-path-model-dir](docs/PLAN-basalt-launch-TASK-002-config-path-model-dir.md)
 - [x] [TASK-003-add-model-engine-bin-flags](docs/PLAN-basalt-launch-TASK-003-add-model-engine-bin-flags.md)
-- [ ] [TASK-004-resolve-model-path-deploy](docs/PLAN-basalt-launch-TASK-004-resolve-model-path-deploy.md)
+- [x] [TASK-004-resolve-model-path-deploy](docs/PLAN-basalt-launch-TASK-004-resolve-model-path-deploy.md)
 
 ### Phase 3: Refactor
 
