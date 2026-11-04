@@ -34,4 +34,4 @@ requirements, so the install works on a host where `python3` has no `pip`.
 
 ### Phase 2: Verification
 
-- [ ] [TASK-002-build-test-lint](docs/PLAN-basalt-pip-bootstrap-TASK-002-build-test-lint.md)
+- [x] [TASK-002-build-test-lint](docs/PLAN-basalt-pip-bootstrap-TASK-002-build-test-lint.md)
