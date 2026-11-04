@@ -61,9 +61,10 @@ export declare class BasaltAdapter extends EngineAdapter {
     private ensureModelArtifact;
     /**
      * withModelArgv swaps the --model flag's value token for the concrete
-     * artifact path. It builds a new array, so the plan (shared with the launch
-     * record) keeps its placeholder. A plan with no --model flag (a pre-flag
-     * plan) stands as-is.
+     * artifact path. It builds a new array rather than mutating the plan's;
+     * deploy then writes the fully resolved spawn argv back onto the plan, so
+     * the launch record carries what the process actually runs. A plan with no
+     * --model flag (a pre-flag plan) stands as-is.
      */
     private withModelArgv;
     /**
