@@ -7,6 +7,7 @@ import {
   deriveLifecycleControl,
   deriveProviderFormMode,
   formatProgressReadout,
+  isGettingInFlight,
 } from '../src/store/derive.ts'
 import type { GetProgressState } from '../src/store/progress.ts'
 import {
@@ -496,6 +497,27 @@ describe('client store derive (store/derive.ts)', () => {
 
     it('is enabled with no deps and no Get in flight', () => {
       expect(deriveLaunchDisabled(initialCardState())).toBe(false)
+    })
+  })
+
+  describe('isGettingInFlight', () => {
+    it('reads true while the get cell is pending', () => {
+      const state = makeState([], {
+        actions: {
+          ...initialCardState().actions,
+          get: { status: 'pending', detail: '' },
+        },
+      })
+      expect(isGettingInFlight(state)).toBe(true)
+    })
+
+    it('reads true while the in-flight registry carries a run after the idle cap settled the cell', () => {
+      trackGetAbort(new AbortController())
+      expect(isGettingInFlight(makeState([]))).toBe(true)
+    })
+
+    it('reads false with no pending cell and no registered run', () => {
+      expect(isGettingInFlight(makeState([]))).toBe(false)
     })
   })
 })

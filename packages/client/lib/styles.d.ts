@@ -33,6 +33,7 @@ export declare const CUSTOM_ARGS_HEADER_STYLE: CSSProperties;
 export declare const CUSTOM_ARGS_BUTTONS_STYLE: CSSProperties;
 export declare function HELP_BUTTON_STYLE(active: boolean): CSSProperties;
 export declare const PROGRESS_STRIP_TRACK: CSSProperties;
+export declare function clampPercent(percent: number): number;
 export declare function progressStripFillStyle(percent: number): CSSProperties;
 export declare const HELP_ROW_STYLE: CSSProperties;
 //# sourceMappingURL=styles.d.ts.map

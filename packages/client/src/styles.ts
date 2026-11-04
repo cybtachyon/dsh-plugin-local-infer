@@ -280,13 +280,19 @@ export const PROGRESS_STRIP_TRACK: CSSProperties = {
     'var(--dsw-alias-bg-layer-1, var(--dsw-alias-background-tertiary, rgba(128,128,128,0.12)))',
 }
 
+// clampPercent clamps a percent value to the 0-100 range the progress strip
+// spans, so an out-of-range bar update (a parser edge) never overflows the
+// track. The strip's fill width and its aria-valuenow share it.
+export function clampPercent(percent: number): number {
+  return Math.max(0, Math.min(100, percent))
+}
+
 // progressStripFillStyle renders the strip's fill: the accent bar whose width
 // is the percent complete, clamped to the 0-100 range the track spans.
 export function progressStripFillStyle(percent: number): CSSProperties {
-  const clamped = Math.max(0, Math.min(100, percent))
   return {
     height: '100%',
-    width: clamped + '%',
+    width: clampPercent(percent) + '%',
     background: 'var(--dsw-alias-accent, #0a84ff)',
   }
 }

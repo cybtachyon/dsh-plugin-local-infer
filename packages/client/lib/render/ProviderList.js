@@ -14,8 +14,7 @@
  * @module dsh-plugin-local-infer/client/render/ProviderList
  */
 import { GHOST_BUTTON } from "../styles.js";
-import { hasInFlightGet } from "../store/abort.js";
-import { deriveProviderFormMode, formatProgressReadout } from "../store/derive.js";
+import { PROGRESS_READOUT_SEPARATOR, deriveProviderFormMode, formatProgressReadout, isGettingInFlight, phaseLabelFor, } from "../store/derive.js";
 import { cancelProvider, deleteProvider, editProvider, newProvider, openEntryLogs, performEntryLaunch, performEntryStop, } from "../store/providers.js";
 import { renderButton, renderProcessButton, renderStateDot, } from "./primitives.js";
 import { react } from "./react.js";
@@ -108,6 +107,31 @@ export function NewProviderControl(props) {
             color: 'var(--dsw-alias-label-secondary, rgba(127,127,127,0.8))',
         } }, t.newProvider));
 }
+// providerRowTitle builds the row's title: the "Engine: Model (status)" line,
+// the getting readout appended while a Get run is in flight for the row's
+// provider (the live progress state when one has landed), and the fork's
+// owner/repo in place of the engine label when the entry names a fork.
+function providerRowTitle(provider, t, engines, getting, progress) {
+    const engineLabel = engines.find((engine) => engine.id === provider.engine)?.label ?? provider.engine;
+    // The title bar renders the fork's owner/repo when the entry names a fork,
+    // so a forked engine reads as its repo (Ninfer/ninfer-all) rather than the
+    // engine label (NInfer). No fork, or an unparseable one, keeps the label.
+    const forkName = repoShortName(provider.platform?.engineFork);
+    const titleLabel = forkName !== undefined ? forkName : engineLabel;
+    const modelLabel = provider.model !== '' ? provider.model : t.modelAuto;
+    if (getting) {
+        // The getting readout: the title reads the getting status, and the live
+        // progress state (when one has landed) appends the download readout.
+        const readout = progress !== null ? PROGRESS_READOUT_SEPARATOR + formatProgressReadout(progress, t) : '';
+        return titleLabel + ': ' + modelLabel + ' (' + t.gettingReadout + ')' + readout;
+    }
+    const statusLabel = {
+        running: t.statusRunning,
+        stopped: t.statusStopped,
+        unsure: t.statusUnsure,
+    }[provider.status] ?? provider.status;
+    return titleLabel + ': ' + modelLabel + ' (' + statusLabel + ')';
+}
 // One provider entry: the status dot, the "Engine: Model (status)" title, the
 // Edit (or Cancel, while the entry is the one being edited) and Delete
 // controls, and the per-entry Launch control. The row owns the entry's timer
@@ -121,34 +145,12 @@ export function ProviderRow(props) {
     }, []);
     const state = store.getSnapshot();
     // A Get run in flight for this row's provider (the one being edited): the
-    // get action cell pending, or the in-flight registry true after the idle
-    // cap settled the cell. The row swaps its status dot to the ongoing
-    // spinner and appends the live download readout to the title.
-    const getting = editingId === provider.id &&
-        (state.actions.get.status === 'pending' || hasInFlightGet());
-    const engineLabel = engines.find((engine) => engine.id === provider.engine)?.label ?? provider.engine;
-    // The title bar renders the fork's owner/repo when the entry names a fork,
-    // so a forked engine reads as its repo (Ninfer/ninfer-all) rather than the
-    // engine label (NInfer). No fork, or an unparseable one, keeps the label.
-    const forkName = repoShortName(provider.platform?.engineFork);
-    const titleLabel = forkName !== undefined ? forkName : engineLabel;
-    const modelLabel = provider.model !== '' ? provider.model : t.modelAuto;
-    const statusLabel = {
-        running: t.statusRunning,
-        stopped: t.statusStopped,
-        unsure: t.statusUnsure,
-    }[provider.status] ?? provider.status;
-    let title;
-    if (getting) {
-        // The getting readout: the title reads the getting status, and the live
-        // progress state (when one has landed) appends the download readout.
-        const progress = state.ui.getProgress;
-        const readout = progress !== null ? ' · ' + formatProgressReadout(progress, t) : '';
-        title = titleLabel + ': ' + modelLabel + ' (' + t.gettingReadout + ')' + readout;
-    }
-    else {
-        title = titleLabel + ': ' + modelLabel + ' (' + statusLabel + ')';
-    }
+    // shared in-flight read (the get cell pending, or the in-flight registry
+    // true after the idle cap settled the cell). The row swaps its status dot
+    // to the ongoing spinner and appends the live download readout to the
+    // title.
+    const getting = editingId === provider.id && isGettingInFlight(state);
+    const title = providerRowTitle(provider, t, engines, getting, state.ui.getProgress);
     // The status dot: the ongoing spinner while a Get is in flight, the
     // status-mapped dot otherwise.
     const dotState = getting ? 'ongoing' : (STATUS_TO_DOT[provider.status] ?? 'idle');
@@ -192,45 +194,19 @@ export function EntryLaunchButton(props) {
     const { store, provider, t, handleRef } = props;
     const state = store.getSnapshot();
     const status = state.launch[provider.id]?.status ?? 'idle';
-    // A rebuild phase in flight: a disabled control with the spinner and the
+    // A rebuild phase, the model fetch (a busy throbber that reads as in
+    // progress, not a failure: the card re-polls until the engine reports
+    // ready), or a stop in flight: a disabled control with the spinner and the
     // phase label, so the button reads the step that is actually running. The
-    // lookup is a string-keyed map (not a 4-key object), so a non-phase status
-    // reads as undefined and falls through to the Stop / Logs / Launch branches.
-    const phaseLabels = {
-        prereqs: t.entryPrereqs,
-        download: t.entryDownloading,
-        build: t.entryBuilding,
-        launch: t.entryLaunching,
-    };
-    const phaseLabel = phaseLabels[status];
+    // shared phaseLabelFor lookup (the title-bar control's source) reads as
+    // undefined for a non-phase status, and the control falls through to the
+    // Stop / Logs / Launch branches.
+    const phaseLabel = phaseLabelFor(status, t);
     if (phaseLabel !== undefined) {
         return renderProcessButton({
             busy: true,
             label: phaseLabel,
             busyLabel: phaseLabel,
-            variant: 'ghost',
-            onClick: () => { },
-        });
-    }
-    // A stop in flight: a disabled control with the spinner and the stopping
-    // label, the same throbber the launch phases show.
-    if (status === 'stopping') {
-        return renderProcessButton({
-            busy: true,
-            label: t.stopping,
-            busyLabel: t.stopping,
-            variant: 'ghost',
-            onClick: () => { },
-        });
-    }
-    // The engine is fetching its model files (the Strata download): a busy
-    // throbber that reads as in progress, not a failure. The card re-polls (a
-    // re-launch) until the engine reports ready.
-    if (status === 'downloading') {
-        return renderProcessButton({
-            busy: true,
-            label: t.entryDownloading,
-            busyLabel: t.entryDownloading,
             variant: 'ghost',
             onClick: () => { },
         });

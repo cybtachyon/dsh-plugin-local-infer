@@ -8,6 +8,7 @@ import {
   PRIMARY_BUTTON,
   SEGMENT_COLORS,
   WARNING_BANNER_STYLE,
+  clampPercent,
 } from '../src/styles.ts'
 
 describe('client styles (styles.ts)', () => {
@@ -72,5 +73,11 @@ describe('client styles (styles.ts)', () => {
     }
     expect(GHOST_BUTTON.background).toBe('transparent')
     expect(PRIMARY_BUTTON.border).toBe('none')
+  })
+
+  it('clamps the progress percent to the 0-100 range the strip spans', () => {
+    expect(clampPercent(42)).toBe(42)
+    expect(clampPercent(150)).toBe(100)
+    expect(clampPercent(-5)).toBe(0)
   })
 })

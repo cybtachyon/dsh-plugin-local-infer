@@ -11,7 +11,7 @@
  * on a host whose platform table predates the seed.
  * @module dsh-plugin-local-infer/client/render/primitives
  */
-import { GHOST_BUTTON, HELP_ROW_STYLE, INPUT_STYLE, PRIMARY_BUTTON, PROGRESS_STRIP_TRACK, progressStripFillStyle, } from "../styles.js";
+import { GHOST_BUTTON, HELP_ROW_STYLE, INPUT_STYLE, PRIMARY_BUTTON, PROGRESS_STRIP_TRACK, clampPercent, progressStripFillStyle, } from "../styles.js";
 import { react } from "./react.js";
 import { injectStyles, SelectPill } from "./SelectPill.js";
 // The seed the bootstrap resolved. It stays null until setPrimitivesModule
@@ -116,7 +116,7 @@ export function renderProgressStrip(progress) {
     if (primitives && typeof primitives.Progress === 'function') {
         return react.createElement(primitives.Progress, { value: progress.percent });
     }
-    return (react.createElement("div", { style: PROGRESS_STRIP_TRACK, role: "progressbar", "aria-valuemin": 0, "aria-valuemax": 100, "aria-valuenow": Math.max(0, Math.min(100, progress.percent)) },
+    return (react.createElement("div", { style: PROGRESS_STRIP_TRACK, role: "progressbar", "aria-valuemin": 0, "aria-valuemax": 100, "aria-valuenow": clampPercent(progress.percent) },
         react.createElement("div", { style: progressStripFillStyle(progress.percent) })));
 }
 export function renderProcessButton(opts) {

@@ -10,12 +10,17 @@
  * title-bar control and the provider entry's Launch button always agree. A
  * Get run in flight (the get cell pending, or the in-flight registry true
  * after the idle cap settled the cell) renders a 'getting' throbber with the
- * live download readout. formatProgressReadout renders that readout from a
- * GetProgressState, the single source the branch and the provider row share.
- * deriveDisplayedLogs, deriveProviderFormMode, and deriveLaunchDisabled are
- * the remaining render-time projections the card needs.
+ * live download readout. isGettingInFlight is the single source of that
+ * condition, shared by the branch and the provider row. formatProgressReadout
+ * renders the readout from a GetProgressState, the single source the branch
+ * and the provider row share, and phaseLabelFor is the single source of the
+ * launch-status to throbber-label map, shared by the branch and the per-entry
+ * Launch button. deriveDisplayedLogs, deriveProviderFormMode, and
+ * deriveLaunchDisabled are the remaining render-time projections the card
+ * needs.
  * @module dsh-plugin-local-infer/client/store/derive
  */
+import type { LaunchStatus } from '../machine/launch.ts';
 import type { TextTable } from '../text.ts';
 import type { GetProgressState } from './progress.ts';
 import type { CardState, ProviderFormMode } from './types.ts';
@@ -46,12 +51,29 @@ export interface LifecycleControl {
     progress?: GetProgressState | null;
 }
 /**
+ * phaseLabelFor maps a machine status to the throbber label it renders, or
+ * undefined when the status is not a throbber state (idle, running, failed).
+ * The model fetch (downloading) shares the download-phase label, so the
+ * title bar mirrors the entry's Launch button while the engine fetches files.
+ * The 'getting' control branch and the per-entry Launch button
+ * (render/ProviderList.tsx) share it, so the phase labels have one source.
+ */
+export declare function phaseLabelFor(status: LaunchStatus | undefined, t: TextTable): string | undefined;
+/**
  * deriveLaunchDisabled reports whether the Launch side of the control is
  * gated: a Get run in flight, or the deps panel reporting an unsatisfied
  * dependency. The control applies it only while it reads as Launch (not
  * running), so a Stop is never disabled by the gate.
  */
 export declare function deriveLaunchDisabled(state: CardState): boolean;
+/**
+ * isGettingInFlight reports whether a Get run is in flight: the get action
+ * cell pending, or the in-flight registry true after the idle cap settled the
+ * cell. The 'getting' control branch, the provider row (TASK-011), and the
+ * Launch gate share it, so the surfaces agree on when a Get is in flight.
+ */
+export declare function isGettingInFlight(state: CardState): boolean;
+export declare const PROGRESS_READOUT_SEPARATOR = " \u00B7 ";
 /**
  * formatProgressReadout renders a GetProgressState as the download readout:
  * the download verb, the percent, the done and total amounts in the unit the

@@ -10,10 +10,14 @@
  * title-bar control and the provider entry's Launch button always agree. A
  * Get run in flight (the get cell pending, or the in-flight registry true
  * after the idle cap settled the cell) renders a 'getting' throbber with the
- * live download readout. formatProgressReadout renders that readout from a
- * GetProgressState, the single source the branch and the provider row share.
- * deriveDisplayedLogs, deriveProviderFormMode, and deriveLaunchDisabled are
- * the remaining render-time projections the card needs.
+ * live download readout. isGettingInFlight is the single source of that
+ * condition, shared by the branch and the provider row. formatProgressReadout
+ * renders the readout from a GetProgressState, the single source the branch
+ * and the provider row share, and phaseLabelFor is the single source of the
+ * launch-status to throbber-label map, shared by the branch and the per-entry
+ * Launch button. deriveDisplayedLogs, deriveProviderFormMode, and
+ * deriveLaunchDisabled are the remaining render-time projections the card
+ * needs.
  * @module dsh-plugin-local-infer/client/store/derive
  */
 
@@ -68,11 +72,15 @@ function editingProvider(state: CardState): ProviderSummaryEntry | undefined {
   return providers.find((provider) => provider.id === state.ui.editingProviderId)
 }
 
-// phaseLabelFor maps a machine status to the throbber label it renders, or
-// undefined when the status is not a throbber state (idle, running, failed).
-// The model fetch (downloading) shares the download-phase label, so the
-// title bar mirrors the entry's Launch button while the engine fetches files.
-function phaseLabelFor(
+/**
+ * phaseLabelFor maps a machine status to the throbber label it renders, or
+ * undefined when the status is not a throbber state (idle, running, failed).
+ * The model fetch (downloading) shares the download-phase label, so the
+ * title bar mirrors the entry's Launch button while the engine fetches files.
+ * The 'getting' control branch and the per-entry Launch button
+ * (render/ProviderList.tsx) share it, so the phase labels have one source.
+ */
+export function phaseLabelFor(
   status: LaunchStatus | undefined,
   t: TextTable,
 ): string | undefined {
@@ -103,9 +111,17 @@ function phaseLabelFor(
  * running), so a Stop is never disabled by the gate.
  */
 export function deriveLaunchDisabled(state: CardState): boolean {
-  const getting = state.actions.get.status === 'pending'
-  const depsUnsatisfied = state.deps !== null && state.deps.allSatisfied !== true
-  return getting || depsUnsatisfied
+  return isGettingInFlight(state) || (state.deps !== null && state.deps.allSatisfied !== true)
+}
+
+/**
+ * isGettingInFlight reports whether a Get run is in flight: the get action
+ * cell pending, or the in-flight registry true after the idle cap settled the
+ * cell. The 'getting' control branch, the provider row (TASK-011), and the
+ * Launch gate share it, so the surfaces agree on when a Get is in flight.
+ */
+export function isGettingInFlight(state: CardState): boolean {
+  return state.actions.get.status === 'pending' || hasInFlightGet()
 }
 
 // toGb renders a byte count as GB with one decimal, the readout's size unit.
@@ -113,10 +129,13 @@ function toGb(bytes: number): string {
   return (bytes / 1e9).toFixed(1)
 }
 
+// The seconds a minute carries: the readout's mm:ss clock.
+const SECONDS_PER_MINUTE = 60
+
 // formatEtaClock renders a seconds count as the readout's mm:ss clock.
 function formatEtaClock(seconds: number): string {
-  const minutes = Math.floor(seconds / 60)
-  const secs = seconds % 60
+  const minutes = Math.floor(seconds / SECONDS_PER_MINUTE)
+  const secs = seconds % SECONDS_PER_MINUTE
   return minutes + ':' + String(secs).padStart(2, '0')
 }
 
@@ -130,6 +149,12 @@ function sizeSegment(state: GetProgressState, t: TextTable): string {
   }
   return toGb(state.doneBytes) + '/' + toGb(state.totalBytes) + ' GB'
 }
+
+// The separator between the readout's segments (the verb, the sizes, the
+// ETA) and between a title and an appended readout. One constant, so the
+// 'getting' control branch and the provider row (TASK-011) share the readout
+// text and its spacing.
+export const PROGRESS_READOUT_SEPARATOR = ' · '
 
 /**
  * formatProgressReadout renders a GetProgressState as the download readout:
@@ -152,7 +177,33 @@ export function formatProgressReadout(
   if (state.etaSeconds > 0) {
     parts.push(t.gettingEta + ' ' + formatEtaClock(state.etaSeconds))
   }
-  return parts.join(' · ')
+  return parts.join(PROGRESS_READOUT_SEPARATOR)
+}
+
+// deriveGettingControl builds the 'getting' control spec: a busy throbber
+// with the live download readout (the plain getting label while no progress
+// state has landed) and the progress state the strip renders. target routes
+// the click to the draft for a fresh provider and to the entry for an
+// edited one.
+function deriveGettingControl(
+  state: CardState,
+  t: TextTable,
+  isFresh: boolean,
+): LifecycleControl {
+  const progress = state.ui.getProgress
+  const busyLabel =
+    progress !== null ? formatProgressReadout(progress, t) : t.gettingReadout
+  return {
+    kind: 'getting',
+    label: busyLabel,
+    variant: 'ghost',
+    busy: true,
+    busyLabel,
+    disabled: false,
+    target: isFresh ? 'draft' : 'entry',
+    action: 'none',
+    progress,
+  }
 }
 
 /**
@@ -233,21 +284,8 @@ export function deriveLifecycleControl(
   // read covers the idle-cap settle (the cell reads as ok, the run keeps
   // streaming in the background), and the draft reading as running keeps the
   // Stop side, so the branch skips it.
-  if (!running && (state.actions.get.status === 'pending' || hasInFlightGet())) {
-    const progress = state.ui.getProgress
-    const busyLabel =
-      progress !== null ? formatProgressReadout(progress, t) : t.gettingReadout
-    return {
-      kind: 'getting',
-      label: busyLabel,
-      variant: 'ghost',
-      busy: true,
-      busyLabel,
-      disabled: false,
-      target: isFresh ? 'draft' : 'entry',
-      action: 'none',
-      progress,
-    }
+  if (!running && isGettingInFlight(state)) {
+    return deriveGettingControl(state, t, isFresh)
   }
 
   return {

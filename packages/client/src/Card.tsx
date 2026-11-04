@@ -62,6 +62,7 @@ import type { CardDraft } from './store/types.ts'
 import {
   deriveLifecycleControl,
   deriveProviderFormMode,
+  type LifecycleControl,
 } from './store/derive.ts'
 import { repriceDeps, repriceSummary } from './store/deps.ts'
 import {
@@ -311,6 +312,66 @@ function renderField(props: FieldProps): ReactNode {
       ))}
     </div>
   )
+}
+
+// renderTitleBarControl draws the title-bar Launch/Stop control from the
+// lifecycle spec: the phase throbber (no click), the ghost Stop, the red
+// Logs, the getting throbber with the progress strip, and the draft
+// Launch/Stop. The 'getting' branch renders the throbber and the thin
+// progress strip as one flex row: the readout button on the left, the strip
+// stretching the remaining width. A null progress renders no strip (the
+// readout alone carries the branch).
+function renderTitleBarControl(
+  control: LifecycleControl,
+  onControlClick: () => void,
+): ReactNode {
+  if (control.kind === 'phase') {
+    return renderProcessButton({
+      busy: true,
+      label: control.label,
+      busyLabel: control.busyLabel,
+      variant: control.variant,
+      onClick: () => {},
+    })
+  }
+  if (control.kind === 'stop') {
+    return renderButton('ghost', { onClick: onControlClick }, control.label)
+  }
+  if (control.kind === 'logs') {
+    return (
+      <button
+        type="button"
+        onClick={onControlClick}
+        style={{ color: 'var(--dsw-alias-label-error, #ff3b30)', ...GHOST_BUTTON }}
+        aria-label={control.label}
+      >
+        {control.label}
+      </button>
+    )
+  }
+  if (control.kind === 'getting') {
+    return (
+      <>
+        {renderProcessButton({
+          busy: control.busy,
+          label: control.label,
+          busyLabel: control.busyLabel,
+          variant: control.variant,
+          onClick: onControlClick,
+          disabled: control.disabled,
+        })}
+        {renderProgressStrip(control.progress)}
+      </>
+    )
+  }
+  return renderProcessButton({
+    busy: control.busy,
+    label: control.label,
+    busyLabel: control.busyLabel,
+    variant: control.variant,
+    onClick: onControlClick,
+    disabled: control.disabled,
+  })
 }
 
 /**
@@ -942,52 +1003,7 @@ export function card(
             <DepsPanel store={store} t={t} />
             <LogsPanel store={store} t={t} />
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 }}>
-              {control.kind === 'phase'
-                ? renderProcessButton({
-                    busy: true,
-                    label: control.label,
-                    busyLabel: control.busyLabel,
-                    variant: control.variant,
-                    onClick: () => {},
-                  })
-                : control.kind === 'stop'
-                  ? renderButton('ghost', { onClick: onControlClick }, control.label)
-                  : control.kind === 'logs'
-                    ? (
-                      <button
-                        type="button"
-                        onClick={onControlClick}
-                        style={{ color: 'var(--dsw-alias-label-error, #ff3b30)', ...GHOST_BUTTON }}
-                        aria-label={control.label}
-                      >
-                        {control.label}
-                      </button>
-                    )
-                    : control.kind === 'getting'
-                      ? (
-                        // The getting throbber and the thin progress strip
-                        // render as one flex row: the readout button on the
-                        // left, the strip stretching the remaining width.
-                        <>
-                          {renderProcessButton({
-                            busy: control.busy,
-                            label: control.label,
-                            busyLabel: control.busyLabel,
-                            variant: control.variant,
-                            onClick: onControlClick,
-                            disabled: control.disabled,
-                          })}
-                          {renderProgressStrip(control.progress)}
-                        </>
-                      )
-                      : renderProcessButton({
-                          busy: control.busy,
-                          label: control.label,
-                          busyLabel: control.busyLabel,
-                          variant: control.variant,
-                          onClick: onControlClick,
-                          disabled: control.disabled,
-                        })}
+              {renderTitleBarControl(control, onControlClick)}
               {renderCheckbox({
                 checked: state.ui.autoRebuild,
                 onChange: (next) => {

@@ -197,11 +197,13 @@ var PROGRESS_STRIP_TRACK = {
   overflow: "hidden",
   background: "var(--dsw-alias-bg-layer-1, var(--dsw-alias-background-tertiary, rgba(128,128,128,0.12)))"
 };
+function clampPercent(percent) {
+  return Math.max(0, Math.min(100, percent));
+}
 function progressStripFillStyle(percent) {
-  const clamped = Math.max(0, Math.min(100, percent));
   return {
     height: "100%",
-    width: clamped + "%",
+    width: clampPercent(percent) + "%",
     background: "var(--dsw-alias-accent, #0a84ff)"
   };
 }
@@ -1008,7 +1010,7 @@ function renderProgressStrip(progress) {
       role: "progressbar",
       "aria-valuemin": 0,
       "aria-valuemax": 100,
-      "aria-valuenow": Math.max(0, Math.min(100, progress.percent))
+      "aria-valuenow": clampPercent(progress.percent)
     },
     /* @__PURE__ */ react.createElement("div", { style: progressStripFillStyle(progress.percent) })
   );
@@ -2142,16 +2144,18 @@ function phaseLabelFor(status, t) {
   }
 }
 function deriveLaunchDisabled(state) {
-  const getting = state.actions.get.status === "pending";
-  const depsUnsatisfied = state.deps !== null && state.deps.allSatisfied !== true;
-  return getting || depsUnsatisfied;
+  return isGettingInFlight(state) || state.deps !== null && state.deps.allSatisfied !== true;
+}
+function isGettingInFlight(state) {
+  return state.actions.get.status === "pending" || hasInFlightGet();
 }
 function toGb(bytes) {
   return (bytes / 1e9).toFixed(1);
 }
+var SECONDS_PER_MINUTE = 60;
 function formatEtaClock(seconds) {
-  const minutes = Math.floor(seconds / 60);
-  const secs = seconds % 60;
+  const minutes = Math.floor(seconds / SECONDS_PER_MINUTE);
+  const secs = seconds % SECONDS_PER_MINUTE;
   return minutes + ":" + String(secs).padStart(2, "0");
 }
 function sizeSegment(state, t) {
@@ -2160,6 +2164,7 @@ function sizeSegment(state, t) {
   }
   return toGb(state.doneBytes) + "/" + toGb(state.totalBytes) + " GB";
 }
+var PROGRESS_READOUT_SEPARATOR = " \xB7 ";
 function formatProgressReadout(state, t) {
   const parts = [
     t.gettingVerb + " " + state.percent + "%",
@@ -2168,7 +2173,22 @@ function formatProgressReadout(state, t) {
   if (state.etaSeconds > 0) {
     parts.push(t.gettingEta + " " + formatEtaClock(state.etaSeconds));
   }
-  return parts.join(" \xB7 ");
+  return parts.join(PROGRESS_READOUT_SEPARATOR);
+}
+function deriveGettingControl(state, t, isFresh) {
+  const progress = state.ui.getProgress;
+  const busyLabel = progress !== null ? formatProgressReadout(progress, t) : t.gettingReadout;
+  return {
+    kind: "getting",
+    label: busyLabel,
+    variant: "ghost",
+    busy: true,
+    busyLabel,
+    disabled: false,
+    target: isFresh ? "draft" : "entry",
+    action: "none",
+    progress
+  };
 }
 function deriveLifecycleControl(state, t) {
   const provider = editingProvider(state);
@@ -2215,20 +2235,8 @@ function deriveLifecycleControl(state, t) {
   const stopPending = state.actions.stop.status === "pending";
   const draftRunning = state.actions.launch.status === "ok" && state.actions.stop.status !== "ok";
   const running = isFresh ? draftRunning : false;
-  if (!running && (state.actions.get.status === "pending" || hasInFlightGet())) {
-    const progress = state.ui.getProgress;
-    const busyLabel = progress !== null ? formatProgressReadout(progress, t) : t.gettingReadout;
-    return {
-      kind: "getting",
-      label: busyLabel,
-      variant: "ghost",
-      busy: true,
-      busyLabel,
-      disabled: false,
-      target: isFresh ? "draft" : "entry",
-      action: "none",
-      progress
-    };
+  if (!running && isGettingInFlight(state)) {
+    return deriveGettingControl(state, t, isFresh);
   }
   return {
     kind: "launchStop",
@@ -2654,6 +2662,22 @@ function NewProviderControl(props) {
     t.newProvider
   );
 }
+function providerRowTitle(provider, t, engines, getting, progress) {
+  const engineLabel = engines.find((engine) => engine.id === provider.engine)?.label ?? provider.engine;
+  const forkName = repoShortName(provider.platform?.engineFork);
+  const titleLabel = forkName !== void 0 ? forkName : engineLabel;
+  const modelLabel = provider.model !== "" ? provider.model : t.modelAuto;
+  if (getting) {
+    const readout = progress !== null ? PROGRESS_READOUT_SEPARATOR + formatProgressReadout(progress, t) : "";
+    return titleLabel + ": " + modelLabel + " (" + t.gettingReadout + ")" + readout;
+  }
+  const statusLabel = {
+    running: t.statusRunning,
+    stopped: t.statusStopped,
+    unsure: t.statusUnsure
+  }[provider.status] ?? provider.status;
+  return titleLabel + ": " + modelLabel + " (" + statusLabel + ")";
+}
 function ProviderRow(props) {
   const { store, provider, t, engines, editingId, deletingId } = props;
   const handleRef = react.useRef(null);
@@ -2664,24 +2688,8 @@ function ProviderRow(props) {
     []
   );
   const state = store.getSnapshot();
-  const getting = editingId === provider.id && (state.actions.get.status === "pending" || hasInFlightGet());
-  const engineLabel = engines.find((engine) => engine.id === provider.engine)?.label ?? provider.engine;
-  const forkName = repoShortName(provider.platform?.engineFork);
-  const titleLabel = forkName !== void 0 ? forkName : engineLabel;
-  const modelLabel = provider.model !== "" ? provider.model : t.modelAuto;
-  const statusLabel = {
-    running: t.statusRunning,
-    stopped: t.statusStopped,
-    unsure: t.statusUnsure
-  }[provider.status] ?? provider.status;
-  let title;
-  if (getting) {
-    const progress = state.ui.getProgress;
-    const readout = progress !== null ? " \xB7 " + formatProgressReadout(progress, t) : "";
-    title = titleLabel + ": " + modelLabel + " (" + t.gettingReadout + ")" + readout;
-  } else {
-    title = titleLabel + ": " + modelLabel + " (" + statusLabel + ")";
-  }
+  const getting = editingId === provider.id && isGettingInFlight(state);
+  const title = providerRowTitle(provider, t, engines, getting, state.ui.getProgress);
   const dotState = getting ? "ongoing" : STATUS_TO_DOT[provider.status] ?? "idle";
   return /* @__PURE__ */ react.createElement(
     "div",
@@ -2730,38 +2738,12 @@ function EntryLaunchButton(props) {
   const { store, provider, t, handleRef } = props;
   const state = store.getSnapshot();
   const status = state.launch[provider.id]?.status ?? "idle";
-  const phaseLabels = {
-    prereqs: t.entryPrereqs,
-    download: t.entryDownloading,
-    build: t.entryBuilding,
-    launch: t.entryLaunching
-  };
-  const phaseLabel = phaseLabels[status];
+  const phaseLabel = phaseLabelFor(status, t);
   if (phaseLabel !== void 0) {
     return renderProcessButton({
       busy: true,
       label: phaseLabel,
       busyLabel: phaseLabel,
-      variant: "ghost",
-      onClick: () => {
-      }
-    });
-  }
-  if (status === "stopping") {
-    return renderProcessButton({
-      busy: true,
-      label: t.stopping,
-      busyLabel: t.stopping,
-      variant: "ghost",
-      onClick: () => {
-      }
-    });
-  }
-  if (status === "downloading") {
-    return renderProcessButton({
-      busy: true,
-      label: t.entryDownloading,
-      busyLabel: t.entryDownloading,
       variant: "ghost",
       onClick: () => {
       }
@@ -3166,6 +3148,51 @@ function renderField(props) {
   ) : null);
   return /* @__PURE__ */ react.createElement("div", { style: { marginTop: 6 } }, body, help ? renderHelpRow(field.description) : null, inlineWarnings.map((warning) => /* @__PURE__ */ react.createElement("div", { key: warning.id, style: INLINE_WARNING_STYLE(warning.tone) }, warning.message)));
 }
+function renderTitleBarControl(control, onControlClick) {
+  if (control.kind === "phase") {
+    return renderProcessButton({
+      busy: true,
+      label: control.label,
+      busyLabel: control.busyLabel,
+      variant: control.variant,
+      onClick: () => {
+      }
+    });
+  }
+  if (control.kind === "stop") {
+    return renderButton("ghost", { onClick: onControlClick }, control.label);
+  }
+  if (control.kind === "logs") {
+    return /* @__PURE__ */ react.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: onControlClick,
+        style: { color: "var(--dsw-alias-label-error, #ff3b30)", ...GHOST_BUTTON },
+        "aria-label": control.label
+      },
+      control.label
+    );
+  }
+  if (control.kind === "getting") {
+    return /* @__PURE__ */ react.createElement(react.Fragment, null, renderProcessButton({
+      busy: control.busy,
+      label: control.label,
+      busyLabel: control.busyLabel,
+      variant: control.variant,
+      onClick: onControlClick,
+      disabled: control.disabled
+    }), renderProgressStrip(control.progress));
+  }
+  return renderProcessButton({
+    busy: control.busy,
+    label: control.label,
+    busyLabel: control.busyLabel,
+    variant: control.variant,
+    onClick: onControlClick,
+    disabled: control.disabled
+  });
+}
 function card(_react, localeRef, _primitives) {
   const subscribeLocale = (onChange) => {
     const locale = localeRef.current;
@@ -3565,42 +3592,7 @@ function card(_react, localeRef, _primitives) {
         }
       },
       t.measureHint
-    ) : null, summary.verdict && (summary.verdict.status === "over" || summary.verdict.status === "tight") ? /* @__PURE__ */ react.createElement("div", { style: BANNER_STYLE(summary.verdict.status) }, (summary.verdict.status === "over" ? t.over : t.tight) + ": " + summary.verdict.detail) : null, /* @__PURE__ */ react.createElement(CustomArgsPanel, { store, t }), /* @__PURE__ */ react.createElement(DepsPanel, { store, t }), /* @__PURE__ */ react.createElement(LogsPanel, { store, t }), /* @__PURE__ */ react.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 8 } }, control.kind === "phase" ? renderProcessButton({
-      busy: true,
-      label: control.label,
-      busyLabel: control.busyLabel,
-      variant: control.variant,
-      onClick: () => {
-      }
-    }) : control.kind === "stop" ? renderButton("ghost", { onClick: onControlClick }, control.label) : control.kind === "logs" ? /* @__PURE__ */ react.createElement(
-      "button",
-      {
-        type: "button",
-        onClick: onControlClick,
-        style: { color: "var(--dsw-alias-label-error, #ff3b30)", ...GHOST_BUTTON },
-        "aria-label": control.label
-      },
-      control.label
-    ) : control.kind === "getting" ? (
-      // The getting throbber and the thin progress strip
-      // render as one flex row: the readout button on the
-      // left, the strip stretching the remaining width.
-      /* @__PURE__ */ react.createElement(react.Fragment, null, renderProcessButton({
-        busy: control.busy,
-        label: control.label,
-        busyLabel: control.busyLabel,
-        variant: control.variant,
-        onClick: onControlClick,
-        disabled: control.disabled
-      }), renderProgressStrip(control.progress))
-    ) : renderProcessButton({
-      busy: control.busy,
-      label: control.label,
-      busyLabel: control.busyLabel,
-      variant: control.variant,
-      onClick: onControlClick,
-      disabled: control.disabled
-    }), renderCheckbox({
+    ) : null, summary.verdict && (summary.verdict.status === "over" || summary.verdict.status === "tight") ? /* @__PURE__ */ react.createElement("div", { style: BANNER_STYLE(summary.verdict.status) }, (summary.verdict.status === "over" ? t.over : t.tight) + ": " + summary.verdict.detail) : null, /* @__PURE__ */ react.createElement(CustomArgsPanel, { store, t }), /* @__PURE__ */ react.createElement(DepsPanel, { store, t }), /* @__PURE__ */ react.createElement(LogsPanel, { store, t }), /* @__PURE__ */ react.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 8 } }, renderTitleBarControl(control, onControlClick), renderCheckbox({
       checked: state.ui.autoRebuild,
       onChange: (next) => {
         store.dispatch({ type: "ui/patch", patch: { autoRebuild: next } });

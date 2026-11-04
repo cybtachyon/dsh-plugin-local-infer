@@ -19,6 +19,7 @@ import {
   INPUT_STYLE,
   PRIMARY_BUTTON,
   PROGRESS_STRIP_TRACK,
+  clampPercent,
   progressStripFillStyle,
 } from '../styles.ts'
 import type { GetProgressState } from '../store/progress.ts'
@@ -32,6 +33,9 @@ export interface PrimitivesModule {
   Button?: unknown
   Checkbox?: unknown
   StateDot?: unknown
+  // Forward-looking: the installed primitives seed exports no Progress
+  // component, so renderProgressStrip's guard stays a fallback for a future
+  // seed. If the seed adds one, the guard picks it up automatically.
   Progress?: unknown
   IconChevronDownOutlineRegular?: unknown
   IconRefreshOutlineRegular?: unknown
@@ -201,7 +205,7 @@ export function renderProgressStrip(progress: GetProgressState | null | undefine
       role="progressbar"
       aria-valuemin={0}
       aria-valuemax={100}
-      aria-valuenow={Math.max(0, Math.min(100, progress.percent))}
+      aria-valuenow={clampPercent(progress.percent)}
     >
       <div style={progressStripFillStyle(progress.percent)} />
     </div>
