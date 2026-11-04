@@ -69,16 +69,17 @@ export declare function performAllowRun(store: CardStore, checked: boolean): Pro
 export declare function performInstall(store: CardStore, t: TextTable): Promise<void>;
 /**
  * performGet runs the git sync, the dependency plan, and the build through
- * the get route's text stream. The click seeds the Logs section's streamed
+ * the get route's NDJSON stream. The click seeds the Logs section's streamed
  * buffer from the persisted last-run logs with a "Getting engine and
- * model..." separator, so the run reads as a fresh Logs section. Each chunk
- * appends to the buffer and re-arms the idle cap: two minutes without a line
- * settles the get cell (the control re-enables) while the run keeps streaming
- * in the background. The run folds the streamed tqdm state into the
- * ui.getProgress readout through the 500 ms throttle: a { progress } event
- * (the server-parsed state) wins over the text parse of a log chunk, and the
- * field clears when the run settles (success, failure, or abort), so the
- * readout never outlives the run. When the stream ends, the route has
+ * model..." separator, so the run reads as a fresh Logs section. Each log
+ * event appends to the buffer and re-arms the idle cap: two minutes without a
+ * line settles the get cell (the control re-enables) while the run keeps
+ * streaming in the background. The run folds the streamed tqdm state into
+ * the ui.getProgress readout through the ProgressThrottle (the 500 ms
+ * cadence): a { progress } event (the server-parsed state) wins over the
+ * text parse of a log chunk, and the field clears when the run settles
+ * (success, failure, or abort), so the readout never outlives the run. When
+ * the stream ends, the route has
  * persisted the run as the last logs, so a summary re-read hands the Logs
  * section back to the stored value. The run registers its AbortController in the in-flight
  * registry, so the provider form's Cancel closes the stream and the route

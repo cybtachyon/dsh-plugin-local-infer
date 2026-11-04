@@ -22,7 +22,8 @@ import {
 } from '../api/routes.ts'
 import type { TextTable } from '../text.ts'
 import { forgetGetAbort, hasInFlightGet, trackGetAbort } from './abort.ts'
-import { parseHfProgress, type GetProgressState } from './progress.ts'
+import { ProgressThrottle } from './progress-throttle.ts'
+import { parseHfProgress } from './progress.ts'
 import { performAction, ACTION_TIMEOUTS, type CardStore } from './sync.ts'
 
 /**
@@ -189,16 +190,17 @@ export function performInstall(store: CardStore, t: TextTable): Promise<void> {
 
 /**
  * performGet runs the git sync, the dependency plan, and the build through
- * the get route's text stream. The click seeds the Logs section's streamed
+ * the get route's NDJSON stream. The click seeds the Logs section's streamed
  * buffer from the persisted last-run logs with a "Getting engine and
- * model..." separator, so the run reads as a fresh Logs section. Each chunk
- * appends to the buffer and re-arms the idle cap: two minutes without a line
- * settles the get cell (the control re-enables) while the run keeps streaming
- * in the background. The run folds the streamed tqdm state into the
- * ui.getProgress readout through the 500 ms throttle: a { progress } event
- * (the server-parsed state) wins over the text parse of a log chunk, and the
- * field clears when the run settles (success, failure, or abort), so the
- * readout never outlives the run. When the stream ends, the route has
+ * model..." separator, so the run reads as a fresh Logs section. Each log
+ * event appends to the buffer and re-arms the idle cap: two minutes without a
+ * line settles the get cell (the control re-enables) while the run keeps
+ * streaming in the background. The run folds the streamed tqdm state into
+ * the ui.getProgress readout through the ProgressThrottle (the 500 ms
+ * cadence): a { progress } event (the server-parsed state) wins over the
+ * text parse of a log chunk, and the field clears when the run settles
+ * (success, failure, or abort), so the readout never outlives the run. When
+ * the stream ends, the route has
  * persisted the run as the last logs, so a summary re-read hands the Logs
  * section back to the stored value. The run registers its AbortController in the in-flight
  * registry, so the provider form's Cancel closes the stream and the route
@@ -233,55 +235,10 @@ export function performGet(store: CardStore, t: TextTable): Promise<void> {
       },
     },
   })
-  // The latest structured progress state the stream carries. A { progress }
-  // event is the server-parsed state, and it wins over the text parse of a
-  // log chunk (the fallback for hosts that stream log text without progress
-  // events). noteProgress patches the state into ui.getProgress through the
-  // 500 ms throttle.
-  let latestProgress: GetProgressState | null = null
-  let structuredProgress = false
-  let lastProgressPatch = 0
-  let progressTimer: ReturnType<typeof setTimeout> | null = null
-  // flushProgress patches ui.getProgress with the latest state now, bypassing
-  // the throttle: the final chunk and the run's settle land the newest state.
-  const flushProgress = (): void => {
-    if (progressTimer !== null) {
-      clearTimeout(progressTimer)
-      progressTimer = null
-    }
-    if (latestProgress !== null) {
-      lastProgressPatch = Date.now()
-      store.dispatch({ type: 'ui/patch', patch: { getProgress: latestProgress } })
-    }
-  }
-  // noteProgress records a progress state and patches it through the
-  // throttle: a state that lands inside the 500 ms interval arms a timer for
-  // the interval's end, so a burst of updates patches at most ~2 per second.
-  // A text-parsed state never overwrites a server-parsed one.
-  const noteProgress = (state: GetProgressState, structured: boolean): void => {
-    if (structuredProgress === true && structured === false) {
-      return
-    }
-    latestProgress = state
-    structuredProgress = structured
-    const elapsed = Date.now() - lastProgressPatch
-    if (elapsed >= GET_PROGRESS_THROTTLE_MS) {
-      flushProgress()
-      return
-    }
-    if (progressTimer === null) {
-      progressTimer = setTimeout(() => {
-        progressTimer = null
-        flushProgress()
-      }, GET_PROGRESS_THROTTLE_MS - elapsed)
-    }
-  }
-  // settleProgress lands the latest state (the final chunk) and clears
-  // ui.getProgress back to null: the readout must not outlive the run.
-  const settleProgress = (): void => {
-    flushProgress()
-    store.dispatch({ type: 'ui/patch', patch: { getProgress: null } })
-  }
+  // The readout throttle: a { progress } event (the server-parsed state)
+  // wins over the text parse of a log chunk, and settle lands the latest
+  // state before clearing the field, so the readout never outlives the run.
+  const throttle = new ProgressThrottle(store, GET_PROGRESS_THROTTLE_MS)
   const append = (chunk: string): void => {
     const logs = store.getSnapshot().ui.logs
     store.dispatch({
@@ -292,9 +249,9 @@ export function performGet(store: CardStore, t: TextTable): Promise<void> {
     // progress events: fold the chunk into the latest state, and note the
     // state only when the chunk carries a bar update (the fold returns the
     // prior state unchanged otherwise).
-    const parsed = parseHfProgress(chunk, latestProgress)
-    if (parsed !== null && parsed !== latestProgress) {
-      noteProgress(parsed, false)
+    const parsed = parseHfProgress(chunk, throttle.latest)
+    if (parsed !== null && parsed !== throttle.latest) {
+      throttle.note(parsed, false)
     }
   }
   let idleTimer: ReturnType<typeof setTimeout> | null = null
@@ -339,6 +296,14 @@ export function performGet(store: CardStore, t: TextTable): Promise<void> {
   // and the route's response close interrupts the in-flight hf child.
   const controller = new AbortController()
   trackGetAbort(controller)
+  // settleRun lands the run's side effects (the abort registry entry, the
+  // progress settle, the summary re-read) once, whichever settle path lands
+  // first.
+  const settleRun = (): void => {
+    forgetGetAbort(controller)
+    throttle.settle()
+    finish(true)
+  }
   return performAction(
     store,
     'get',
@@ -359,17 +324,14 @@ export function performGet(store: CardStore, t: TextTable): Promise<void> {
           (progress) => {
             // The structured event is the server-parsed state: it wins over
             // the text parse when both arrive.
-            noteProgress(progress, true)
+            throttle.note(progress, true)
           },
         )
           .then(() => {
-            forgetGetAbort(controller)
-            settleProgress()
-            finish(true)
+            settleRun()
             resolve('ok')
           })
           .catch((error: unknown) => {
-            forgetGetAbort(controller)
             const message = error instanceof Error ? error.message : String(error)
             // An aborted run (the provider form's Cancel) reads as canceled,
             // not failed: the "Canceled" line the Cancel wrote is the tail,
@@ -377,8 +339,7 @@ export function performGet(store: CardStore, t: TextTable): Promise<void> {
             if (controller.signal.aborted !== true) {
               append('\n' + t.getFailed + ': ' + message + '\n')
             }
-            settleProgress()
-            finish(true)
+            settleRun()
             reject(new Error(message))
           })
       }),

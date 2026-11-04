@@ -7,6 +7,7 @@ var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
@@ -20,6 +21,7 @@ var __copyProps = (to, from, except, desc) => {
   return to;
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
 // packages/client/src/index.ts
 var index_exports = {};
@@ -1661,6 +1663,67 @@ function cancelInFlightRuns(providerId) {
   return aborted;
 }
 
+// packages/client/src/store/progress-throttle.ts
+var ProgressThrottle = class {
+  constructor(store, intervalMs) {
+    __publicField(this, "store");
+    __publicField(this, "intervalMs");
+    __publicField(this, "latestState", null);
+    __publicField(this, "structured", false);
+    __publicField(this, "lastPatch", 0);
+    __publicField(this, "timer", null);
+    this.store = store;
+    this.intervalMs = intervalMs;
+  }
+  // The latest state the throttle holds: the performGet text parse folds a
+  // new chunk against it.
+  get latest() {
+    return this.latestState;
+  }
+  // note records a progress state and patches it through the throttle: a
+  // state that lands inside the interval arms a timer for the interval's
+  // end. A text-parsed state never overwrites a server-parsed one.
+  note(state, structured) {
+    if (this.structured === true && structured === false) {
+      return;
+    }
+    this.latestState = state;
+    this.structured = structured;
+    const elapsed = Date.now() - this.lastPatch;
+    if (elapsed >= this.intervalMs) {
+      this.flush();
+      return;
+    }
+    if (this.timer === null) {
+      this.timer = setTimeout(() => {
+        this.timer = null;
+        this.flush();
+      }, this.intervalMs - elapsed);
+    }
+  }
+  // flush patches ui.getProgress with the latest state now, bypassing the
+  // throttle: the run's final chunk and settle land the newest state.
+  flush() {
+    if (this.timer !== null) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    if (this.latestState !== null) {
+      this.lastPatch = Date.now();
+      this.store.dispatch({
+        type: "ui/patch",
+        patch: { getProgress: this.latestState }
+      });
+    }
+  }
+  // settle lands the latest state (the final chunk) and clears
+  // ui.getProgress back to null: the readout must not outlive the run.
+  settle() {
+    this.flush();
+    this.store.dispatch({ type: "ui/patch", patch: { getProgress: null } });
+  }
+};
+
 // packages/client/src/store/progress.ts
 var FILES_LINE = /^Fetching (\d+) files:\s*(\d+(?:\.\d+)?)%\|[^|]*\|\s*(\d+)\s*\/\s*(\d+)(?:\s*\[([^\]]*)\])?/;
 var BYTES_LINE = /^(?:Downloading|Fetching)\s+([^:]+):\s*(\d+(?:\.\d+)?)%\s*\|\s*(\d+(?:\.\d+)?[KMGTP]?i?B?)\s*\/\s*(\d+(?:\.\d+)?[KMGTP]?i?B?)\s*(?:\[([^\]]*)\])?/;
@@ -1832,51 +1895,16 @@ function performGet(store, t) {
       }
     }
   });
-  let latestProgress = null;
-  let structuredProgress = false;
-  let lastProgressPatch = 0;
-  let progressTimer = null;
-  const flushProgress = () => {
-    if (progressTimer !== null) {
-      clearTimeout(progressTimer);
-      progressTimer = null;
-    }
-    if (latestProgress !== null) {
-      lastProgressPatch = Date.now();
-      store.dispatch({ type: "ui/patch", patch: { getProgress: latestProgress } });
-    }
-  };
-  const noteProgress = (state2, structured) => {
-    if (structuredProgress === true && structured === false) {
-      return;
-    }
-    latestProgress = state2;
-    structuredProgress = structured;
-    const elapsed = Date.now() - lastProgressPatch;
-    if (elapsed >= GET_PROGRESS_THROTTLE_MS) {
-      flushProgress();
-      return;
-    }
-    if (progressTimer === null) {
-      progressTimer = setTimeout(() => {
-        progressTimer = null;
-        flushProgress();
-      }, GET_PROGRESS_THROTTLE_MS - elapsed);
-    }
-  };
-  const settleProgress = () => {
-    flushProgress();
-    store.dispatch({ type: "ui/patch", patch: { getProgress: null } });
-  };
+  const throttle = new ProgressThrottle(store, GET_PROGRESS_THROTTLE_MS);
   const append = (chunk) => {
     const logs = store.getSnapshot().ui.logs;
     store.dispatch({
       type: "ui/patch",
       patch: { logs: { ...logs, getLogs: (logs.getLogs ?? "") + chunk } }
     });
-    const parsed = parseHfProgress(chunk, latestProgress);
-    if (parsed !== null && parsed !== latestProgress) {
-      noteProgress(parsed, false);
+    const parsed = parseHfProgress(chunk, throttle.latest);
+    if (parsed !== null && parsed !== throttle.latest) {
+      throttle.note(parsed, false);
     }
   };
   let idleTimer = null;
@@ -1911,6 +1939,11 @@ function performGet(store, t) {
   armIdle();
   const controller = new AbortController();
   trackGetAbort(controller);
+  const settleRun = () => {
+    forgetGetAbort(controller);
+    throttle.settle();
+    finish(true);
+  };
   return performAction(
     store,
     "get",
@@ -1928,21 +1961,17 @@ function performGet(store, t) {
         },
         controller.signal,
         (progress) => {
-          noteProgress(progress, true);
+          throttle.note(progress, true);
         }
       ).then(() => {
-        forgetGetAbort(controller);
-        settleProgress();
-        finish(true);
+        settleRun();
         resolve("ok");
       }).catch((error) => {
-        forgetGetAbort(controller);
         const message = error instanceof Error ? error.message : String(error);
         if (controller.signal.aborted !== true) {
           append("\n" + t.getFailed + ": " + message + "\n");
         }
-        settleProgress();
-        finish(true);
+        settleRun();
         reject(new Error(message));
       });
     }),
