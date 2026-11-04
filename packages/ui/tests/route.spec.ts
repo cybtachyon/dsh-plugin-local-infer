@@ -633,6 +633,93 @@ describe('launch and stop route helpers', () => {
     expect(seenOptions?.autoRebuild).toBeUndefined()
   })
 
+  it('launches the current version and skips the deploy git sync after a Get rebase failure', async () => {
+    // The checkout directory exists (a current version to launch), so the
+    // launch's Get-step rebase failure is non-fatal under the override the
+    // launch always sets: the launch continues with the checkout's current
+    // version.
+    writeConfig('ninfer', { modelDirectory: MODEL_DIR }, true)
+    mkdirSync(join(MODEL_DIR, 'ninfer'), { recursive: true })
+    let seenOptions: { autoRebuild?: boolean } | undefined
+    const service = stubService([], {
+      launchResult: {
+        plan: { engineId: 'ninfer', kind: 'process', port: 18020, healthUrl: 'http://127.0.0.1:18020/health' },
+        healthy: true,
+        logs: 'engine booted\n',
+      },
+    })
+    service.launch = async (plan: LaunchPlan, options?: { autoRebuild?: boolean }): Promise<LaunchResult> => {
+      seenOptions = options
+      return { plan, healthy: true, logs: 'engine booted\n' }
+    }
+    const result = await launchEngine(
+      service,
+      { engine: 'ninfer', config: { modelDirectory: MODEL_DIR }, autoRebuild: true },
+      undefined,
+      stubGetHost({ exists: true, fail: ['rebase'] }).host,
+    )
+    // The sync failed, so the deploy's own git sync (it would hit the same
+    // rebase conflict) is skipped and the checkout's current version
+    // launches.
+    expect(result.healthy).toBe(true)
+    expect(seenOptions?.autoRebuild).toBe(false)
+    // The Get error line and the continue note persist under the
+    // "Launching..." separator, so the Logs section names the broken
+    // rebase after a reload.
+    const lastLogs = readConfig().lastLogs
+    expect(lastLogs.startsWith('--- Launching...\n')).toBe(true)
+    expect(lastLogs).toContain('!! git rebase')
+    expect(lastLogs).toContain('engine sync failed; continuing with the current version')
+    // The same run reached the configured log file. The file name carries a
+    // timestamp, so the newest ninfer-model run file is the one this launch
+    // wrote.
+    const logFile = resolveLogPath(
+      readConfig().logPath,
+      'ninfer',
+      undefined,
+      new Date(),
+      process.env.HOME ?? '',
+    )
+    const dir = dirname(logFile)
+    const logNames = (existsSync(dir) ? readdirSync(dir) : [])
+      .filter((name) => name.startsWith('ninfer-model-') && name.endsWith('.log'))
+      .sort()
+    expect(logNames.length).toBeGreaterThan(0)
+    expect(readFileSync(join(dir, logNames[logNames.length - 1]!), 'utf8')).toContain('!! git rebase')
+    rmSync(join(MODEL_DIR, 'ninfer'), { recursive: true, force: true })
+  })
+
+  it('keeps the request auto-rebuild flag when the Get sync passes', async () => {
+    // The Get sync passes (no stubbed failure), so the request's autoRebuild
+    // threads into the deploy unchanged, on and absent.
+    let seenOptions: { autoRebuild?: boolean } | undefined
+    const service = stubService([], {
+      launchResult: {
+        plan: { engineId: 'ninfer', kind: 'process', port: 18020, healthUrl: 'http://127.0.0.1:18020/health' },
+        healthy: true,
+      },
+    })
+    service.launch = async (plan: LaunchPlan, options?: { autoRebuild?: boolean }): Promise<LaunchResult> => {
+      seenOptions = options
+      return { plan, healthy: true }
+    }
+    await launchEngine(
+      service,
+      { engine: 'ninfer', config: { port: 18020 }, autoRebuild: true },
+      undefined,
+      stubGetHost().host,
+    )
+    expect(seenOptions?.autoRebuild).toBe(true)
+    seenOptions = undefined
+    await launchEngine(
+      service,
+      { engine: 'ninfer', config: { port: 18020 } },
+      undefined,
+      stubGetHost().host,
+    )
+    expect(seenOptions?.autoRebuild).toBeUndefined()
+  })
+
   it('streams the Get-step download chunks through the launch onChunk sink', async () => {
     writeConfig('ninfer', { port: 18020, model: 'qwen3-27b', modelDirectory: MODEL_DIR }, true)
     // The model artifact starts absent, so the launch's Get-step download runs.

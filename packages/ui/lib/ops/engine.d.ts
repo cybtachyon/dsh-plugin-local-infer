@@ -37,8 +37,15 @@ export declare function resolveAdapter(localInfer: LocalInferService, engineId: 
  * build, model download, chat-template download, each skipped when already
  * satisfied) and then renders the plan the registered adapter produces for
  * the config and the detected hardware, and runs the service's launch entry
- * point (deploy, then the health poll). The detail the launch returns names
- * the broken step when the engine does not come up. The launch line (the
+ * point (deploy, then the health poll). A git sync of an existing checkout
+ * that fails under the continueOnSyncFailure override (always on for a
+ * launch) keeps the Get run going with the checkout's current version and
+ * reports syncFailed on the result; the launch then threads autoRebuild:
+ * false into the deploy step, which skips its own git sync (it would hit the
+ * same rebase conflict) and launches the current version, while the Get
+ * error line persists in the last-run logs and the log file. The detail the
+ * launch returns names the broken step when the engine does not come up.
+ * The launch line (the
  * engine binary and its arguments) leads the engine output in the run logs
  * the card's Logs section and the log file carry, and the Get-step output the
  * launch ran leads it, so a broken setup diagnoses against the exact steps

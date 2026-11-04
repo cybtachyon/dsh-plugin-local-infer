@@ -121,8 +121,15 @@ function registerLaunchPlatform(localInfer, request, stored, engineId, config) {
  * build, model download, chat-template download, each skipped when already
  * satisfied) and then renders the plan the registered adapter produces for
  * the config and the detected hardware, and runs the service's launch entry
- * point (deploy, then the health poll). The detail the launch returns names
- * the broken step when the engine does not come up. The launch line (the
+ * point (deploy, then the health poll). A git sync of an existing checkout
+ * that fails under the continueOnSyncFailure override (always on for a
+ * launch) keeps the Get run going with the checkout's current version and
+ * reports syncFailed on the result; the launch then threads autoRebuild:
+ * false into the deploy step, which skips its own git sync (it would hit the
+ * same rebase conflict) and launches the current version, while the Get
+ * error line persists in the last-run logs and the log file. The detail the
+ * launch returns names the broken step when the engine does not come up.
+ * The launch line (the
  * engine binary and its arguments) leads the engine output in the run logs
  * the card's Logs section and the log file carry, and the Get-step output the
  * launch ran leads it, so a broken setup diagnoses against the exact steps
@@ -154,7 +161,10 @@ export async function launchEngine(localInfer, request, onProgress, host = nodeL
     // download) run idempotently before the launch plan renders, so a launch
     // never reads a missing checkout, binary, model, or template. The Auto
     // Rebuild checkbox off skips the sync and build steps, the same rule the
-    // adapter's deploy step applies.
+    // adapter's deploy step applies. The launch always sets
+    // continueOnSyncFailure: a failed git sync of an existing checkout reports
+    // syncFailed on the result (the run keeps going with the checkout's
+    // current version) instead of halting the launch.
     let getLogs = '';
     const get = await runGetSteps(localInfer, {
         engineId,
@@ -162,6 +172,7 @@ export async function launchEngine(localInfer, request, onProgress, host = nodeL
         ...(platform !== undefined ? { platform } : {}),
         allowRunDeps: stored.allowRunDeps,
         ...(request.autoRebuild !== undefined ? { autoRebuild: request.autoRebuild } : {}),
+        continueOnSyncFailure: true,
         host,
         ...(signal !== undefined ? { signal } : {}),
         ...(onChunk !== undefined ? { onChunk } : {}),
@@ -195,11 +206,15 @@ export async function launchEngine(localInfer, request, onProgress, host = nodeL
     // reads them to decide whether a rebuild's missing-binary symlink into
     // /usr/local/bin runs (on) or is written to the card's Logs section (off),
     // and whether the deploy's own git sync (fetch, rebase, rebuild) runs at
-    // all.
+    // all. A Get sync that failed under the override threads autoRebuild:
+    // false into the deploy, which skips its own git sync (it would hit the
+    // same rebase conflict) and launches the checkout's current version; a Get
+    // run whose sync passed keeps the request's autoRebuild.
+    const launchAutoRebuild = get.syncFailed === true ? false : request.autoRebuild;
     const result = await localInfer.launch(plan, {
         ...(onProgress !== undefined ? { onProgress } : {}),
         allowRunDeps: stored.allowRunDeps,
-        ...(request.autoRebuild !== undefined ? { autoRebuild: request.autoRebuild } : {}),
+        ...(launchAutoRebuild !== undefined ? { autoRebuild: launchAutoRebuild } : {}),
     });
     // A cancel that landed after the Get steps (the card's provider-form Cancel
     // closed the stream during the deploy or health poll) adds the "Canceled"
