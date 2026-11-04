@@ -60,10 +60,13 @@ describe('SystemDep install data', () => {
     for (const manager of ['apt', 'dnf', 'pacman']) {
       expect(dep.install[manager]?.commands).toEqual([`sudo ${install}`])
     }
-    // brew and winget hosts run the pip install without sudo.
-    for (const manager of ['brew', 'winget']) {
-      expect(dep.install[manager]?.commands).toEqual([install])
-    }
+    // The brew host runs the pip install without sudo, on python3.
+    expect(dep.install.brew?.commands).toEqual([install])
+    // The winget host uses the python alias, not python3, because the Windows
+    // interpreter is named python.
+    expect(dep.install.winget?.commands).toEqual([
+      'python -m pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil',
+    ])
   })
 
   it('carries the winget toolchain blocks the Windows NInfer build needs', () => {
