@@ -162,21 +162,25 @@ async function postJson(path, body) {
     }
     return json;
 }
-/**
- * routeExists probes whether the host route is mounted: any response other
- * than a 404 (and other than a network failure) proves the route exists.
- * The bootstrap uses it to decide whether to mount the card, so a headless
- * profile (no web route) keeps the card off the Plugins page.
- */
-export async function routeExists() {
+// probeRoute answers the bootstrap's presence check for one route: any
+// response other than a 404 proves the route exists. A network failure (the
+// host is unreachable) reads as absent.
+async function probeRoute(path) {
     try {
-        const response = await fetch('/local-infer/summary');
+        const response = await fetch(path);
         return response.status !== 404;
     }
     catch {
-        // A network failure (the host is unreachable) reads as absent.
         return false;
     }
+}
+/**
+ * routeExists probes whether the host route is mounted (see probeRoute).
+ * The bootstrap uses it to decide whether to mount the card, so a headless
+ * profile (no web route) keeps the card off the Plugins page.
+ */
+export function routeExists() {
+    return probeRoute('/local-infer/summary');
 }
 /** fetchSummary reads the card's read model (the GET /local-infer/summary route). */
 export function fetchSummary(query) {
@@ -242,20 +246,12 @@ export function postProviderDelete(request) {
 }
 /**
  * orchestratorRouteExists probes whether the orchestrator's GET route is
- * mounted: the same rule as routeExists (any response other than a 404 or a
- * network failure proves presence). The orchestrator component ships
- * disabled, and its routes live and die with the component, so the probe is
- * the card's enablement read.
+ * mounted (see probeRoute). The orchestrator component ships disabled, and
+ * its routes live and die with the component, so the probe is the card's
+ * enablement read.
  */
-export async function orchestratorRouteExists() {
-    try {
-        const response = await fetch('/local-infer/orchestrator');
-        return response.status !== 404;
-    }
-    catch {
-        // A network failure (the host is unreachable) reads as absent.
-        return false;
-    }
+export function orchestratorRouteExists() {
+    return probeRoute('/local-infer/orchestrator');
 }
 /** fetchOrchestrator reads the orchestrator prompt model (the GET /local-infer/orchestrator route). */
 export function fetchOrchestrator() {

@@ -42,6 +42,17 @@ export interface LocaleRef {
     current: LocaleService | null;
 }
 /**
+ * localeStores builds the useSyncExternalStore locale pair over the handle:
+ * a subscribe that binds to the current seam (a no-op while it is null) and
+ * a reader of the active locale id. Each card factory calls it once per
+ * mount, so the closures stay stable across renders and the hook does not
+ * re-subscribe.
+ */
+export declare function localeStores(localeRef: LocaleRef): {
+    subscribeLocale: (onChange: () => void) => () => void;
+    readLocale: () => string;
+};
+/**
  * card builds the browser card component factory. It has the same
  * (react, localeRef, primitives) shape as the placeholder the bootstrap used,
  * so plugin.ts swaps it in 1:1. The returned component calls useCardStore

@@ -1,215 +1,28 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { afterAll, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 /**
  * dsh/client.js is a generated artifact (scripts/build-client.mjs bundles
- * packages/client/src into the lazy-CJS carrier), so this suite loads it under
- * a fake window.__ModuleLoader__ and pins the contract the dsh client-module
- * scan and the card's routes rely on. The loader captures the spec instead of
- * running the factory, so the test drives the factory with a stub require and a
- * stub plugin context.
+ * packages/client/src into the lazy-CJS carrier). The loader contract and
+ * the bootstrap behavior it pins (apply/inject, the locale and slots seams,
+ * the route probes, the primitives seed, the slot registrations) live in
+ * packages/client/tests/carrier.spec.ts, the carrier behavior suite; the
+ * two suites used to mirror each other's full harness.
  *
- * The carrier-level behavior tests pin the loader contract (apply/inject, the
- * locale and slots seams, the mount probe, the primitives seed). The
- * source-pinning tests read strings out of the generated artifact and pin the
- * store-driven contracts the card relies on: the single lifecycle derivation
- * (deriveLifecycleControl), the per-provider launch machine, the draft as the
- * only form-value source, and the performAction server-mutation path. The
- * behavior these pins describe is unit-tested in packages/client/tests/; the
- * pins here are the integration-level contract on the bundled artifact.
+ * This suite adds the integration-level source pins: it reads strings out
+ * of the generated artifact and pins the store-driven contracts the card
+ * relies on: the single lifecycle derivation (deriveLifecycleControl), the
+ * per-provider launch machine, the draft as the only form-value source, and
+ * the performAction server-mutation path. The behavior these pins describe
+ * is unit-tested in packages/client/tests/; the pins here are the
+ * integration-level contract on the bundled artifact.
  */
 
 // The carrier lives at the repo root, three levels above this test file.
 const clientPath = new URL('../../../dsh/client.js', import.meta.url)
 
-interface ModuleLoaderSpec {
-  id: string
-  factory: (require: (name: string) => unknown) => Record<string, unknown>
-}
-
-let loaded: ModuleLoaderSpec | undefined
-let previousWindow: unknown
-
-afterAll(() => {
-  if (previousWindow === undefined) {
-    delete (globalThis as { window?: unknown }).window
-  } else {
-    (globalThis as { window?: unknown }).window = previousWindow
-  }
-  delete (globalThis as Record<string, unknown>).fetch
-})
-
-// The bootstrap probes /local-infer/summary and /local-infer/orchestrator on
-// mount, and one stub answers both the same way. A 404 reads as "the route is
-// absent", so that card's mount is skipped and require('react') never runs.
-function stubFetch(status: number): void {
-  ;(globalThis as Record<string, unknown>).fetch = (async () => ({
-    status,
-    json: async () => ({ engineId: 'ninfer' }),
-  })) as unknown
-}
-
-// The hooks the card component calls. mountCard only constructs the component
-// (it does not render it), so the stubs are never invoked at mount time; they
-// exist so a render in a future test has a surface to call.
-const reactStub = {
-  useState: (initial: unknown) => [initial, () => undefined],
-  useRef: (initial: unknown) => ({ current: initial }),
-  useCallback: (fn: unknown) => fn,
-  useEffect: () => undefined,
-  useSyncExternalStore: (_subscribe: unknown, getSnapshot: () => string) => getSnapshot(),
-  createElement: () => null,
-}
-
-// The DSH primitives seed the shell puts in the frozen platform module table.
-// The card draws its menus, buttons, checkboxes, and state dots from this
-// module; the stub names the members the card touches so a renamed export
-// fails the mount, and a loader that throws for it exercises the native
-// fallback.
-const primitivesStub = {
-  Menu: () => null,
-  Button: () => null,
-  Checkbox: () => null,
-  StateDot: () => null,
-  IconChevronDownOutlineRegular: () => null,
-  IconRefreshOutlineRegular: () => null,
-}
-
-function loadPlugin(options?: { primitives?: unknown; required?: string[] }): {
-  apply: (ctx: unknown) => void
-  inject: unknown
-} {
-  const required: string[] = options?.required ?? []
-  const plugin = loaded!.factory((name: string) => {
-    if (name === 'react') {
-      return reactStub
-    }
-    if (name === '@deepseek-ai/dsh-client-ui-primitives') {
-      required.push(name)
-      if (options?.primitives === undefined) {
-        return primitivesStub
-      }
-      if (options.primitives instanceof Error) {
-        throw options.primitives
-      }
-      return options.primitives
-    }
-    throw new Error(`unexpected require of ${name}`)
-  })
-  return plugin as { apply: (ctx: unknown) => void; inject: unknown }
-}
-
-function mountScope() {
-  const slotNames: string[] = []
-  const scope = {
-    locale: undefined,
-    effect: (disposer: () => void) => {
-      disposer()
-    },
-    slots: {
-      inject: (name: string) => {
-        slotNames.push(name)
-      },
-      register: () => undefined,
-    },
-  }
-  return {
-    slotNames,
-    ctx: {
-      inject: (_names: string[], fn: (scope: unknown) => void) => {
-        fn(scope)
-      },
-    },
-  }
-}
-
-describe('dsh/client.js browser carrier', () => {
-  it('loads as the lazy-CJS plugin the dsh client-module scan expects', async () => {
-    previousWindow = (globalThis as { window?: unknown }).window
-    globalThis.window = {
-      __ModuleLoader__: {
-        load: (spec: ModuleLoaderSpec) => {
-          loaded = spec
-        },
-      },
-    }
-    stubFetch(404)
-    await import(clientPath.href)
-    expect(loaded).toBeDefined()
-    expect(loaded?.id).toBe('dsh-plugin-local-infer')
-    const plugin = loadPlugin()
-    expect(typeof plugin.apply).toBe('function')
-    expect(plugin.inject).toEqual([])
-  })
-
-  it('registers the card through the locale and slots seams', () => {
-    const injected: string[][] = []
-    const scope = {
-      locale: undefined,
-      effect: (disposer: () => void) => {
-        disposer()
-      },
-      slots: {
-        inject: (_name: string) => {
-          /* the 404 probe skips the mount, so no slot registration happens */
-        },
-      },
-    }
-    const ctx = {
-      inject: (names: string[], fn: (scope: unknown) => void) => {
-        injected.push(names)
-        fn(scope)
-      },
-    }
-    stubFetch(404)
-    loadPlugin().apply(ctx)
-    expect(injected).toEqual([
-      ['locale'],
-      ['slots'],
-    ])
-  })
-
-  it('mounts both cards and registers every slot when both probes succeed', async () => {
-    const { slotNames, ctx } = mountScope()
-    stubFetch(200)
-    loadPlugin().apply(ctx)
-    // The mounts run in microtasks after their probes resolve; the main card
-    // probes first, so it registers first, and the Orchestrator card adds the
-    // plugins.row.config registration for its component row.
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(slotNames).toEqual([
-      'plugins.bundle.config',
-      'settings.plugin.item',
-      'plugins.row.config',
-    ])
-  })
-
-  it('requires the DSH primitives seed so the card draws the host controls', async () => {
-    const required: string[] = []
-    const { ctx } = mountScope()
-    stubFetch(200)
-    loadPlugin({ required }).apply(ctx)
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    // Both card mounts resolve the seed through the injected require.
-    expect(required).toEqual([
-      '@deepseek-ai/dsh-client-ui-primitives',
-      '@deepseek-ai/dsh-client-ui-primitives',
-    ])
-  })
-
-  it('keeps the card mounted when the primitives seed is absent', async () => {
-    const { slotNames, ctx } = mountScope()
-    stubFetch(200)
-    loadPlugin({ primitives: new Error('seed absent') }).apply(ctx)
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(slotNames).toEqual([
-      'plugins.bundle.config',
-      'settings.plugin.item',
-      'plugins.row.config',
-    ])
-  })
-
+describe('dsh/client.js artifact source pins', () => {
   it('pins the route contract the card calls', () => {
     const source = readFileSync(fileURLToPath(clientPath), 'utf8')
     for (const route of [
@@ -221,6 +34,8 @@ describe('dsh/client.js browser carrier', () => {
       '/local-infer/stop',
       '/local-infer/register',
       '/local-infer/unregister',
+      '/local-infer/orchestrator',
+      '/local-infer/orchestrator/save',
     ]) {
       expect(source).toContain(route)
     }

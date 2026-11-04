@@ -1,6 +1,6 @@
 /**
- * The browser card bootstrap: apply, registerCard, mountCard, and
- * mountOrchestratorCard.
+ * The browser card bootstrap: apply, registerCard, mountWhenRouteExists,
+ * mountCard, and mountOrchestratorCard.
  *
  * dsh web users have no terminal, so the local-inference config (engine,
  * model, parameters) had no way in from the browser. The card is contributed

@@ -102,6 +102,29 @@ export interface LocaleRef {
   current: LocaleService | null
 }
 
+/**
+ * localeStores builds the useSyncExternalStore locale pair over the handle:
+ * a subscribe that binds to the current seam (a no-op while it is null) and
+ * a reader of the active locale id. Each card factory calls it once per
+ * mount, so the closures stay stable across renders and the hook does not
+ * re-subscribe.
+ */
+export function localeStores(localeRef: LocaleRef): {
+  subscribeLocale: (onChange: () => void) => () => void
+  readLocale: () => string
+} {
+  return {
+    subscribeLocale: (onChange: () => void): (() => void) => {
+      const locale = localeRef.current
+      return locale ? locale.subscribe(onChange) : () => {}
+    },
+    readLocale: (): string => {
+      const locale = localeRef.current
+      return locale ? locale.getSnapshot().active : ''
+    },
+  }
+}
+
 /** The field-edit callback the form fields run: one config key to a value. */
 type OnValue = (key: string, value: unknown) => void
 
@@ -391,18 +414,9 @@ export function card(
   localeRef: LocaleRef,
   _primitives: PrimitivesModule | null,
 ): () => ReactNode {
-  // The locale service the host seam hands the card (null before the seam
-  // fires). The card reads the active locale string through it and subscribes,
-  // so a language switch re-renders the label table. Both closures are created
-  // once per mount, so useSyncExternalStore does not re-subscribe each render.
-  const subscribeLocale = (onChange: () => void): (() => void) => {
-    const locale = localeRef.current
-    return locale ? locale.subscribe(onChange) : () => {}
-  }
-  const readLocale = (): string => {
-    const locale = localeRef.current
-    return locale ? locale.getSnapshot().active : ''
-  }
+  // The locale pair is created once per mount, so a language switch
+  // re-renders the label table and useSyncExternalStore never re-subscribes.
+  const { subscribeLocale, readLocale } = localeStores(localeRef)
 
   return function Card(): ReactNode {
     const store = useCardStore()
