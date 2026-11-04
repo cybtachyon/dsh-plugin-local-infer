@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import LocalInfer from 'dsh-plugin-local-infer/service'
+import { hfHubCacheDirectory } from 'dsh-plugin-local-infer/core'
 import type {
   CommandOutcome,
   FetchResult,
@@ -443,6 +444,15 @@ describe('BasaltAdapter.renderLaunch', () => {
     expect(argv[0]).toBe(join('bin', 'basalt'))
     expect(argv).toContain('serve')
     expect(argv).toContain('--config')
+    // The serve CLI requires --model and --engine-bin. The --model value is a
+    // placeholder the deploy step resolves (TASK-004); the --engine-bin value
+    // is the build-tree binary the first token names.
+    expect(argv).toContain('--model')
+    expect(argv).toContain('--engine-bin')
+    expect(argv[argv.indexOf('--model') + 1]).toBe(
+      join('models', 'models/Qwen3.8-FN-NVFP4-DQ6_K.basalt'),
+    )
+    expect(argv[argv.indexOf('--engine-bin') + 1]).toBe(join('bin', 'basalt'))
     // The config file content is exactly what the surface renders, and the
     // path lands in the model directory.
     expect(plan.configFile?.content).toBe(configFileFromSpecs(BASALT_PARAMETERS, config, 'json'))
@@ -456,13 +466,14 @@ describe('BasaltAdapter.renderLaunch', () => {
     expect(plan.modelDirectory).toBe('models')
   })
 
-  it('writes the config file into the working directory for a bare config', () => {
+  it('writes the config file into the hub cache root for a bare config', () => {
     const { host } = basaltStubHost()
     const adapter = new BasaltAdapter(host)
     const plan = adapter.renderLaunch({}, ADAPTER_HW)
-    // A bare config (no model directory) writes the config into the spawn's
-    // working directory and launches on the CLI default port.
-    expect(plan.configFile?.path).toBe(BASALT_CONFIG_FILE)
+    // A bare config (no model directory) targets the hub cache, so the config
+    // file lands in the hub cache root, and the launch runs on the CLI default
+    // port.
+    expect(plan.configFile?.path).toBe(join(hfHubCacheDirectory(), BASALT_CONFIG_FILE))
     expect(plan.modelDirectory).toBeUndefined()
     expect(plan.port).toBe(8080)
   })
@@ -510,21 +521,26 @@ describe('BasaltAdapter.deploy', () => {
     expect(state.run).toContain(
       `hf download ${BASALT_MODEL_REPO} ${BASALT_MODEL_FILE} --local-dir models --format human`,
     )
-    // The relative config path is written into the engine directory the spawn
-    // runs in, so the engine's --config flag (resolved against its cwd) finds
-    // the file.
+    // The config path is the model download target base directory joined with
+    // the config file name (the flat --local-dir layout), written as-is.
     expect(state.writeFile).toHaveLength(1)
-    expect(state.writeFile[0]?.path).toBe(join('/src/basalt', 'models', BASALT_CONFIG_FILE))
-    // The spawn runs the serve command with the config flag, in the engine
-    // directory. The binary is the build-tree path joined against the engine
-    // directory (CMake's bin/ output dir), so the spawn resolves the real
-    // binary without the PATH.
+    expect(state.writeFile[0]?.path).toBe(join('models', BASALT_CONFIG_FILE))
+    // The spawn runs the serve command with the config, model, and engine-bin
+    // flags, in the engine directory. The first token is the build-tree path
+    // joined against the engine directory (CMake's bin/ output dir), so the
+    // spawn resolves the real binary without the PATH. The --model value is a
+    // placeholder the deploy step resolves (TASK-004); the --engine-bin value
+    // is the build-tree binary the first token names.
     expect(state.spawn).toHaveLength(1)
     expect(state.spawn[0]?.argv).toEqual([
       join('/src/basalt', 'bin', 'basalt'),
       'serve',
       '--config',
       join('models', BASALT_CONFIG_FILE),
+      '--model',
+      join('models', 'models/Qwen3.8-FN-NVFP4-DQ6_K.basalt'),
+      '--engine-bin',
+      join('bin', 'basalt'),
     ])
     expect(state.spawn[0]?.cwd).toBe('/src/basalt')
     // The rebuild decision and output ride the result logs.

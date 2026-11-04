@@ -1,11 +1,12 @@
 /**
  * The Basalt engine adapter. BasaltAdapter is the Basalt engine (the C++/CUDA
  * serve/ server for the Qwen3.8-Flash-Next MoE model, Blackwell-only).
- * `renderLaunch` renders a `basalt serve --config` process plan: the binary
- * name comes from the host OS profile, and every setting lands in the
- * `basalt_config.json` the plan's `configFile` carries (rendered from the
- * spec surface with `configFileFromSpecs`), so the launch argv stays three
- * tokens long no matter how many settings the form offers. `deploy` builds
+ * `renderLaunch` renders a `basalt serve --config --model --engine-bin`
+ * process plan: the binary name comes from the host OS profile, every
+ * setting lands in the `basalt_config.json` the plan's `configFile` carries
+ * (rendered from the spec surface with `configFileFromSpecs`), and the argv
+ * carries the `--model` and `--engine-bin` flags the serve CLI requires, so
+ * it stays fixed no matter how many settings the form offers. `deploy` builds
  * the engine in the checkout (the acquisition build steps), downloads the
  * `.basalt` model into the model directory, writes the config file, and
  * spawns the serve command. `healthCheck` polls the health URL and reports
@@ -48,7 +49,13 @@ import {
   trackChild,
 } from '../../adapters.ts'
 import { engineBuildDir, syncEngineForDeploy } from '../../acquire.ts'
-import { BASALT_PARAMETERS, basaltModelKey } from './basalt.ts'
+import { defaultModelFor } from '../../model-defaults.ts'
+import {
+  BASALT_MODEL_FILE,
+  BASALT_MODEL_REPO,
+  BASALT_PARAMETERS,
+  basaltModelKey,
+} from './basalt.ts'
 import { basaltLinuxBinary } from './basaltLinux.ts'
 import { basaltMacOSBinary } from './basaltMacOS.ts'
 import { basaltWindowsBinary } from './basaltWindows.ts'
@@ -66,14 +73,11 @@ const BASALT_BINARY: Record<'linux' | 'windows' | 'macos', () => string> = {
   windows: basaltWindowsBinary,
 }
 
-/**
- * The Hugging Face repo and file the deploy step downloads into the model
- * directory: the single `.basalt` artifact the engine serves (the weights,
- * tokenizer, chat template, drafter, vision projector, and default
- * sampling all come from it).
- */
-export const BASALT_MODEL_REPO = 'jesdga/Qwen3.8-Flash-Next-Basalt'
-export const BASALT_MODEL_FILE = 'Qwen3.8-FN-NVFP4-DQ6_K.basalt'
+// The repo and file the deploy step downloads live in the leaf basalt.ts
+// module (the default model list imports them from there, so defining them
+// here would close a circular edge). Re-exported so the existing
+// `basaltAdapter` import path keeps working.
+export { BASALT_MODEL_FILE, BASALT_MODEL_REPO } from './basalt.ts'
 
 /**
  * The config file name the deploy step writes into the model directory, so
@@ -82,12 +86,28 @@ export const BASALT_MODEL_FILE = 'Qwen3.8-FN-NVFP4-DQ6_K.basalt'
 export const BASALT_CONFIG_FILE = 'basalt_config.json'
 
 /**
+ * basaltModelFileName resolves the `.basalt` artifact file name a config's
+ * model field names: a value that is already a `.basalt` file name (a
+ * directory-scan selection) passes through; a registry key (a default-model
+ * selection, e.g. `qwen38-flash-next`) maps to its artifact file through the
+ * default model list; and a bare config falls back to the engine's default
+ * artifact. The deploy step (TASK-004) resolves the file name to the
+ * concrete artifact path after the model download.
+ */
+function basaltModelFileName(modelValue: string): string {
+  if (modelValue !== '' && modelValue.endsWith('.basalt')) return modelValue
+  const entry = modelValue === '' ? undefined : defaultModelFor('basalt', modelValue)
+  return entry?.file ?? BASALT_MODEL_FILE
+}
+
+/**
  * BasaltAdapter is the Basalt engine. `renderLaunch` renders a
- * `basalt serve --config` process plan (the settings ride the config file,
- * never the argv); `deploy` builds the engine, downloads the model, writes
- * the config file, and spawns the serve command; `healthCheck` polls the
- * health URL and reports the start phase from the tracked process output;
- * `stop` signals the tracked process.
+ * `basalt serve --config --model --engine-bin` process plan (the settings
+ * ride the config file; the argv carries the `--model` and `--engine-bin`
+ * flags the serve CLI requires); `deploy` builds the engine, downloads the
+ * model, writes the config file, and spawns the serve command;
+ * `healthCheck` polls the health URL and reports the start phase from the
+ * tracked process output; `stop` signals the tracked process.
  */
 export class BasaltAdapter extends EngineAdapter {
   readonly id = 'basalt'
@@ -153,18 +173,36 @@ export class BasaltAdapter extends EngineAdapter {
     const binary = BASALT_BINARY[_hw.os]()
     const buildDir = engineBuildDir(this.id, _hw.os)
     const binaryPath = buildDir === '' ? binary : join(buildDir, binary)
+    // The --model flag names the .basalt artifact the engine serves. The
+    // value is a placeholder the deploy step resolves to the concrete
+    // artifact path after the model download: the flat join for a user model
+    // directory, the hub-cache snapshot path for the default layout. The
+    // file name comes from config.model (a registry key, a .basalt file
+    // name, or the engine default). The --engine-bin flag names the same
+    // build-tree binary the argv's first token carries, so the serve CLI
+    // spawns the engine binary it already names.
+    const modelValue = typeof config.model === 'string' ? config.model : ''
+    const modelPath = join(baseDir, basaltModelFileName(modelValue))
     return {
       engineId: this.id,
       kind: 'process',
-      argv: [binaryPath, 'serve', '--config', configPath],
+      argv: [
+        binaryPath,
+        'serve',
+        '--config',
+        configPath,
+        '--model',
+        modelPath,
+        '--engine-bin',
+        binaryPath,
+      ],
       env: {},
       ...(modelDirectory === '' ? {} : { modelDirectory }),
       port,
       healthUrl: `http://127.0.0.1:${port}/health`,
       os: _hw.os,
-      // Every setting rides the config file the deploy step writes, so the
-      // argv stays three tokens long no matter how many settings the form
-      // offers.
+      // Every setting rides the config file the deploy step writes; the
+      // --model and --engine-bin flags are the only argv additions.
       configFile: {
         path: configPath,
         content: configFileFromSpecs(BASALT_PARAMETERS, config, 'json'),

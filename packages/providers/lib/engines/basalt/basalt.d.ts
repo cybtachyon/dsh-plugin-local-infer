@@ -15,6 +15,16 @@
  */
 import type { ComboOption, Config, EnumOption, ParameterSpec } from 'dsh-plugin-local-infer/core';
 /**
+ * The Hugging Face repo and file the deploy step downloads into the model
+ * directory: the single `.basalt` artifact the engine serves (the weights,
+ * tokenizer, chat template, drafter, vision projector, and default
+ * sampling all come from it). The constants live in this leaf module so
+ * both the adapter and the default model list import them without a
+ * circular edge.
+ */
+export declare const BASALT_MODEL_REPO = "jesdga/Qwen3.8-Flash-Next-Basalt";
+export declare const BASALT_MODEL_FILE = "Qwen3.8-FN-NVFP4-DQ6_K.basalt";
+/**
  * The KV cache storage formats Basalt serves, in the order the form
  * dropdown lists them. `note` carries the tradeoff text the dropdown shows
  * beside each choice.

@@ -16,7 +16,7 @@
  * data edit here, never a route or card rewire.
  * @module dsh-plugin-local-infer/providers/model-defaults
  */
-import { BASALT_MODEL_FILE, BASALT_MODEL_REPO } from "./engines/basalt/basaltAdapter.js";
+import { BASALT_MODEL_FILE, BASALT_MODEL_REPO } from "./engines/basalt/basalt.js";
 /**
  * DEFAULT_MODELS is the default model list, in the order the card lists them.
  * The 27B keys reuse the VramModel registry ids; the 35B-A3B entries use the

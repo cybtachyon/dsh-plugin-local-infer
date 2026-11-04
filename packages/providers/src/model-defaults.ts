@@ -18,7 +18,7 @@
  */
 
 import type { DefaultModel } from 'dsh-plugin-local-infer/core'
-import { BASALT_MODEL_FILE, BASALT_MODEL_REPO } from './engines/basalt/basaltAdapter.ts'
+import { BASALT_MODEL_FILE, BASALT_MODEL_REPO } from './engines/basalt/basalt.ts'
 
 /**
  * DEFAULT_MODELS is the default model list, in the order the card lists them.
