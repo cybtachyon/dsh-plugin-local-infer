@@ -27,7 +27,6 @@ import { type CardStore } from './sync.ts';
 export interface EntryTimerHandle {
     cancel(): void;
 }
-export declare function appendCanceledLog(store: CardStore): void;
 /**
  * editProvider loads a stored provider's engine, config, and platform into
  * the form (the next Save updates that entry in place). It caches the form's

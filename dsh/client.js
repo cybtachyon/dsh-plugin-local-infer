@@ -1953,12 +1953,7 @@ function stepForLine(line) {
   return null;
 }
 
-// packages/client/src/store/providers.ts
-var noHandle = { cancel() {
-} };
-function move(store, providerId, event) {
-  store.dispatch({ type: "launch/move", providerId, event });
-}
+// packages/client/src/store/logs.ts
 function seedProcessLog(store, label) {
   const state = store.getSnapshot();
   const base = state.ui.logs.getLogs ?? state.summary?.lastLogs ?? "";
@@ -1982,296 +1977,6 @@ function appendProcessLog(store, line) {
 }
 function appendCanceledLog(store) {
   appendProcessLog(store, "--- Canceled\n");
-}
-function editProvider(store, provider) {
-  const state = store.getSnapshot();
-  store.dispatch({
-    type: "ui/patch",
-    patch: {
-      cachedDraft: state.draft,
-      editingProviderId: provider.id,
-      providerFormMode: "editing"
-    }
-  });
-  store.dispatch({
-    type: "draft/load",
-    draft: {
-      engine: provider.engine,
-      config: provider.config,
-      platform: { [provider.engine]: provider.platform }
-    }
-  });
-  void repriceSummary(store, { engine: provider.engine, config: provider.config });
-  void repriceDeps(store, { engine: provider.engine, config: provider.config });
-}
-function cancelProvider(store, providerId) {
-  if (cancelInFlightRuns(providerId)) {
-    appendCanceledLog(store);
-  }
-  const state = store.getSnapshot();
-  const hasProviders = (state.summary?.providers.length ?? 0) > 0;
-  store.dispatch({
-    type: "ui/patch",
-    patch: {
-      editingProviderId: null,
-      providerFormMode: hasProviders ? "collapsed" : "new"
-    }
-  });
-  store.dispatch({ type: "draft/discard" });
-  void repriceSummary(store);
-  void repriceDeps(store);
-}
-function newProvider(store) {
-  const state = store.getSnapshot();
-  const next = state.ui.cachedDraft !== null ? state.ui.cachedDraft : {
-    engine: state.draft?.engine ?? "ninfer",
-    config: {},
-    platform: state.draft?.platform ?? {}
-  };
-  store.dispatch({
-    type: "ui/patch",
-    patch: { editingProviderId: null, providerFormMode: "new" }
-  });
-  store.dispatch({ type: "draft/load", draft: next });
-  void repriceSummary(store, { engine: next.engine, config: next.config });
-  void repriceDeps(store, { engine: next.engine, config: next.config });
-}
-function deleteProvider(store, providerId) {
-  if (store.getSnapshot().ui.deletingProviderId !== null) {
-    return Promise.resolve();
-  }
-  store.dispatch({ type: "ui/patch", patch: { deletingProviderId: providerId } });
-  return postProviderDelete({ id: providerId }).then((summary) => {
-    store.dispatch({ type: "summary/ack", summary });
-    const ui = store.getSnapshot().ui;
-    if (ui.editingProviderId === providerId) {
-      store.dispatch({
-        type: "ui/patch",
-        patch: {
-          editingProviderId: null,
-          providerFormMode: summary.providers.length > 0 ? "collapsed" : "new"
-        }
-      });
-    }
-    store.dispatch({ type: "ui/patch", patch: { deletingProviderId: null } });
-  }).catch((error) => {
-    const message = error instanceof Error ? error.message : String(error);
-    store.dispatch({ type: "summary/fail", note: message });
-    store.dispatch({ type: "ui/patch", patch: { deletingProviderId: null } });
-  });
-}
-function openEntryLogs(store, provider) {
-  editProvider(store, provider);
-  move(store, provider.id, { type: "reset" });
-}
-function performEntryLaunch(store, provider, t) {
-  const prior = store.getSnapshot().launch[provider.id];
-  const status = prior?.status ?? "idle";
-  if (status !== "idle" && status !== "failed") {
-    return noHandle;
-  }
-  seedProcessLog(store, t.entryLaunching);
-  move(store, provider.id, { type: "start" });
-  let settled = false;
-  let deadline = null;
-  const clearDeadline = () => {
-    if (deadline !== null) {
-      clearTimeout(deadline);
-      deadline = null;
-    }
-  };
-  const controller = new AbortController();
-  trackLaunchAbort(provider.id, controller);
-  const handle = {
-    cancel() {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      clearDeadline();
-      forgetLaunchAbort(provider.id);
-    }
-  };
-  const armDeadline = () => {
-    if (deadline !== null || settled) {
-      return;
-    }
-    deadline = setTimeout(() => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      move(store, provider.id, { type: "failed" });
-    }, LAUNCH_HEALTH_DEADLINE_MS);
-  };
-  const onStep = (step) => {
-    move(store, provider.id, { type: "step", step });
-    if (step === "build") {
-      appendProcessLog(store, "--- " + t.entryBuilding + "\n");
-    }
-    if (step === "launch") {
-      armDeadline();
-    }
-  };
-  postLaunch(
-    {
-      engine: provider.engine,
-      config: provider.config,
-      platform: { [provider.engine]: provider.platform },
-      providerId: provider.id
-    },
-    onStep,
-    controller.signal
-  ).then((result) => {
-    if (settled) {
-      return;
-    }
-    settled = true;
-    clearDeadline();
-    forgetLaunchAbort(provider.id);
-    if (result === null) {
-      move(store, provider.id, { type: "failed" });
-    } else if (result.healthy === true) {
-      move(store, provider.id, { type: "healthy" });
-    } else if (result.state === "downloading") {
-      move(store, provider.id, { type: "downloading" });
-    } else {
-      move(store, provider.id, { type: "failed" });
-    }
-    void repriceSummary(store, { engine: provider.engine, config: provider.config });
-  }).catch(() => {
-    if (settled) {
-      return;
-    }
-    settled = true;
-    clearDeadline();
-    forgetLaunchAbort(provider.id);
-    move(store, provider.id, { type: "failed" });
-  });
-  return handle;
-}
-function performEntryStop(store, provider) {
-  const prior = store.getSnapshot().launch[provider.id];
-  const priorStatus = prior?.status ?? "idle";
-  if (priorStatus === "failed") {
-    return noHandle;
-  }
-  move(store, provider.id, { type: "stop" });
-  let poll = null;
-  let deadline = null;
-  let settled = false;
-  const clearTimers = () => {
-    if (poll !== null) {
-      clearTimeout(poll);
-      poll = null;
-    }
-    if (deadline !== null) {
-      clearTimeout(deadline);
-      deadline = null;
-    }
-  };
-  const handle = {
-    cancel() {
-      settled = true;
-      clearTimers();
-    }
-  };
-  const pollFn = () => {
-    if (settled) {
-      return;
-    }
-    const entry = (store.getSnapshot().summary?.providers ?? []).find(
-      (p) => p.id === provider.id
-    );
-    if (entry !== void 0 && entry.status !== "running") {
-      move(store, provider.id, { type: "stopped" });
-      settled = true;
-      clearTimers();
-      return;
-    }
-    void repriceSummary(store);
-    poll = setTimeout(pollFn, STOP_POLL_MS);
-  };
-  poll = setTimeout(pollFn, STOP_POLL_MS);
-  deadline = setTimeout(() => {
-    if (settled) {
-      return;
-    }
-    settled = true;
-    clearTimers();
-    move(store, provider.id, { type: "stopFailed" });
-  }, STOP_HEALTH_DEADLINE_MS);
-  void postStop({
-    engine: provider.engine,
-    config: provider.config,
-    platform: { [provider.engine]: provider.platform },
-    providerId: provider.id
-  }).catch(() => {
-  });
-  return handle;
-}
-function draftLaunchBody(store) {
-  const state = store.getSnapshot();
-  const draft = state.draft;
-  const platform = draft !== null ? (draft.platform ?? {})[draft.engine] : void 0;
-  const body = {
-    autoRebuild: state.ui.autoRebuild
-  };
-  if (draft !== null) {
-    body.engine = draft.engine;
-    body.config = draft.config;
-  }
-  if (platform !== void 0 && draft !== null) {
-    body.platform = { [draft.engine]: platform };
-  }
-  if (state.ui.editingProviderId !== null) {
-    body.providerId = state.ui.editingProviderId;
-  }
-  return body;
-}
-function performDraftLaunch(store, t) {
-  const state = store.getSnapshot();
-  if (state.draft === null) {
-    return Promise.resolve();
-  }
-  const draft = state.draft;
-  const abortKey = state.ui.editingProviderId ?? "draft";
-  const controller = new AbortController();
-  trackLaunchAbort(abortKey, controller);
-  return performAction(
-    store,
-    "launch",
-    () => postLaunch(draftLaunchBody(store), void 0, controller.signal).then((result) => {
-      if (result !== null && result.healthy === true) {
-        void repriceSummary(store, { engine: draft.engine, config: draft.config });
-        return t.runningOn + " " + (result.plan !== void 0 ? String(result.plan.port) : "");
-      }
-      if (result !== null) {
-        throw new Error(t.notHealthy + (result.detail ? ": " + result.detail : ""));
-      }
-      throw new Error(t.launchFailed);
-    }).catch((error) => {
-      forgetLaunchAbort(abortKey);
-      throw error;
-    }),
-    ACTION_TIMEOUTS.launch
-  );
-}
-function performDraftStop(store, t) {
-  const state = store.getSnapshot();
-  if (state.draft === null) {
-    return Promise.resolve();
-  }
-  const draft = state.draft;
-  return performAction(
-    store,
-    "stop",
-    () => postStop(draftLaunchBody(store)).then(() => {
-      void repriceSummary(store, { engine: draft.engine, config: draft.config });
-      return t.stopped;
-    }),
-    ACTION_TIMEOUTS.stop
-  );
 }
 
 // packages/client/src/store/deps.ts
@@ -2376,16 +2081,7 @@ function performGet(store, t) {
     return Promise.resolve();
   }
   const platform = (draft.platform ?? {})[draft.engine];
-  const base = state.ui.logs.getLogs ?? state.summary?.lastLogs ?? "";
-  store.dispatch({
-    type: "ui/patch",
-    patch: {
-      logs: {
-        ...state.ui.logs,
-        getLogs: base + (base === "" ? "" : "\n") + "--- " + t.getting + "\n"
-      }
-    }
-  });
+  seedProcessLog(store, t.getting);
   const throttle = new ProgressThrottle(store, GET_PROGRESS_THROTTLE_MS);
   const append = (chunk) => {
     const logs = store.getSnapshot().ui.logs;
@@ -2711,6 +2407,303 @@ function DepsPanel(props) {
     },
     note
   ) : null);
+}
+
+// packages/client/src/store/providers.ts
+var noHandle = { cancel() {
+} };
+function move(store, providerId, event) {
+  store.dispatch({ type: "launch/move", providerId, event });
+}
+function editProvider(store, provider) {
+  const state = store.getSnapshot();
+  store.dispatch({
+    type: "ui/patch",
+    patch: {
+      cachedDraft: state.draft,
+      editingProviderId: provider.id,
+      providerFormMode: "editing"
+    }
+  });
+  store.dispatch({
+    type: "draft/load",
+    draft: {
+      engine: provider.engine,
+      config: provider.config,
+      platform: { [provider.engine]: provider.platform }
+    }
+  });
+  void repriceSummary(store, { engine: provider.engine, config: provider.config });
+  void repriceDeps(store, { engine: provider.engine, config: provider.config });
+}
+function cancelProvider(store, providerId) {
+  if (cancelInFlightRuns(providerId)) {
+    appendCanceledLog(store);
+  }
+  const state = store.getSnapshot();
+  const hasProviders = (state.summary?.providers.length ?? 0) > 0;
+  store.dispatch({
+    type: "ui/patch",
+    patch: {
+      editingProviderId: null,
+      providerFormMode: hasProviders ? "collapsed" : "new"
+    }
+  });
+  store.dispatch({ type: "draft/discard" });
+  void repriceSummary(store);
+  void repriceDeps(store);
+}
+function newProvider(store) {
+  const state = store.getSnapshot();
+  const next = state.ui.cachedDraft !== null ? state.ui.cachedDraft : {
+    engine: state.draft?.engine ?? "ninfer",
+    config: {},
+    platform: state.draft?.platform ?? {}
+  };
+  store.dispatch({
+    type: "ui/patch",
+    patch: { editingProviderId: null, providerFormMode: "new" }
+  });
+  store.dispatch({ type: "draft/load", draft: next });
+  void repriceSummary(store, { engine: next.engine, config: next.config });
+  void repriceDeps(store, { engine: next.engine, config: next.config });
+}
+function deleteProvider(store, providerId) {
+  if (store.getSnapshot().ui.deletingProviderId !== null) {
+    return Promise.resolve();
+  }
+  store.dispatch({ type: "ui/patch", patch: { deletingProviderId: providerId } });
+  return postProviderDelete({ id: providerId }).then((summary) => {
+    store.dispatch({ type: "summary/ack", summary });
+    const ui = store.getSnapshot().ui;
+    if (ui.editingProviderId === providerId) {
+      store.dispatch({
+        type: "ui/patch",
+        patch: {
+          editingProviderId: null,
+          providerFormMode: summary.providers.length > 0 ? "collapsed" : "new"
+        }
+      });
+    }
+    store.dispatch({ type: "ui/patch", patch: { deletingProviderId: null } });
+  }).catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    store.dispatch({ type: "summary/fail", note: message });
+    store.dispatch({ type: "ui/patch", patch: { deletingProviderId: null } });
+  });
+}
+function openEntryLogs(store, provider) {
+  editProvider(store, provider);
+  move(store, provider.id, { type: "reset" });
+}
+function performEntryLaunch(store, provider, t) {
+  const prior = store.getSnapshot().launch[provider.id];
+  const status = prior?.status ?? "idle";
+  if (status !== "idle" && status !== "failed") {
+    return noHandle;
+  }
+  seedProcessLog(store, t.entryLaunching);
+  move(store, provider.id, { type: "start" });
+  let settled = false;
+  let deadline = null;
+  const clearDeadline = () => {
+    if (deadline !== null) {
+      clearTimeout(deadline);
+      deadline = null;
+    }
+  };
+  const controller = new AbortController();
+  trackLaunchAbort(provider.id, controller);
+  const handle = {
+    cancel() {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearDeadline();
+      forgetLaunchAbort(provider.id);
+    }
+  };
+  const armDeadline = () => {
+    if (deadline !== null || settled) {
+      return;
+    }
+    deadline = setTimeout(() => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      move(store, provider.id, { type: "failed" });
+    }, LAUNCH_HEALTH_DEADLINE_MS);
+  };
+  const onStep = (step) => {
+    move(store, provider.id, { type: "step", step });
+    if (step === "build") {
+      appendProcessLog(store, "--- " + t.entryBuilding + "\n");
+    }
+    if (step === "launch") {
+      armDeadline();
+    }
+  };
+  postLaunch(
+    {
+      engine: provider.engine,
+      config: provider.config,
+      platform: { [provider.engine]: provider.platform },
+      providerId: provider.id
+    },
+    onStep,
+    controller.signal
+  ).then((result) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    clearDeadline();
+    forgetLaunchAbort(provider.id);
+    if (result === null) {
+      move(store, provider.id, { type: "failed" });
+    } else if (result.healthy === true) {
+      move(store, provider.id, { type: "healthy" });
+    } else if (result.state === "downloading") {
+      move(store, provider.id, { type: "downloading" });
+    } else {
+      move(store, provider.id, { type: "failed" });
+    }
+    void repriceSummary(store, { engine: provider.engine, config: provider.config });
+  }).catch(() => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    clearDeadline();
+    forgetLaunchAbort(provider.id);
+    move(store, provider.id, { type: "failed" });
+  });
+  return handle;
+}
+function performEntryStop(store, provider) {
+  const prior = store.getSnapshot().launch[provider.id];
+  const priorStatus = prior?.status ?? "idle";
+  if (priorStatus === "failed") {
+    return noHandle;
+  }
+  move(store, provider.id, { type: "stop" });
+  let poll = null;
+  let deadline = null;
+  let settled = false;
+  const clearTimers = () => {
+    if (poll !== null) {
+      clearTimeout(poll);
+      poll = null;
+    }
+    if (deadline !== null) {
+      clearTimeout(deadline);
+      deadline = null;
+    }
+  };
+  const handle = {
+    cancel() {
+      settled = true;
+      clearTimers();
+    }
+  };
+  const pollFn = () => {
+    if (settled) {
+      return;
+    }
+    const entry = (store.getSnapshot().summary?.providers ?? []).find(
+      (p) => p.id === provider.id
+    );
+    if (entry !== void 0 && entry.status !== "running") {
+      move(store, provider.id, { type: "stopped" });
+      settled = true;
+      clearTimers();
+      return;
+    }
+    void repriceSummary(store);
+    poll = setTimeout(pollFn, STOP_POLL_MS);
+  };
+  poll = setTimeout(pollFn, STOP_POLL_MS);
+  deadline = setTimeout(() => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    clearTimers();
+    move(store, provider.id, { type: "stopFailed" });
+  }, STOP_HEALTH_DEADLINE_MS);
+  void postStop({
+    engine: provider.engine,
+    config: provider.config,
+    platform: { [provider.engine]: provider.platform },
+    providerId: provider.id
+  }).catch(() => {
+  });
+  return handle;
+}
+function draftLaunchBody(store) {
+  const state = store.getSnapshot();
+  const draft = state.draft;
+  const platform = draft !== null ? (draft.platform ?? {})[draft.engine] : void 0;
+  const body = {
+    autoRebuild: state.ui.autoRebuild
+  };
+  if (draft !== null) {
+    body.engine = draft.engine;
+    body.config = draft.config;
+  }
+  if (platform !== void 0 && draft !== null) {
+    body.platform = { [draft.engine]: platform };
+  }
+  if (state.ui.editingProviderId !== null) {
+    body.providerId = state.ui.editingProviderId;
+  }
+  return body;
+}
+function performDraftLaunch(store, t) {
+  const state = store.getSnapshot();
+  if (state.draft === null) {
+    return Promise.resolve();
+  }
+  const draft = state.draft;
+  const abortKey = state.ui.editingProviderId ?? "draft";
+  const controller = new AbortController();
+  trackLaunchAbort(abortKey, controller);
+  return performAction(
+    store,
+    "launch",
+    () => postLaunch(draftLaunchBody(store), void 0, controller.signal).then((result) => {
+      if (result !== null && result.healthy === true) {
+        void repriceSummary(store, { engine: draft.engine, config: draft.config });
+        return t.runningOn + " " + (result.plan !== void 0 ? String(result.plan.port) : "");
+      }
+      if (result !== null) {
+        throw new Error(t.notHealthy + (result.detail ? ": " + result.detail : ""));
+      }
+      throw new Error(t.launchFailed);
+    }).catch((error) => {
+      forgetLaunchAbort(abortKey);
+      throw error;
+    }),
+    ACTION_TIMEOUTS.launch
+  );
+}
+function performDraftStop(store, t) {
+  const state = store.getSnapshot();
+  if (state.draft === null) {
+    return Promise.resolve();
+  }
+  const draft = state.draft;
+  return performAction(
+    store,
+    "stop",
+    () => postStop(draftLaunchBody(store)).then(() => {
+      void repriceSummary(store, { engine: draft.engine, config: draft.config });
+      return t.stopped;
+    }),
+    ACTION_TIMEOUTS.stop
+  );
 }
 
 // packages/client/src/render/ProviderList.tsx

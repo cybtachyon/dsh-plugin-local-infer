@@ -29,7 +29,7 @@ import {
 } from './abort.ts'
 import { ProgressThrottle } from './progress-throttle.ts'
 import { parseHfProgress } from './progress.ts'
-import { appendCanceledLog } from './providers.ts'
+import { appendCanceledLog, seedProcessLog } from './logs.ts'
 import { performAction, ACTION_TIMEOUTS, type CardStore } from './sync.ts'
 
 /**
@@ -231,16 +231,7 @@ export function performGet(store: CardStore, t: TextTable): Promise<void> {
     return Promise.resolve()
   }
   const platform = (draft.platform ?? {})[draft.engine]
-  const base = state.ui.logs.getLogs ?? state.summary?.lastLogs ?? ''
-  store.dispatch({
-    type: 'ui/patch',
-    patch: {
-      logs: {
-        ...state.ui.logs,
-        getLogs: base + (base === '' ? '' : '\n') + '--- ' + t.getting + '\n',
-      },
-    },
-  })
+  seedProcessLog(store, t.getting)
   // The readout throttle: a { progress } event (the server-parsed state)
   // wins over the text parse of a log chunk, and settle lands the latest
   // state before clearing the field, so the readout never outlives the run.

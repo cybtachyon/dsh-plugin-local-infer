@@ -15,7 +15,7 @@ import { fetchDeps, fetchSummary, postGet, postInstall, postSave, } from "../api
 import { cancelInFlightRuns, forgetGetAbort, hasInFlightGet, trackGetAbort, } from "./abort.js";
 import { ProgressThrottle } from "./progress-throttle.js";
 import { parseHfProgress } from "./progress.js";
-import { appendCanceledLog } from "./providers.js";
+import { appendCanceledLog, seedProcessLog } from "./logs.js";
 import { performAction, ACTION_TIMEOUTS } from "./sync.js";
 /**
  * GET_IDLE_MS is the Get run's output-idle cap in ms. Two minutes without a
@@ -195,16 +195,7 @@ export function performGet(store, t) {
         return Promise.resolve();
     }
     const platform = (draft.platform ?? {})[draft.engine];
-    const base = state.ui.logs.getLogs ?? state.summary?.lastLogs ?? '';
-    store.dispatch({
-        type: 'ui/patch',
-        patch: {
-            logs: {
-                ...state.ui.logs,
-                getLogs: base + (base === '' ? '' : '\n') + '--- ' + t.getting + '\n',
-            },
-        },
-    });
+    seedProcessLog(store, t.getting);
     // The readout throttle: a { progress } event (the server-parsed state)
     // wins over the text parse of a log chunk, and settle lands the latest
     // state before clearing the field, so the readout never outlives the run.
