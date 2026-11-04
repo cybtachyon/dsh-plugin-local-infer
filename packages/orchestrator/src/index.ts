@@ -3,13 +3,24 @@
  * under `~/.dsh/local-infer`, defaulted from the shipped `prompt.md`, and
  * injected into the system prompt while the component is enabled.
  *
- * In the scaffold this plugin is a no-op placeholder so the bundle loads with
- * zero contributions; the config holder lands in TASK-002, the system-prompt
- * seam in TASK-003, and the settings routes in TASK-004.
+ * The prompt store (saved file, shipped default, effective-prompt holder)
+ * lives in ./config.js and is re-exported here as the single source of truth
+ * the system-prompt seam (TASK-003) and the settings routes (TASK-004) pull
+ * from.
  * @module dsh-plugin-local-infer/orchestrator
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+
+export {
+  defaultOrchestratorPrompt,
+  getOrchestratorPrompt,
+  orchestratorConfigPath,
+  readOrchestratorConfig,
+  setOrchestratorPrompt,
+  writeOrchestratorConfig,
+} from './config.js'
+export type { StoredOrchestratorConfig } from './config.js'
 
 export const name = 'local-infer-orchestrator'
 
