@@ -64,7 +64,7 @@ runs, and `stopped` (killable from the card) when stopped.
 ### Phase 2: basalt adapter
 
  - [x] [TASK-003-signature-port-in-config](docs/PLAN-basalt-link-TASK-003-signature-port-in-config.md)
- - [ ] [TASK-004-plan-model-id](docs/PLAN-basalt-link-TASK-004-plan-model-id.md)
+ - [x] [TASK-004-plan-model-id](docs/PLAN-basalt-link-TASK-004-plan-model-id.md)
  - [ ] [TASK-005-record-spawn-argv](docs/PLAN-basalt-link-TASK-005-record-spawn-argv.md)
  - [ ] [TASK-006-refactor-review](docs/PLAN-basalt-link-TASK-006-refactor-review.md)
 
