@@ -44,6 +44,28 @@ describe('SystemDep install data', () => {
     expect(SYSTEM_DEPS.hfCli.requiresSudo).toBe(false)
   })
 
+  it('probes and installs the basalt serve pip requirements in the system python', async () => {
+    // The basalt serve CLI resolves its python as <src_dir>/.venv/bin/python if
+    // present, else the system python3 (python_interpreter in basalt's
+    // src/platform/system.cpp), so the probe and the install target the system
+    // python the CLI falls back to, not a uv environment.
+    const dep = SYSTEM_DEPS.basaltPip
+    expect(dep.id).toBe('basalt-pip')
+    expect(dep.requiresSudo).toBe(true)
+    // The probe shells out to the host python3, so the answer is
+    // environment-specific; the assertion is that it degrades to a boolean
+    // (the checkDeps contract) instead of throwing.
+    expect(typeof (await dep.detect!(APT))).toBe('boolean')
+    const install = 'python3 -m pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'
+    for (const manager of ['apt', 'dnf', 'pacman']) {
+      expect(dep.install[manager]?.commands).toEqual([`sudo ${install}`])
+    }
+    // brew and winget hosts run the pip install without sudo.
+    for (const manager of ['brew', 'winget']) {
+      expect(dep.install[manager]?.commands).toEqual([install])
+    }
+  })
+
   it('carries the winget toolchain blocks the Windows NInfer build needs', () => {
     expect(SYSTEM_DEPS.cmake.install.winget?.commands).toEqual(['winget install Kitware.CMake'])
     expect(SYSTEM_DEPS.ninja.install.winget?.commands).toEqual(['winget install -e --id Ninja-build.Ninja'])
