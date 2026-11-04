@@ -73,7 +73,7 @@ its output). No other cross-task dependencies.
 
 ### Phase 2 — Gates and commit
 
-- TASK-002 — repo gates green and committed.
+- [x] TASK-002 — repo gates green and committed.
   DoD: `pnpm build`, `pnpm test`, `pnpm lint` clean; tracked `lib/` artifacts
   updated beside `src/`; `prek run --files` passes on the changed paths; one
   commit on top of `55ae3a7`.
