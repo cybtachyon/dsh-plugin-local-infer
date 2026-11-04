@@ -19,6 +19,7 @@ const STATES: LaunchStatus[] = [
   'build',
   'launch',
   'downloading',
+  'sudo',
   'running',
   'stopping',
   'failed',
@@ -38,6 +39,7 @@ const START: Record<LaunchStatus, LaunchStatus> = {
   build: 'build',
   launch: 'launch',
   downloading: 'prereqs',
+  sudo: 'sudo',
   running: 'running',
   stopping: 'stopping',
   failed: 'prereqs',
@@ -50,13 +52,15 @@ const STEP: Record<LaunchStatus, Record<StepName, LaunchStatus>> = {
   build: { prereqs: 'build', download: 'build', build: 'build', launch: 'launch', bogus: 'build' },
   launch: { prereqs: 'launch', download: 'launch', build: 'launch', launch: 'launch', bogus: 'launch' },
   downloading: { prereqs: 'downloading', download: 'downloading', build: 'downloading', launch: 'downloading', bogus: 'downloading' },
+  sudo: { prereqs: 'prereqs', download: 'download', build: 'build', launch: 'launch', bogus: 'sudo' },
   running: { prereqs: 'running', download: 'running', build: 'running', launch: 'running', bogus: 'running' },
   stopping: { prereqs: 'stopping', download: 'stopping', build: 'stopping', launch: 'stopping', bogus: 'stopping' },
   failed: { prereqs: 'prereqs', download: 'download', build: 'build', launch: 'launch', bogus: 'failed' },
 }
 
 // The healthy, failed, and downloading events each settle exactly the
-// four phase states, to a different target each.
+// four phase states (plus the sudo wait, for healthy and failed), to a
+// different target each.
 const HEALTHY: Record<LaunchStatus, LaunchStatus> = {
   idle: 'idle',
   prereqs: 'running',
@@ -64,6 +68,7 @@ const HEALTHY: Record<LaunchStatus, LaunchStatus> = {
   build: 'running',
   launch: 'running',
   downloading: 'downloading',
+  sudo: 'running',
   running: 'running',
   stopping: 'stopping',
   failed: 'failed',
@@ -76,6 +81,7 @@ const FAILED: Record<LaunchStatus, LaunchStatus> = {
   build: 'failed',
   launch: 'failed',
   downloading: 'downloading',
+  sudo: 'failed',
   running: 'running',
   stopping: 'stopping',
   failed: 'failed',
@@ -88,6 +94,23 @@ const DOWNLOADING: Record<LaunchStatus, LaunchStatus> = {
   build: 'downloading',
   launch: 'downloading',
   downloading: 'downloading',
+  sudo: 'sudo',
+  running: 'running',
+  stopping: 'stopping',
+  failed: 'failed',
+}
+
+// sudoNeeded interrupts only the in-flight runs; every other control
+// state ignores the announcement, the same guarantee the other events
+// give a late event.
+const SUDO_NEEDED: Record<LaunchStatus, LaunchStatus> = {
+  idle: 'idle',
+  prereqs: 'sudo',
+  download: 'sudo',
+  build: 'sudo',
+  launch: 'sudo',
+  downloading: 'sudo',
+  sudo: 'sudo',
   running: 'running',
   stopping: 'stopping',
   failed: 'failed',
@@ -100,6 +123,7 @@ const STOP: Record<LaunchStatus, LaunchStatus> = {
   build: 'stopping',
   launch: 'stopping',
   downloading: 'downloading',
+  sudo: 'stopping',
   running: 'stopping',
   stopping: 'stopping',
   failed: 'failed',
@@ -112,6 +136,7 @@ const STOPPED: Record<LaunchStatus, LaunchStatus> = {
   build: 'build',
   launch: 'launch',
   downloading: 'downloading',
+  sudo: 'sudo',
   running: 'running',
   stopping: 'idle',
   failed: 'failed',
@@ -124,6 +149,7 @@ const STOP_FAILED: Record<LaunchStatus, LaunchStatus> = {
   build: 'build',
   launch: 'launch',
   downloading: 'downloading',
+  sudo: 'sudo',
   running: 'running',
   stopping: 'failed',
   failed: 'failed',
@@ -136,6 +162,7 @@ const RESET: Record<LaunchStatus, LaunchStatus> = {
   build: 'idle',
   launch: 'idle',
   downloading: 'idle',
+  sudo: 'idle',
   running: 'idle',
   stopping: 'idle',
   failed: 'idle',
@@ -154,7 +181,14 @@ describe('client launch machine (machine/launch.ts)', () => {
     for (const phase of LAUNCH_PHASE_STATES) {
       expect(launchIsPhase(phase)).toBe(true)
     }
-    for (const state of ['idle', 'downloading', 'running', 'stopping', 'failed'] as LaunchStatus[]) {
+    for (const state of [
+      'idle',
+      'downloading',
+      'sudo',
+      'running',
+      'stopping',
+      'failed',
+    ] as LaunchStatus[]) {
       expect(launchIsPhase(state)).toBe(false)
     }
   })
@@ -172,6 +206,9 @@ describe('client launch machine (machine/launch.ts)', () => {
       expect(launchNextState({ status }, { type: 'downloading' })).toEqual({
         status: DOWNLOADING[status],
       })
+      expect(launchNextState({ status }, { type: 'sudoNeeded' })).toEqual({
+        status: SUDO_NEEDED[status],
+      })
       expect(launchNextState({ status }, { type: 'stop' })).toEqual({ status: STOP[status] })
       expect(launchNextState({ status }, { type: 'stopped' })).toEqual({ status: STOPPED[status] })
       if (status === 'stopping') {
@@ -188,6 +225,45 @@ describe('client launch machine (machine/launch.ts)', () => {
       expect(launchNextState({ status }, { type: 'reset' })).toEqual({ status: RESET[status] })
     })
   }
+
+  describe('sudo wait (the host is waiting for a password on the terminal)', () => {
+    it('step resumes the run at the reported step, with no phase order to guard', () => {
+      expect(launchNextState({ status: 'sudo' }, { type: 'step', step: 'build' })).toEqual({
+        status: 'build',
+      })
+      expect(launchNextState({ status: 'sudo' }, { type: 'step', step: 'prereqs' })).toEqual({
+        status: 'prereqs',
+      })
+    })
+
+    it('an unknown step name leaves the waiting control at sudo', () => {
+      expect(launchNextState({ status: 'sudo' }, { type: 'step', step: 'bogus' })).toEqual({
+        status: 'sudo',
+      })
+    })
+
+    it('healthy settles the resumed run to running', () => {
+      expect(launchNextState({ status: 'sudo' }, { type: 'healthy' })).toEqual({
+        status: 'running',
+      })
+    })
+
+    it('failed settles the 60 s password timeout to failed', () => {
+      expect(launchNextState({ status: 'sudo' }, { type: 'failed' })).toEqual({
+        status: 'failed',
+      })
+    })
+
+    it('stop moves a run paused on the password to stopping', () => {
+      expect(launchNextState({ status: 'sudo' }, { type: 'stop' })).toEqual({
+        status: 'stopping',
+      })
+    })
+
+    it('reset settles a waiting control to idle', () => {
+      expect(launchNextState({ status: 'sudo' }, { type: 'reset' })).toEqual({ status: 'idle' })
+    })
+  })
 
   describe('cause-aware entries', () => {
     it('reset reads a stop timeout as running (the engine is probably still up)', () => {
@@ -214,6 +290,22 @@ describe('client launch machine (machine/launch.ts)', () => {
         launchNextState({ status: 'failed', cause: 'stop' }, { type: 'step', step: 'bogus' }),
       ).toEqual({ status: 'failed', cause: 'stop' })
     })
+
+    it('preserves the cause when sudoNeeded meets a state that cannot wait', () => {
+      expect(
+        launchNextState({ status: 'failed', cause: 'stop' }, { type: 'sudoNeeded' }),
+      ).toEqual({ status: 'failed', cause: 'stop' })
+    })
+
+    it('sudoNeeded clears the cause when it interrupts an in-flight run', () => {
+      expect(
+        launchNextState({ status: 'download', cause: 'stop' }, { type: 'sudoNeeded' }),
+      ).toEqual({ status: 'sudo' })
+    })
+
+    it('reset settles a sudo wait back to idle (a launch failure reads as Launch)', () => {
+      expect(launchNextState({ status: 'sudo' }, { type: 'reset' })).toEqual({ status: 'idle' })
+    })
   })
 
   describe('entries without a machine state', () => {
@@ -230,6 +322,10 @@ describe('client launch machine (machine/launch.ts)', () => {
       expect(
         launchNextState({ status: 'running' }, { type: 'bogus' } as never),
       ).toEqual({ status: 'running' })
+    })
+
+    it('prices sudoNeeded from a null entry as a no-op (idle ignores it)', () => {
+      expect(launchNextState(null, { type: 'sudoNeeded' })).toEqual({ status: 'idle' })
     })
   })
 })

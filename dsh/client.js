@@ -536,6 +536,17 @@ function launchIsPhase(state) {
 function isLaunchStep(step) {
   return step in LAUNCH_STEP_ORDER;
 }
+var SUDO_WAITABLE_STATES = [
+  "prereqs",
+  "download",
+  "build",
+  "launch",
+  "downloading",
+  "sudo"
+];
+function launchIsAwaitingResult(state) {
+  return launchIsPhase(state) || state === "sudo";
+}
 function launchNextState(entry, event) {
   const current = entry?.status ?? "idle";
   const cause = entry?.cause;
@@ -558,6 +569,9 @@ function launchNextState(entry, event) {
       } else if (current === "running" || current === "stopping") {
         next = current;
         nextCause = cause;
+      } else if (current === "sudo") {
+        next = target;
+        nextCause = void 0;
       } else if (!isLaunchStep(current)) {
         next = current;
         nextCause = cause;
@@ -568,12 +582,12 @@ function launchNextState(entry, event) {
       break;
     }
     case "healthy": {
-      next = launchIsPhase(current) ? "running" : current;
+      next = launchIsAwaitingResult(current) ? "running" : current;
       nextCause = void 0;
       break;
     }
     case "failed": {
-      next = launchIsPhase(current) ? "failed" : current;
+      next = launchIsAwaitingResult(current) ? "failed" : current;
       nextCause = void 0;
       break;
     }
@@ -583,7 +597,7 @@ function launchNextState(entry, event) {
       break;
     }
     case "stop": {
-      next = current === "running" || current === "stopping" || current === "idle" || launchIsPhase(current) ? "stopping" : current;
+      next = current === "running" || current === "stopping" || current === "idle" || launchIsAwaitingResult(current) ? "stopping" : current;
       nextCause = void 0;
       break;
     }
@@ -595,6 +609,12 @@ function launchNextState(entry, event) {
     case "stopFailed": {
       next = current === "stopping" ? "failed" : current;
       nextCause = current === "stopping" ? "stop" : cause;
+      break;
+    }
+    case "sudoNeeded": {
+      const waitable = SUDO_WAITABLE_STATES.includes(current);
+      next = waitable ? "sudo" : current;
+      nextCause = waitable ? void 0 : cause;
       break;
     }
     case "reset": {
