@@ -63,22 +63,34 @@ export function modelArtifactPath(entry, directory, useHubCache = false) {
     return join(directory, repoNameFromUrl(entry.url));
 }
 /**
+ * hfDownloadFileCommand renders the hf CLI download for one repo and file
+ * pair: the repo, the file (omitted when blank, a whole-repo download), the
+ * `--local-dir` target when the hub-cache layout does not apply, and the
+ * `--format human` flag. The flag overrides the non-TTY default (`auto` picks
+ * `agent`, which prints no progress) so the hf CLI prints tqdm progress
+ * lines to stderr, which the progress streaming tasks consume. The string is
+ * the single source every hf download command renders through: the model and
+ * chat-template builders below, and the Infernix extra-download commands the
+ * Get step streams.
+ */
+export function hfDownloadFileCommand(repo, file, directory, useHubCache = false) {
+    const filePart = file !== '' ? ` ${file}` : '';
+    const localDir = useHubCache ? '' : ` --local-dir ${directory}`;
+    return `hf download ${repo}${filePart}${localDir} --format human`;
+}
+/**
  * hfDownloadCommand renders the hf CLI download for one default model: the
  * repo, the artifact file when the entry names one, and the `--local-dir`
  * target. With the hub-cache layout (`useHubCache`), the `--local-dir` is
  * dropped so the hf CLI writes into the hub cache's `models--{ns}--{name}`
- * directory (the content-addressed `blobs/` plus the `snapshots/`). The string
- * is the single source the download route runs and the card shows beside its
- * Download button. The `--format human` flag overrides the non-TTY default
- * (`auto` picks `agent`, which prints no progress) so the hf CLI prints tqdm
- * progress lines to stderr, which the progress streaming tasks consume.
+ * directory (the content-addressed `blobs/` plus the `snapshots/`). The
+ * string is the single source the download route runs and the card shows
+ * beside its Download button, rendered through hfDownloadFileCommand.
  */
 export function hfDownloadCommand(entry, directory, useHubCache = false) {
     const repo = repoIdFromUrl(entry.url);
-    const file = entry.file !== undefined && entry.file !== '' ? ` ${entry.file}` : '';
-    if (useHubCache)
-        return `hf download ${repo}${file} --format human`;
-    return `hf download ${repo}${file} --local-dir ${directory} --format human`;
+    const file = entry.file !== undefined && entry.file !== '' ? entry.file : '';
+    return hfDownloadFileCommand(repo, file, directory, useHubCache);
 }
 /**
  * The chat template file the hf CLI pulls into the model directory. The
@@ -93,15 +105,11 @@ export const CHAT_TEMPLATE_FILE = 'chat_template.jinja';
  * `--local-dir` is dropped so the template lands in the hub cache's
  * `models--{ns}--{name}` directory. The string is the single source the
  * template download route runs and the card shows beside its Download button
- * and in the System dependencies box when the auto-download is unavailable.
- * The `--format human` flag overrides the non-TTY default (`auto` picks
- * `agent`, which prints no progress) so the hf CLI prints tqdm progress
- * lines to stderr, which the progress streaming tasks consume.
+ * and in the System dependencies box when the auto-download is unavailable,
+ * rendered through hfDownloadFileCommand.
  */
 export function hfChatTemplateCommand(repo, directory, useHubCache = false) {
-    if (useHubCache)
-        return `hf download ${repo} ${CHAT_TEMPLATE_FILE} --format human`;
-    return `hf download ${repo} ${CHAT_TEMPLATE_FILE} --local-dir ${directory} --format human`;
+    return hfDownloadFileCommand(repo, CHAT_TEMPLATE_FILE, directory, useHubCache);
 }
 /**
  * chatTemplateArtifactPath is the path the chat-template presence check looks

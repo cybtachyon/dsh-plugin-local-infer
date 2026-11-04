@@ -36,6 +36,21 @@ export function resolveEngineDirectory(localInfer, config, engineId, platform) {
     return join(modelDir, engineId);
 }
 /**
+ * downloadOptions builds the exactOptionalPropertyTypes-safe download options
+ * a Get step's hf download runs with: the hub-cache layout flag, the run's
+ * cancel signal, and the onChunk progress sink, each present only when the
+ * run carries it, so an absent field never writes `undefined`. The model and
+ * chat-template steps share it, so the option group (the directory layout,
+ * the cancel, the progress sink) is built in one place.
+ */
+function downloadOptions(ctx) {
+    return {
+        useHubCache: ctx.useHubCache,
+        ...(ctx.request.signal !== undefined ? { signal: ctx.request.signal } : {}),
+        ...(ctx.onChunk !== undefined ? { onChunk: ctx.onChunk } : {}),
+    };
+}
+/**
  * runDepsStep is the Get step's system-dependency install: it runs the
  * install while the Play/Run trust gate is on, and re-checks the deps with
  * a copy/paste note when the gate is off, so a missing dependency aborts the
@@ -141,11 +156,7 @@ async function runModelDownloadStep(ctx) {
             }
             else {
                 emit(`$ ${hfDownloadCommand(entry, modelDir, useHubCache)}\n`);
-                const download = await localInfer.downloadModel(entry, modelDir, {
-                    useHubCache,
-                    ...(request.signal !== undefined ? { signal: request.signal } : {}),
-                    ...(ctx.onChunk !== undefined ? { onChunk: ctx.onChunk } : {}),
-                });
+                const download = await localInfer.downloadModel(entry, modelDir, downloadOptions(ctx));
                 if (!download.ok) {
                     emit(`!! ${download.detail ?? 'model download failed'}\n`);
                     return { ok: false, detail: download.detail ?? 'a model download failed' };
@@ -195,11 +206,7 @@ async function runChatTemplateStep(ctx) {
         }
         else {
             emit(`$ ${hfChatTemplateCommand(template, modelDir, useHubCache)}\n`);
-            const download = await localInfer.downloadChatTemplate(template, modelDir, {
-                useHubCache,
-                ...(request.signal !== undefined ? { signal: request.signal } : {}),
-                ...(ctx.onChunk !== undefined ? { onChunk: ctx.onChunk } : {}),
-            });
+            const download = await localInfer.downloadChatTemplate(template, modelDir, downloadOptions(ctx));
             if (!download.ok) {
                 emit(`!! ${download.detail ?? 'chat template download failed'}\n`);
                 return { ok: false, detail: download.detail ?? 'a chat template download failed' };

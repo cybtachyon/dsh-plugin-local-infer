@@ -9,7 +9,11 @@
  * the byte bar (`Downloading x.safetensors: 12% | 5.2G/43.5G [01:23<10:11,
  * 72.3MB/s]`, where the done/total fields carry human byte sizes). It
  * converts the human byte sizes to bytes and the `[elapsed<remaining, rate]`
- * tail to remaining seconds.
+ * tail to remaining seconds. The client package mirrors this parser in
+ * `packages/client/src/store/progress.ts` (the TASK-006 browser-side copy):
+ * the core package is not browser-safe, so the client bundle keeps its own
+ * copy and the two shapes (`HfProgress` and the client's `HfProgressShape`)
+ * must stay in sync when a tqdm bar shape changes.
  * @module dsh-plugin-local-infer/core/progress
  */
 // The file-count bar: `Fetching 102 files: 42%|...| 43/102 [00:01<00:02, ...]`.

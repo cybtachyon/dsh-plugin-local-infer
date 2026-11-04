@@ -180,8 +180,7 @@ export async function launchEngine(localInfer, request, onProgress, host = nodeL
             healthy: false,
             detail: get.detail ?? 'a Get step failed',
         };
-        persistLaunchLogs(result, engineId, config, signal?.aborted === true ? getLogs + CANCELED_LINE : getLogs);
-        persistLaunchRecord(result, engineId, config, request.providerId);
+        persistLaunchOutcome(result, engineId, config, request.providerId, signal?.aborted === true ? getLogs + CANCELED_LINE : getLogs);
         return result;
     }
     applyComposeArgs(plan, localInfer, engineId);
@@ -202,27 +201,43 @@ export async function launchEngine(localInfer, request, onProgress, host = nodeL
         allowRunDeps: stored.allowRunDeps,
         ...(request.autoRebuild !== undefined ? { autoRebuild: request.autoRebuild } : {}),
     });
-    // Order the run logs: the Get-step output the launch ran leads, the build
-    // output (the rebuild decision, the build command, and its output)
-    // follows it, the launch command follows that (after a successful build,
-    // or a direct launch with no build), and the engine's runtime output comes
-    // last. A deploy that failed before the engine printed anything still
-    // reports the command it tried to run.
+    // A cancel that landed after the Get steps (the card's provider-form Cancel
+    // closed the stream during the deploy or health poll) adds the "Canceled"
+    // line, so the persisted run reads as canceled.
+    composeLaunchLogs(result, getLogs, commandNote, signal?.aborted === true);
+    persistLaunchOutcome(result, engineId, config, request.providerId, getLogs);
+    return result;
+}
+/**
+ * composeLaunchLogs orders a launch's run logs: the Get-step output the
+ * launch ran leads, the deploy step's build output follows it, the launch
+ * command note follows that (after a successful build, or a direct launch
+ * with no build), and the engine's runtime output comes last. The deploy
+ * step's buildLogs field is folded into the ordered text and dropped, so the
+ * result carries the ordered run in its logs field. A cancel that landed
+ * after the Get steps appends the "Canceled" line, so the persisted run reads
+ * as canceled.
+ */
+function composeLaunchLogs(result, getLogs, commandNote, canceled) {
     const buildLogs = result.buildLogs ?? '';
     const engineLogs = result.logs ?? '';
     result.logs = getLogs + buildLogs + (commandNote ?? '') + engineLogs;
     if (result.buildLogs !== undefined) {
         delete result.buildLogs;
     }
-    // A cancel that landed after the Get steps (the card's provider-form Cancel
-    // closed the stream during the deploy or health poll) adds the "Canceled"
-    // line, so the persisted run reads as canceled.
-    if (signal?.aborted === true) {
+    if (canceled) {
         result.logs += CANCELED_LINE;
     }
+}
+/**
+ * persistLaunchOutcome persists a settled launch: the run logs to the stored
+ * last-run logs and the log file (the Get-step output the launch ran leads),
+ * and the launch record on the target provider entry, so a DSH restart can
+ * re-link a surviving engine to its config.
+ */
+function persistLaunchOutcome(result, engineId, config, providerId, getLogs) {
     persistLaunchLogs(result, engineId, config, getLogs);
-    persistLaunchRecord(result, engineId, config, request.providerId);
-    return result;
+    persistLaunchRecord(result, engineId, config, providerId);
 }
 /**
  * findLaunchTarget resolves the stored provider entry a launch or stop

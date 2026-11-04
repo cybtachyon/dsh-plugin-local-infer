@@ -9,15 +9,11 @@
  * rebuild steps run as long as they need to.
  * @module dsh-plugin-local-infer/ui/routes/launch
  */
-import { foldHfProgressChunk } from '../../../core/lib/index.js';
 import { nodeLifecycleHost } from '../../../providers/lib/index.js';
 import { launchEngine } from "../ops/engine.js";
 import { defineRoute, RouteError } from "../route.js";
 import { launchRequestFromBody } from "../request.js";
-// The minimum interval between progress events: the tqdm cadence is hot (a
-// bar redraw per chunk), so the route emits at most one event per half
-// second, the same cadence the get route throttles to.
-const PROGRESS_MIN_INTERVAL_MS = 500;
+import { abortOnResponseClose, ndjsonLine, throttledProgressSink } from "./stream.js";
 /**
  * launchRoute builds the POST /local-infer/launch route definition the
  * register step holds by an effect. The optional launchHost is the lifecycle
@@ -35,41 +31,23 @@ export function launchRoute(localInfer, launchHost = nodeLifecycleHost) {
         run: async ({ body }, res) => {
             res.ndjsonStream();
             const writeLine = (line) => {
-                res.write(JSON.stringify(line) + '\n');
+                ndjsonLine(res, line);
             };
             const onProgress = (step) => {
                 writeLine({ step });
             };
             // The Get-steps hf download's raw stderr sink: the core chunk folder
-            // turns the tqdm lines into a structured state, and the route emits a
+            // turns the tqdm lines into a structured state, and the sink emits a
             // progress event when a fold yields one (throttled to the half-second
             // cadence), between the step and result events.
-            let folded;
-            let lastProgressAt = 0;
-            const onChunk = (chunk) => {
-                const state = foldHfProgressChunk(chunk, folded);
-                if (state === undefined)
-                    return;
-                folded = state;
-                const now = Date.now();
-                if (now - lastProgressAt >= PROGRESS_MIN_INTERVAL_MS) {
-                    lastProgressAt = now;
-                    writeLine({ progress: state });
-                }
-            };
+            const onChunk = throttledProgressSink((progress) => writeLine({ progress }));
             // The card's provider-form Cancel aborts the fetch, which closes the
             // response: the abort interrupts the in-flight Get-step hf child
             // (SIGINT, then SIGTERM), and the persisted run carries the "Canceled"
             // line. A close after the run settled is the normal end, not a cancel.
-            const controller = new AbortController();
-            let finished = false;
-            res.onClose(() => {
-                if (!finished) {
-                    controller.abort();
-                }
-            });
+            const { signal, markFinished } = abortOnResponseClose(res);
             try {
-                const result = await launchEngine(localInfer, launchRequestFromBody(body), onProgress, launchHost, controller.signal, onChunk);
+                const result = await launchEngine(localInfer, launchRequestFromBody(body), onProgress, launchHost, signal, onChunk);
                 writeLine({ result });
             }
             catch (error) {
@@ -81,7 +59,7 @@ export function launchRoute(localInfer, launchHost = nodeLifecycleHost) {
                     : String(error?.message ?? error);
                 writeLine({ result: { healthy: false, detail } });
             }
-            finished = true;
+            markFinished();
             res.end();
         },
     });

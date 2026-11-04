@@ -7,15 +7,11 @@
  * way.
  * @module dsh-plugin-local-infer/ui/routes/get
  */
-import { foldHfProgressChunk } from '../../../core/lib/index.js';
 import { parseStoredPlatformConfig } from "../config.js";
 import { CANCELED_LINE, getEngine } from "../ops/engine.js";
 import { persistProcessLog } from "../ops/logs.js";
 import { defineRoute } from "../route.js";
-// The minimum interval between progress events: the tqdm cadence is hot (a
-// bar redraw per chunk), so the route emits at most one event per half
-// second and the card's own throttle bounds the store updates.
-const PROGRESS_MIN_INTERVAL_MS = 500;
+import { abortOnResponseClose, ndjsonLine, throttledProgressSink } from "./stream.js";
 /**
  * getRoute builds the POST /local-infer/get route definition the register
  * step holds by an effect. The optional getHost is the lifecycle host the
@@ -43,46 +39,25 @@ export function getRoute(localInfer, getHost) {
             }
             res.ndjsonStream();
             let collected = '';
-            const writeLine = (line) => {
-                res.write(JSON.stringify(line) + '\n');
-            };
             // The log sink collects the plain-text run (the persisted log) and
             // streams it as NDJSON log events, one event per chunk.
             const log = (text) => {
                 collected += text;
-                writeLine({ log: text });
+                ndjsonLine(res, { log: text });
             };
             // The hf download's raw stderr sink: the core chunk folder turns the
-            // tqdm lines into a structured state, and the route emits a progress
+            // tqdm lines into a structured state, and the sink emits a progress
             // event when a fold yields one (throttled to the half-second cadence).
-            let folded;
-            let lastProgressAt = 0;
-            const onChunk = (chunk) => {
-                const state = foldHfProgressChunk(chunk, folded);
-                if (state === undefined)
-                    return;
-                folded = state;
-                const now = Date.now();
-                if (now - lastProgressAt >= PROGRESS_MIN_INTERVAL_MS) {
-                    lastProgressAt = now;
-                    writeLine({ progress: state });
-                }
-            };
+            const onChunk = throttledProgressSink((progress) => ndjsonLine(res, { progress }));
             // The card's provider-form Cancel aborts the fetch, which closes the
             // response: the abort interrupts the in-flight hf child (SIGINT, then
             // SIGTERM). Resume is within-invocation only; a killed run re-downloads
             // from zero on the re-run (the orphaned .incomplete blob lingers until
             // `hf cache prune`). A close after the run settled is the normal end,
             // not a cancel.
-            const controller = new AbortController();
-            let finished = false;
-            res.onClose(() => {
-                if (!finished) {
-                    controller.abort();
-                }
-            });
+            const { signal, markFinished } = abortOnResponseClose(res);
             try {
-                await getEngine(localInfer, request, log, getHost, controller.signal, onChunk);
+                await getEngine(localInfer, request, log, getHost, signal, onChunk);
             }
             catch (error) {
                 log(`!! get failed: ${String(error?.message ?? error)}\n`);
@@ -90,10 +65,10 @@ export function getRoute(localInfer, getHost) {
             // A cancel that closed the stream appends the "Canceled" line, so the
             // persisted run (and the log file) read the run as canceled, the same
             // line the card writes to its Logs buffer on the Cancel.
-            if (controller.signal.aborted) {
+            if (signal.aborted) {
                 log(`${CANCELED_LINE}`);
             }
-            finished = true;
+            markFinished();
             // The "Getting engine and model..." separator leads the persisted run,
             // so the Logs section and the log file read the run as a fresh process
             // section, the same line the card writes when the Get button is

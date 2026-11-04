@@ -30,7 +30,7 @@ export type { DefaultProvenance, DefaultsResolver, HardwareClass, Preset, Preset
 export { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, apiKeyEnvFor, buildModelEntry, defaultApiKeyFor, LLM_PI_AI_NAMESPACE, modelRowsFrom, modelSlug, providerIdFor, providerRegistrationOps, providerRemovalOps, removeModelRow, upsertModelRow, } from './registrar.ts';
 export type { DshModelEntry, DshModelRegistrar, ModelRow, RegisterResult, SettingsOp, } from './registrar.ts';
 export { checkDeps, detectPackageManager, osLabel, planDeps, renderInstallString, runInstall, } from './deps.ts';
-export { CHAT_TEMPLATE_FILE, chatTemplateArtifactPath, hfChatTemplateCommand, hfDownloadCommand, hubCacheModelDirectory, hubCacheSnapshotFilePath, isModelDirectoryOverridden, modelArtifactPath, modelCacheEntriesForEngine, modelEntriesForEngine, repoIdFromUrl, repoNameFromUrl, } from './models.ts';
+export { CHAT_TEMPLATE_FILE, chatTemplateArtifactPath, hfChatTemplateCommand, hfDownloadCommand, hfDownloadFileCommand, hubCacheModelDirectory, hubCacheSnapshotFilePath, isModelDirectoryOverridden, modelArtifactPath, modelCacheEntriesForEngine, modelEntriesForEngine, repoIdFromUrl, repoNameFromUrl, } from './models.ts';
 export type { DefaultModel, ModelCacheEntry, ModelDirectoryEntry, } from './models.ts';
 export { hfDatasetsCacheDirectory, hfHubCacheDirectory, modelDownloadTarget, } from './hf-cache.ts';
 export type { ModelDownloadTarget } from './hf-cache.ts';

@@ -23,7 +23,7 @@ import {
   isModelDirectoryOverridden,
   modelArtifactPath,
 } from '../../../core/lib/index.js'
-import type { LocalInferService } from 'dsh-plugin-local-infer/service'
+import type { DownloadModelOptions, LocalInferService } from 'dsh-plugin-local-infer/service'
 import {
   buildEngineRepo,
   defaultModelFor,
@@ -126,6 +126,22 @@ interface GetStepContext {
  * the runner moves to the next step.
  */
 type GetStepFailure = { ok: false; detail?: string } | null
+
+/**
+ * downloadOptions builds the exactOptionalPropertyTypes-safe download options
+ * a Get step's hf download runs with: the hub-cache layout flag, the run's
+ * cancel signal, and the onChunk progress sink, each present only when the
+ * run carries it, so an absent field never writes `undefined`. The model and
+ * chat-template steps share it, so the option group (the directory layout,
+ * the cancel, the progress sink) is built in one place.
+ */
+function downloadOptions(ctx: GetStepContext): DownloadModelOptions {
+  return {
+    useHubCache: ctx.useHubCache,
+    ...(ctx.request.signal !== undefined ? { signal: ctx.request.signal } : {}),
+    ...(ctx.onChunk !== undefined ? { onChunk: ctx.onChunk } : {}),
+  }
+}
 
 /**
  * runDepsStep is the Get step's system-dependency install: it runs the
@@ -247,11 +263,7 @@ async function runModelDownloadStep(ctx: GetStepContext): Promise<GetStepFailure
         emit(`model download: ${modelId} is already present, skipped\n`)
       } else {
         emit(`$ ${hfDownloadCommand(entry, modelDir, useHubCache)}\n`)
-        const download = await localInfer.downloadModel(entry, modelDir, {
-          useHubCache,
-          ...(request.signal !== undefined ? { signal: request.signal } : {}),
-          ...(ctx.onChunk !== undefined ? { onChunk: ctx.onChunk } : {}),
-        })
+        const download = await localInfer.downloadModel(entry, modelDir, downloadOptions(ctx))
         if (!download.ok) {
           emit(`!! ${download.detail ?? 'model download failed'}\n`)
           return { ok: false, detail: download.detail ?? 'a model download failed' }
@@ -305,11 +317,7 @@ async function runChatTemplateStep(ctx: GetStepContext): Promise<GetStepFailure>
       emit(`chat template: ${template} is already present, skipped\n`)
     } else {
       emit(`$ ${hfChatTemplateCommand(template, modelDir, useHubCache)}\n`)
-      const download = await localInfer.downloadChatTemplate(template, modelDir, {
-        useHubCache,
-        ...(request.signal !== undefined ? { signal: request.signal } : {}),
-        ...(ctx.onChunk !== undefined ? { onChunk: ctx.onChunk } : {}),
-      })
+      const download = await localInfer.downloadChatTemplate(template, modelDir, downloadOptions(ctx))
       if (!download.ok) {
         emit(`!! ${download.detail ?? 'chat template download failed'}\n`)
         return { ok: false, detail: download.detail ?? 'a chat template download failed' }

@@ -168,6 +168,7 @@ export {
   chatTemplateArtifactPath,
   hfChatTemplateCommand,
   hfDownloadCommand,
+  hfDownloadFileCommand,
   hubCacheModelDirectory,
   hubCacheSnapshotFilePath,
   isModelDirectoryOverridden,

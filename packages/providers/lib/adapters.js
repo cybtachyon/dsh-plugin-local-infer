@@ -261,7 +261,11 @@ const STREAM_OUTPUT_TAIL = 1_024;
  * aborts (the card's cancel of a Get/Launch download): SIGINT first, SIGTERM
  * after the grace period if the child is still alive. A signal that is already
  * aborted kills immediately. The optional graceMs overrides the 5 s constant
- * so a test can exercise the escalation without waiting.
+ * so a test can exercise the escalation without waiting. A near-identical
+ * copy lives in the service package (packages/service/src/index.ts, the
+ * download runner's abort path): each package owns its own child-process
+ * wiring, and the guard fix (the SIGTERM escalation) was applied to both
+ * copies, so a change to the escalation rule lands in two places by design.
  */
 function watchChildAbort(child, signal, graceMs) {
     if (signal === undefined)

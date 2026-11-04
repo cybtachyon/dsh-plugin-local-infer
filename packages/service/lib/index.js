@@ -1424,6 +1424,32 @@ function runCommand(cmd, args) {
  */
 const INSTALL_OUTPUT_TAIL = 1024;
 /**
+ * The high-water mark the streaming output trims to: the collected output
+ * passes the mark only for a chatty command, and the trim keeps the last
+ * kilobyte the failure detail shows, the same rule the providers' streaming
+ * host applies.
+ */
+const INSTALL_OUTPUT_HIGH_WATER = INSTALL_OUTPUT_TAIL * 2;
+/**
+ * tailOutput keeps a bounded tail of a streamed command's combined output:
+ * append grows the buffer and trims it to the high-water mark, and tail
+ * returns the trimmed last kilobyte a failure detail shows. The install and
+ * download runners share it, so a chatty failure stays readable without
+ * growing the host's memory.
+ */
+function tailOutput() {
+    let output = '';
+    return {
+        append: (text) => {
+            output += text;
+            if (output.length > INSTALL_OUTPUT_HIGH_WATER) {
+                output = output.slice(-INSTALL_OUTPUT_HIGH_WATER);
+            }
+        },
+        tail: () => output.trim().slice(-INSTALL_OUTPUT_TAIL),
+    };
+}
+/**
  * shellRunCommand is the Play/Run runner: it runs one command line through
  * the system shell and reports the exit. stdin is closed, so a sudo password
  * prompt that cannot read a terminal fails fast instead of hanging the panel;
@@ -1431,12 +1457,9 @@ const INSTALL_OUTPUT_TAIL = 1024;
  */
 const shellRunCommand = (command) => new Promise(resolve => {
     const child = spawn(command, { shell: true, stdio: ['ignore', 'pipe', 'pipe'] });
-    let output = '';
+    const tail = tailOutput();
     const append = (chunk) => {
-        output += chunk.toString('utf8');
-        if (output.length > INSTALL_OUTPUT_TAIL * 2) {
-            output = output.slice(-INSTALL_OUTPUT_TAIL * 2);
-        }
+        tail.append(chunk.toString('utf8'));
     };
     child.stdout.on('data', append);
     child.stderr.on('data', append);
@@ -1451,7 +1474,7 @@ const shellRunCommand = (command) => new Promise(resolve => {
             resolve({ ok: true });
             return;
         }
-        resolve({ ok: false, detail: `exit ${code}: ${output.trim().slice(-INSTALL_OUTPUT_TAIL)}` });
+        resolve({ ok: false, detail: `exit ${code}: ${tail.tail()}` });
     });
 });
 /**
@@ -1471,7 +1494,11 @@ const DOWNLOAD_ABORT_GRACE_MS = 5_000;
  * cancel): SIGINT first, SIGTERM after the grace period if the child is still
  * alive. A signal that is already aborted kills immediately. The optional
  * graceMs overrides the 5 s constant so a test can exercise the escalation
- * without waiting.
+ * without waiting. A near-identical copy lives in the providers package
+ * (packages/providers/src/adapters.ts, the lifecycle host's run and runStream
+ * abort path): each package owns its own child-process wiring, and the guard
+ * fix (the SIGTERM escalation) was applied to both copies, so a change to the
+ * escalation rule lands in two places by design.
  */
 function watchChildAbort(child, signal, graceMs) {
     if (signal === undefined)
@@ -1511,13 +1538,10 @@ export const downloadRunner = (command, signal, onChunk, graceMs) => new Promise
         timeout: DOWNLOAD_TIMEOUT_MS,
         stdio: ['ignore', 'pipe', 'pipe'],
     });
-    let output = '';
+    const tail = tailOutput();
     const append = (chunk) => {
         const text = chunk.toString('utf8');
-        output += text;
-        if (output.length > INSTALL_OUTPUT_TAIL * 2) {
-            output = output.slice(-INSTALL_OUTPUT_TAIL * 2);
-        }
+        tail.append(text);
         onChunk?.(text);
     };
     child.stdout.on('data', append);
@@ -1533,9 +1557,9 @@ export const downloadRunner = (command, signal, onChunk, graceMs) => new Promise
             resolve({ ok: true });
             return;
         }
-        const tail = output.trim().slice(-INSTALL_OUTPUT_TAIL);
+        const detail = tail.tail();
         const label = code !== null ? `exit ${code}` : `killed by ${killSignal ?? 'a signal'}`;
-        resolve({ ok: false, detail: tail === '' ? label : `${label}: ${tail}` });
+        resolve({ ok: false, detail: detail === '' ? label : `${label}: ${detail}` });
     });
     watchChildAbort(child, signal, graceMs);
 });
