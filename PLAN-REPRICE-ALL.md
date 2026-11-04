@@ -72,7 +72,7 @@ the draft)
 
 ### Phase 2: Verify
 
-- [ ] [TASK-005-full-gate](docs/PLAN-REPRICE-ALL-TASK-005-full-gate.md)
+- [x] [TASK-005-full-gate](docs/PLAN-REPRICE-ALL-TASK-005-full-gate.md)
 
 ## Task dependencies
 
