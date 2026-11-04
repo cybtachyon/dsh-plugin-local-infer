@@ -71,7 +71,7 @@ runs, and `stopped` (killable from the card) when stopped.
 
 ### Phase 3: verification
 
- - [ ] [TASK-007-verify-commit](docs/PLAN-basalt-link-TASK-007-verify-commit.md)
+ - [x] [TASK-007-verify-commit](docs/PLAN-basalt-link-TASK-007-verify-commit.md)
 
 ## Task dependencies
 
@@ -118,6 +118,14 @@ runs, and `stopped` (killable from the card) when stopped.
   (the eb4b99b pattern), so the persisted record argv is what the process
   carries on every OS, and the adapters spec pins the plan equal to the
   spawn argv.
+- TASK-007: all gates green (build, 1422 tests, coverage thresholds, lint);
+  tracked lib outputs carry every src change. The behavioral spot check
+  landed as a permanent regression test (scope upgrade from a scratch run):
+  the `ctx.localInfer basalt config-carried port linking` describe in
+  `packages/service/tests/local-infer.spec.ts` prices the live bug shape
+  end-to-end (no-model provider, config port 18020, a portless
+  `python3 -m serve.server` basalt line): running with the launch model
+  tie, unsure without one.
 
 ## Answers
 
