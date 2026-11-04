@@ -267,7 +267,23 @@ export function createNodeLifecycleHost(debug) {
         },
         spawn(argv, env, cwd) {
             log?.(`spawn: ${argv.join(' ')}${cwd !== undefined ? ` (cwd: ${cwd})` : ''}`);
-            const child = nodeSpawn(argv[0] ?? '', argv.slice(1), {
+            // An empty argv (or an empty command) would spawn '' and hang the watcher
+            // on a child that never starts. Settle the handle with a spawn error
+            // detail instead, so the launch step reports the missing command.
+            const command = argv[0];
+            if (command === undefined || command === '') {
+                const detail = 'spawn: no command in argv';
+                const info = { code: null, signal: null, error: detail };
+                return {
+                    pid: -1,
+                    kill: () => { },
+                    logs: detail,
+                    onExit: (listener) => {
+                        listener(info);
+                    },
+                };
+            }
+            const child = nodeSpawn(command, argv.slice(1), {
                 env: { ...process.env, ...env },
                 cwd,
                 detached: true,

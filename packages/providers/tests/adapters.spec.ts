@@ -2137,6 +2137,19 @@ describe('nodeLifecycleHost (the live host the service wires in)', () => {
     expect(handle.logs).toContain('spawn error')
   })
 
+  it('settles onExit with a spawn error detail for an empty argv', async () => {
+    // The empty-argv guard: no child spawns (no '' command), the handle
+    // settles with the error detail, and a late onExit attach fires it
+    // immediately.
+    const host = createNodeLifecycleHost()
+    const handle = host.spawn([], {})
+    expect(handle.pid).toBe(-1)
+    const exit = await onceExit(handle)
+    expect(exit.code).toBeNull()
+    expect(exit.error).toContain('no command in argv')
+    expect(handle.logs).toContain('no command in argv')
+  })
+
   it('reports a pkill as a signal exit through onExit', async () => {
     const host = createNodeLifecycleHost()
     // The card's kill commands and a stray pkill both signal the engine pid
