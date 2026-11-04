@@ -45,6 +45,13 @@ export function parseNvidiaSmiGpuUsage(output: string): GpuUsageProbe | null {
 export interface EngineLaunchSignature {
   binary: string
   port?: number
+  /**
+   * When false the engine binds its port from a file (Basalt's
+   * basalt_config.json server block), so the matcher never sees the number
+   * in the command line and must skip the port element. Undefined reads as
+   * true: the port must appear as a standalone number, the current rule.
+   */
+  portInArgv?: boolean
   envKeys?: readonly string[]
 }
 
