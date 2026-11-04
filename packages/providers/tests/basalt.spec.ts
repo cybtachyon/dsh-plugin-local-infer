@@ -1,5 +1,7 @@
 import { join } from 'node:path'
+import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
+import LocalInfer from 'dsh-plugin-local-infer/service'
 import type {
   CommandOutcome,
   FetchResult,
@@ -8,7 +10,14 @@ import type {
   LifecycleHost,
   ProcessHandle,
 } from 'dsh-plugin-local-infer/core'
+import localInferProviders from '../src/index.ts'
 import { configFileFromSpecs } from '../src/adapters.ts'
+import { ENGINES } from '../src/engines.ts'
+import { engineOsProfile, engineSource } from '../src/acquire.ts'
+import { defaultModelsForEngine } from '../src/model-defaults.ts'
+import { BASALT_VRAM_MODELS, basaltVramModel } from '../src/vram.ts'
+import { BUILTIN_GUIDELINES } from '../src/guidelines.ts'
+import { BUILTIN_PRESETS } from '../src/presets.ts'
 import {
   BASALT_CONFIG_FILE,
   BASALT_MODEL_FILE,
@@ -232,6 +241,93 @@ describe('Basalt OS profiles', () => {
       'python',
       'hf-cli',
     ])
+  })
+})
+
+describe('Basalt registration', () => {
+  it('ships the ENGINES entry as local-build only, wired to the basalt surface', () => {
+    const basalt = ENGINES.find((engine) => engine.id === 'basalt')
+    expect(basalt).toBeDefined()
+    expect(basalt?.supports).toEqual({ docker: false, local: true })
+    expect(basalt?.parameters).toBe(BASALT_PARAMETERS)
+  })
+
+  it('resolves the upstream source and the per-OS profiles', () => {
+    const source = engineSource('basalt')
+    expect(source?.repo).toBe('https://github.com/jesdga95/basalt')
+    expect(source?.branch).toBe('main')
+    expect(engineOsProfile('basalt', 'linux')).toBe(BASALT_LINUX)
+    expect(engineOsProfile('basalt', 'macos')).toBe(BASALT_MACOS)
+    expect(engineOsProfile('basalt', 'windows')).toBe(BASALT_WINDOWS)
+  })
+
+  it('carries the single default model the adapter constants name', () => {
+    const models = defaultModelsForEngine('basalt')
+    expect(models).toHaveLength(1)
+    expect(models[0]?.url).toBe(`https://huggingface.co/${BASALT_MODEL_REPO}`)
+    expect(models[0]?.file).toBe(BASALT_MODEL_FILE)
+  })
+
+  it('registers the basalt adapter with the provider seam', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LocalInfer)
+    await ctx.plugin(localInferProviders)
+    // A duplicate id registration throws, so basalt in the list proves the
+    // adapter registered without colliding with the five engines ahead of it.
+    const ids = ctx.localInfer.registeredEngines().map((engine) => engine.id)
+    expect(ids).toContain('basalt')
+  })
+})
+
+describe('Basalt VRAM, guideline, and preset data', () => {
+  it('registers the Qwen3.8-Flash-Next artifact as an estimated VRAM model', () => {
+    expect(BASALT_VRAM_MODELS.map((model) => model.id)).toEqual(['qwen38-flash-next'])
+    for (const model of BASALT_VRAM_MODELS) {
+      // The measured figures are not yet available, so the model is flagged
+      // estimated and the meter never reads it as authoritative.
+      expect(model.source).toBe('estimated')
+    }
+    expect(basaltVramModel('qwen38-flash-next')?.id).toBe('qwen38-flash-next')
+    expect(basaltVramModel('qwen3-27b')).toBeUndefined()
+  })
+
+  it('fires the basalt-needs-blackwell guideline only off an sm_120 card', () => {
+    const rule = BUILTIN_GUIDELINES.find((guideline) => guideline.id === 'basalt-needs-blackwell')
+    expect(rule).toBeDefined()
+    expect(rule?.level).toBe('error')
+    const sm86: HardwareProfile = {
+      gpu: { name: 'NVIDIA GeForce RTX 3090', vramGiB: 24, sm: 86 },
+      dockerAvailable: false,
+      wsl2: false,
+      os: 'linux',
+      cpuThreads: 8,
+    }
+    const sm120: HardwareProfile = {
+      gpu: { name: 'NVIDIA Blackwell', vramGiB: 32, sm: 120 },
+      dockerAvailable: false,
+      wsl2: false,
+      os: 'linux',
+      cpuThreads: 8,
+    }
+    // A basalt config on a non-Blackwell card, or with no detected GPU, fires.
+    expect(rule?.when({ engine: 'basalt' }, sm86)).toBe(true)
+    expect(rule?.when({ engine: 'basalt' }, { ...sm86, gpu: undefined })).toBe(true)
+    // A basalt config on an sm_120 card stays silent, and a non-basalt config
+    // never fires the rule.
+    expect(rule?.when({ engine: 'basalt' }, sm120)).toBe(false)
+    expect(rule?.when({ engine: 'ninfer' }, sm86)).toBe(false)
+  })
+
+  it('ships the Basalt Blackwell long-context preset on the wildcard class', () => {
+    const basalt = BUILTIN_PRESETS.filter((preset) => preset.engineId === 'basalt')
+    expect(basalt).toHaveLength(1)
+    const preset = basalt[0]
+    // Basalt runs on any Blackwell card, so the preset is keyed to the
+    // wildcard class, not a specific card.
+    expect(preset?.modelId).toBe('qwen38-flash-next')
+    expect(preset?.hardwareClass).toBe('*')
+    expect(preset?.isDefault).toBe(true)
+    expect(preset?.values).toMatchObject({ kv: 'int8', maxContext: 32768 })
   })
 })
 
