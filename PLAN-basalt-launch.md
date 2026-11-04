@@ -51,7 +51,7 @@ CLI contract and the existing model-download-target rule)
 
 ### Phase 1: Diagnosis
 
-- [ ] [TASK-001-diagnose-basalt-launch](docs/PLAN-basalt-launch-TASK-001-diagnose-basalt-launch.md)
+- [x] [TASK-001-diagnose-basalt-launch](docs/PLAN-basalt-launch-TASK-001-diagnose-basalt-launch.md)
 
 ### Phase 2: Fix
 
