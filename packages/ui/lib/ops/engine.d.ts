@@ -1,13 +1,15 @@
 /**
- * The engine lifecycle operations: launchEngine renders the plan the
- * registered adapter produces and runs the service's launch entry point
- * (deploy, then the health poll); stopEngine stops the exact container or
- * process the launch started (a re-adopted engine through the record's pid),
- * and a failed stop persists a note to the last-run logs and the log file;
- * getEngine runs the Get step (git sync, dep plan, build, model artifacts).
- * The launch record (the engine pid, start time, launch arguments, and the
- * DSH process pid that launched it) is what a DSH restart re-links a
- * surviving engine to its config:
+ * The engine lifecycle operations: launchEngine runs the shared Get-steps
+ * routine (idempotent) and then renders the plan the registered adapter
+ * produces and runs the service's launch entry point (deploy, then the health
+ * poll), preserving the Get-step logs in the persisted last-run logs;
+ * stopEngine stops the exact container or process the launch started (a
+ * re-adopted engine through the record's pid), and a failed stop persists a
+ * note to the last-run logs and the log file; getEngine is a thin wrapper
+ * over the shared Get-steps routine (deps, git sync, build, model download,
+ * chat-template download). The launch record (the engine pid, start time,
+ * launch arguments, and the DSH process pid that launched it) is what a DSH
+ * restart re-links a surviving engine to its config:
  * relinkStoredProviders re-adopts surviving engines on mount and per summary
  * read, handleEngineDeath settles the stored state the moment an engine dies
  * outside the stop path, and persistLaunchLogs stores the captured output.
@@ -25,18 +27,22 @@ import type { GetRequest, LaunchRequest } from '../request.ts';
  */
 export declare function resolveAdapter(localInfer: LocalInferService, engineId: string): import("dsh-plugin-local-infer/core").EngineAdapter;
 /**
- * launchEngine renders the plan the registered adapter produces for the config
- * and the detected hardware, then runs the service's launch entry point
- * (deploy, then the health poll). The detail the launch returns names the
- * broken step when the engine does not come up. The launch line (the engine
- * binary and its arguments) leads the run logs the card's Logs section and
- * the log file carry, so a broken setup diagnoses against the exact child
- * process the launch started. The launch step persists the
+ * launchEngine runs the shared Get-steps routine (idempotent: deps, git sync,
+ * build, model download, chat-template download, each skipped when already
+ * satisfied) and then renders the plan the registered adapter produces for
+ * the config and the detected hardware, and runs the service's launch entry
+ * point (deploy, then the health poll). The detail the launch returns names
+ * the broken step when the engine does not come up. The launch line (the
+ * engine binary and its arguments) leads the engine output in the run logs
+ * the card's Logs section and the log file carry, and the Get-step output the
+ * launch ran leads it, so a broken setup diagnoses against the exact steps
+ * and child process the launch started, and the Get logs are preserved, not
+ * wiped, by the launch's persistence. The launch step persists the
  * launch record (the engine pid, start time, launch arguments, and the DSH
  * process pid that launched it) on the request's provider entry, so a DSH
  * restart can re-link a surviving engine to its config.
  */
-export declare function launchEngine(localInfer: LocalInferService, request: LaunchRequest, onProgress?: (step: LaunchStep) => void): Promise<LaunchResult>;
+export declare function launchEngine(localInfer: LocalInferService, request: LaunchRequest, onProgress?: (step: LaunchStep) => void, host?: LifecycleHost): Promise<LaunchResult>;
 /**
  * handleEngineDeath persists a provider entry's state when its engine process
  * dies outside the plugin's stop path: a crash, a pkill of a plugin-launched
@@ -52,12 +58,15 @@ export declare function launchEngine(localInfer: LocalInferService, request: Lau
 export declare function handleEngineDeath(event: EngineDeathEvent): void;
 /**
  * persistLaunchLogs stores a launch's captured output as the last run and
- * writes it to the configured log file. The log file is only written when the
- * run produced output and the log location is set; the last-run logs are always
- * persisted (an empty string clears a stale run) so the card's Logs section
- * shows the previous run after a reload.
+ * writes it to the configured log file. The Get-step output the launch ran
+ * (the optional getLogs) leads the persisted run, so the Logs section and the
+ * log file show the Get steps followed by the launch, not the launch wiping
+ * the Get logs. The log file is only written when the run produced output and
+ * the log location is set; the last-run logs are always persisted (an empty
+ * string clears a stale run) so the card's Logs section shows the previous
+ * run after a reload.
  */
-export declare function persistLaunchLogs(result: LaunchResult, engineId: string, config: Config): void;
+export declare function persistLaunchLogs(result: LaunchResult, engineId: string, config: Config, getLogs?: string): void;
 /**
  * stopEngine renders the same plan and runs the service's stop entry point, so
  * the stop step targets the exact container or process the launch started. The
@@ -96,14 +105,12 @@ export type GetOutcome = {
     detail?: string;
 };
 /**
- * getEngine is the Get step: it syncs the engine checkout (clone the git
- * repo, or the fork when the platform entry provides one; fetch and rebase
- * a clean checkout; abort with a Logs alert when the checkout has local
- * changes), runs the system dependency plan, and runs the engine's build
- * steps. Every command and its output streams through log as it lands, so
- * the card appends it to the Logs section live. The dependency install only
- * runs while the Play/Run trust gate is on; with the gate off the deps are
- * re-checked and a missing one aborts the step with the copy/paste note.
+ * getEngine is the Get step: a thin wrapper over the shared Get-steps routine
+ * (the system dependencies, the git sync, the build, the model download, and
+ * the chat-template download), streaming every step through log as it lands,
+ * so the card appends it to the Logs section live. The dependency install
+ * only runs while the Play/Run trust gate is on; with the gate off the deps
+ * are re-checked and a missing one aborts the step with the copy/paste note.
  */
 export declare function getEngine(localInfer: LocalInferService, request: GetRequest, log: (chunk: string) => void, host?: LifecycleHost): Promise<GetOutcome>;
 /**

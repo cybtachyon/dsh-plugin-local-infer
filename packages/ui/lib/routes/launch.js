@@ -8,14 +8,18 @@
  * long as they need to.
  * @module dsh-plugin-local-infer/ui/routes/launch
  */
+import { nodeLifecycleHost } from '../../../providers/lib/index.js';
 import { launchEngine } from "../ops/engine.js";
 import { defineRoute, RouteError } from "../route.js";
 import { launchRequestFromBody } from "../request.js";
 /**
  * launchRoute builds the POST /local-infer/launch route definition the
- * register step holds by an effect.
+ * register step holds by an effect. The optional launchHost is the lifecycle
+ * host the launch's Get steps (git sync, build) run through; it defaults to
+ * the node host, and a test injects a stub so the route never clones a real
+ * repo in CI.
  */
-export function launchRoute(localInfer) {
+export function launchRoute(localInfer, launchHost = nodeLifecycleHost) {
     return defineRoute({
         name: 'local-infer-launch',
         path: '/local-infer/launch',
@@ -31,7 +35,7 @@ export function launchRoute(localInfer) {
                 writeLine({ step });
             };
             try {
-                const result = await launchEngine(localInfer, launchRequestFromBody(body), onProgress);
+                const result = await launchEngine(localInfer, launchRequestFromBody(body), onProgress, launchHost);
                 writeLine({ result });
             }
             catch (error) {

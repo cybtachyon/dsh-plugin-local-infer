@@ -134,12 +134,13 @@ export declare function defineRoute(spec: RouteSpec): LocalInferRoute;
  * bundle switch off removes them before the next switch on re-registers. The
  * scoped context carries the webServer; the localInfer service is passed in
  * because the scope only injects what it names. The optional getHost is the
- * lifecycle host the Get route's git and build steps run through; it
- * defaults to the node host, and a test injects a stub so the route never
- * clones a real repo in CI.
+ * lifecycle host the Get route's git and build steps run through, and the
+ * optional launchHost the launch route's Get steps run through; both default
+ * to the node host, and a test injects a stub so the routes never clone a
+ * real repo in CI.
  */
 export declare function registerLocalInferRoute(scope: Context & {
     webServer: WebServerService;
-}, localInfer: LocalInferService, getHost?: LifecycleHost): void;
+}, localInfer: LocalInferService, getHost?: LifecycleHost, launchHost?: LifecycleHost): void;
 export {};
 //# sourceMappingURL=route.d.ts.map

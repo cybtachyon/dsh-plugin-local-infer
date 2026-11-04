@@ -9,6 +9,7 @@
  * @module dsh-plugin-local-infer/providers/engines/llamacpp/llamacppAdapter
  */
 
+import { existsSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { EngineAdapter } from '../../../../core/lib/index.js'
 import type {
@@ -301,6 +302,10 @@ export class LlamaCppAdapter extends EngineAdapter {
     const artifact = plan.modelId !== undefined ? LLAMACPP_MODEL_ARTIFACTS[plan.modelId] : undefined
     if (artifact === undefined) return { ok: true }
     const target = plan.modelDirectory ?? '.'
+    // A model the shared Get-steps routine already downloaded is on disk, so
+    // the deploy step skips the re-fetch and a launch after a Get does no
+    // duplicate download.
+    if (existsSync(join(target, artifact.file))) return { ok: true }
     const download = await this.host.run(
       `hf download ${artifact.repo} ${artifact.file} --local-dir ${target}`,
     )

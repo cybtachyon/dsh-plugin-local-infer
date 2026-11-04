@@ -9,8 +9,9 @@
  * @module dsh-plugin-local-infer/ui/routes/launch
  */
 
-import type { LaunchStep } from 'dsh-plugin-local-infer/core'
+import type { LaunchStep, LifecycleHost } from 'dsh-plugin-local-infer/core'
 import type { LaunchResult, LocalInferService } from 'dsh-plugin-local-infer/service'
+import { nodeLifecycleHost } from '../../../providers/lib/index.js'
 import { launchEngine } from '../ops/engine.ts'
 import { defineRoute, RouteError } from '../route.ts'
 import type { LocalInferRoute } from '../route.ts'
@@ -29,9 +30,15 @@ type LaunchStreamEvent =
 
 /**
  * launchRoute builds the POST /local-infer/launch route definition the
- * register step holds by an effect.
+ * register step holds by an effect. The optional launchHost is the lifecycle
+ * host the launch's Get steps (git sync, build) run through; it defaults to
+ * the node host, and a test injects a stub so the route never clones a real
+ * repo in CI.
  */
-export function launchRoute(localInfer: LocalInferService): LocalInferRoute {
+export function launchRoute(
+  localInfer: LocalInferService,
+  launchHost: LifecycleHost = nodeLifecycleHost,
+): LocalInferRoute {
   return defineRoute({
     name: 'local-infer-launch',
     path: '/local-infer/launch',
@@ -47,7 +54,12 @@ export function launchRoute(localInfer: LocalInferService): LocalInferRoute {
         writeLine({ step })
       }
       try {
-        const result = await launchEngine(localInfer, launchRequestFromBody(body), onProgress)
+        const result = await launchEngine(
+          localInfer,
+          launchRequestFromBody(body),
+          onProgress,
+          launchHost,
+        )
         writeLine({ result })
       } catch (error) {
         // A launch that breaks before a plan renders (an unknown engine, a

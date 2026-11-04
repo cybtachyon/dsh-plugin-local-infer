@@ -14,6 +14,7 @@
  * @module dsh-plugin-local-infer/providers/engines/basalt/basaltAdapter
  */
 
+import { existsSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
 import { EngineAdapter } from '../../../../core/lib/index.js'
 import type {
@@ -214,17 +215,21 @@ export class BasaltAdapter extends EngineAdapter {
       buildLogs !== '' ? { ...result, logs: buildLogs } : result
     // The .basalt model artifact the engine serves, downloaded into the model
     // directory. A bare config (no model directory) downloads into the spawn
-    // working directory.
-    onProgress?.('download')
+    // working directory. A model the shared Get-steps routine already
+    // downloaded is on disk, so the deploy step skips the re-fetch and a
+    // launch after a Get does no duplicate download.
     const modelDirectory = plan.modelDirectory ?? '.'
-    const download = await this.host.run(
-      `hf download ${BASALT_MODEL_REPO} ${BASALT_MODEL_FILE} --local-dir ${modelDirectory}`,
-    )
-    if (!download.ok) {
-      return withLogs({
-        ok: false,
-        detail: `model download failed: ${download.detail ?? 'unknown'}`,
-      })
+    if (!existsSync(join(modelDirectory, BASALT_MODEL_FILE))) {
+      onProgress?.('download')
+      const download = await this.host.run(
+        `hf download ${BASALT_MODEL_REPO} ${BASALT_MODEL_FILE} --local-dir ${modelDirectory}`,
+      )
+      if (!download.ok) {
+        return withLogs({
+          ok: false,
+          detail: `model download failed: ${download.detail ?? 'unknown'}`,
+        })
+      }
     }
     // Write the config file the plan names, so the engine's --config flag
     // points at a path that exists. A host that cannot write files (a test

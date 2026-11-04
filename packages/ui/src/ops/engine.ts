@@ -1,13 +1,15 @@
 /**
- * The engine lifecycle operations: launchEngine renders the plan the
- * registered adapter produces and runs the service's launch entry point
- * (deploy, then the health poll); stopEngine stops the exact container or
- * process the launch started (a re-adopted engine through the record's pid),
- * and a failed stop persists a note to the last-run logs and the log file;
- * getEngine runs the Get step (git sync, dep plan, build, model artifacts).
- * The launch record (the engine pid, start time, launch arguments, and the
- * DSH process pid that launched it) is what a DSH restart re-links a
- * surviving engine to its config:
+ * The engine lifecycle operations: launchEngine runs the shared Get-steps
+ * routine (idempotent) and then renders the plan the registered adapter
+ * produces and runs the service's launch entry point (deploy, then the health
+ * poll), preserving the Get-step logs in the persisted last-run logs;
+ * stopEngine stops the exact container or process the launch started (a
+ * re-adopted engine through the record's pid), and a failed stop persists a
+ * note to the last-run logs and the log file; getEngine is a thin wrapper
+ * over the shared Get-steps routine (deps, git sync, build, model download,
+ * chat-template download). The launch record (the engine pid, start time,
+ * launch arguments, and the DSH process pid that launched it) is what a DSH
+ * restart re-links a surviving engine to its config:
  * relinkStoredProviders re-adopts surviving engines on mount and per summary
  * read, handleEngineDeath settles the stored state the moment an engine dies
  * outside the stop path, and persistLaunchLogs stores the captured output.
@@ -18,7 +20,7 @@
 
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname } from 'node:path'
 import type {
   Config,
   EnginePlatformConfig,
@@ -27,7 +29,6 @@ import type {
   LifecycleHost,
 } from 'dsh-plugin-local-infer/core'
 import {
-  checkDeps,
   formatLaunchCommand,
   launchRecordFromPlan,
   resolveLogPath,
@@ -37,13 +38,7 @@ import type {
   LaunchResult,
   LocalInferService,
 } from 'dsh-plugin-local-infer/service'
-import {
-  buildEngineRepo,
-  ENGINES,
-  infernixGetDownloads,
-  nodeLifecycleHost,
-  syncEngineRepo,
-} from '../../../providers/lib/index.js'
+import { nodeLifecycleHost } from '../../../providers/lib/index.js'
 import type {
   StoredConfig,
   StoredPlatformConfig,
@@ -51,10 +46,9 @@ import type {
 } from '../config.ts'
 import { readConfig, writeConfig } from '../config.ts'
 import { persistStopLog } from './logs.ts'
+import { resolveEngineDirectory, runGetSteps } from './get-steps.ts'
 import { RouteError } from '../route.ts'
 import type { GetRequest, LaunchRequest } from '../request.ts'
-import { resolveBuildMode } from '../viewmodels/deps.ts'
-import { resolveModelDirectory } from './model.ts'
 
 /**
  * resolveAdapter picks the registered engine adapter an engine id routes to. A
@@ -120,13 +114,17 @@ function persistStoredLogs(logs: string): void {
 }
 
 /**
- * launchEngine renders the plan the registered adapter produces for the config
- * and the detected hardware, then runs the service's launch entry point
- * (deploy, then the health poll). The detail the launch returns names the
- * broken step when the engine does not come up. The launch line (the engine
- * binary and its arguments) leads the run logs the card's Logs section and
- * the log file carry, so a broken setup diagnoses against the exact child
- * process the launch started. The launch step persists the
+ * launchEngine runs the shared Get-steps routine (idempotent: deps, git sync,
+ * build, model download, chat-template download, each skipped when already
+ * satisfied) and then renders the plan the registered adapter produces for
+ * the config and the detected hardware, and runs the service's launch entry
+ * point (deploy, then the health poll). The detail the launch returns names
+ * the broken step when the engine does not come up. The launch line (the
+ * engine binary and its arguments) leads the engine output in the run logs
+ * the card's Logs section and the log file carry, and the Get-step output the
+ * launch ran leads it, so a broken setup diagnoses against the exact steps
+ * and child process the launch started, and the Get logs are preserved, not
+ * wiped, by the launch's persistence. The launch step persists the
  * launch record (the engine pid, start time, launch arguments, and the DSH
  * process pid that launched it) on the request's provider entry, so a DSH
  * restart can re-link a surviving engine to its config.
@@ -135,6 +133,7 @@ export async function launchEngine(
   localInfer: LocalInferService,
   request: LaunchRequest,
   onProgress?: (step: LaunchStep) => void,
+  host: LifecycleHost = nodeLifecycleHost,
 ): Promise<LaunchResult> {
   const stored = readConfig()
   const engineId = request.engine ?? stored.engine
@@ -158,44 +157,61 @@ export async function launchEngine(
     const engineDirectory = resolveEngineDirectory(localInfer, config, engineId, platform)
     setPlatformConfig(localInfer, engineId, { ...platform, engineDirectory })
   }
+  // The prereqs phase: the system-dependency install the Get-steps routine
+  // runs. It runs only while the Play/Run trust gate is on, the same rule the
+  // Get step applies. The card's button reads "Prereqs..." for this phase, so
+  // the phase is reported only while an install actually runs (the gate on),
+  // not when the deps are already satisfied and the phase is skipped.
+  if (stored.allowRunDeps === true) {
+    onProgress?.('prereqs')
+  }
+  // The Get steps (deps, git sync, build, model download, chat-template
+  // download) run idempotently before the launch plan renders, so a launch
+  // never reads a missing checkout, binary, model, or template. The Auto
+  // Rebuild checkbox off skips the sync and build steps, the same rule the
+  // adapter's deploy step applies.
+  let getLogs = ''
+  const get = await runGetSteps(
+    localInfer,
+    {
+      engineId,
+      config,
+      ...(platform !== undefined ? { platform } : {}),
+      allowRunDeps: stored.allowRunDeps,
+      ...(request.autoRebuild !== undefined ? { autoRebuild: request.autoRebuild } : {}),
+      host,
+    },
+    (chunk) => {
+      getLogs += chunk
+    },
+  )
   const plan = adapter.renderLaunch(config, hardware)
+  if (!get.ok) {
+    // A Get step that failed aborts the launch before the deploy starts, and
+    // the persisted run carries the Get-step output that named the broken
+    // step, so the Logs section diagnoses it after a reload.
+    const result: LaunchResult = {
+      plan,
+      healthy: false,
+      detail: get.detail ?? 'a Get step failed',
+    }
+    persistLaunchLogs(result, engineId, config, getLogs)
+    persistLaunchRecord(result, engineId, config, request.providerId)
+    return result
+  }
   applyComposeArgs(plan, localInfer, engineId)
   const commandNote = launchCommandNote(plan)
   if (commandNote !== undefined) {
-    // Persist before the deploy starts: a slow or hung launch keeps the
-    // command readable in the Logs section across a card reload, where the
-    // engine output has not landed yet.
-    persistStoredLogs(commandNote)
-  }
-  // The prereqs phase: the system-dependency install the local build needs. It
-  // runs only while the Play/Run trust gate is on, the same rule the Get step
-  // applies; a failed install aborts the launch before the deploy starts. The
-  // card's button reads "Prereqs..." for this phase, so the phase is reported
-  // only while an install actually runs (the gate on), not when the deps are
-  // already satisfied and the phase is skipped.
-  if (stored.allowRunDeps === true) {
-    onProgress?.('prereqs')
-    // Price the dep plan for the build mode the config names (docker, local,
-    // or the Strata binary install), not just the plan kind, so a binary
-    // launch installs its own (thinner) dep list.
-    const engine = ENGINES.find((entry) => entry.id === engineId) ?? ENGINES[0]!
-    const buildMode = resolveBuildMode(engine, config)
-    const install = await localInfer.runInstall(engineId, buildMode, hardware)
-    if (!install.ok) {
-      const result: LaunchResult = {
-        plan,
-        healthy: false,
-        detail: 'a system dependency install failed',
-      }
-      persistLaunchLogs(result, engineId, config)
-      persistLaunchRecord(result, engineId, config, request.providerId)
-      return result
-    }
+    // Persist before the deploy starts: a slow or hung launch keeps the Get
+    // steps and the command readable in the Logs section across a card
+    // reload, where the engine output has not landed yet.
+    persistStoredLogs(getLogs + commandNote)
   }
   // The trust gate and the auto-rebuild flag ride into the deploy step, which
   // reads them to decide whether a rebuild's missing-binary symlink into
   // /usr/local/bin runs (on) or is written to the card's Logs section (off),
-  // and whether the git sync (fetch, rebase, rebuild) runs at all.
+  // and whether the deploy's own git sync (fetch, rebase, rebuild) runs at
+  // all.
   const result = await localInfer.launch(
     plan,
     {
@@ -204,18 +220,19 @@ export async function launchEngine(
       ...(request.autoRebuild !== undefined ? { autoRebuild: request.autoRebuild } : {}),
     },
   )
-  // Order the run logs: the build output (the rebuild decision, the build
-  // command, and its output) leads, the launch command follows it (after a
-  // successful build, or a direct launch with no build), and the engine's
-  // runtime output comes last. A deploy that failed before the engine printed
-  // anything still reports the command it tried to run.
+  // Order the run logs: the Get-step output the launch ran leads, the build
+  // output (the rebuild decision, the build command, and its output)
+  // follows it, the launch command follows that (after a successful build,
+  // or a direct launch with no build), and the engine's runtime output comes
+  // last. A deploy that failed before the engine printed anything still
+  // reports the command it tried to run.
   const buildLogs = result.buildLogs ?? ''
   const engineLogs = result.logs ?? ''
-  result.logs = buildLogs + (commandNote ?? '') + engineLogs
+  result.logs = getLogs + buildLogs + (commandNote ?? '') + engineLogs
   if (result.buildLogs !== undefined) {
     delete result.buildLogs
   }
-  persistLaunchLogs(result, engineId, config)
+  persistLaunchLogs(result, engineId, config, getLogs)
   persistLaunchRecord(result, engineId, config, request.providerId)
   return result
 }
@@ -370,22 +387,26 @@ export function handleEngineDeath(event: EngineDeathEvent): void {
 
 /**
  * persistLaunchLogs stores a launch's captured output as the last run and
- * writes it to the configured log file. The log file is only written when the
- * run produced output and the log location is set; the last-run logs are always
- * persisted (an empty string clears a stale run) so the card's Logs section
- * shows the previous run after a reload.
+ * writes it to the configured log file. The Get-step output the launch ran
+ * (the optional getLogs) leads the persisted run, so the Logs section and the
+ * log file show the Get steps followed by the launch, not the launch wiping
+ * the Get logs. The log file is only written when the run produced output and
+ * the log location is set; the last-run logs are always persisted (an empty
+ * string clears a stale run) so the card's Logs section shows the previous
+ * run after a reload.
  */
 export function persistLaunchLogs(
   result: LaunchResult,
   engineId: string,
   config: Config,
+  getLogs = '',
 ): void {
   const stored = readConfig()
   // The "Launching..." separator leads the persisted run, so the Logs
   // section and the log file read the launch as a fresh process section, the
   // same line the card writes when a Launch button is clicked.
-  const logs =
-    result.logs === undefined || result.logs === '' ? '' : `--- Launching...\n${result.logs}`
+  const body = getLogs + (result.logs === undefined ? '' : result.logs)
+  const logs = body === '' ? '' : `--- Launching...\n${body}`
   writeConfig(
     stored.engine,
     stored.config,
@@ -522,38 +543,12 @@ export async function relinkStoredProviders(
 export type GetOutcome = { ok: true } | { ok: false; detail?: string }
 
 /**
- * resolveEngineDirectory picks the checkout the Get step syncs: the Engine
- * Directory override when it names a path, else a per-engine folder inside
- * the model directory (the default model directory, or the config's
- * override), so a Get with no override still has a real place to live.
- */
-function resolveEngineDirectory(
-  localInfer: LocalInferService,
-  config: Config,
-  engineId: string,
-  platform: StoredPlatformConfig | undefined,
-): string {
-  const override = platform?.engineDirectory
-  if (override !== undefined && override.trim() !== '') {
-    return override
-  }
-  const rawModelDir = config.modelDirectory
-  const modelDir =
-    typeof rawModelDir === 'string' && rawModelDir.trim() !== ''
-      ? rawModelDir
-      : localInfer.defaultModelDirectory()
-  return join(modelDir, engineId)
-}
-
-/**
- * getEngine is the Get step: it syncs the engine checkout (clone the git
- * repo, or the fork when the platform entry provides one; fetch and rebase
- * a clean checkout; abort with a Logs alert when the checkout has local
- * changes), runs the system dependency plan, and runs the engine's build
- * steps. Every command and its output streams through log as it lands, so
- * the card appends it to the Logs section live. The dependency install only
- * runs while the Play/Run trust gate is on; with the gate off the deps are
- * re-checked and a missing one aborts the step with the copy/paste note.
+ * getEngine is the Get step: a thin wrapper over the shared Get-steps routine
+ * (the system dependencies, the git sync, the build, the model download, and
+ * the chat-template download), streaming every step through log as it lands,
+ * so the card appends it to the Logs section live. The dependency install
+ * only runs while the Play/Run trust gate is on; with the gate off the deps
+ * are re-checked and a missing one aborts the step with the copy/paste note.
  */
 export async function getEngine(
   localInfer: LocalInferService,
@@ -564,96 +559,24 @@ export async function getEngine(
   const stored = readConfig()
   const engineId = request.engine ?? stored.engine
   const config = request.config ?? stored.config
-  // ENGINES is a known non-empty constant, so the fallback is always defined.
-  const engine = ENGINES.find((entry) => entry.id === engineId) ?? ENGINES[0]!
   // Register the request's platform override the same way launchEngine does,
   // so the next launch reads the Engine Directory / Engine Fork the Get used.
   if (request.platform !== undefined) {
     setPlatformConfig(localInfer, engineId, request.platform)
   }
   const platform = request.platform ?? stored.platform[engineId]
-  const directory = resolveEngineDirectory(localInfer, config, engineId, platform)
-  const fork = platform?.engineFork
-  log(`get ${engineId} in ${directory}\n`)
-  const sync = await syncEngineRepo(
-    host,
-    { engineId, directory, ...(fork !== undefined && fork.trim() !== '' ? { fork } : {}) },
+  const result = await runGetSteps(
+    localInfer,
+    {
+      engineId,
+      config,
+      ...(platform !== undefined ? { platform } : {}),
+      allowRunDeps: stored.allowRunDeps,
+      host,
+    },
     log,
   )
-  if (!sync.ok) {
-    // A dirty checkout already alerted in the sync step; any other failure
-    // names its step here.
-    if (sync.aborted !== true && sync.detail !== undefined) {
-      log(`!! ${sync.detail}\n`)
-    }
-    return { ok: false, ...(sync.detail !== undefined ? { detail: sync.detail } : {}) }
-  }
-  const hardware = await localInfer.detectHardware()
-  const buildMode = resolveBuildMode(engine, config)
-  log(`system dependencies (${buildMode})\n`)
-  if (stored.allowRunDeps === true) {
-    const result = await localInfer.runInstall(engineId, buildMode, hardware)
-    for (const entry of result.results) {
-      log(`  ${entry.id}: ${entry.status}${entry.detail !== undefined ? ` (${entry.detail})` : ''}\n`)
-    }
-    if (!result.ok) {
-      log('!! a system dependency install failed; copy the install string from the panel\n')
-      return { ok: false, detail: 'a system dependency install failed' }
-    }
-  } else {
-    const deps = await localInfer.deps(engineId, buildMode, hardware)
-    const checks = await checkDeps(deps, hardware)
-    let missing = false
-    for (const check of checks) {
-      log(`  ${check.dep.id}: ${check.status}\n`)
-      if (check.status !== 'satisfied') missing = true
-    }
-    if (missing) {
-      log(
-        '!! a system dependency is missing and one-click install is off; copy the install string from the panel\n',
-      )
-      return { ok: false, detail: 'a system dependency is missing' }
-    }
-  }
-  // The user's local build command (the card's Build commands field) overrides
-  // the engine's default build steps; absent runs the engine's acquisition
-  // steps. The host OS picks the engine's OS profile (the Windows vcpkg route
-  // and its pwsh.exe shell on a Windows host, the cmake route elsewhere).
-  const build = await buildEngineRepo(
-    host,
-    engineId,
-    directory,
-    log,
-    platform?.buildCommands,
-    hardware.os,
-  )
-  if (!build.ok) {
-    if (build.detail !== undefined) {
-      log(`!! ${build.detail}\n`)
-    }
-    return { ok: false, ...(build.detail !== undefined ? { detail: build.detail } : {}) }
-  }
-  // The model artifacts a Get leaves ready to launch: the Infernix DFlash2
-  // drafter (when a preset is selected) and the PLE n-gram volume (when the
-  // model key names one), pulled through the hf CLI into the model directory.
-  // A download failure aborts the Get, so a launch never reads a missing
-  // drafter or table.
-  if (engineId === 'infernix') {
-    const modelDir = resolveModelDirectory(localInfer, config)
-    for (const command of infernixGetDownloads(config, modelDir)) {
-      log(`$ ${command}\n`)
-      const outcome =
-        host.runStream !== undefined
-          ? await host.runStream(command, (chunk) => log(chunk))
-          : await host.run(command)
-      if (!outcome.ok) {
-        log(`!! ${command} failed: ${outcome.detail ?? 'unknown'}\n`)
-        return { ok: false, detail: 'a model artifact download failed' }
-      }
-    }
-  }
-  log('get complete\n')
-  return { ok: true }
+  return { ok: result.ok, ...(result.detail !== undefined ? { detail: result.detail } : {}) }
 }
 
 /**

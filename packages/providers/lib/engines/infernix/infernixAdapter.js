@@ -12,6 +12,7 @@
  * so the adapter supports the local build mode only.
  * @module dsh-plugin-local-infer/providers/engines/infernix/infernixAdapter
  */
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { EngineAdapter } from '../../../../core/lib/index.js';
 import { customArgFlags, flagsFromSpecs, nodeLifecycleHost, pollHealth, stopProcessPlan, } from "../../adapters.js";
@@ -214,7 +215,12 @@ export class InfernixAdapter extends EngineAdapter {
         // --ngram-volume flag points at a file the same download left on disk.
         // A single-file artifact downloads the file alone.
         const repo = artifact.repo;
-        const files = artifact.files ?? [];
+        const files = artifact.files ?? [artifact.file];
+        // A model the shared Get-steps routine already downloaded is on disk, so
+        // the deploy step skips the re-fetch and a launch after a Get does no
+        // duplicate download.
+        if (files.every((file) => existsSync(join(target, file))))
+            return { ok: true };
         const download = files.length > 1
             ? await this.host.run(`hf download ${repo} --local-dir ${target}`)
             : await this.host.run(`hf download ${repo} ${artifact.file} --local-dir ${target}`);
