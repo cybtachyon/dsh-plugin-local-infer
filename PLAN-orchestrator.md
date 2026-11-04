@@ -74,7 +74,7 @@ system prompt when enabled. Document the feature in README.md.
 
 ### Phase 2: Bundle wiring (disabled by default)
 
-- [ ] [TASK-006-patch-rows](docs/PLAN-orchestrator-TASK-006-patch-rows.md)
+- [x] [TASK-006-patch-rows](docs/PLAN-orchestrator-TASK-006-patch-rows.md)
 
 ### Phase 3: Orchestrator browser card
 

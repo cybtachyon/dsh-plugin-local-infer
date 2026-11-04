@@ -40,3 +40,10 @@
     # model confirmation.
     - id: local-infer-ui
       name: 'dsh-plugin-local-infer/ui'
+
+    # Orchestrator: the opt-in "Orchestrator" card and its system-prompt
+    # injection. Ships disabled: the Plugins page Components toggle writes the
+    # enabling override in the user's profile patch layer.
+    - id: local-infer-orchestrator
+      name: 'dsh-plugin-local-infer/orchestrator'
+      disabled: true
