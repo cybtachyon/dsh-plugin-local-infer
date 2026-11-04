@@ -67,7 +67,7 @@ runs, and `stopped` (killable from the card) when stopped.
  - [x] [TASK-004-plan-model-id](docs/PLAN-basalt-link-TASK-004-plan-model-id.md)
  - [x] [TASK-005-record-spawn-argv](docs/PLAN-basalt-link-TASK-005-record-spawn-argv.md)
  - [x] [TASK-006-refactor-review](docs/PLAN-basalt-link-TASK-006-refactor-review.md)
- - [ ] [TASK-008-ninfer-spawn-argv](docs/PLAN-basalt-link-TASK-008-ninfer-spawn-argv.md)
+ - [x] [TASK-008-ninfer-spawn-argv](docs/PLAN-basalt-link-TASK-008-ninfer-spawn-argv.md)
 
 ### Phase 3: verification
 
@@ -113,6 +113,11 @@ runs, and `stopped` (killable from the card) when stopped.
   writing it back onto the plan, so a Windows build-tree launch with an
   engineDirectory persists a record argv the process never carries (the
   D4 defect class; Linux and macOS bare names keep the records matching).
+- TASK-008 (7b3e56d): fixed that pre-existing note. The ninfer deploy now
+  writes the `resolveLaunchArgv` result onto the plan before the spawn
+  (the eb4b99b pattern), so the persisted record argv is what the process
+  carries on every OS, and the adapters spec pins the plan equal to the
+  spawn argv.
 
 ## Answers
 
