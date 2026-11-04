@@ -196,7 +196,7 @@ export async function buildSummary(localInfer, request) {
         // host-KV slider cap), so the render model and the meter agree on the
         // machine they run on.
         formModel: renderForm(engine.parameters, config, hardware),
-        meterModel: renderMeter(estimate.breakdown, estimate.verdict, hardware.gpu?.vramGiB ?? 0, estimate.source, estimate.reserveSource, 
+        meterModel: renderMeter(estimate.breakdown, estimate.verdict, hardware.gpu?.vramGiB ?? 0, estimate.source, estimate.reserveSource,
         // The "Unknown Engine(s)" readout shows the VRAM the detector's foreign
         // engine programs are holding: the OS-reserve segment is the GPU's used
         // VRAM when a foreign engine is detected, so the readout names the

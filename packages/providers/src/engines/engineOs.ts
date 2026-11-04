@@ -9,9 +9,13 @@
  * defaults, and the binary symlink step read, so a build command and its
  * output directory have one home. The distro-specific Linux profiles (Arch,
  * Debian, Fedora) reuse the shared Linux profile, so they carry no build steps
- * of their own.
+ * of their own. The optional deps list carries the host build dependencies the
+ * platform's local build needs.
  * @module dsh-plugin-local-infer/providers/engines/engineOs
  */
+
+import type { SystemDep } from '../../../core/lib/index.js'
+
 export interface EngineOsProfile {
   // The shell build steps the checkout runs, in order. An engine with no local
   // build (the compose engines) carries an empty list.
@@ -26,4 +30,8 @@ export interface EngineOsProfile {
   // pwsh.exe, because its steps set $env: variables). Absent runs the
   // host's default shell.
   shell?: string
+  // The host build dependencies for this platform's local build (the
+  // toolchain, the CUDA toolkit). Absent when the build needs nothing
+  // outside the host.
+  deps?: readonly SystemDep[]
 }

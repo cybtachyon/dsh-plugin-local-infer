@@ -9,13 +9,16 @@
  * defaults, and the binary symlink step read, so a build command and its
  * output directory have one home. The distro-specific Linux profiles (Arch,
  * Debian, Fedora) reuse the shared Linux profile, so they carry no build steps
- * of their own.
+ * of their own. The optional deps list carries the host build dependencies the
+ * platform's local build needs.
  * @module dsh-plugin-local-infer/providers/engines/engineOs
  */
+import type { SystemDep } from '../../../core/lib/index.js';
 export interface EngineOsProfile {
     buildSteps: readonly string[];
     buildDir?: string;
     binary?: string;
     shell?: string;
+    deps?: readonly SystemDep[];
 }
 //# sourceMappingURL=engineOs.d.ts.map
