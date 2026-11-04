@@ -278,16 +278,21 @@ function pointHomeAt(dir: string): void {
  * A stub LifecycleHost for the Get steps: `exists` decides whether the
  * `git -C <dir> rev-parse --is-inside-work-tree` probe finds a checkout,
  * `stream` feeds the streamed stdout, and `fail` lists command substrings
- * whose run fails. The launch route tests inject it too, so a launch's Get
- * steps never clone a real repo in CI.
+ * whose run fails (the sync and build steps stream through `runStream`, so
+ * a failed rebase or clone is a `runStream` failure). The launch route tests
+ * inject it too, so a launch's Get steps never clone a real repo in CI.
  */
-function stubGetHost(options?: { exists?: boolean; stream?: Record<string, string> }) {
+function stubGetHost(
+  options?: { exists?: boolean; stream?: Record<string, string>; fail?: string[] },
+) {
   const state = { run: [] as string[], streamed: [] as string[], logged: '' }
   const streamText = (command: string): string => {
     const stream = options?.stream ?? {}
     const key = Object.keys(stream).find((needle) => command.includes(needle))
     return key === undefined ? '' : stream[key]!
   }
+  const fails = (command: string): boolean =>
+    (options?.fail ?? []).some((needle) => command.includes(needle))
   const host: LifecycleHost = {
     async run(command: string) {
       state.run.push(command)
@@ -301,6 +306,9 @@ function stubGetHost(options?: { exists?: boolean; stream?: Record<string, strin
       const text = streamText(command)
       if (text !== '') {
         onOutput(text)
+      }
+      if (fails(command)) {
+        return { ok: false, detail: 'stubbed failure' }
       }
       return { ok: true }
     },
@@ -3560,6 +3568,94 @@ describe('shared Get-steps routine', () => {
     // The get-failed path leaves the result's logs unset, so the persisted
     // run leads with the Get-step output and carries it exactly once.
     expect(lastLogs.match(/a system dependency is missing/g)?.length).toBe(1)
+  })
+
+  it('continues with the current version when a rebase fails under the override', async () => {
+    // The checkout directory exists (a current version to launch), so a failed
+    // rebase is non-fatal under the override: the run reports syncFailed and
+    // skips the build, keeping the checkout at its current version.
+    writeConfig('ninfer', { modelDirectory: MODEL_DIR }, true)
+    mkdirSync(join(MODEL_DIR, 'ninfer'), { recursive: true })
+    const service = stubService([])
+    const { host, state } = stubGetHost({ exists: true, fail: ['rebase'] })
+    let logged = ''
+    const result = await runGetSteps(
+      service,
+      {
+        engineId: 'ninfer',
+        config: { modelDirectory: MODEL_DIR },
+        allowRunDeps: true,
+        continueOnSyncFailure: true,
+        host,
+      },
+      (chunk) => {
+        logged += chunk
+      },
+    )
+    expect(result.ok).toBe(true)
+    expect(result.syncFailed).toBe(true)
+    // The error line and the continue note land in the logs the caller
+    // persists to the Logs section and the log file.
+    expect(logged).toContain('!! git rebase')
+    expect(logged).toContain('engine sync failed; continuing with the current version')
+    expect(logged).toContain('get complete')
+    // The rebase failed, so the build step is skipped: no cmake command runs.
+    expect(state.streamed.some((command) => command.includes('cmake'))).toBe(false)
+    rmSync(join(MODEL_DIR, 'ninfer'), { recursive: true, force: true })
+  })
+
+  it('still fails the run when a rebase fails without the override', async () => {
+    // The override off (a standalone Get): a failed rebase of an existing
+    // checkout stops the run, the existing behavior.
+    writeConfig('ninfer', { modelDirectory: MODEL_DIR }, true)
+    mkdirSync(join(MODEL_DIR, 'ninfer'), { recursive: true })
+    const service = stubService([])
+    const { host } = stubGetHost({ exists: true, fail: ['rebase'] })
+    let logged = ''
+    const result = await runGetSteps(
+      service,
+      {
+        engineId: 'ninfer',
+        config: { modelDirectory: MODEL_DIR },
+        allowRunDeps: true,
+        host,
+      },
+      (chunk) => {
+        logged += chunk
+      },
+    )
+    expect(result.ok).toBe(false)
+    expect(result.syncFailed).toBeUndefined()
+    expect(result.detail).toContain('git rebase')
+    expect(logged).toContain('!! git rebase')
+    rmSync(join(MODEL_DIR, 'ninfer'), { recursive: true, force: true })
+  })
+
+  it('keeps a clone failure fatal under the override when no checkout exists', async () => {
+    // No checkout directory (a clone failure, no current version to launch):
+    // the override does not apply, so the run stays fatal.
+    writeConfig('ninfer', { modelDirectory: MODEL_DIR }, true)
+    rmSync(join(MODEL_DIR, 'ninfer'), { recursive: true, force: true })
+    const service = stubService([])
+    const { host } = stubGetHost({ exists: false, fail: ['git clone'] })
+    let logged = ''
+    const result = await runGetSteps(
+      service,
+      {
+        engineId: 'ninfer',
+        config: { modelDirectory: MODEL_DIR },
+        allowRunDeps: true,
+        continueOnSyncFailure: true,
+        host,
+      },
+      (chunk) => {
+        logged += chunk
+      },
+    )
+    expect(result.ok).toBe(false)
+    expect(result.syncFailed).toBeUndefined()
+    expect(result.detail).toContain('git clone')
+    expect(logged).toContain('!! git clone')
   })
 })
 

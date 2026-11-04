@@ -8,7 +8,12 @@
  * hf download of any selected chat template when it is not already present.
  * Every step streams through the log sink as it lands, and an already-
  * satisfied step is skipped and logged as such, so a Launch that runs the
- * routine before the deploy is idempotent.
+ * routine before the deploy is idempotent. A Launch can set
+ * `continueOnSyncFailure` on the request: when the git sync (rebase) of an
+ * existing checkout fails, the run keeps going with the checkout's current
+ * version and reports `syncFailed` on the result, so a broken rebase never
+ * halts the launch. A standalone Get omits the flag and keeps stopping on a
+ * sync failure.
  * @module dsh-plugin-local-infer/ui/ops/get-steps
  */
 import type { Config, LifecycleHost } from 'dsh-plugin-local-infer/core';
@@ -29,7 +34,11 @@ import type { StoredPlatformConfig } from '../config.ts';
  * `onChunk` is the hf download's raw stderr progress sink: the download
  * runner hands each streamed stdout and stderr chunk to it as it lands,
  * separate from the log text sink the step lines stream through, so the
- * caller parses the tqdm lines into progress events.
+ * caller parses the tqdm lines into progress events. `continueOnSyncFailure`
+ * (a Launch-only flag) keeps the run going when the git sync of an existing
+ * checkout fails: the run reports `syncFailed` on the result and the launch
+ * continues with the checkout's current version, so a broken rebase never
+ * halts it. A standalone Get omits it and stops on a sync failure.
  */
 export interface GetStepsRequest {
     engineId: string;
@@ -37,6 +46,7 @@ export interface GetStepsRequest {
     platform?: StoredPlatformConfig;
     allowRunDeps: boolean;
     autoRebuild?: boolean;
+    continueOnSyncFailure?: boolean;
     host: LifecycleHost;
     signal?: AbortSignal;
     onChunk?: (chunk: string) => void;
@@ -44,12 +54,17 @@ export interface GetStepsRequest {
 /**
  * GetStepsResult reports the run: whether every step passed, a detail the
  * Logs section shows when one did not, and the captured log text (every step
- * line, in order) the caller persists or streams to the card.
+ * line, in order) the caller persists or streams to the card. `syncFailed`
+ * marks a run that kept going after a non-fatal git sync failure (the
+ * `continueOnSyncFailure` override): `ok` stays true and the caller threads
+ * the flag into the launch so the deploy skips its own git sync and launches
+ * the checkout's current version.
  */
 export interface GetStepsResult {
     ok: boolean;
     logs: string;
     detail?: string;
+    syncFailed?: boolean;
 }
 /**
  * resolveEngineDirectory picks the checkout the Get step syncs: the Engine
@@ -64,7 +79,10 @@ export declare function resolveEngineDirectory(localInfer: LocalInferService, co
  * result's logs, so a caller can persist the run (a Get) or thread it into
  * the launch's persisted logs (a Launch) without re-running the steps. A
  * step that is already satisfied is skipped and logged as such; a failing
- * step stops the run and names the broken step in the detail.
+ * step stops the run and names the broken step in the detail. A step that
+ * fails non-fatally (the git sync under the `continueOnSyncFailure`
+ * override) keeps the run going and threads `syncFailed` into the result, so
+ * the launch continues with the checkout's current version.
  */
 export declare function runGetSteps(localInfer: LocalInferService, request: GetStepsRequest, log: (chunk: string) => void): Promise<GetStepsResult>;
 //# sourceMappingURL=get-steps.d.ts.map

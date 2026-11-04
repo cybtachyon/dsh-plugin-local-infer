@@ -8,7 +8,12 @@
  * hf download of any selected chat template when it is not already present.
  * Every step streams through the log sink as it lands, and an already-
  * satisfied step is skipped and logged as such, so a Launch that runs the
- * routine before the deploy is idempotent.
+ * routine before the deploy is idempotent. A Launch can set
+ * `continueOnSyncFailure` on the request: when the git sync (rebase) of an
+ * existing checkout fails, the run keeps going with the checkout's current
+ * version and reports `syncFailed` on the result, so a broken rebase never
+ * halts the launch. A standalone Get omits the flag and keeps stopping on a
+ * sync failure.
  * @module dsh-plugin-local-infer/ui/ops/get-steps
  */
 import { existsSync } from 'node:fs';
@@ -35,6 +40,13 @@ export function resolveEngineDirectory(localInfer, config, engineId, platform) {
         : localInfer.defaultModelDirectory();
     return join(modelDir, engineId);
 }
+/**
+ * The marker a Get step reports when it fails non-fatally: the git sync of
+ * an existing checkout failed while the `continueOnSyncFailure` override is
+ * on, so the runner keeps going (skipping the build) and threads
+ * `syncFailed` into the result while the launch continues.
+ */
+const SYNC_FAILED = { kind: 'syncFailed' };
 /**
  * downloadOptions builds the exactOptionalPropertyTypes-safe download options
  * a Get step's hf download runs with: the hub-cache layout flag, the run's
@@ -91,6 +103,10 @@ async function runDepsStep(ctx) {
  * compose engines carry no local build steps and pass through). A checkout
  * with local changes aborts, so the user's work is never rebased away. The
  * Auto Rebuild checkbox off skips both, so a launch reads the checkout as-is.
+ * Under the `continueOnSyncFailure` override, a failed sync of an existing
+ * checkout reports the SYNC_FAILED marker (the run keeps going with the
+ * checkout's current version and the build is skipped); a failed clone of a
+ * missing checkout stays fatal, since there is no current version to launch.
  */
 async function runSyncBuildStep(ctx) {
     const { request, directory, emit } = ctx;
@@ -113,6 +129,16 @@ async function runSyncBuildStep(ctx) {
         // names its step here.
         if (sync.aborted !== true && sync.detail !== undefined) {
             emit(`!! ${sync.detail}\n`);
+        }
+        // The `continueOnSyncFailure` override (a Launch-only flag): when the git
+        // sync of an existing checkout fails, the run keeps going with the
+        // checkout's current version (the build is skipped, since the rebase
+        // failed and the checkout stays where it is) and reports the failure
+        // non-fatally, so a broken rebase never halts the launch. A missing
+        // checkout (a clone failure, no current version to launch) stays fatal.
+        if (request.continueOnSyncFailure === true && existsSync(directory)) {
+            emit('!! engine sync failed; continuing with the current version\n');
+            return SYNC_FAILED;
         }
         return {
             ok: false,
@@ -226,7 +252,10 @@ async function runChatTemplateStep(ctx) {
  * result's logs, so a caller can persist the run (a Get) or thread it into
  * the launch's persisted logs (a Launch) without re-running the steps. A
  * step that is already satisfied is skipped and logged as such; a failing
- * step stops the run and names the broken step in the detail.
+ * step stops the run and names the broken step in the detail. A step that
+ * fails non-fatally (the git sync under the `continueOnSyncFailure`
+ * override) keeps the run going and threads `syncFailed` into the result, so
+ * the launch continues with the checkout's current version.
  */
 export async function runGetSteps(localInfer, request, log) {
     const chunks = [];
@@ -253,13 +282,26 @@ export async function runGetSteps(localInfer, request, log) {
         ...(request.onChunk !== undefined ? { onChunk: request.onChunk } : {}),
     };
     ctx.emit(`get ${request.engineId} in ${ctx.directory}\n`);
+    // A non-fatal sync failure (the `continueOnSyncFailure` override) keeps the
+    // run going through the remaining steps; the flag threads into the result
+    // so the launch skips the deploy's own git sync and launches the checkout's
+    // current version.
+    let syncFailed = false;
     for (const step of [runDepsStep, runSyncBuildStep, runModelDownloadStep, runChatTemplateStep]) {
         const failure = await step(ctx);
         if (failure !== null) {
+            if ('kind' in failure) {
+                syncFailed = true;
+                continue;
+            }
             return { ...failure, logs: chunks.join('') };
         }
     }
     ctx.emit('get complete\n');
-    return { ok: true, logs: chunks.join('') };
+    return {
+        ok: true,
+        logs: chunks.join(''),
+        ...(syncFailed ? { syncFailed: true } : {}),
+    };
 }
 //# sourceMappingURL=get-steps.js.map

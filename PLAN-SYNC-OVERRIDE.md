@@ -54,7 +54,7 @@ Answers are recorded beside each question as they arrive.
 
 ## Phase 1: Get process override
 
-- [ ] [TASK-001-GET-STEP-OVERRIDE](docs/PLAN-SYNC-OVERRIDE-TASK-001-GET-STEP-OVERRIDE.md)
+- [x] [TASK-001-GET-STEP-OVERRIDE](docs/PLAN-SYNC-OVERRIDE-TASK-001-GET-STEP-OVERRIDE.md)
 - [ ] [TASK-002-LAUNCH-WIRING](docs/PLAN-SYNC-OVERRIDE-TASK-002-LAUNCH-WIRING.md)
 
 ## Phase 2: Refactor
