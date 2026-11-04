@@ -483,9 +483,10 @@ export declare class LocalInfer extends Service implements LocalInferService {
  * progress), while the output tail keeps the last kilobyte, the same rule the
  * install runner uses, so a failure names the broken line. An abort on the
  * optional signal interrupts the in-flight child (SIGINT, then SIGTERM), so a
- * canceled download stops instead of running to the timeout.
+ * canceled download stops instead of running to the timeout. The optional
+ * graceMs overrides the 5 s SIGTERM escalation window for the abort path.
  */
-export declare const downloadRunner: (command: string, signal?: AbortSignal, onChunk?: (chunk: string) => void) => Promise<CommandOutcome>;
+export declare const downloadRunner: (command: string, signal?: AbortSignal, onChunk?: (chunk: string) => void, graceMs?: number) => Promise<CommandOutcome>;
 /**
  * parseWindowsProcessTable reads the `pid<TAB>commandLine` rows PowerShell's
  * Win32_Process probe emits into process lines the launch-signature matcher

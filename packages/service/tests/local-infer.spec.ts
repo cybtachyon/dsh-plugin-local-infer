@@ -2251,6 +2251,26 @@ describe('model directory, hf CLI, and model download', () => {
     expect(result.ok).toBe(false)
   }, 15000)
 
+  it('SIGTERMs a SIGINT-ignoring child after the abort grace period', async () => {
+    const controller = new AbortController()
+    // A node child that traps SIGINT: the SIGINT lands and is ignored, so
+    // only the SIGTERM escalation can settle the promise. A short grace keeps
+    // the test off the 5 s production constant.
+    const command =
+      "node -e \"process.on('SIGINT', () => {}); setInterval(() => {}, 1000)\""
+    const pending = downloadRunner(command, controller.signal, undefined, 100)
+    // Abort after the child has started, so the kill lands on a live process.
+    setTimeout(() => controller.abort(), 200)
+    const result = await pending
+    expect(result.ok).toBe(false)
+    // On POSIX the escalation is observable: the child dies by SIGTERM, not
+    // the 2-hour timeout. Windows kills platform-specifically on the first
+    // signal, so only the settled failure is asserted there.
+    if (process.platform !== 'win32') {
+      expect(result.detail).toContain('SIGTERM')
+    }
+  }, 15000)
+
   it('threads onChunk through to the injected runner', async () => {
     const ctx = await seam()
     const entry: DefaultModel = {

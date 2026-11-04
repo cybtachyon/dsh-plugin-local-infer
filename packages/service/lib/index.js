@@ -1469,9 +1469,11 @@ const DOWNLOAD_ABORT_GRACE_MS = 5_000;
 /**
  * watchChildAbort kills the in-flight child when the signal aborts (the card's
  * cancel): SIGINT first, SIGTERM after the grace period if the child is still
- * alive. A signal that is already aborted kills immediately.
+ * alive. A signal that is already aborted kills immediately. The optional
+ * graceMs overrides the 5 s constant so a test can exercise the escalation
+ * without waiting.
  */
-function watchChildAbort(child, signal) {
+function watchChildAbort(child, signal, graceMs) {
     if (signal === undefined)
         return;
     const onAbort = () => {
@@ -1479,9 +1481,12 @@ function watchChildAbort(child, signal) {
             return;
         child.kill('SIGINT');
         const escalate = setTimeout(() => {
-            if (!child.killed && child.exitCode === null)
+            // child.killed is already true from the SIGINT, so the guard reads the
+            // exit state: a child that has neither exited nor been signalled is
+            // still alive and gets SIGTERM.
+            if (child.exitCode === null && child.signalCode === null)
                 child.kill('SIGTERM');
-        }, DOWNLOAD_ABORT_GRACE_MS);
+        }, graceMs ?? DOWNLOAD_ABORT_GRACE_MS);
         escalate.unref();
     };
     if (signal.aborted) {
@@ -1497,9 +1502,10 @@ function watchChildAbort(child, signal) {
  * progress), while the output tail keeps the last kilobyte, the same rule the
  * install runner uses, so a failure names the broken line. An abort on the
  * optional signal interrupts the in-flight child (SIGINT, then SIGTERM), so a
- * canceled download stops instead of running to the timeout.
+ * canceled download stops instead of running to the timeout. The optional
+ * graceMs overrides the 5 s SIGTERM escalation window for the abort path.
  */
-export const downloadRunner = (command, signal, onChunk) => new Promise(resolve => {
+export const downloadRunner = (command, signal, onChunk, graceMs) => new Promise(resolve => {
     const child = spawn(command, {
         shell: true,
         timeout: DOWNLOAD_TIMEOUT_MS,
@@ -1531,7 +1537,7 @@ export const downloadRunner = (command, signal, onChunk) => new Promise(resolve 
         const label = code !== null ? `exit ${code}` : `killed by ${killSignal ?? 'a signal'}`;
         resolve({ ok: false, detail: tail === '' ? label : `${label}: ${tail}` });
     });
-    watchChildAbort(child, signal);
+    watchChildAbort(child, signal, graceMs);
 });
 /**
  * hasSafetensorsIn reports whether one directory holds a `.safetensors`
