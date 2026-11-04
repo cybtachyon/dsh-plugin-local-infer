@@ -15,7 +15,7 @@
 import { SYSTEM_DEPS } from "../../systemDeps.js";
 export const BASALT_LINUX = {
     buildSteps: [
-        'cmake -S {dir} -B {dir}/build -DCMAKE_BUILD_TYPE=Release && cmake --build {dir}/build -j && sudo python3 -m pip install -r {dir}/requirements.txt',
+        'cmake -S {dir} -B {dir}/build -DCMAKE_BUILD_TYPE=Release && cmake --build {dir}/build -j',
     ],
     // The CMake target sets RUNTIME_OUTPUT_DIRECTORY to the repo's bin/ folder,
     // so the basalt executable lands in bin/, not the CMake build/ tree.
