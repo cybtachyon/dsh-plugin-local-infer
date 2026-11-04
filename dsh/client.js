@@ -1661,8 +1661,68 @@ function cancelInFlightRuns(providerId) {
   return aborted;
 }
 
+// packages/client/src/store/progress.ts
+var FILES_LINE = /^Fetching (\d+) files:\s*(\d+(?:\.\d+)?)%\|[^|]*\|\s*(\d+)\s*\/\s*(\d+)(?:\s*\[([^\]]*)\])?/;
+var BYTES_LINE = /^(?:Downloading|Fetching)\s+([^:]+):\s*(\d+(?:\.\d+)?)%\s*\|\s*(\d+(?:\.\d+)?[KMGTP]?i?B?)\s*\/\s*(\d+(?:\.\d+)?[KMGTP]?i?B?)\s*(?:\[([^\]]*)\])?/;
+var UNIT_EXPONENTS = { K: 1, M: 2, G: 3, T: 4, P: 5 };
+function parseHumanSize(text) {
+  const match = /^(\d+(?:\.\d+)?)([KMGTP]?)i?B?$/.exec(text);
+  if (match === null) return 0;
+  const exponent = UNIT_EXPONENTS[match[2]] ?? 0;
+  const base = text.includes("i") ? 1024 : 1e3;
+  return Number(match[1]) * base ** exponent;
+}
+function durationSeconds(text) {
+  let seconds = 0;
+  for (const part of text.split(":")) {
+    seconds = seconds * 60 + Number(part);
+  }
+  return seconds;
+}
+function etaSecondsFromTail(tail) {
+  if (tail === void 0) return 0;
+  const match = /<\s*(\d+(?::\d+)+)/.exec(tail);
+  if (match === null) return 0;
+  return durationSeconds(match[1]);
+}
+function parseHfProgressLine(line) {
+  const trimmed = line.trim();
+  if (trimmed === "") return null;
+  const files = FILES_LINE.exec(trimmed);
+  if (files !== null) {
+    return {
+      step: `Fetching ${files[1]} files`,
+      percent: Number(files[2]),
+      doneBytes: Number(files[3]),
+      totalBytes: Number(files[4]),
+      etaSeconds: etaSecondsFromTail(files[5])
+    };
+  }
+  const bytes = BYTES_LINE.exec(trimmed);
+  if (bytes !== null) {
+    const verb = trimmed.startsWith("Fetching") ? "Fetching" : "Downloading";
+    return {
+      step: `${verb} ${bytes[1].trim()}`,
+      percent: Number(bytes[2]),
+      doneBytes: parseHumanSize(bytes[3]),
+      totalBytes: parseHumanSize(bytes[4]),
+      etaSeconds: etaSecondsFromTail(bytes[5])
+    };
+  }
+  return null;
+}
+function parseHfProgress(chunk, prior) {
+  let folded = prior;
+  for (const line of chunk.split(/\r\n|\r|\n/)) {
+    const parsed = parseHfProgressLine(line);
+    if (parsed !== null) folded = parsed;
+  }
+  return folded;
+}
+
 // packages/client/src/store/deps.ts
 var GET_IDLE_MS = 12e4;
+var GET_PROGRESS_THROTTLE_MS = 500;
 var COPY_NOTE_MS = 2e3;
 function repriceDeps(store, query) {
   return fetchDeps(query).then((deps) => {
@@ -1772,12 +1832,52 @@ function performGet(store, t) {
       }
     }
   });
+  let latestProgress = null;
+  let structuredProgress = false;
+  let lastProgressPatch = 0;
+  let progressTimer = null;
+  const flushProgress = () => {
+    if (progressTimer !== null) {
+      clearTimeout(progressTimer);
+      progressTimer = null;
+    }
+    if (latestProgress !== null) {
+      lastProgressPatch = Date.now();
+      store.dispatch({ type: "ui/patch", patch: { getProgress: latestProgress } });
+    }
+  };
+  const noteProgress = (state2, structured) => {
+    if (structuredProgress === true && structured === false) {
+      return;
+    }
+    latestProgress = state2;
+    structuredProgress = structured;
+    const elapsed = Date.now() - lastProgressPatch;
+    if (elapsed >= GET_PROGRESS_THROTTLE_MS) {
+      flushProgress();
+      return;
+    }
+    if (progressTimer === null) {
+      progressTimer = setTimeout(() => {
+        progressTimer = null;
+        flushProgress();
+      }, GET_PROGRESS_THROTTLE_MS - elapsed);
+    }
+  };
+  const settleProgress = () => {
+    flushProgress();
+    store.dispatch({ type: "ui/patch", patch: { getProgress: null } });
+  };
   const append = (chunk) => {
     const logs = store.getSnapshot().ui.logs;
     store.dispatch({
       type: "ui/patch",
       patch: { logs: { ...logs, getLogs: (logs.getLogs ?? "") + chunk } }
     });
+    const parsed = parseHfProgress(chunk, latestProgress);
+    if (parsed !== null && parsed !== latestProgress) {
+      noteProgress(parsed, false);
+    }
   };
   let idleTimer = null;
   let finished = false;
@@ -1826,9 +1926,13 @@ function performGet(store, t) {
           append(chunk);
           armIdle();
         },
-        controller.signal
+        controller.signal,
+        (progress) => {
+          noteProgress(progress, true);
+        }
       ).then(() => {
         forgetGetAbort(controller);
+        settleProgress();
         finish(true);
         resolve("ok");
       }).catch((error) => {
@@ -1837,6 +1941,7 @@ function performGet(store, t) {
         if (controller.signal.aborted !== true) {
           append("\n" + t.getFailed + ": " + message + "\n");
         }
+        settleProgress();
         finish(true);
         reject(new Error(message));
       });

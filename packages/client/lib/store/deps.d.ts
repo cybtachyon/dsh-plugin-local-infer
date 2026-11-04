@@ -21,6 +21,13 @@ import { type CardStore } from './sync.ts';
  */
 export declare const GET_IDLE_MS = 120000;
 /**
+ * GET_PROGRESS_THROTTLE_MS is the minimum interval in ms between
+ * getProgress store patches: the card folds the streamed tqdm state at
+ * ~2 Hz. The latest state always lands on the final chunk and when the run
+ * settles (the throttle's pending flush).
+ */
+export declare const GET_PROGRESS_THROTTLE_MS = 500;
+/**
  * repriceDeps re-fetches the deps panel model (the GET /local-infer/deps
  * route). A fetch failure reads as no panel: a host that predates the deps
  * route keeps the card usable, so the model clears and the panel hides.
@@ -67,9 +74,13 @@ export declare function performInstall(store: CardStore, t: TextTable): Promise<
  * model..." separator, so the run reads as a fresh Logs section. Each chunk
  * appends to the buffer and re-arms the idle cap: two minutes without a line
  * settles the get cell (the control re-enables) while the run keeps streaming
- * in the background. When the stream ends, the route has persisted the run as
- * the last logs, so a summary re-read hands the Logs section back to the
- * stored value. The run registers its AbortController in the in-flight
+ * in the background. The run folds the streamed tqdm state into the
+ * ui.getProgress readout through the 500 ms throttle: a { progress } event
+ * (the server-parsed state) wins over the text parse of a log chunk, and the
+ * field clears when the run settles (success, failure, or abort), so the
+ * readout never outlives the run. When the stream ends, the route has
+ * persisted the run as the last logs, so a summary re-read hands the Logs
+ * section back to the stored value. The run registers its AbortController in the in-flight
  * registry, so the provider form's Cancel closes the stream and the route
  * interrupts the in-flight hf child; an aborted run settles without a
  * failure line (the "Canceled" line the Cancel wrote is the run's tail). A

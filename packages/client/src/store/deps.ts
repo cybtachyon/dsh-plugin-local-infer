@@ -22,6 +22,7 @@ import {
 } from '../api/routes.ts'
 import type { TextTable } from '../text.ts'
 import { forgetGetAbort, hasInFlightGet, trackGetAbort } from './abort.ts'
+import { parseHfProgress, type GetProgressState } from './progress.ts'
 import { performAction, ACTION_TIMEOUTS, type CardStore } from './sync.ts'
 
 /**
@@ -30,6 +31,14 @@ import { performAction, ACTION_TIMEOUTS, type CardStore } from './sync.ts'
  * control re-enables) while the run keeps streaming in the background.
  */
 export const GET_IDLE_MS = 120_000
+
+/**
+ * GET_PROGRESS_THROTTLE_MS is the minimum interval in ms between
+ * getProgress store patches: the card folds the streamed tqdm state at
+ * ~2 Hz. The latest state always lands on the final chunk and when the run
+ * settles (the throttle's pending flush).
+ */
+export const GET_PROGRESS_THROTTLE_MS = 500
 
 /**
  * COPY_NOTE_MS is how long the clipboard copy's note (the copied /
@@ -185,9 +194,13 @@ export function performInstall(store: CardStore, t: TextTable): Promise<void> {
  * model..." separator, so the run reads as a fresh Logs section. Each chunk
  * appends to the buffer and re-arms the idle cap: two minutes without a line
  * settles the get cell (the control re-enables) while the run keeps streaming
- * in the background. When the stream ends, the route has persisted the run as
- * the last logs, so a summary re-read hands the Logs section back to the
- * stored value. The run registers its AbortController in the in-flight
+ * in the background. The run folds the streamed tqdm state into the
+ * ui.getProgress readout through the 500 ms throttle: a { progress } event
+ * (the server-parsed state) wins over the text parse of a log chunk, and the
+ * field clears when the run settles (success, failure, or abort), so the
+ * readout never outlives the run. When the stream ends, the route has
+ * persisted the run as the last logs, so a summary re-read hands the Logs
+ * section back to the stored value. The run registers its AbortController in the in-flight
  * registry, so the provider form's Cancel closes the stream and the route
  * interrupts the in-flight hf child; an aborted run settles without a
  * failure line (the "Canceled" line the Cancel wrote is the run's tail). A
@@ -220,12 +233,69 @@ export function performGet(store: CardStore, t: TextTable): Promise<void> {
       },
     },
   })
+  // The latest structured progress state the stream carries. A { progress }
+  // event is the server-parsed state, and it wins over the text parse of a
+  // log chunk (the fallback for hosts that stream log text without progress
+  // events). noteProgress patches the state into ui.getProgress through the
+  // 500 ms throttle.
+  let latestProgress: GetProgressState | null = null
+  let structuredProgress = false
+  let lastProgressPatch = 0
+  let progressTimer: ReturnType<typeof setTimeout> | null = null
+  // flushProgress patches ui.getProgress with the latest state now, bypassing
+  // the throttle: the final chunk and the run's settle land the newest state.
+  const flushProgress = (): void => {
+    if (progressTimer !== null) {
+      clearTimeout(progressTimer)
+      progressTimer = null
+    }
+    if (latestProgress !== null) {
+      lastProgressPatch = Date.now()
+      store.dispatch({ type: 'ui/patch', patch: { getProgress: latestProgress } })
+    }
+  }
+  // noteProgress records a progress state and patches it through the
+  // throttle: a state that lands inside the 500 ms interval arms a timer for
+  // the interval's end, so a burst of updates patches at most ~2 per second.
+  // A text-parsed state never overwrites a server-parsed one.
+  const noteProgress = (state: GetProgressState, structured: boolean): void => {
+    if (structuredProgress === true && structured === false) {
+      return
+    }
+    latestProgress = state
+    structuredProgress = structured
+    const elapsed = Date.now() - lastProgressPatch
+    if (elapsed >= GET_PROGRESS_THROTTLE_MS) {
+      flushProgress()
+      return
+    }
+    if (progressTimer === null) {
+      progressTimer = setTimeout(() => {
+        progressTimer = null
+        flushProgress()
+      }, GET_PROGRESS_THROTTLE_MS - elapsed)
+    }
+  }
+  // settleProgress lands the latest state (the final chunk) and clears
+  // ui.getProgress back to null: the readout must not outlive the run.
+  const settleProgress = (): void => {
+    flushProgress()
+    store.dispatch({ type: 'ui/patch', patch: { getProgress: null } })
+  }
   const append = (chunk: string): void => {
     const logs = store.getSnapshot().ui.logs
     store.dispatch({
       type: 'ui/patch',
       patch: { logs: { ...logs, getLogs: (logs.getLogs ?? '') + chunk } },
     })
+    // The text parse is the fallback for hosts that stream log text without
+    // progress events: fold the chunk into the latest state, and note the
+    // state only when the chunk carries a bar update (the fold returns the
+    // prior state unchanged otherwise).
+    const parsed = parseHfProgress(chunk, latestProgress)
+    if (parsed !== null && parsed !== latestProgress) {
+      noteProgress(parsed, false)
+    }
   }
   let idleTimer: ReturnType<typeof setTimeout> | null = null
   let finished = false
@@ -286,9 +356,15 @@ export function performGet(store: CardStore, t: TextTable): Promise<void> {
             armIdle()
           },
           controller.signal,
+          (progress) => {
+            // The structured event is the server-parsed state: it wins over
+            // the text parse when both arrive.
+            noteProgress(progress, true)
+          },
         )
           .then(() => {
             forgetGetAbort(controller)
+            settleProgress()
             finish(true)
             resolve('ok')
           })
@@ -301,6 +377,7 @@ export function performGet(store: CardStore, t: TextTable): Promise<void> {
             if (controller.signal.aborted !== true) {
               append('\n' + t.getFailed + ': ' + message + '\n')
             }
+            settleProgress()
             finish(true)
             reject(new Error(message))
           })

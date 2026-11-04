@@ -4,12 +4,14 @@ import { cancelInFlightRuns, clearInFlightRuns } from '../src/store/abort.ts'
 import {
   copyInstallString,
   GET_IDLE_MS,
+  GET_PROGRESS_THROTTLE_MS,
   performAllowRun,
   performGet,
   performInstall,
   repriceDeps,
 } from '../src/store/deps.ts'
 import { cardReducer } from '../src/store/reducer.ts'
+import type { GetProgressState } from '../src/store/progress.ts'
 import type { CardStore } from '../src/store/sync.ts'
 import { initialCardState, type CardState } from '../src/store/types.ts'
 import { TEXT } from '../src/text.ts'
@@ -63,6 +65,21 @@ function prime(store: CardStore, deps: DepsModel | null = depsWith()): CardState
     store.dispatch({ type: 'deps/ack', deps })
   }
   return store.getSnapshot()
+}
+
+// trackProgressPatches wraps the store's dispatch and records every
+// getProgress patch the driver dispatches, so the test reads the throttle's
+// cadence (how many patches a burst of updates lands).
+function trackProgressPatches(store: CardStore) {
+  const patches: Array<GetProgressState | null> = []
+  const original = store.dispatch
+  store.dispatch = (action) => {
+    if (action.type === 'ui/patch' && 'getProgress' in action.patch) {
+      patches.push(action.patch.getProgress ?? null)
+    }
+    original(action)
+  }
+  return patches
 }
 
 // jsonFetch stubs the global fetch with a per-route JSON answer table and
@@ -339,6 +356,139 @@ describe('the deps panel drivers (store/deps.ts)', () => {
         engine: 'ninfer',
         config: { model: 'a-model' },
       })
+    })
+
+    it('folds the tqdm log chunks into getProgress (throttled) and clears it on the settle', async () => {
+      const { store, state } = makeStore()
+      prime(store, depsWith())
+      const patches = trackProgressPatches(store)
+      const stream = streamResponse()
+      const fetchMock = vi.fn(async (url: string) => {
+        if (url === '/local-infer/get') {
+          return stream.response()
+        }
+        return new Response('{}', { status: 200 })
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const bar = (percent: number, done: string, total: string): string =>
+        JSON.stringify({
+          log: `Downloading x.safetensors: ${percent}% | ${done}/${total} [00:01<00:02, 1.0MB/s]\n`,
+        }) + '\n'
+      const promise = performGet(store, t)
+      // A burst of tqdm chunks: the first patches immediately, and the rest
+      // land inside the 500 ms window, so the throttle arms one timer for
+      // the burst (no more than ~2 patches per second).
+      stream.enqueue(bar(10, '5.0G', '50.0G'))
+      await vi.advanceTimersByTimeAsync(0)
+      stream.enqueue(bar(20, '10.0G', '50.0G'))
+      stream.enqueue(bar(30, '15.0G', '50.0G'))
+      stream.enqueue(bar(40, '20.0G', '50.0G'))
+      await vi.advanceTimersByTimeAsync(0)
+      expect(patches).toHaveLength(1)
+      expect(state().ui.getProgress).toEqual({
+        step: 'Downloading x.safetensors',
+        percent: 10,
+        doneBytes: 5.0e9,
+        totalBytes: 50.0e9,
+        etaSeconds: 2,
+      })
+      // The Logs buffer kept every chunk (the progress parse has no side
+      // effect on the log text).
+      expect(state().ui.logs.getLogs).toContain('10%')
+      expect(state().ui.logs.getLogs).toContain('40%')
+      // The window's end lands the latest state of the burst.
+      await vi.advanceTimersByTimeAsync(GET_PROGRESS_THROTTLE_MS)
+      expect(patches).toHaveLength(2)
+      expect(state().ui.getProgress).toEqual({
+        step: 'Downloading x.safetensors',
+        percent: 40,
+        doneBytes: 20.0e9,
+        totalBytes: 50.0e9,
+        etaSeconds: 2,
+      })
+      // The settle lands the latest state (the final chunk), then clears the
+      // field back to null: the readout must not outlive the run.
+      stream.close()
+      await vi.advanceTimersByTimeAsync(0)
+      await promise
+      expect(patches[patches.length - 2]).toEqual({
+        step: 'Downloading x.safetensors',
+        percent: 40,
+        doneBytes: 20.0e9,
+        totalBytes: 50.0e9,
+        etaSeconds: 2,
+      })
+      expect(patches[patches.length - 1]).toBeNull()
+      expect(state().ui.getProgress).toBeNull()
+    })
+
+    it('lands the structured progress event in getProgress (throttled) and lets it win over the text parse', async () => {
+      const { store, state } = makeStore()
+      prime(store, depsWith())
+      const patches = trackProgressPatches(store)
+      const stream = streamResponse()
+      const fetchMock = vi.fn(async (url: string) => {
+        if (url === '/local-infer/get') {
+          return stream.response()
+        }
+        return new Response('{}', { status: 200 })
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const promise = performGet(store, t)
+      // The text parse lands first (the fallback for hosts that stream log
+      // text without progress events)...
+      stream.enqueue(
+        JSON.stringify({
+          log: 'Downloading x.safetensors: 10% | 5.0G/50.0G [00:01<00:02, 1.0MB/s]\n',
+        }) + '\n',
+      )
+      await vi.advanceTimersByTimeAsync(0)
+      expect(state().ui.getProgress).toEqual({
+        step: 'Downloading x.safetensors',
+        percent: 10,
+        doneBytes: 5.0e9,
+        totalBytes: 50.0e9,
+        etaSeconds: 2,
+      })
+      // ...and the structured event (the server-parsed state) wins,
+      // throttled to the window's end.
+      const structured: GetProgressState = {
+        step: 'Downloading x.safetensors',
+        percent: 55,
+        doneBytes: 27.5e9,
+        totalBytes: 50.0e9,
+        etaSeconds: 30,
+      }
+      stream.enqueue(JSON.stringify({ progress: structured }) + '\n')
+      await vi.advanceTimersByTimeAsync(0)
+      // Inside the 500 ms window the patch is held, so the readout keeps the
+      // text-parsed state until the window's end.
+      expect(patches).toHaveLength(1)
+      expect(state().ui.getProgress).toEqual({
+        step: 'Downloading x.safetensors',
+        percent: 10,
+        doneBytes: 5.0e9,
+        totalBytes: 50.0e9,
+        etaSeconds: 2,
+      })
+      await vi.advanceTimersByTimeAsync(GET_PROGRESS_THROTTLE_MS)
+      expect(patches).toHaveLength(2)
+      expect(state().ui.getProgress).toEqual(structured)
+      // A later text parse never overwrites the server-parsed state.
+      stream.enqueue(
+        JSON.stringify({
+          log: 'Downloading x.safetensors: 60% | 30.0G/50.0G [00:02<00:01, 1.0MB/s]\n',
+        }) + '\n',
+      )
+      await vi.advanceTimersByTimeAsync(GET_PROGRESS_THROTTLE_MS)
+      expect(state().ui.getProgress).toEqual(structured)
+      // The Logs buffer kept the log chunks.
+      expect(state().ui.logs.getLogs).toContain('10%')
+      expect(state().ui.logs.getLogs).toContain('60%')
+      stream.close()
+      await vi.advanceTimersByTimeAsync(0)
+      await promise
+      expect(state().ui.getProgress).toBeNull()
     })
 
     it('re-enables the control at the idle cap while the run keeps streaming', async () => {

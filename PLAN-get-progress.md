@@ -89,7 +89,7 @@ by the previous commits in their phase and resolve the named code risks.
 
 - [x] [TASK-006-parse-hf-progress](docs/PLAN-get-progress-TASK-006-parse-hf-progress.md)
 - [x] [TASK-007-getprogress-state](docs/PLAN-get-progress-TASK-007-getprogress-state.md)
-- [ ] [TASK-008-performget-throttle](docs/PLAN-get-progress-TASK-008-performget-throttle.md)
+- [x] [TASK-008-performget-throttle](docs/PLAN-get-progress-TASK-008-performget-throttle.md)
 - [ ] [TASK-009-refactor-phase2](docs/PLAN-get-progress-TASK-009-refactor-phase2.md)
 
 ### Phase 3 — Provider title-bar progress readout
