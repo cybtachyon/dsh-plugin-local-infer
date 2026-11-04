@@ -81,7 +81,7 @@ by the previous commits in their phase and resolve the named code risks.
 - [x] [TASK-020-providers-watchchildabort-sigterm](docs/PLAN-get-progress-TASK-020-providers-watchchildabort-sigterm.md)
 - [x] [TASK-003-getsteps-onchunk-sink](docs/PLAN-get-progress-TASK-003-getsteps-onchunk-sink.md)
 - [x] [TASK-021-infernix-progress-sink](docs/PLAN-get-progress-TASK-021-infernix-progress-sink.md)
-- [ ] [TASK-004-launch-route-progress-event](docs/PLAN-get-progress-TASK-004-launch-route-progress-event.md)
+- [x] [TASK-004-launch-route-progress-event](docs/PLAN-get-progress-TASK-004-launch-route-progress-event.md)
 - [ ] [TASK-005-refactor-phase1](docs/PLAN-get-progress-TASK-005-refactor-phase1.md)
 
 ### Phase 2 — Client store progress state

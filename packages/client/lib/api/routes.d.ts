@@ -8,8 +8,10 @@
  * chat-template, provider-delete) mutate the host. A JSON answer that is
  * not OK throws with the route's error field, so the caller's catch reads
  * the host's own message. The launch route streams NDJSON (a step event as
- * each phase begins, then a final result event), and the get route streams
- * plain text, so the two readers live here too. readNdjsonLines buffers
+ * each phase begins, a progress event when the Get-steps hf download's tqdm
+ * output folds into a structured state, then a final result event), and the
+ * get route streams NDJSON too (a log event per log line, a progress event
+ * per folded download state), so the two readers live here. readNdjsonLines buffers
  * chunks into whole lines: a line split across chunks completes on the
  * next chunk, a partial final line (a stream that ends without a trailing
  * newline) is still parsed, and a line that is not JSON is skipped, so one
@@ -78,12 +80,32 @@ export interface ChatTemplateRequest {
 export interface ProviderDeleteRequest {
     id: string;
 }
+export interface HfProgressShape {
+    step: string;
+    percent: number;
+    doneBytes: number;
+    totalBytes: number;
+    etaSeconds: number;
+}
 export type LaunchStreamEvent = {
     step: string;
     result?: undefined;
+    progress?: undefined;
 } | {
     step?: undefined;
     result: LaunchResult;
+    progress?: undefined;
+} | {
+    step?: undefined;
+    result?: undefined;
+    progress: HfProgressShape;
+};
+export type GetStreamEvent = {
+    log: string;
+    progress?: undefined;
+} | {
+    log?: undefined;
+    progress: HfProgressShape;
 };
 export type LaunchResultEvent = Omit<LaunchResult, 'plan'> & {
     plan?: LaunchResult['plan'];
@@ -99,19 +121,22 @@ export type LaunchResultEvent = Omit<LaunchResult, 'plan'> & {
 export declare function readNdjsonLines<T>(body: ReadableStream<Uint8Array>, onEvent: (event: T) => void): Promise<void>;
 /**
  * readLaunchStream reads the launch route's NDJSON answer and returns the
- * final result event, handing each step event to onStep. A non-OK response
- * throws with the body text. A response with no streamable body (a host
- * that cannot stream) reads the whole body as the result JSON. A stream
+ * final result event, handing each step event to onStep and each progress
+ * event to onProgress (absent onProgress ignores the progress events, so a
+ * caller that only reads the steps and the result is untouched). A non-OK
+ * response throws with the body text. A response with no streamable body (a
+ * host that cannot stream) reads the whole body as the result JSON. A stream
  * that ends without a result event returns null, so the caller settles its
  * control to failed.
  */
-export declare function readLaunchStream(response: Response, onStep?: (step: string) => void): Promise<LaunchResultEvent | null>;
+export declare function readLaunchStream(response: Response, onStep?: (step: string) => void, onProgress?: (progress: HfProgressShape) => void): Promise<LaunchResultEvent | null>;
 /**
- * readTextStream reads the get route's plain-text answer and hands each
- * decoded chunk to onChunk. A non-OK response throws with the body text. A
- * response with no streamable body reads the whole body at once.
+ * readGetStream reads the get route's NDJSON answer and hands each log event
+ * to onChunk and each progress event to onProgress. A non-OK response throws
+ * with the body text. A response with no streamable body (a host that cannot
+ * stream) reads the whole body as one log chunk.
  */
-export declare function readTextStream(response: Response, onChunk: (text: string) => void): Promise<void>;
+export declare function readGetStream(response: Response, onChunk: (text: string) => void, onProgress?: (progress: HfProgressShape) => void): Promise<void>;
 /**
  * routeExists probes whether the host route is mounted: any response other
  * than a 404 (and other than a network failure) proves the route exists.
@@ -147,11 +172,12 @@ export declare function postStop(request: LaunchRequest): Promise<{
 }>;
 /**
  * postGet runs the git sync, the dependency plan, and the build through the
- * get route's text stream, handing each chunk to onChunk as it lands. The
- * optional signal is the card's cancel: an abort closes the in-flight stream,
- * and the route interrupts the in-flight hf child on the host.
+ * get route's NDJSON stream, handing each log event to onChunk as it lands
+ * and each progress event to the optional onProgress. The optional signal is
+ * the card's cancel: an abort closes the in-flight stream, and the route
+ * interrupts the in-flight hf child on the host.
  */
-export declare function postGet(request: GetRequest, onChunk: (text: string) => void, signal?: AbortSignal): Promise<void>;
+export declare function postGet(request: GetRequest, onChunk: (text: string) => void, signal?: AbortSignal, onProgress?: (progress: HfProgressShape) => void): Promise<void>;
 /** postDownload pulls the selected model into the model directory. */
 export declare function postDownload(request: DownloadRequest): Promise<DownloadResult>;
 /** postChatTemplate pulls the selected chat template into the model directory. */

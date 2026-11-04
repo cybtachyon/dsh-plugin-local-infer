@@ -20,4 +20,5 @@ export { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, a
 export { checkDeps, detectPackageManager, osLabel, planDeps, renderInstallString, runInstall, } from "./deps.js";
 export { CHAT_TEMPLATE_FILE, chatTemplateArtifactPath, hfChatTemplateCommand, hfDownloadCommand, hubCacheModelDirectory, hubCacheSnapshotFilePath, isModelDirectoryOverridden, modelArtifactPath, modelCacheEntriesForEngine, modelEntriesForEngine, repoIdFromUrl, repoNameFromUrl, } from "./models.js";
 export { hfDatasetsCacheDirectory, hfHubCacheDirectory, modelDownloadTarget, } from "./hf-cache.js";
+export { foldHfProgressChunk, parseHfProgressLine } from "./progress.js";
 //# sourceMappingURL=index.js.map

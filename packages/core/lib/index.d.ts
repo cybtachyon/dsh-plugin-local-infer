@@ -34,5 +34,7 @@ export { CHAT_TEMPLATE_FILE, chatTemplateArtifactPath, hfChatTemplateCommand, hf
 export type { DefaultModel, ModelCacheEntry, ModelDirectoryEntry, } from './models.ts';
 export { hfDatasetsCacheDirectory, hfHubCacheDirectory, modelDownloadTarget, } from './hf-cache.ts';
 export type { ModelDownloadTarget } from './hf-cache.ts';
+export { foldHfProgressChunk, parseHfProgressLine } from './progress.ts';
+export type { HfProgress } from './progress.ts';
 export type { CommandOutcome, CommandRunner, DepCheck, DepStatus, EngineDepPlan, InstallCommands, InstallResult, PackageManager, PackageManagerProbes, SystemDep, SystemDepProvisioner, } from './deps.ts';
 //# sourceMappingURL=index.d.ts.map

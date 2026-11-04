@@ -1,14 +1,21 @@
 /**
- * The POST /local-infer/get route: the Get step. Its answer streams as plain
- * text, so the card appends the git sync, the dependency run, and the build
- * output to its Logs section as it lands. The full run persists as the
- * last-run logs.
+ * The POST /local-infer/get route: the Get step. Its answer streams as
+ * NDJSON: a log event per log line the card appends to its Logs section, and
+ * a progress event when the hf download's tqdm stderr (the onChunk sink)
+ * folds into a structured state. The full run persists as the last-run logs
+ * in plain text, so the log file and the Logs section read the run the same
+ * way.
  * @module dsh-plugin-local-infer/ui/routes/get
  */
+import { foldHfProgressChunk } from '../../../core/lib/index.js';
 import { parseStoredPlatformConfig } from "../config.js";
 import { CANCELED_LINE, getEngine } from "../ops/engine.js";
 import { persistProcessLog } from "../ops/logs.js";
 import { defineRoute } from "../route.js";
+// The minimum interval between progress events: the tqdm cadence is hot (a
+// bar redraw per chunk), so the route emits at most one event per half
+// second and the card's own throttle bounds the store updates.
+const PROGRESS_MIN_INTERVAL_MS = 500;
 /**
  * getRoute builds the POST /local-infer/get route definition the register
  * step holds by an effect. The optional getHost is the lifecycle host the
@@ -34,11 +41,32 @@ export function getRoute(localInfer, getHost) {
             if (platform !== undefined) {
                 request.platform = platform;
             }
-            res.textStream();
+            res.ndjsonStream();
             let collected = '';
+            const writeLine = (line) => {
+                res.write(JSON.stringify(line) + '\n');
+            };
+            // The log sink collects the plain-text run (the persisted log) and
+            // streams it as NDJSON log events, one event per chunk.
             const log = (text) => {
                 collected += text;
-                res.write(text);
+                writeLine({ log: text });
+            };
+            // The hf download's raw stderr sink: the core chunk folder turns the
+            // tqdm lines into a structured state, and the route emits a progress
+            // event when a fold yields one (throttled to the half-second cadence).
+            let folded;
+            let lastProgressAt = 0;
+            const onChunk = (chunk) => {
+                const state = foldHfProgressChunk(chunk, folded);
+                if (state === undefined)
+                    return;
+                folded = state;
+                const now = Date.now();
+                if (now - lastProgressAt >= PROGRESS_MIN_INTERVAL_MS) {
+                    lastProgressAt = now;
+                    writeLine({ progress: state });
+                }
             };
             // The card's provider-form Cancel aborts the fetch, which closes the
             // response: the abort interrupts the in-flight hf child (SIGINT, then
@@ -54,7 +82,7 @@ export function getRoute(localInfer, getHost) {
                 }
             });
             try {
-                await getEngine(localInfer, request, log, getHost, controller.signal);
+                await getEngine(localInfer, request, log, getHost, controller.signal, onChunk);
             }
             catch (error) {
                 log(`!! get failed: ${String(error?.message ?? error)}\n`);

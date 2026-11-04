@@ -1140,7 +1140,7 @@ async function readNdjsonLines(body, onEvent) {
   }
   handleLine(buffer);
 }
-async function readLaunchStream(response, onStep) {
+async function readLaunchStream(response, onStep, onProgress) {
   if (!response.ok) {
     const text = await response.text();
     throw new Error(text || "HTTP " + response.status);
@@ -1152,30 +1152,33 @@ async function readLaunchStream(response, onStep) {
   await readNdjsonLines(response.body, (event) => {
     if (event.step !== void 0) {
       onStep?.(event.step);
+    } else if (event.progress !== void 0) {
+      onProgress?.(event.progress);
     } else if (event.result !== void 0) {
       result = event.result;
     }
   });
   return result;
 }
-async function readTextStream(response, onChunk) {
+async function readGetStream(response, onChunk, onProgress) {
   if (!response.ok) {
     const text = await response.text();
     throw new Error(text || "HTTP " + response.status);
   }
   if (response.body === null || typeof response.body.getReader !== "function") {
-    onChunk(await response.text());
+    const text = await response.text();
+    if (text !== "") {
+      onChunk(text);
+    }
     return;
   }
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  for (; ; ) {
-    const { done, value } = await reader.read();
-    if (done) {
-      break;
+  await readNdjsonLines(response.body, (event) => {
+    if (event.log !== void 0) {
+      onChunk(event.log);
+    } else if (event.progress !== void 0) {
+      onProgress?.(event.progress);
     }
-    onChunk(decoder.decode(value, { stream: true }));
-  }
+  });
 }
 function withQuery(path, query) {
   const params = new URLSearchParams();
@@ -1245,9 +1248,9 @@ async function postLaunch(request, onStep, signal) {
 function postStop(request) {
   return postJson("/local-infer/stop", request);
 }
-async function postGet(request, onChunk, signal) {
+async function postGet(request, onChunk, signal, onProgress) {
   const response = await post("/local-infer/get", request, signal);
-  await readTextStream(response, onChunk);
+  await readGetStream(response, onChunk, onProgress);
 }
 function postDownload(request) {
   return postJson("/local-infer/download", request);

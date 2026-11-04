@@ -238,7 +238,8 @@ describe('the deps panel control handlers (render/DepsPanel.tsx)', () => {
     })
   }
 
-  // getStream builds a /local-infer/get answer whose body streams text chunks.
+  // getStream builds a /local-infer/get answer whose body streams NDJSON log
+  // events.
   function getStream() {
     let controller: ReadableStreamDefaultController<Uint8Array>
     const stream = new ReadableStream<Uint8Array>({
@@ -251,7 +252,7 @@ describe('the deps panel control handlers (render/DepsPanel.tsx)', () => {
       response: (): Response =>
         new Response(stream, {
           status: 200,
-          headers: { 'content-type': 'text/plain' },
+          headers: { 'content-type': 'application/x-ndjson' },
         }),
       enqueue: (chunk: string) => controller.enqueue(encoder.encode(chunk)),
       close: () => controller.close(),
@@ -389,7 +390,7 @@ describe('the deps panel control handlers (render/DepsPanel.tsx)', () => {
       const getButton = children(controlRow)[2]
       ;(getButton.props.onClick as () => void)()
       vi.advanceTimersByTime(0)
-      stream.enqueue('building...\n')
+      stream.enqueue('{"log":"building...\\n"}\n')
       await flush()
       expect(state().ui.logs.getLogs).toContain('building...')
       stream.close()

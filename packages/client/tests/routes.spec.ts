@@ -12,9 +12,9 @@ import {
   postSave,
   postStop,
   postUnregister,
+  readGetStream,
   readLaunchStream,
   readNdjsonLines,
-  readTextStream,
   routeExists,
 } from '../src/api/routes.ts'
 
@@ -231,25 +231,77 @@ describe('readLaunchStream (the launch route answer)', () => {
       detail: 'no stream',
     })
   })
+
+  it('forwards progress events to onProgress and returns the result', async () => {
+    const steps: string[] = []
+    const progress: unknown[] = []
+    const response = streamResponse([
+      '{"step":"prereqs"}\n{"progress":{"step":"Downloading x.safetensors","percent":12,"doneBytes":5200000000,"totalBytes":43500000000,"etaSeconds":611}}\n',
+      '{"result":{"healthy":true}}\n',
+    ])
+    const result = await readLaunchStream(
+      response,
+      (step) => steps.push(step),
+      (state) => progress.push(state),
+    )
+    expect(steps).toEqual(['prereqs'])
+    expect(progress).toEqual([
+      {
+        step: 'Downloading x.safetensors',
+        percent: 12,
+        doneBytes: 5200000000,
+        totalBytes: 43500000000,
+        etaSeconds: 611,
+      },
+    ])
+    expect(result).toEqual({ healthy: true })
+  })
+
+  it('ignores progress events when no onProgress is given', async () => {
+    const response = streamResponse([
+      '{"progress":{"percent":12}}\n{"result":{"healthy":true}}\n',
+    ])
+    await expect(readLaunchStream(response)).resolves.toEqual({ healthy: true })
+  })
 })
 
-describe('readTextStream (the get route answer)', () => {
-  it('hands each decoded chunk to onChunk', async () => {
+describe('readGetStream (the get route answer)', () => {
+  it('hands log events to onChunk and progress events to onProgress', async () => {
     const chunks: string[] = []
-    const response = streamResponse(['line one\n', 'line two\n'])
-    await readTextStream(response, (text) => chunks.push(text))
-    expect(chunks.join('')).toBe('line one\nline two\n')
+    const progress: unknown[] = []
+    const response = streamResponse([
+      '{"log":"line one\\n"}\n{"progress":{"step":"Downloading x.safetensors","percent":12,"doneBytes":5200000000,"totalBytes":43500000000,"etaSeconds":611}}\n',
+      '{"log":"line two\\n"}\n',
+    ])
+    await readGetStream(response, (text) => chunks.push(text), (state) => progress.push(state))
+    expect(chunks).toEqual(['line one\n', 'line two\n'])
+    expect(progress).toEqual([
+      {
+        step: 'Downloading x.safetensors',
+        percent: 12,
+        doneBytes: 5200000000,
+        totalBytes: 43500000000,
+        etaSeconds: 611,
+      },
+    ])
+  })
+
+  it('ignores progress events when no onProgress is given', async () => {
+    const chunks: string[] = []
+    const response = streamResponse(['{"progress":{"percent":12}}\n{"log":"line one\\n"}\n'])
+    await readGetStream(response, (text) => chunks.push(text))
+    expect(chunks).toEqual(['line one\n'])
   })
 
   it('throws with the body text on a non-OK response', async () => {
     const response = new Response('the build broke', { status: 400 })
-    await expect(readTextStream(response, () => undefined)).rejects.toThrow('the build broke')
+    await expect(readGetStream(response, () => undefined)).rejects.toThrow('the build broke')
   })
 
-  it('reads the whole body at once when the host cannot stream', async () => {
+  it('reads the whole body as one log chunk when the host cannot stream', async () => {
     const chunks: string[] = []
     const response = nonStreamJsonResponse('the whole body')
-    await readTextStream(response, (text) => chunks.push(text))
+    await readGetStream(response, (text) => chunks.push(text))
     expect(chunks).toEqual(['"the whole body"'])
   })
 })
@@ -261,11 +313,37 @@ describe('postLaunch and postGet (the streamed routes)', () => {
     expect(result).toEqual({ healthy: true })
   })
 
-  it('appends each get chunk through onChunk', async () => {
-    stubFetch(() => streamResponse(['line one\n', 'line two\n']))
+  it('appends each get log event through onChunk', async () => {
+    stubFetch(() =>
+      streamResponse(['{"log":"line one\\n"}\n', '{"log":"line two\\n"}\n']),
+    )
     const chunks: string[] = []
     await postGet({ engine: 'ninfer' }, (text) => chunks.push(text))
     expect(chunks.join('')).toBe('line one\nline two\n')
+  })
+
+  it('hands get progress events through onProgress', async () => {
+    stubFetch(() =>
+      streamResponse([
+        '{"progress":{"step":"Downloading x.safetensors","percent":12,"doneBytes":5200000000,"totalBytes":43500000000,"etaSeconds":611}}\n',
+      ]),
+    )
+    const progress: unknown[] = []
+    await postGet(
+      { engine: 'ninfer' },
+      () => undefined,
+      undefined,
+      (state) => progress.push(state),
+    )
+    expect(progress).toEqual([
+      {
+        step: 'Downloading x.safetensors',
+        percent: 12,
+        doneBytes: 5200000000,
+        totalBytes: 43500000000,
+        etaSeconds: 611,
+      },
+    ])
   })
 })
 

@@ -1,8 +1,10 @@
 /**
- * The POST /local-infer/get route: the Get step. Its answer streams as plain
- * text, so the card appends the git sync, the dependency run, and the build
- * output to its Logs section as it lands. The full run persists as the
- * last-run logs.
+ * The POST /local-infer/get route: the Get step. Its answer streams as
+ * NDJSON: a log event per log line the card appends to its Logs section, and
+ * a progress event when the hf download's tqdm stderr (the onChunk sink)
+ * folds into a structured state. The full run persists as the last-run logs
+ * in plain text, so the log file and the Logs section read the run the same
+ * way.
  * @module dsh-plugin-local-infer/ui/routes/get
  */
 import type { LifecycleHost } from 'dsh-plugin-local-infer/core';

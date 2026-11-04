@@ -1727,6 +1727,49 @@ describe('route handlers over a fake web server', () => {
     expect(events[events.length - 1].result.healthy).toBe(true)
   })
 
+  it('streams a progress event between the step and result events', async () => {
+    writeConfig('ninfer', { model: 'qwen3-27b', modelDirectory: MODEL_DIR }, true)
+    // The model artifact starts absent, so the launch's Get-step download runs.
+    rmSync(join(MODEL_DIR, 'qwen3_8_27b_nvfp4.ninfer'), { force: true })
+    const service = stubService([], {
+      launchResult: { plan: { engineId: 'ninfer', kind: 'process', port: 18020, healthUrl: 'http://127.0.0.1:18020/health' }, healthy: true },
+    })
+    // The stubbed download invokes the injected onChunk with a tqdm line, the
+    // way the real runner hands the hf download's streamed stderr to it.
+    const tqdmLine = 'Downloading x.safetensors: 12% | 5.2G/43.5G [01:23<10:11, 72.3MB/s]\n'
+    service.downloadModel = (_entry: DefaultModel, _directory: string, options?: { onChunk?: (chunk: string) => void }) => {
+      options?.onChunk?.(tqdmLine)
+      return Promise.resolve({ ok: true })
+    }
+    const routes = registeredRoutes(service, stubGetHost({ exists: false }).host)
+    const launchRoute = routes.find((route) => route.path === '/local-infer/launch')
+    const res = fakeRes()
+    await launchRoute?.handler(
+      fakeReq(
+        'POST',
+        '/local-infer/launch',
+        JSON.stringify({ engine: 'ninfer', config: { model: 'qwen3-27b', modelDirectory: MODEL_DIR } }),
+      ),
+      res,
+    )
+    expect(res.status).toBe(200)
+    // The stream carries the step event, the progress event the download's
+    // tqdm chunk folded into, and the result event, in order.
+    const events = res.body.split('\n').filter((line) => line !== '').map((line) => JSON.parse(line))
+    const kinds = events.map((event) =>
+      event.step !== undefined ? 'step' : event.progress !== undefined ? 'progress' : 'result',
+    )
+    expect(kinds).toEqual(['step', 'progress', 'result'])
+    expect(events[1].progress).toEqual({
+      step: 'Downloading x.safetensors',
+      percent: 12,
+      doneBytes: 5.2e9,
+      totalBytes: 43.5e9,
+      etaSeconds: 611,
+    })
+    expect(events[events.length - 1].result.healthy).toBe(true)
+  })
+
   it('reads the auto-rebuild flag from the launch body and threads it to the service', async () => {
     let seenAutoRebuild: boolean | undefined
     const service = stubService([], {
@@ -2817,6 +2860,18 @@ describe('get route (git sync, deps, build)', () => {
     return res
   }
 
+  // ndjsonEvents parses the get route's NDJSON stream chunks into events, so
+  // a test reads the log and progress events the route wrote.
+  function ndjsonEvents(
+    chunks: string[],
+  ): Array<{ log?: string; progress?: Record<string, unknown> }> {
+    return chunks
+      .join('')
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => JSON.parse(line) as { log?: string; progress?: Record<string, unknown> })
+  }
+
   function getRouteWith(host: LifecycleHost | undefined, service: LocalInferService = stubService([])) {
     const routes: { path: string; handler: (req: unknown, res: unknown) => Promise<void> }[] = []
     const scope = {
@@ -2956,10 +3011,14 @@ describe('get route (git sync, deps, build)', () => {
       res,
     )
     expect(res.status).toBe(200)
-    expect(res.headers['content-type']).toContain('text/plain')
-    const streamed = res.chunks.join('')
-    expect(streamed).toContain('$ git clone')
-    expect(streamed).toContain('get complete')
+    expect(res.headers['content-type']).toContain('application/x-ndjson')
+    const events = ndjsonEvents(res.chunks)
+    const logText = events
+      .filter((event) => event.log !== undefined)
+      .map((event) => event.log!)
+      .join('')
+    expect(logText).toContain('$ git clone')
+    expect(logText).toContain('get complete')
     // The streamed run persists as the last logs the Logs section shows, under
     // the "Getting engine and model..." separator the route writes when the
     // Get button is clicked.
@@ -3129,6 +3188,53 @@ describe('get route (git sync, deps, build)', () => {
     // The step log lines stay on the log sink, unchanged.
     expect(logged).toContain('$ hf download')
     expect(logged).toContain('get complete')
+  })
+
+  it('streams a progress event for the download tqdm chunks and keeps the persisted log plain text', async () => {
+    // The qwen36-35b model names a log file the cancel test's prefix search
+    // (ninfer-qwen3-27b-*) does not match, so the two tests own separate
+    // per-run log files.
+    writeConfig('ninfer', { model: 'qwen36-35b', modelDirectory: MODEL_DIR }, true)
+    // The model artifact starts absent, so the download step runs.
+    rmSync(join(MODEL_DIR, 'qwen3_6_35b_a3b.ninfer'), { force: true })
+    const service = stubService([])
+    // The stubbed download invokes the injected onChunk with a tqdm line, the
+    // way the real runner hands the hf download's streamed stderr to it.
+    const tqdmLine = 'Downloading x.safetensors: 12% | 5.2G/43.5G [01:23<10:11, 72.3MB/s]\n'
+    service.downloadModel = (_entry: DefaultModel, _directory: string, options?: { onChunk?: (chunk: string) => void }) => {
+      options?.onChunk?.(tqdmLine)
+      return Promise.resolve({ ok: true })
+    }
+    const route = getRouteWith(stubGetHost({ exists: false }).host, service)
+    const res = fakeStreamRes()
+    await route.handler(
+      fakePost(
+        JSON.stringify({ engine: 'ninfer', config: { model: 'qwen36-35b', modelDirectory: MODEL_DIR } }),
+      ),
+      res,
+    )
+    const events = ndjsonEvents(res.chunks)
+    const progress = events.filter((event) => event.progress !== undefined)
+    // The folded tqdm line lands as one progress event, between the log
+    // events, with the parsed state the card renders.
+    expect(progress).toHaveLength(1)
+    expect(progress[0]?.progress).toEqual({
+      step: 'Downloading x.safetensors',
+      percent: 12,
+      doneBytes: 5.2e9,
+      totalBytes: 43.5e9,
+      etaSeconds: 611,
+    })
+    // The log events carry the plain step text, and the persisted run stays
+    // plain text: the log file reads the run, not the NDJSON it streamed.
+    const logText = events
+      .filter((event) => event.log !== undefined)
+      .map((event) => event.log!)
+      .join('')
+    expect(logText).toContain('$ hf download')
+    expect(logText).toContain('get complete')
+    expect(readConfig().lastLogs).toContain('$ hf download')
+    expect(readConfig().lastLogs).not.toContain('{"log"')
   })
 
   it('answers 400 for a broken body and streams nothing', async () => {

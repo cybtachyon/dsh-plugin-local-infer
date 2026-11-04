@@ -1,19 +1,31 @@
 /**
- * The POST /local-infer/get route: the Get step. Its answer streams as plain
- * text, so the card appends the git sync, the dependency run, and the build
- * output to its Logs section as it lands. The full run persists as the
- * last-run logs.
+ * The POST /local-infer/get route: the Get step. Its answer streams as
+ * NDJSON: a log event per log line the card appends to its Logs section, and
+ * a progress event when the hf download's tqdm stderr (the onChunk sink)
+ * folds into a structured state. The full run persists as the last-run logs
+ * in plain text, so the log file and the Logs section read the run the same
+ * way.
  * @module dsh-plugin-local-infer/ui/routes/get
  */
 
-import type { Config, LifecycleHost } from 'dsh-plugin-local-infer/core'
+import type { Config, HfProgress, LifecycleHost } from 'dsh-plugin-local-infer/core'
 import type { LocalInferService } from 'dsh-plugin-local-infer/service'
+import { foldHfProgressChunk } from '../../../core/lib/index.js'
 import { parseStoredPlatformConfig } from '../config.ts'
 import { CANCELED_LINE, getEngine } from '../ops/engine.ts'
 import { persistProcessLog } from '../ops/logs.ts'
 import { defineRoute } from '../route.ts'
 import type { LocalInferRoute } from '../route.ts'
 import type { GetRequest } from '../request.ts'
+
+// One NDJSON line the get route streams: the log text the card appends to
+// its Logs section, or the structured download progress the card renders.
+type GetStreamEvent = { log: string } | { progress: HfProgress }
+
+// The minimum interval between progress events: the tqdm cadence is hot (a
+// bar redraw per chunk), so the route emits at most one event per half
+// second and the card's own throttle bounds the store updates.
+const PROGRESS_MIN_INTERVAL_MS = 500
 
 /**
  * getRoute builds the POST /local-infer/get route definition the register
@@ -43,11 +55,31 @@ export function getRoute(
       if (platform !== undefined) {
         request.platform = platform
       }
-      res.textStream()
+      res.ndjsonStream()
       let collected = ''
+      const writeLine = (line: GetStreamEvent): void => {
+        res.write(JSON.stringify(line) + '\n')
+      }
+      // The log sink collects the plain-text run (the persisted log) and
+      // streams it as NDJSON log events, one event per chunk.
       const log = (text: string): void => {
         collected += text
-        res.write(text)
+        writeLine({ log: text })
+      }
+      // The hf download's raw stderr sink: the core chunk folder turns the
+      // tqdm lines into a structured state, and the route emits a progress
+      // event when a fold yields one (throttled to the half-second cadence).
+      let folded: HfProgress | undefined
+      let lastProgressAt = 0
+      const onChunk = (chunk: string): void => {
+        const state = foldHfProgressChunk(chunk, folded)
+        if (state === undefined) return
+        folded = state
+        const now = Date.now()
+        if (now - lastProgressAt >= PROGRESS_MIN_INTERVAL_MS) {
+          lastProgressAt = now
+          writeLine({ progress: state })
+        }
       }
       // The card's provider-form Cancel aborts the fetch, which closes the
       // response: the abort interrupts the in-flight hf child (SIGINT, then
@@ -63,7 +95,7 @@ export function getRoute(
         }
       })
       try {
-        await getEngine(localInfer, request, log, getHost, controller.signal)
+        await getEngine(localInfer, request, log, getHost, controller.signal, onChunk)
       } catch (error) {
         log(`!! get failed: ${String((error as Error)?.message ?? error)}\n`)
       }

@@ -83,8 +83,8 @@ function jsonFetch(routes: Record<string, { status: number; body: unknown }>) {
   return { calls, fetchMock }
 }
 
-// streamResponse builds a /local-infer/get answer whose body streams the
-// named chunks and stays open, so the test enqueues and closes by hand.
+// streamResponse builds a /local-infer/get answer whose body streams NDJSON
+// log events and stays open, so the test enqueues and closes by hand.
 function streamResponse() {
   let controller: ReadableStreamDefaultController<Uint8Array>
   const stream = new ReadableStream<Uint8Array>({
@@ -321,10 +321,10 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       })
       vi.stubGlobal('fetch', fetchMock)
       const promise = performGet(store, t)
-      stream.enqueue('line one\n')
+      stream.enqueue('{"log":"line one\\n"}\n')
       await vi.advanceTimersByTimeAsync(0)
       expect(state().ui.logs.getLogs).toBe('old logs\n--- ' + t.getting + '\nline one\n')
-      stream.enqueue('line two\n')
+      stream.enqueue('{"log":"line two\\n"}\n')
       await vi.advanceTimersByTimeAsync(0)
       expect(state().ui.logs.getLogs).toContain('line two\n')
       stream.close()
@@ -358,7 +358,7 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       // control while the run keeps streaming in the background.
       await vi.advanceTimersByTimeAsync(GET_IDLE_MS)
       expect(state().actions.get).toEqual({ status: 'ok', detail: 'idle' })
-      stream.enqueue('line one\n')
+      stream.enqueue('{"log":"line one\\n"}\n')
       await vi.advanceTimersByTimeAsync(0)
       expect(state().ui.logs.getLogs).toContain('line one\n')
       stream.close()
@@ -417,7 +417,7 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       })
       vi.stubGlobal('fetch', fetchMock)
       const promise = performGet(store, t)
-      stream.enqueue('line one\n')
+      stream.enqueue('{"log":"line one\\n"}\n')
       await vi.advanceTimersByTimeAsync(0)
       stream.fail('the build broke')
       await vi.advanceTimersByTimeAsync(0)
@@ -460,7 +460,7 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       })
       vi.stubGlobal('fetch', fetchMock)
       const promise = performGet(store, t)
-      stream.enqueue('line one\n')
+      stream.enqueue('{"log":"line one\\n"}\n')
       await vi.advanceTimersByTimeAsync(0)
       // The provider form's Cancel: abort the in-flight run.
       expect(cancelInFlightRuns()).toBe(true)

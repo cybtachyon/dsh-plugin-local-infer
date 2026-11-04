@@ -8,8 +8,10 @@
  * chat-template, provider-delete) mutate the host. A JSON answer that is
  * not OK throws with the route's error field, so the caller's catch reads
  * the host's own message. The launch route streams NDJSON (a step event as
- * each phase begins, then a final result event), and the get route streams
- * plain text, so the two readers live here too. readNdjsonLines buffers
+ * each phase begins, a progress event when the Get-steps hf download's tqdm
+ * output folds into a structured state, then a final result event), and the
+ * get route streams NDJSON too (a log event per log line, a progress event
+ * per folded download state), so the two readers live here. readNdjsonLines buffers
  * chunks into whole lines: a line split across chunks completes on the
  * next chunk, a partial final line (a stream that ends without a trailing
  * newline) is still parsed, and a line that is not JSON is skipped, so one
@@ -57,13 +59,15 @@ export async function readNdjsonLines(body, onEvent) {
 }
 /**
  * readLaunchStream reads the launch route's NDJSON answer and returns the
- * final result event, handing each step event to onStep. A non-OK response
- * throws with the body text. A response with no streamable body (a host
- * that cannot stream) reads the whole body as the result JSON. A stream
+ * final result event, handing each step event to onStep and each progress
+ * event to onProgress (absent onProgress ignores the progress events, so a
+ * caller that only reads the steps and the result is untouched). A non-OK
+ * response throws with the body text. A response with no streamable body (a
+ * host that cannot stream) reads the whole body as the result JSON. A stream
  * that ends without a result event returns null, so the caller settles its
  * control to failed.
  */
-export async function readLaunchStream(response, onStep) {
+export async function readLaunchStream(response, onStep, onProgress) {
     if (!response.ok) {
         const text = await response.text();
         throw new Error(text || 'HTTP ' + response.status);
@@ -76,6 +80,9 @@ export async function readLaunchStream(response, onStep) {
         if (event.step !== undefined) {
             onStep?.(event.step);
         }
+        else if (event.progress !== undefined) {
+            onProgress?.(event.progress);
+        }
         else if (event.result !== undefined) {
             result = event.result;
         }
@@ -83,28 +90,31 @@ export async function readLaunchStream(response, onStep) {
     return result;
 }
 /**
- * readTextStream reads the get route's plain-text answer and hands each
- * decoded chunk to onChunk. A non-OK response throws with the body text. A
- * response with no streamable body reads the whole body at once.
+ * readGetStream reads the get route's NDJSON answer and hands each log event
+ * to onChunk and each progress event to onProgress. A non-OK response throws
+ * with the body text. A response with no streamable body (a host that cannot
+ * stream) reads the whole body as one log chunk.
  */
-export async function readTextStream(response, onChunk) {
+export async function readGetStream(response, onChunk, onProgress) {
     if (!response.ok) {
         const text = await response.text();
         throw new Error(text || 'HTTP ' + response.status);
     }
     if (response.body === null || typeof response.body.getReader !== 'function') {
-        onChunk(await response.text());
+        const text = await response.text();
+        if (text !== '') {
+            onChunk(text);
+        }
         return;
     }
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    for (;;) {
-        const { done, value } = await reader.read();
-        if (done) {
-            break;
+    await readNdjsonLines(response.body, (event) => {
+        if (event.log !== undefined) {
+            onChunk(event.log);
         }
-        onChunk(decoder.decode(value, { stream: true }));
-    }
+        else if (event.progress !== undefined) {
+            onProgress?.(event.progress);
+        }
+    });
 }
 // withQuery builds the query string a GET route takes: the engine and the
 // JSON-encoded config, each absent when undefined.
@@ -208,13 +218,14 @@ export function postStop(request) {
 }
 /**
  * postGet runs the git sync, the dependency plan, and the build through the
- * get route's text stream, handing each chunk to onChunk as it lands. The
- * optional signal is the card's cancel: an abort closes the in-flight stream,
- * and the route interrupts the in-flight hf child on the host.
+ * get route's NDJSON stream, handing each log event to onChunk as it lands
+ * and each progress event to the optional onProgress. The optional signal is
+ * the card's cancel: an abort closes the in-flight stream, and the route
+ * interrupts the in-flight hf child on the host.
  */
-export async function postGet(request, onChunk, signal) {
+export async function postGet(request, onChunk, signal, onProgress) {
     const response = await post('/local-infer/get', request, signal);
-    await readTextStream(response, onChunk);
+    await readGetStream(response, onChunk, onProgress);
 }
 /** postDownload pulls the selected model into the model directory. */
 export function postDownload(request) {
