@@ -3371,15 +3371,13 @@ function card(_react, localeRef, _primitives) {
         if (latest === null) {
           return;
         }
-        void repriceSummary(store, { engine: latest.engine, config: latest.config });
-        void repriceDeps(store, { engine: latest.engine, config: latest.config });
+        void repriceAll(store, { engine: latest.engine, config: latest.config });
       }, 300);
     };
     react.useEffect(() => {
       const current = store.getSnapshot();
       if (current.summary === null && current.draft === null) {
-        void repriceSummary(store);
-        void repriceDeps(store);
+        void repriceAll(store);
       }
       return () => {
         if (repriceTimerRef.current !== null) {
@@ -3562,8 +3560,7 @@ function card(_react, localeRef, _primitives) {
           title: t.refresh,
           "aria-label": t.refresh,
           onClick: () => {
-            void repriceSummary(store);
-            void repriceDeps(store);
+            void repriceAll(store);
           }
         },
         "\u21BB"

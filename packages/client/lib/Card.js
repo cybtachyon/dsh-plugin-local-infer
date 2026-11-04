@@ -32,7 +32,7 @@ import { ProviderList } from "./render/ProviderList.js";
 import { LogsPanel } from "./render/LogsPanel.js";
 import { useCardStore } from "./store/useCardStore.js";
 import { deriveLifecycleControl, deriveProviderFormMode, } from "./store/derive.js";
-import { repriceDeps, repriceSummary } from "./store/deps.js";
+import { repriceAll } from "./store/deps.js";
 import { openEntryLogs, performDraftLaunch, performDraftStop, performEntryLaunch, performEntryStop, } from "./store/providers.js";
 import { performDiscard, performDownload, performRegister, performSave, performUnregister, } from "./store/actions.js";
 import { performGetCancel } from "./store/deps.js";
@@ -258,8 +258,7 @@ export function card(_react, localeRef, _primitives) {
                 if (latest === null) {
                     return;
                 }
-                void repriceSummary(store, { engine: latest.engine, config: latest.config });
-                void repriceDeps(store, { engine: latest.engine, config: latest.config });
+                void repriceAll(store, { engine: latest.engine, config: latest.config });
             }, 300);
         };
         // The initial load: with no summary and no draft, fetch the read model
@@ -267,8 +266,7 @@ export function card(_react, localeRef, _primitives) {
         react.useEffect(() => {
             const current = store.getSnapshot();
             if (current.summary === null && current.draft === null) {
-                void repriceSummary(store);
-                void repriceDeps(store);
+                void repriceAll(store);
             }
             return () => {
                 if (repriceTimerRef.current !== null) {
@@ -458,8 +456,7 @@ export function card(_react, localeRef, _primitives) {
                 react.createElement("div", { style: { fontWeight: 600, fontSize: 14 } }, t.section),
                 react.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8 } },
                     react.createElement("button", { type: "button", style: HELP_BUTTON_STYLE(false), title: t.refresh, "aria-label": t.refresh, onClick: () => {
-                            void repriceSummary(store);
-                            void repriceDeps(store);
+                            void repriceAll(store);
                         } }, '↻'),
                     react.createElement("button", { type: "button", style: HELP_BUTTON_STYLE(state.ui.help), title: t.helpToggle, "aria-label": t.helpToggle, "aria-pressed": state.ui.help, onClick: () => {
                             store.dispatch({

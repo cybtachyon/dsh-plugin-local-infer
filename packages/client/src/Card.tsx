@@ -64,7 +64,7 @@ import {
   deriveProviderFormMode,
   type LifecycleControl,
 } from './store/derive.ts'
-import { repriceDeps, repriceSummary } from './store/deps.ts'
+import { repriceAll } from './store/deps.ts'
 import {
   openEntryLogs,
   performDraftLaunch,
@@ -432,8 +432,7 @@ export function card(
         if (latest === null) {
           return
         }
-        void repriceSummary(store, { engine: latest.engine, config: latest.config })
-        void repriceDeps(store, { engine: latest.engine, config: latest.config })
+        void repriceAll(store, { engine: latest.engine, config: latest.config })
       }, 300)
     }
 
@@ -442,8 +441,7 @@ export function card(
     react.useEffect(() => {
       const current = store.getSnapshot()
       if (current.summary === null && current.draft === null) {
-        void repriceSummary(store)
-        void repriceDeps(store)
+        void repriceAll(store)
       }
       return () => {
         if (repriceTimerRef.current !== null) {
@@ -676,8 +674,7 @@ export function card(
               title={t.refresh}
               aria-label={t.refresh}
               onClick={() => {
-                void repriceSummary(store)
-                void repriceDeps(store)
+                void repriceAll(store)
               }}
             >
               {'↻'}
