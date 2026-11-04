@@ -357,7 +357,10 @@ var en = {
   customArgAdd: "Add a row",
   customArgRemove: "Remove this row",
   customArgClear: "Clear this row",
-  customArgHelp: "Extra flags appended to the engine launch command after saving."
+  customArgHelp: "Extra flags appended to the engine launch command after saving.",
+  orchestratorSection: "Orchestrator",
+  orchestratorPrompt: "Orchestrator Prompt",
+  orchestratorDefaultNote: "Clear the prompt and save to restore the shipped default."
 };
 var zh = {
   section: "\u5F15\u64CE\u8BBE\u7F6E",
@@ -500,7 +503,10 @@ var zh = {
   customArgAdd: "\u6DFB\u52A0\u4E00\u884C",
   customArgRemove: "\u5220\u9664\u6B64\u884C",
   customArgClear: "\u6E05\u7A7A\u6B64\u884C",
-  customArgHelp: "\u4FDD\u5B58\u540E\u8FFD\u52A0\u5230\u5F15\u64CE\u542F\u52A8\u547D\u4EE4\u7684\u989D\u5916\u6807\u5FD7\u3002\u9996\u884C\u53EA\u6E05\u7A7A\u4E0D\u5220\u9664\uFF1B+ \u6DFB\u52A0\u4E00\u884C\uFF0C\u4E0B\u65B9\u884C\u7684 - \u5220\u9664\u8BE5\u884C\u3002"
+  customArgHelp: "\u4FDD\u5B58\u540E\u8FFD\u52A0\u5230\u5F15\u64CE\u542F\u52A8\u547D\u4EE4\u7684\u989D\u5916\u6807\u5FD7\u3002\u9996\u884C\u53EA\u6E05\u7A7A\u4E0D\u5220\u9664\uFF1B+ \u6DFB\u52A0\u4E00\u884C\uFF0C\u4E0B\u65B9\u884C\u7684 - \u5220\u9664\u8BE5\u884C\u3002",
+  orchestratorSection: "\u7F16\u6392\u5668",
+  orchestratorPrompt: "\u7F16\u6392\u5668\u63D0\u793A\u8BCD",
+  orchestratorDefaultNote: "\u6E05\u7A7A\u63D0\u793A\u8BCD\u5E76\u4FDD\u5B58\u5373\u53EF\u6062\u590D\u968F\u5305\u9ED8\u8BA4\u63D0\u793A\u8BCD\u3002"
 };
 var TEXT = { en, zh };
 function labels(active) {
@@ -1396,6 +1402,20 @@ function postChatTemplate(request) {
 }
 function postProviderDelete(request) {
   return postJson("/local-infer/provider-delete", request);
+}
+async function orchestratorRouteExists() {
+  try {
+    const response = await fetch("/local-infer/orchestrator");
+    return response.status !== 404;
+  } catch {
+    return false;
+  }
+}
+function fetchOrchestrator() {
+  return getJson("/local-infer/orchestrator");
+}
+function postOrchestratorSave(request) {
+  return postJson("/local-infer/orchestrator/save", request);
 }
 
 // packages/client/src/store/sync.ts
@@ -3792,8 +3812,102 @@ function card(_react, localeRef, _primitives) {
   };
 }
 
+// packages/client/src/OrchestratorCard.tsx
+var FIELD_LABEL_STYLE = {
+  display: "block",
+  color: "var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))",
+  marginBottom: 4
+};
+var PROMPT_TEXTAREA_STYLE = {
+  width: "100%",
+  boxSizing: "border-box",
+  minHeight: 160,
+  padding: 8,
+  borderRadius: "var(--dsw-radius-md, 8px)",
+  border: "0.5px solid var(--dsw-alias-border-l4, var(--dsw-alias-border-secondary, rgba(128,128,128,0.24)))",
+  background: "var(--dsw-alias-bg-layer-1, var(--dsw-alias-background-tertiary, rgba(128,128,128,0.12)))",
+  color: "var(--dsw-alias-label-primary, inherit)",
+  fontFamily: "var(--dsw-alias-font-mono, ui-monospace, monospace)",
+  fontSize: 12,
+  lineHeight: 1.5,
+  colorScheme: "light dark",
+  resize: "vertical"
+};
+var NOTE_STYLE = {
+  fontSize: 11,
+  lineHeight: 1.4,
+  marginTop: 4,
+  color: "var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))"
+};
+function orchestratorCard(_react, localeRef) {
+  const subscribeLocale = (onChange) => {
+    const locale = localeRef.current;
+    return locale ? locale.subscribe(onChange) : () => {
+    };
+  };
+  const readLocale = () => {
+    const locale = localeRef.current;
+    return locale ? locale.getSnapshot().active : "";
+  };
+  return function OrchestratorCard() {
+    const active = react.useSyncExternalStore(subscribeLocale, readLocale, readLocale);
+    const t = labels(active);
+    const [model, setModel] = react.useState(null);
+    const [loadError, setLoadError] = react.useState("");
+    const [draft, setDraft] = react.useState(null);
+    const [saving, setSaving] = react.useState(false);
+    const [note, setNote] = react.useState(null);
+    react.useEffect(() => {
+      fetchOrchestrator().then(setModel, (error) => {
+        setLoadError(String(error?.message ?? error));
+      });
+    }, []);
+    const value = draft !== null ? draft : model?.prompt ?? "";
+    const onSave = () => {
+      setSaving(true);
+      setNote(null);
+      postOrchestratorSave({ prompt: value }).then(
+        (fresh) => {
+          setModel(fresh);
+          setDraft(null);
+          setSaving(false);
+          setNote({ kind: "ok", message: "" });
+        },
+        (error) => {
+          setSaving(false);
+          setNote({ kind: "error", message: String(error?.message ?? error) });
+        }
+      );
+    };
+    return /* @__PURE__ */ react.createElement("div", { style: CARD_STYLE }, /* @__PURE__ */ react.createElement("div", { style: { fontWeight: 600, fontSize: 14 } }, t.orchestratorSection), model === null ? /* @__PURE__ */ react.createElement("div", null, loadError !== "" ? loadError : t.loading) : /* @__PURE__ */ react.createElement("div", null, /* @__PURE__ */ react.createElement("div", null, /* @__PURE__ */ react.createElement("label", { style: FIELD_LABEL_STYLE }, t.orchestratorPrompt), /* @__PURE__ */ react.createElement(
+      "textarea",
+      {
+        style: PROMPT_TEXTAREA_STYLE,
+        value,
+        placeholder: model.defaultPrompt,
+        disabled: saving,
+        onChange: (event) => setDraft(event.target.value)
+      }
+    ), /* @__PURE__ */ react.createElement("div", { style: NOTE_STYLE }, t.orchestratorDefaultNote)), /* @__PURE__ */ react.createElement("div", { style: FOOTER_STYLE }, renderButton(
+      "primary",
+      { onClick: onSave, disabled: saving },
+      saving ? t.saving : t.save
+    )), note === null ? null : /* @__PURE__ */ react.createElement(
+      "div",
+      {
+        style: {
+          fontSize: 12,
+          color: note.kind === "error" ? "var(--dsw-alias-label-error, #ff3b30)" : "var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))"
+        }
+      },
+      note.kind === "ok" ? t.saved : note.message
+    )));
+  };
+}
+
 // packages/client/src/plugin.ts
 var PACKAGE_NAME = "dsh-plugin-local-infer";
+var ORCHESTRATOR_ROW_CONFIG_KEY = PACKAGE_NAME + "#local-infer-orchestrator";
 function registerCard(ctx) {
   if (typeof ctx.inject !== "function") {
     return;
@@ -3821,17 +3935,21 @@ function registerCard(ctx) {
         console.error(`[local-infer] settings card skipped: ${error}`);
       }
     });
+    orchestratorRouteExists().then((exists) => {
+      if (!exists) {
+        return;
+      }
+      try {
+        mountOrchestratorCard(scope, localeRef);
+      } catch (error) {
+        console.error(`[local-infer] orchestrator settings card skipped: ${error}`);
+      }
+    });
   });
 }
-function mountCard(ctx, localeRef) {
-  let react2;
-  try {
-    react2 = require("react");
-  } catch (error) {
-    console.error(`[local-infer] settings card skipped: ${error}`);
-    return;
-  }
-  setReactModule(react2);
+function requireRuntimeModules() {
+  const reactModule = require("react");
+  setReactModule(reactModule);
   let primitives;
   try {
     primitives = require("@deepseek-ai/dsh-client-ui-primitives");
@@ -3842,13 +3960,39 @@ function mountCard(ctx, localeRef) {
     primitives = null;
   }
   setPrimitivesModule(primitives);
-  const Card = card(react2, localeRef, primitives);
+  return { react: reactModule, primitives };
+}
+function mountCard(ctx, localeRef) {
+  let modules;
+  try {
+    modules = requireRuntimeModules();
+  } catch (error) {
+    console.error(`[local-infer] settings card skipped: ${error}`);
+    return;
+  }
+  const Card = card(modules.react, localeRef, modules.primitives);
   ctx.slots.inject("plugins.bundle.config", () => {
     ctx.slots.register({ name: "plugins.bundle.config", key: PACKAGE_NAME }, Card);
   });
   ctx.slots.inject("settings.plugin.item", () => {
     ctx.slots.register(
       { name: "settings.plugin.item", id: "local-infer", key: "local-infer", order: 41 },
+      Card
+    );
+  });
+}
+function mountOrchestratorCard(ctx, localeRef) {
+  let modules;
+  try {
+    modules = requireRuntimeModules();
+  } catch (error) {
+    console.error(`[local-infer] orchestrator settings card skipped: ${error}`);
+    return;
+  }
+  const Card = orchestratorCard(modules.react, localeRef);
+  ctx.slots.inject("plugins.row.config", () => {
+    ctx.slots.register(
+      { name: "plugins.row.config", key: ORCHESTRATOR_ROW_CONFIG_KEY },
       Card
     );
   });

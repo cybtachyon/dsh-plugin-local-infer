@@ -35,8 +35,9 @@ afterAll(() => {
   delete (globalThis as Record<string, unknown>).fetch
 })
 
-// The card probes /local-infer/summary on mount. A 404 reads as "the route is
-// absent", so the mount is skipped and require('react') never runs.
+// The bootstrap probes /local-infer/summary and /local-infer/orchestrator on
+// mount, and one stub answers both the same way. A 404 reads as "the route is
+// absent", so that card's mount is skipped and require('react') never runs.
 function stubFetch(status: number): void {
   ;(globalThis as Record<string, unknown>).fetch = (async () => ({
     status,
@@ -171,13 +172,19 @@ describe('dsh/client.js browser carrier', () => {
     expect(slotNames).toEqual([])
   })
 
-  it('mounts the card and registers both slots when the route probe succeeds', async () => {
+  it('mounts both cards and registers every slot when both probes succeed', async () => {
     const { slotNames, ctx } = mountScope()
     stubFetch(200)
     loadPlugin().apply(ctx)
-    // The mount runs in a microtask after the probe resolves.
+    // The mounts run in microtasks after their probes resolve; the main card
+    // probes first, so it registers first, and the Orchestrator card adds the
+    // plugins.row.config registration for its component row.
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(slotNames).toEqual(['plugins.bundle.config', 'settings.plugin.item'])
+    expect(slotNames).toEqual([
+      'plugins.bundle.config',
+      'settings.plugin.item',
+      'plugins.row.config',
+    ])
   })
 
   it('requires the DSH primitives seed so the card draws the host controls', async () => {
@@ -186,7 +193,11 @@ describe('dsh/client.js browser carrier', () => {
     stubFetch(200)
     loadPlugin({ required }).apply(ctx)
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(required).toEqual(['@deepseek-ai/dsh-client-ui-primitives'])
+    // Both card mounts resolve the seed through the injected require.
+    expect(required).toEqual([
+      '@deepseek-ai/dsh-client-ui-primitives',
+      '@deepseek-ai/dsh-client-ui-primitives',
+    ])
   })
 
   it('keeps the card mounted when the primitives seed is absent', async () => {
@@ -194,6 +205,10 @@ describe('dsh/client.js browser carrier', () => {
     stubFetch(200)
     loadPlugin({ primitives: new Error('seed absent') }).apply(ctx)
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(slotNames).toEqual(['plugins.bundle.config', 'settings.plugin.item'])
+    expect(slotNames).toEqual([
+      'plugins.bundle.config',
+      'settings.plugin.item',
+      'plugins.row.config',
+    ])
   })
 })

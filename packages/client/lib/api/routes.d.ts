@@ -5,8 +5,9 @@
  * Every wrapper is a thin typed round trip over the global fetch: the GET
  * routes (summary, deps) price the card's draft, and the POST routes
  * (save, install, register, unregister, launch, stop, get, download,
- * chat-template, provider-delete) mutate the host. A JSON answer that is
- * not OK throws with the route's error field, so the caller's catch reads
+ * chat-template, provider-delete, orchestrator-save) mutate the host. A
+ * JSON answer that is not OK throws with the route's error field, so the
+ * caller's catch reads
  * the host's own message. The launch route streams NDJSON (a step event as
  * each phase begins, a progress event when the Get-steps hf download's tqdm
  * output folds into a structured state, then a final result event), and the
@@ -79,6 +80,22 @@ export interface ChatTemplateRequest {
 /** The body the provider-delete route takes. */
 export interface ProviderDeleteRequest {
     id: string;
+}
+/** The body the orchestrator-save route takes. */
+export interface OrchestratorSaveRequest {
+    prompt: string;
+}
+/**
+ * OrchestratorModel is the answer both orchestrator routes share: the
+ * effective prompt, the shipped prompt.md default, and whether the effective
+ * prompt is a saved value. The payload interface is private in the node-side
+ * orchestrator package and the client bundle cannot import it, so the shape
+ * is mirrored here; the two copies change together by hand.
+ */
+export interface OrchestratorModel {
+    prompt: string;
+    defaultPrompt: string;
+    saved: boolean;
 }
 export interface HfProgressShape {
     step: string;
@@ -185,4 +202,16 @@ export declare function postDownload(request: DownloadRequest): Promise<Download
 export declare function postChatTemplate(request: ChatTemplateRequest): Promise<DownloadResult>;
 /** postProviderDelete removes a saved provider entry and answers with the fresh summary. */
 export declare function postProviderDelete(request: ProviderDeleteRequest): Promise<LocalInferSummary>;
+/**
+ * orchestratorRouteExists probes whether the orchestrator's GET route is
+ * mounted: the same rule as routeExists (any response other than a 404 or a
+ * network failure proves presence). The orchestrator component ships
+ * disabled, and its routes live and die with the component, so the probe is
+ * the card's enablement read.
+ */
+export declare function orchestratorRouteExists(): Promise<boolean>;
+/** fetchOrchestrator reads the orchestrator prompt model (the GET /local-infer/orchestrator route). */
+export declare function fetchOrchestrator(): Promise<OrchestratorModel>;
+/** postOrchestratorSave persists the prompt and answers with the fresh model. */
+export declare function postOrchestratorSave(request: OrchestratorSaveRequest): Promise<OrchestratorModel>;
 //# sourceMappingURL=routes.d.ts.map
