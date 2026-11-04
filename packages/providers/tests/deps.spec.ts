@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { planDepsForOs, renderInstallString } from 'dsh-plugin-local-infer/core'
+import { renderInstallString } from 'dsh-plugin-local-infer/core'
 import type { HardwareProfile } from 'dsh-plugin-local-infer/core'
 import LocalInfer from 'dsh-plugin-local-infer/service'
 import { ENGINE_DEP_PLANS, SYSTEM_DEPS } from '../src/deps.ts'
@@ -95,7 +95,7 @@ describe('dep probes', () => {
 
 describe('engine dep plans', () => {
   it('plans the NInfer local toolchain in the qwen-ninfer order, ending with the hf CLI', () => {
-    const ids = ENGINE_DEP_PLANS.ninfer.local.map((dep) => dep.id)
+    const ids = ENGINE_DEP_PLANS.ninfer.local?.linux?.map((dep) => dep.id)
     expect(ids).toEqual([
       'cmake',
       'ninja',
@@ -108,7 +108,7 @@ describe('engine dep plans', () => {
   })
 
   it('plans the NInfer Windows local toolchain as the winget vcpkg route', () => {
-    const ids = ENGINE_DEP_PLANS.ninfer.windows?.local?.map((dep) => dep.id)
+    const ids = ENGINE_DEP_PLANS.ninfer.local?.windows?.map((dep) => dep.id)
     expect(ids).toEqual([
       'cmake',
       'ninja',
@@ -131,15 +131,15 @@ describe('engine dep plans', () => {
       'hf-cli',
     ])
     // Hyper-Qwen is docker-only, so its local list is empty.
-    expect(ENGINE_DEP_PLANS.hyperqwen.local).toEqual([])
+    expect(ENGINE_DEP_PLANS.hyperqwen.local?.linux).toEqual([])
   })
 
   it('leaves the specified-not-verified engines their thin lists', () => {
-    expect(ENGINE_DEP_PLANS.llamacpp.local.map((dep) => dep.id)).toEqual(['cmake', 'hf-cli'])
+    expect(ENGINE_DEP_PLANS.llamacpp.local?.linux?.map((dep) => dep.id)).toEqual(['cmake', 'hf-cli'])
     // Strata carries one list per build mode: the source build needs git and
     // curl, the binary install needs curl, and the docker mode needs the
     // container runtime plus the GPU toolkit.
-    expect(ENGINE_DEP_PLANS.strata.local.map((dep) => dep.id)).toEqual(['git', 'curl'])
+    expect(ENGINE_DEP_PLANS.strata.local?.linux?.map((dep) => dep.id)).toEqual(['git', 'curl'])
     expect(ENGINE_DEP_PLANS.strata.binary?.map((dep) => dep.id)).toEqual(['curl'])
     expect(ENGINE_DEP_PLANS.strata.docker.map((dep) => dep.id)).toEqual([
       'docker',
@@ -148,7 +148,7 @@ describe('engine dep plans', () => {
   })
 
   it('renders the NInfer local apt block over the qwen-ninfer package set', () => {
-    const block = renderInstallString(ENGINE_DEP_PLANS.ninfer.local, APT)
+    const block = renderInstallString(ENGINE_DEP_PLANS.ninfer.local?.linux ?? [], APT)
     expect(block).toContain('sudo apt install cmake')
     expect(block).toContain('sudo apt install ninja-build')
     expect(block).toContain('sudo apt install pkg-config')
@@ -160,7 +160,7 @@ describe('engine dep plans', () => {
   })
 
   it('renders the NInfer local pacman block over the Arch package set', () => {
-    const block = renderInstallString(ENGINE_DEP_PLANS.ninfer.local, PACMAN)
+    const block = renderInstallString(ENGINE_DEP_PLANS.ninfer.local?.linux ?? [], PACMAN)
     expect(block).toContain('sudo pacman -S --noconfirm cmake')
     expect(block).toContain('sudo pacman -S --noconfirm ninja')
     expect(block).toContain('sudo pacman -S --noconfirm pkgconf')
@@ -188,10 +188,7 @@ describe('engine dep plans', () => {
       wsl2: false,
       packageManager: 'winget',
     }
-    const block = renderInstallString(
-      planDepsForOs(ENGINE_DEP_PLANS.ninfer, 'local', 'windows'),
-      WINDOWS,
-    )
+    const block = renderInstallString(ENGINE_DEP_PLANS.ninfer.local?.windows ?? [], WINDOWS)
     expect(block).toContain('# System dependencies on Windows')
     expect(block).toContain('# Package manager: winget')
     expect(block).toContain('winget install Kitware.CMake')
@@ -213,6 +210,51 @@ describe('dep plan registration', () => {
       'llamacpp',
       'ninfer',
       'strata',
+    ])
+  })
+
+  it('resolves the per-platform local list for the host OS', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LocalInfer)
+    const { apply } = await import('../src/index.ts')
+    apply(ctx)
+    const LINUX: HardwareProfile = { ...APT }
+    const WINDOWS: HardwareProfile = {
+      os: 'windows',
+      cpuThreads: 8,
+      dockerAvailable: true,
+      wsl2: false,
+      packageManager: 'winget',
+    }
+    const MACOS: HardwareProfile = { ...APT, os: 'macos', packageManager: 'brew' }
+    // A Windows host reads the Windows profile's local deps (the winget route).
+    expect((await ctx.localInfer.deps('ninfer', 'local', WINDOWS)).map((dep) => dep.id)).toEqual([
+      'cmake',
+      'ninja',
+      'visual-studio',
+      'cuda-toolkit',
+      'hf-cli',
+      'git',
+    ])
+    // A Linux host reads the Linux profile's local deps (the apt/dnf/pacman/brew route).
+    expect((await ctx.localInfer.deps('ninfer', 'local', LINUX)).map((dep) => dep.id)).toEqual([
+      'cmake',
+      'ninja',
+      'pkg-config',
+      'ffmpeg',
+      'curl',
+      'cuda-toolkit',
+      'hf-cli',
+    ])
+    // A macOS host reads the Linux profile's list (the fallback).
+    expect((await ctx.localInfer.deps('ninfer', 'local', MACOS)).map((dep) => dep.id)).toEqual([
+      'cmake',
+      'ninja',
+      'pkg-config',
+      'ffmpeg',
+      'curl',
+      'cuda-toolkit',
+      'hf-cli',
     ])
   })
 })

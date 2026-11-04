@@ -1,5 +1,5 @@
 /**
- * The per-engine dep plans, keyed by engine id. The local build-mode list is
+ * The per-engine dep plans, keyed by engine id. The local build-mode lists are
  * sourced from the engine OS profile's deps (the Windows profile carries the
  * winget/MSVC toolchain, the shared Linux profile the apt/dnf/pacman/brew
  * toolchain), so the per-platform local lists have one home in the profiles.
@@ -11,8 +11,16 @@
  * catalog keeps its public home in this module.
  * @module dsh-plugin-local-infer/providers/deps
  */
-import type { EngineDepPlan } from 'dsh-plugin-local-infer/core';
+import type { EngineDepPlan, SystemDep } from 'dsh-plugin-local-infer/core';
 export { SYSTEM_DEPS } from './systemDeps.ts';
+/**
+ * engineLocalDeps reads the host build deps an engine's local build needs on
+ * an OS, from the engine OS profile's deps (the single home for the
+ * per-platform toolchain). A Windows host reads the Windows profile (the
+ * winget/MSVC route); every other host reads the shared Linux profile, so a
+ * macOS host gets the Linux toolchain list.
+ */
+export declare function engineLocalDeps(engineId: string, os: 'linux' | 'windows' | 'macos'): readonly SystemDep[];
 /**
  * The per-engine dep plans, keyed by engine id. The local NInfer list is the
  * qwen-ninfer header's toolchain plus the CUDA toolkit and the hf CLI; the
@@ -24,12 +32,14 @@ export { SYSTEM_DEPS } from './systemDeps.ts';
  * build needs git and curl, the binary install needs curl, and the docker
  * mode needs the container runtime plus the GPU toolkit.
  *
- * The local lists are read from the engine OS profile's deps, so the
- * per-platform toolchain (the apt/dnf/pacman/brew route on Linux, the
- * winget/MSVC route on Windows) has one home in the profiles. The Windows
- * variant of a build mode's list is the Windows profile's deps; an engine
- * with no Windows profile of its own (hyperqwen, llamacpp, strata) falls
- * back to the shared Linux profile's deps.
+ * The local lists ride the plan as a per-OS record (the linux and windows
+ * entries), read from the engine OS profile's deps through engineLocalDeps,
+ * so the per-platform toolchain (the apt/dnf/pacman/brew route on Linux, the
+ * winget/MSVC route on Windows) has one home in the profiles. An engine with
+ * no dedicated Windows toolchain (hyperqwen, llamacpp, strata) reads the same
+ * list for both entries: its Windows profile reuses the shared Linux profile
+ * (hyperqwen, empty for the compose engine) or declares the identical list
+ * (llamacpp, strata).
  */
 export declare const ENGINE_DEP_PLANS: Record<string, EngineDepPlan>;
 //# sourceMappingURL=deps.d.ts.map

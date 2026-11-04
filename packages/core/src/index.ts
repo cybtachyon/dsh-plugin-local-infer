@@ -159,7 +159,6 @@ export {
   detectPackageManager,
   osLabel,
   planDeps,
-  planDepsForOs,
   renderInstallString,
   runInstall,
 } from './deps.ts'

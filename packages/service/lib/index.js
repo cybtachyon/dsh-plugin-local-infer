@@ -25,7 +25,7 @@ import { Service } from '@deepseek-ai/cordis';
 // Relative, not the root package subpath: a self-referencing bare specifier
 // only resolves when the package sits inside a node_modules tree, so a
 // local-path or pnpm-linked install of this repo would fail the import.
-import { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, buildModelEntry, detectHardware as detectHardwareFromProbes, detectPackageManager, evaluateGuidelines, estimateVram, hfChatTemplateCommand, hfDownloadCommand, isGpuBusy, LLM_PI_AI_NAMESPACE, matchLaunchSignature, modelGuidelines, reLinkRecord, computeProviderStatuses, modelRowsFrom, parseNvidiaSmiGpu, parseNvidiaSmiGpuUsage, planDepsForOs, presetFromFetch, providerRegistrationOps, providerRemovalOps, removeModelRow, renderInstallString, resolveDefaults as resolveDefaultsFromPresets, resolveOsReserve, runInstall, } from '../../core/lib/index.js';
+import { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, buildModelEntry, detectHardware as detectHardwareFromProbes, detectPackageManager, evaluateGuidelines, estimateVram, hfChatTemplateCommand, hfDownloadCommand, isGpuBusy, LLM_PI_AI_NAMESPACE, matchLaunchSignature, modelGuidelines, reLinkRecord, computeProviderStatuses, modelRowsFrom, parseNvidiaSmiGpu, parseNvidiaSmiGpuUsage, presetFromFetch, providerRegistrationOps, providerRemovalOps, removeModelRow, renderInstallString, resolveDefaults as resolveDefaultsFromPresets, resolveOsReserve, runInstall, } from '../../core/lib/index.js';
 /**
  * Local-inference failure. Extends Error with a stable `code`
  * (`LOCAL_INFER_CONFLICT`, `LOCAL_INFER_INVALID_ENGINE`,
@@ -456,7 +456,11 @@ export class LocalInfer extends Service {
      * deps resolves the host deps an engine's deploy step needs for a build
      * mode. A registered adapter that declares systemDeps wins; the provider-
      * registered plan for the engine id is the fallback, and an engine with
-     * neither plans an empty list (nothing to install, the gate passes).
+     * neither plans an empty list (nothing to install, the gate passes). The
+     * local list is per-OS: a Windows host reads the plan's windows entry (the
+     * winget toolchain the providers sourced from the Windows profile), every
+     * other host reads the linux entry, so the System dependencies section
+     * shows the right toolchain for the host.
      */
     async deps(engineId, buildMode, hw) {
         const adapter = this.engineRegistry.get(engineId);
@@ -466,10 +470,13 @@ export class LocalInfer extends Service {
         const plan = this.depPlanRegistry.get(engineId);
         if (plan === undefined)
             return [];
-        // The plan's base lists are the Linux/WSL lists; a Windows host reads the
-        // plan's windows variant for the mode when present, so the System
-        // dependencies section shows the winget toolchain on Windows.
-        return planDepsForOs(plan, buildMode, hw.os);
+        if (buildMode === 'local') {
+            // A Windows host reads the windows entry; every other host (linux,
+            // macos) reads the linux entry, which the providers source from the
+            // shared Linux profile.
+            return plan.local?.[hw.os] ?? plan.local?.linux ?? [];
+        }
+        return plan[buildMode] ?? [];
     }
     /**
      * installString renders the copy/paste block for the resolved dep plan,

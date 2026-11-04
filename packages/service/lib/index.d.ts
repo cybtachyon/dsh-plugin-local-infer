@@ -170,7 +170,11 @@ export declare class LocalInfer extends Service implements LocalInferService {
      * deps resolves the host deps an engine's deploy step needs for a build
      * mode. A registered adapter that declares systemDeps wins; the provider-
      * registered plan for the engine id is the fallback, and an engine with
-     * neither plans an empty list (nothing to install, the gate passes).
+     * neither plans an empty list (nothing to install, the gate passes). The
+     * local list is per-OS: a Windows host reads the plan's windows entry (the
+     * winget toolchain the providers sourced from the Windows profile), every
+     * other host reads the linux entry, so the System dependencies section
+     * shows the right toolchain for the host.
      */
     deps(engineId: string, buildMode: BuildMode, hw: HardwareProfile): Promise<readonly SystemDep[]>;
     /**

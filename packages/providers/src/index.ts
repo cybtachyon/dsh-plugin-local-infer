@@ -68,7 +68,7 @@ export type {
   SyncRebuildRequest,
   SyncRebuildResult,
 } from './acquire.ts'
-export { ENGINE_DEP_PLANS, SYSTEM_DEPS } from './deps.ts'
+export { ENGINE_DEP_PLANS, SYSTEM_DEPS, engineLocalDeps } from './deps.ts'
 export { ENGINE_PLATFORM_DEFAULTS, enginePlatformDefaults } from './platform.ts'
 export type { EnginePlatformDefaults } from './platform.ts'
 export { BUILTIN_PRESETS, PRESET_SOURCES, extractJsonBlock } from './presets.ts'

@@ -400,7 +400,7 @@ describe('ctx.localInfer dep provisioning', () => {
       requiresSudo: true,
       install: { apt: { commands: [`sudo apt install ${id}`] } },
     }
-    return { docker: [dep], local: [dep] }
+    return { docker: [dep], local: { linux: [dep] } }
   }
 
   it('registers a dep plan keyed by engine id and rejects duplicates and empty ids', async () => {
@@ -424,6 +424,36 @@ describe('ctx.localInfer dep provisioning', () => {
     expect(deps.map((dep) => dep.id)).toEqual(['cmake'])
     // An engine with no plan plans an empty list: nothing to install.
     expect(await ctx.localInfer.deps('unknown', 'local', HW)).toEqual([])
+  })
+
+  it('resolves the per-platform local list for the host OS', async () => {
+    const ctx = await seam()
+    const linuxDep: SystemDep = {
+      id: 'cmake',
+      purpose: 'the linux toolchain',
+      requiresSudo: true,
+      install: { apt: { commands: ['sudo apt install cmake'] } },
+    }
+    const windowsDep: SystemDep = {
+      id: 'visual-studio',
+      purpose: 'the windows toolchain',
+      requiresSudo: false,
+      install: { winget: { commands: ['winget install --id Microsoft.VisualStudio.Community'] } },
+    }
+    ctx.localInfer.registerDepPlan('ninfer', {
+      docker: [],
+      local: { linux: [linuxDep], windows: [windowsDep] },
+    })
+    // A Windows host reads the plan's windows entry (the winget toolchain).
+    expect((await ctx.localInfer.deps('ninfer', 'local', { ...HW, os: 'windows' })).map((dep) => dep.id)).toEqual([
+      'visual-studio',
+    ])
+    // A Linux host reads the plan's linux entry.
+    expect((await ctx.localInfer.deps('ninfer', 'local', HW)).map((dep) => dep.id)).toEqual(['cmake'])
+    // A macOS host falls back to the linux entry.
+    expect((await ctx.localInfer.deps('ninfer', 'local', { ...HW, os: 'macos' })).map((dep) => dep.id)).toEqual([
+      'cmake',
+    ])
   })
 
   it('lets an adapter-declared systemDeps win over the registered plan', async () => {
@@ -481,20 +511,22 @@ describe('ctx.localInfer dep provisioning', () => {
     const brokenCommand = process.platform === 'win32' ? 'exit 1' : 'false'
     const plan: EngineDepPlan = {
       docker: [],
-      local: [
-        {
-          id: 'noop',
-          purpose: 'a no-op command',
-          requiresSudo: false,
-          install: { apt: { commands: [noopCommand] } },
-        },
-        {
-          id: 'broken',
-          purpose: 'a failing command',
-          requiresSudo: false,
-          install: { apt: { commands: [brokenCommand] } },
-        },
-      ],
+      local: {
+        linux: [
+          {
+            id: 'noop',
+            purpose: 'a no-op command',
+            requiresSudo: false,
+            install: { apt: { commands: [noopCommand] } },
+          },
+          {
+            id: 'broken',
+            purpose: 'a failing command',
+            requiresSudo: false,
+            install: { apt: { commands: [brokenCommand] } },
+          },
+        ],
+      },
     }
     ctx.localInfer.registerDepPlan('shelltest', plan)
     const result = await ctx.localInfer.runInstall('shelltest', 'local', {

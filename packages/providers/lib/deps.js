@@ -1,5 +1,5 @@
 /**
- * The per-engine dep plans, keyed by engine id. The local build-mode list is
+ * The per-engine dep plans, keyed by engine id. The local build-mode lists are
  * sourced from the engine OS profile's deps (the Windows profile carries the
  * winget/MSVC toolchain, the shared Linux profile the apt/dnf/pacman/brew
  * toolchain), so the per-platform local lists have one home in the profiles.
@@ -11,15 +11,20 @@
  * catalog keeps its public home in this module.
  * @module dsh-plugin-local-infer/providers/deps
  */
-import { HYPERQWEN_LINUX } from "./engines/hyperqwen/hyperqwenLinux.js";
-import { INFERNIX_LINUX } from "./engines/infernix/infernixLinux.js";
-import { INFERNIX_WINDOWS } from "./engines/infernix/infernixWindows.js";
-import { LLAMACPP_LINUX } from "./engines/llamacpp/llamacppLinux.js";
-import { NINFER_LINUX } from "./engines/ninfer/ninferLinux.js";
-import { NINFER_WINDOWS } from "./engines/ninfer/ninferWindows.js";
-import { STRATA_LINUX } from "./engines/strata/strataLinux.js";
+import { engineOsProfile } from "./acquire.js";
 import { SYSTEM_DEPS } from "./systemDeps.js";
 export { SYSTEM_DEPS } from "./systemDeps.js";
+/**
+ * engineLocalDeps reads the host build deps an engine's local build needs on
+ * an OS, from the engine OS profile's deps (the single home for the
+ * per-platform toolchain). A Windows host reads the Windows profile (the
+ * winget/MSVC route); every other host reads the shared Linux profile, so a
+ * macOS host gets the Linux toolchain list.
+ */
+export function engineLocalDeps(engineId, os) {
+    const profile = engineOsProfile(engineId, os === 'windows' ? 'windows' : 'linux');
+    return profile?.deps ?? [];
+}
 /**
  * The per-engine dep plans, keyed by engine id. The local NInfer list is the
  * qwen-ninfer header's toolchain plus the CUDA toolkit and the hf CLI; the
@@ -31,48 +36,53 @@ export { SYSTEM_DEPS } from "./systemDeps.js";
  * build needs git and curl, the binary install needs curl, and the docker
  * mode needs the container runtime plus the GPU toolkit.
  *
- * The local lists are read from the engine OS profile's deps, so the
- * per-platform toolchain (the apt/dnf/pacman/brew route on Linux, the
- * winget/MSVC route on Windows) has one home in the profiles. The Windows
- * variant of a build mode's list is the Windows profile's deps; an engine
- * with no Windows profile of its own (hyperqwen, llamacpp, strata) falls
- * back to the shared Linux profile's deps.
+ * The local lists ride the plan as a per-OS record (the linux and windows
+ * entries), read from the engine OS profile's deps through engineLocalDeps,
+ * so the per-platform toolchain (the apt/dnf/pacman/brew route on Linux, the
+ * winget/MSVC route on Windows) has one home in the profiles. An engine with
+ * no dedicated Windows toolchain (hyperqwen, llamacpp, strata) reads the same
+ * list for both entries: its Windows profile reuses the shared Linux profile
+ * (hyperqwen, empty for the compose engine) or declares the identical list
+ * (llamacpp, strata).
  */
 export const ENGINE_DEP_PLANS = {
     ninfer: {
-        local: NINFER_LINUX.deps ?? [],
-        docker: [SYSTEM_DEPS.docker, SYSTEM_DEPS.nvidiaContainerToolkit, SYSTEM_DEPS.hfCli],
-        // The Windows local build is the vcpkg route: the winget toolchain (CMake,
-        // Ninja, the MSVC compiler, the CUDA toolkit) plus the hf CLI and git. The
-        // vcpkg manifest pulls the ffmpeg and curl dev libraries, so the Linux
-        // pkg-config/ffmpeg/curl deps do not ride the Windows list.
-        windows: {
-            local: NINFER_WINDOWS.deps ?? [],
+        local: {
+            linux: engineLocalDeps('ninfer', 'linux'),
+            windows: engineLocalDeps('ninfer', 'windows'),
         },
+        docker: [SYSTEM_DEPS.docker, SYSTEM_DEPS.nvidiaContainerToolkit, SYSTEM_DEPS.hfCli],
     },
     hyperqwen: {
-        local: HYPERQWEN_LINUX.deps ?? [],
+        local: {
+            linux: engineLocalDeps('hyperqwen', 'linux'),
+            windows: engineLocalDeps('hyperqwen', 'windows'),
+        },
         docker: [SYSTEM_DEPS.docker, SYSTEM_DEPS.nvidiaContainerToolkit, SYSTEM_DEPS.hfCli],
     },
     llamacpp: {
-        local: LLAMACPP_LINUX.deps ?? [],
+        local: {
+            linux: engineLocalDeps('llamacpp', 'linux'),
+            windows: engineLocalDeps('llamacpp', 'windows'),
+        },
         docker: [SYSTEM_DEPS.docker, SYSTEM_DEPS.hfCli],
     },
     infernix: {
-        local: INFERNIX_LINUX.deps ?? [],
-        docker: [],
-        // Infernix builds through the engine's own cmake preset, so its Windows
-        // local list is the same winget toolchain as NInfer's.
-        windows: {
-            local: INFERNIX_WINDOWS.deps ?? [],
+        local: {
+            linux: engineLocalDeps('infernix', 'linux'),
+            windows: engineLocalDeps('infernix', 'windows'),
         },
+        docker: [],
     },
     strata: {
         // The source build git-clones the repo and runs setup.sh, which downloads
         // what it needs; the binary install is the one-line curl script; the docker
         // mode needs the container runtime plus the GPU toolkit (the model downloads
         // inside the container, so no hf CLI).
-        local: STRATA_LINUX.deps ?? [],
+        local: {
+            linux: engineLocalDeps('strata', 'linux'),
+            windows: engineLocalDeps('strata', 'windows'),
+        },
         docker: [SYSTEM_DEPS.docker, SYSTEM_DEPS.nvidiaContainerToolkit],
         binary: [SYSTEM_DEPS.curl],
     },

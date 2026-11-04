@@ -5,11 +5,9 @@ import {
   EngineAdapter,
   osLabel,
   planDeps,
-  planDepsForOs,
   renderInstallString,
   runInstall,
 } from '../src/index.ts'
-import type { EngineDepPlan } from '../src/index.ts'
 import type {
   CommandOutcome,
   CommandRunner,
@@ -152,34 +150,6 @@ describe('planDeps', () => {
 
   it('plans an empty list for an adapter that declares none', () => {
     expect(planDeps(new SilentAdapter(), 'local', HW)).toEqual([])
-  })
-})
-
-describe('planDepsForOs', () => {
-  const localDep = dep({ id: 'cmake' })
-  const windowsDep = dep({ id: 'visual-studio' })
-  const plan: EngineDepPlan = {
-    local: [localDep],
-    docker: [],
-    windows: { local: [windowsDep] },
-  }
-
-  it('reads the windows variant for a Windows host when present', () => {
-    expect(planDepsForOs(plan, 'local', 'windows').map((entry) => entry.id)).toEqual(['visual-studio'])
-  })
-
-  it('falls back to the base list for a Windows host with no windows variant', () => {
-    expect(planDepsForOs({ local: [localDep], docker: [] }, 'local', 'windows').map((entry) => entry.id)).toEqual([
-      'cmake',
-    ])
-  })
-
-  it('reads the base list for a Linux host even when a windows variant exists', () => {
-    expect(planDepsForOs(plan, 'local', 'linux').map((entry) => entry.id)).toEqual(['cmake'])
-  })
-
-  it('reads an empty list for a mode the plan does not carry', () => {
-    expect(planDepsForOs(plan, 'binary', 'linux')).toEqual([])
   })
 })
 

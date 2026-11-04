@@ -1,17 +1,4 @@
 /**
- * planDepsForOs reads the dep list a plan carries for a build mode on an OS.
- * A Windows host reads the plan's `windows` variant for the mode when present
- * and falls back to the base list when it is not; every other OS reads the
- * base list. A mode the plan does not carry (a binary list for a non-Strata
- * engine) reads as an empty list.
- */
-export function planDepsForOs(plan, buildMode, os) {
-    if (os === 'windows' && plan.windows !== undefined) {
-        return plan.windows[buildMode] ?? plan[buildMode] ?? [];
-    }
-    return plan[buildMode] ?? [];
-}
-/**
  * osLabel is the friendly OS name the install string's header and the card's
  * System dependencies section show: WSL on a WSL2 kernel, Windows on Windows,
  * OSX on macOS, and Linux on every other Linux host.

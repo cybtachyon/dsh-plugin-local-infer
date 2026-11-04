@@ -55,30 +55,20 @@ export interface SystemDep {
 }
 /**
  * EngineDepPlan is the per-engine answer to "which host deps does this engine
- * need": the docker list and the local list. A docker build skips the compile
- * toolchain entirely; a local build needs it. The providers ship the plans as
- * data, so adding an engine is a data edit. The base lists are the Linux/WSL
- * lists; `windows` carries the Windows variant of a build mode's list (the
- * winget toolchain), which a Windows host reads when present.
+ * need": the docker list, the optional binary list, and the per-OS local
+ * lists. A docker build skips the compile toolchain entirely; a local build
+ * needs it. The providers ship the plans as data, so adding an engine is a
+ * data edit. The local lists are per-OS, sourced from the engine OS profile's
+ * deps by the providers (the Windows profile carries the winget toolchain,
+ * the shared Linux profile the apt/dnf/pacman/brew toolchain); a host OS
+ * reads its own list, and an OS with no dedicated list (macOS) reads the
+ * Linux list.
  */
 export interface EngineDepPlan {
     docker: readonly SystemDep[];
-    local: readonly SystemDep[];
     binary?: readonly SystemDep[];
-    windows?: {
-        local?: readonly SystemDep[];
-        docker?: readonly SystemDep[];
-        binary?: readonly SystemDep[];
-    };
+    local?: Partial<Record<'linux' | 'windows' | 'macos', readonly SystemDep[]>>;
 }
-/**
- * planDepsForOs reads the dep list a plan carries for a build mode on an OS.
- * A Windows host reads the plan's `windows` variant for the mode when present
- * and falls back to the base list when it is not; every other OS reads the
- * base list. A mode the plan does not carry (a binary list for a non-Strata
- * engine) reads as an empty list.
- */
-export declare function planDepsForOs(plan: EngineDepPlan, buildMode: BuildMode, os: 'linux' | 'windows' | 'macos'): readonly SystemDep[];
 /**
  * osLabel is the friendly OS name the install string's header and the card's
  * System dependencies section show: WSL on a WSL2 kernel, Windows on Windows,
