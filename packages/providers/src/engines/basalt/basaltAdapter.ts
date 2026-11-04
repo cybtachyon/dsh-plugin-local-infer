@@ -36,6 +36,7 @@ import {
   configFileFromSpecs,
   nodeLifecycleHost,
   pollHealth,
+  stopProcessPlan,
   trackChild,
 } from '../../adapters.ts'
 import { syncAndRebuildEngine } from '../../acquire.ts'
@@ -276,7 +277,12 @@ export class BasaltAdapter extends EngineAdapter {
     if (handle !== undefined) {
       handle.kill()
       this.children.delete(this.planKey(plan))
+      return
     }
+    // No tracked child (an engine a DSH restart re-adopted): signal the pid
+    // the stored launch record stamped on the plan, so the stop reaches a
+    // process this adapter instance did not spawn.
+    await stopProcessPlan(this.host, plan)
   }
 
   private port(config: Config): number {

@@ -50,6 +50,12 @@ export interface LaunchPlan {
   // flag points at the path. Absent for engines that carry every setting in
   // argv or env.
   configFile?: { path: string; content: string }
+  // The engine process pid the stop step signals when the adapter tracks no
+  // child handle for it: an engine a DSH restart re-adopted from a stored
+  // launch record carries no in-memory handle, so the route stamps the record's
+  // pid here and the stop step kills it through the host. Absent when the
+  // stop targets nothing the record names (a fresh stop of an idle engine).
+  pid?: number
 }
 
 /**

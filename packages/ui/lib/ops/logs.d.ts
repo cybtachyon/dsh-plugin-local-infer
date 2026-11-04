@@ -20,4 +20,12 @@ export declare function persistGetLogs(output: string): void;
  * launch runs.
  */
 export declare function persistDownloadLog(output: string): void;
+/**
+ * persistStopLog appends one stop's failure note to the stored last-run logs
+ * and writes the note to the configured log file, so the card's Logs section
+ * and the log file name the broken stop beside the launch and get runs. The
+ * note is the stop route's own detail (the engine, the model, and the host's
+ * failure message), newline-terminated.
+ */
+export declare function persistStopLog(output: string): void;
 //# sourceMappingURL=logs.d.ts.map

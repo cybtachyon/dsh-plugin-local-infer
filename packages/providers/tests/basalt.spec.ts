@@ -628,6 +628,25 @@ describe('BasaltAdapter.stop', () => {
     await adapter.stop(plan)
     expect(state.killed).toEqual([4321])
   })
+
+  it('signals the plan pid when no tracked child exists (a re-adopted engine)', async () => {
+    const { host, state } = basaltStubHost()
+    const adapter = new BasaltAdapter(host)
+    // No deploy ran, so the adapter tracks no child: the stop reaches the
+    // process a DSH restart re-adopted through the pid the record stamped.
+    const plan = { ...adapter.renderLaunch({ port: 8090 }, ADAPTER_HW), pid: 777 }
+    await adapter.stop(plan)
+    expect(state.run).toContain('kill 777')
+    expect(state.killed).toEqual([])
+  })
+
+  it('throws with the host detail when the pid kill fails', async () => {
+    const { host, state } = basaltStubHost()
+    state.runFail.push('kill 777')
+    const adapter = new BasaltAdapter(host)
+    const plan = { ...adapter.renderLaunch({ port: 8090 }, ADAPTER_HW), pid: 777 }
+    await expect(adapter.stop(plan)).rejects.toThrow('stop: signal pid 777 failed: run failed')
+  })
 })
 
 describe('BasaltAdapter model data', () => {

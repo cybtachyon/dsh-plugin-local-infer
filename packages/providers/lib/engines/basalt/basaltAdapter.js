@@ -15,7 +15,7 @@
  */
 import { isAbsolute, join } from 'node:path';
 import { EngineAdapter } from '../../../../core/lib/index.js';
-import { configFileFromSpecs, nodeLifecycleHost, pollHealth, trackChild, } from "../../adapters.js";
+import { configFileFromSpecs, nodeLifecycleHost, pollHealth, stopProcessPlan, trackChild, } from "../../adapters.js";
 import { syncAndRebuildEngine } from "../../acquire.js";
 import { BASALT_PARAMETERS, basaltModelKey } from "./basalt.js";
 import { basaltLinuxBinary } from "./basaltLinux.js";
@@ -226,7 +226,12 @@ export class BasaltAdapter extends EngineAdapter {
         if (handle !== undefined) {
             handle.kill();
             this.children.delete(this.planKey(plan));
+            return;
         }
+        // No tracked child (an engine a DSH restart re-adopted): signal the pid
+        // the stored launch record stamped on the plan, so the stop reaches a
+        // process this adapter instance did not spawn.
+        await stopProcessPlan(this.host, plan);
     }
     port(config) {
         // 8080 is the port the basalt serve CLI binds by default, so a bare

@@ -801,6 +801,160 @@ describe('launch and stop route helpers', () => {
     const stored = readConfig()
     expect(stored.providers[0]?.launch).toBeUndefined()
   })
+
+  it('stamps the re-adopted engine pid from the stored launch record', async () => {
+    writeConfig('ninfer', { model: 'qwen3-27b' }, false, {}, true, [
+      {
+        id: 'p1',
+        engine: 'ninfer',
+        config: { model: 'qwen3-27b' },
+        platform: {},
+        launch: {
+          pid: 12345,
+          startedAt: '2026-10-14T12:00:00.000Z',
+          argv: ['ninfer-serve'],
+          previousPids: [888, 999],
+          engineId: 'ninfer',
+          port: 18020,
+          modelId: 'qwen3-27b',
+        },
+      },
+    ])
+    let stoppedPlan: LaunchPlan | undefined
+    const service = stubService([], { engines: [fakeAdapter('ninfer')] })
+    service.stop = async (plan: LaunchPlan) => {
+      stoppedPlan = plan
+    }
+    await stopEngine(service, {
+      engine: 'ninfer',
+      config: { model: 'qwen3-27b' },
+      providerId: 'p1',
+    })
+    // The pid the adapter signals through the host: the process a DSH restart
+    // re-adopted, which the adapter tracks no child handle for.
+    expect(stoppedPlan?.pid).toBe(12345)
+  })
+
+  it('stamps no pid when the target entry carries no launch record', async () => {
+    writeConfig('ninfer', { model: 'qwen3-27b' }, false, {}, true, [
+      { id: 'p1', engine: 'ninfer', config: { model: 'qwen3-27b' }, platform: {} },
+    ])
+    let stoppedPlan: LaunchPlan | undefined
+    const service = stubService([], { engines: [fakeAdapter('ninfer')] })
+    service.stop = async (plan: LaunchPlan) => {
+      stoppedPlan = plan
+    }
+    await stopEngine(service, {
+      engine: 'ninfer',
+      config: { model: 'qwen3-27b' },
+      providerId: 'p1',
+    })
+    // A fresh stop of an idle engine names nothing to signal.
+    expect(stoppedPlan?.pid).toBeUndefined()
+  })
+
+  it('persists a stop-failure note to the last-run logs and the log file', async () => {
+    writeConfig(
+      'ninfer',
+      { model: 'qwen3-27b' },
+      false,
+      {},
+      true,
+      [
+        {
+          id: 'p1',
+          engine: 'ninfer',
+          config: { model: 'qwen3-27b' },
+          platform: {},
+          launch: {
+            pid: 12345,
+            startedAt: '2026-10-14T12:00:00.000Z',
+            argv: ['ninfer-serve'],
+            previousPids: [999],
+            engineId: 'ninfer',
+            port: 18020,
+            modelId: 'qwen3-27b',
+          },
+        },
+      ],
+      DEFAULT_LOG_PATH_TEMPLATE,
+      'engine up\n',
+    )
+    const service = stubService([], { engines: [fakeAdapter('ninfer')] })
+    service.stop = async (): Promise<void> => {
+      throw new Error('stop: signal pid 12345 failed: No such process')
+    }
+    await expect(
+      stopEngine(service, {
+        engine: 'ninfer',
+        config: { model: 'qwen3-27b' },
+        providerId: 'p1',
+      }),
+    ).rejects.toThrow('stop: signal pid 12345 failed')
+    // The failure note landed in the last-run logs (the card's Logs section)
+    // beside the previous run, and the record stays, so the engine the kill
+    // could not reach is not read as stopped.
+    const stored = readConfig()
+    expect(stored.lastLogs).toContain('engine up')
+    expect(stored.lastLogs).toContain(
+      '[local-infer] stop failed for ninfer (qwen3-27b): stop: signal pid 12345 failed: No such process',
+    )
+    expect(stored.providers[0]?.launch).toBeDefined()
+    // The note also reached the configured log file, the same per-run rule the
+    // launch step applies.
+    const logFile = resolveLogPath(
+      stored.logPath,
+      'ninfer',
+      'qwen3-27b',
+      new Date(),
+      process.env.HOME ?? '',
+    )
+    const dir = dirname(logFile)
+    const entries = existsSync(dir) ? readdirSync(dir) : []
+    expect(
+      entries.some((name) => name.startsWith('ninfer-qwen3-27b-') && name.endsWith('.log')),
+    ).toBe(true)
+  })
+
+  it('writes no stop-failure note when the stop succeeds', async () => {
+    writeConfig(
+      'ninfer',
+      { model: 'qwen3-27b' },
+      false,
+      {},
+      true,
+      [
+        {
+          id: 'p1',
+          engine: 'ninfer',
+          config: { model: 'qwen3-27b' },
+          platform: {},
+          launch: {
+            pid: 12345,
+            startedAt: '2026-10-14T12:00:00.000Z',
+            argv: ['ninfer-serve'],
+            previousPids: [999],
+            engineId: 'ninfer',
+            port: 18020,
+            modelId: 'qwen3-27b',
+          },
+        },
+      ],
+      DEFAULT_LOG_PATH_TEMPLATE,
+      'engine up\n',
+    )
+    const service = stubService([], { engines: [fakeAdapter('ninfer')] })
+    await stopEngine(service, {
+      engine: 'ninfer',
+      config: { model: 'qwen3-27b' },
+      providerId: 'p1',
+    })
+    // The last-run logs stay as the launch left them, and the record is
+    // cleared with the stop.
+    const stored = readConfig()
+    expect(stored.lastLogs).toBe('engine up\n')
+    expect(stored.providers[0]?.launch).toBeUndefined()
+  })
 })
 
 describe('platform config (§3.10) round trip and launch pass-through', () => {

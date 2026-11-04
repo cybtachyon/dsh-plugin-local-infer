@@ -2,10 +2,12 @@
  * The engine lifecycle operations: launchEngine renders the plan the
  * registered adapter produces and runs the service's launch entry point
  * (deploy, then the health poll); stopEngine stops the exact container or
- * process the launch started; getEngine runs the Get step (git sync, dep
- * plan, build, model artifacts). The launch record (the engine pid, start
- * time, launch arguments, and the DSH process pid that launched it) is what
- * a DSH restart re-links a surviving engine to its config:
+ * process the launch started (a re-adopted engine through the record's pid),
+ * and a failed stop persists a note to the last-run logs and the log file;
+ * getEngine runs the Get step (git sync, dep plan, build, model artifacts).
+ * The launch record (the engine pid, start time, launch arguments, and the
+ * DSH process pid that launched it) is what a DSH restart re-links a
+ * surviving engine to its config:
  * relinkStoredProviders re-adopts surviving engines on mount and per summary
  * read, handleEngineDeath settles the stored state the moment an engine dies
  * outside the stop path, and persistLaunchLogs stores the captured output.
@@ -61,7 +63,13 @@ export declare function persistLaunchLogs(result: LaunchResult, engineId: string
  * the stop step targets the exact container or process the launch started. The
  * stop then clears the target entry's launch record (the engine pid and the
  * previous-pid list with it), so a recycled pid cannot re-link an engine the
- * user just stopped.
+ * user just stopped. An engine a DSH restart re-adopted carries no tracked
+ * child handle in the adapter, so the stop stamps the record's pid on the
+ * plan and the adapter signals it through the host; a stop that fails
+ * persists a note (the engine, the model, and the host's message) to the
+ * stored last-run logs and the log file, so the card's Logs section names the
+ * broken step, and re-throws, so the route answers 500 and the card's stop
+ * deadline settles the entry to the red Logs state.
  */
 export declare function stopEngine(localInfer: LocalInferService, request: LaunchRequest): Promise<void>;
 /**

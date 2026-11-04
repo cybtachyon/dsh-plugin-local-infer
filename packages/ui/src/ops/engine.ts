@@ -2,10 +2,12 @@
  * The engine lifecycle operations: launchEngine renders the plan the
  * registered adapter produces and runs the service's launch entry point
  * (deploy, then the health poll); stopEngine stops the exact container or
- * process the launch started; getEngine runs the Get step (git sync, dep
- * plan, build, model artifacts). The launch record (the engine pid, start
- * time, launch arguments, and the DSH process pid that launched it) is what
- * a DSH restart re-links a surviving engine to its config:
+ * process the launch started (a re-adopted engine through the record's pid),
+ * and a failed stop persists a note to the last-run logs and the log file;
+ * getEngine runs the Get step (git sync, dep plan, build, model artifacts).
+ * The launch record (the engine pid, start time, launch arguments, and the
+ * DSH process pid that launched it) is what a DSH restart re-links a
+ * surviving engine to its config:
  * relinkStoredProviders re-adopts surviving engines on mount and per summary
  * read, handleEngineDeath settles the stored state the moment an engine dies
  * outside the stop path, and persistLaunchLogs stores the captured output.
@@ -48,6 +50,7 @@ import type {
   StoredProviderConfig,
 } from '../config.ts'
 import { readConfig, writeConfig } from '../config.ts'
+import { persistStopLog } from './logs.ts'
 import { RouteError } from '../route.ts'
 import type { GetRequest, LaunchRequest } from '../request.ts'
 import { resolveBuildMode } from '../viewmodels/deps.ts'
@@ -412,7 +415,13 @@ export function persistLaunchLogs(
  * the stop step targets the exact container or process the launch started. The
  * stop then clears the target entry's launch record (the engine pid and the
  * previous-pid list with it), so a recycled pid cannot re-link an engine the
- * user just stopped.
+ * user just stopped. An engine a DSH restart re-adopted carries no tracked
+ * child handle in the adapter, so the stop stamps the record's pid on the
+ * plan and the adapter signals it through the host; a stop that fails
+ * persists a note (the engine, the model, and the host's message) to the
+ * stored last-run logs and the log file, so the card's Logs section names the
+ * broken step, and re-throws, so the route answers 500 and the card's stop
+ * deadline settles the entry to the red Logs state.
  */
 export async function stopEngine(
   localInfer: LocalInferService,
@@ -425,8 +434,35 @@ export async function stopEngine(
   const hardware = await localInfer.detectHardware()
   const plan = adapter.renderLaunch(config, hardware)
   applyComposeArgs(plan, localInfer, engineId)
-  await localInfer.stop(plan)
+  // The re-adopted engine's pid: without it the adapter's stop is a no-op for
+  // a process it did not spawn, and the engine the user just clicked Stop on
+  // keeps running.
+  const target = findLaunchTarget(stored, engineId, request.providerId, config)
+  if (target?.launch?.pid !== undefined) {
+    plan.pid = target.launch.pid
+  }
+  try {
+    await localInfer.stop(plan)
+  } catch (error) {
+    persistStopFailure(engineId, config, error)
+    throw error
+  }
   clearLaunchRecord(engineId, config, request.providerId)
+}
+
+/**
+ * persistStopFailure appends a stop's failure note to the stored last-run logs
+ * (the card's Logs section shows it after the summary re-fetch) and writes it
+ * to the configured log file, the same per-run file rule the launch step
+ * applies. A host that threw without a message reads as "unknown".
+ */
+function persistStopFailure(engineId: string, config: Config, error: unknown): void {
+  const detail = error instanceof Error ? error.message : String(error)
+  const modelId = typeof config.model === 'string' ? config.model : undefined
+  const note =
+    `[local-infer] stop failed for ${engineId}` +
+    `${modelId !== undefined ? ` (${modelId})` : ''}: ${detail}\n`
+  persistStopLog(note)
 }
 
 /**

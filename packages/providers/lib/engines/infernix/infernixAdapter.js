@@ -14,7 +14,7 @@
  */
 import { join } from 'node:path';
 import { EngineAdapter } from '../../../../core/lib/index.js';
-import { customArgFlags, flagsFromSpecs, nodeLifecycleHost, pollHealth, } from "../../adapters.js";
+import { customArgFlags, flagsFromSpecs, nodeLifecycleHost, pollHealth, stopProcessPlan, } from "../../adapters.js";
 import { syncAndRebuildEngine } from "../../acquire.js";
 import { INFERNIX_MODEL_ARTIFACTS, INFERNIX_PARAMETERS, infernixArtifactFor, infernixDraftModelPath, infernixModelKey, } from "./infernix.js";
 import { infernixLinuxBinary } from "./infernixLinux.js";
@@ -187,7 +187,12 @@ export class InfernixAdapter extends EngineAdapter {
         if (handle !== undefined) {
             handle.kill();
             this.children.delete(this.planKey(plan));
+            return;
         }
+        // No tracked child (an engine a DSH restart re-adopted): signal the pid
+        // the stored launch record stamped on the plan, so the stop reaches a
+        // process this adapter instance did not spawn.
+        await stopProcessPlan(this.host, plan);
     }
     port(config) {
         // 8080 is the infernix-serve CLI default, so the form seeds it and the

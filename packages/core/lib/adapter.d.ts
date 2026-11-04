@@ -39,6 +39,7 @@ export interface LaunchPlan {
         path: string;
         content: string;
     };
+    pid?: number;
 }
 /**
  * EnginePlatformConfig is the per-engine platform config the user adds for a

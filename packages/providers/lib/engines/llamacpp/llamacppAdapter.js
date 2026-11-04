@@ -10,7 +10,7 @@
  */
 import { basename, dirname, join } from 'node:path';
 import { EngineAdapter } from '../../../../core/lib/index.js';
-import { customArgFlags, flagsFromSpecs, nodeLifecycleHost, pollHealth, trackChild, } from "../../adapters.js";
+import { customArgFlags, flagsFromSpecs, nodeLifecycleHost, pollHealth, stopProcessPlan, trackChild, } from "../../adapters.js";
 import { syncAndRebuildEngine } from "../../acquire.js";
 import { LLAMACPP_MODEL_ARTIFACTS, LLAMACPP_PARAMETERS, llamaCppModelKey, } from "./llamacpp.js";
 import { llamacppLinuxBinary } from "./llamacppLinux.js";
@@ -227,7 +227,12 @@ export class LlamaCppAdapter extends EngineAdapter {
         if (handle !== undefined) {
             handle.kill();
             this.children.delete(this.planKey(plan));
+            return;
         }
+        // No tracked child (an engine a DSH restart re-adopted): signal the pid
+        // the stored launch record stamped on the plan, so the stop reaches a
+        // process this adapter instance did not spawn.
+        await stopProcessPlan(this.host, plan);
     }
     buildMode(config) {
         return config.buildMode === 'docker' ? 'docker' : 'local';

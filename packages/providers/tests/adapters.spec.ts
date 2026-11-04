@@ -943,6 +943,86 @@ describe('NInferAdapter.healthCheck and stop', () => {
     expect(state.run[1]).toBe('docker stop ninfer-18020')
     expect(state.killed).toContain(1234)
   })
+
+  it('signals the plan pid when no tracked child exists (a re-adopted engine)', async () => {
+    const { host, state } = stubHost()
+    const adapter = new NInferAdapter(host)
+    // No deploy ran, so the adapter tracks no child: the stop reaches the
+    // process a DSH restart re-adopted through the pid the record stamped.
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      pid: 4321,
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    await adapter.stop(plan)
+    expect(state.run).toEqual(['kill 4321'])
+    expect(state.killed).toEqual([])
+  })
+
+  it('uses taskkill for a Windows plan pid', async () => {
+    const { host, state } = stubHost()
+    const adapter = new NInferAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      pid: 4321,
+      os: 'windows',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    await adapter.stop(plan)
+    expect(state.run).toEqual(['taskkill /PID 4321 /T'])
+  })
+
+  it('throws with the host detail when the pid kill fails', async () => {
+    const { host, state } = stubHost()
+    state.runOk = false
+    const adapter = new NInferAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      pid: 4321,
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    await expect(adapter.stop(plan)).rejects.toThrow(
+      'stop: signal pid 4321 failed: run failed',
+    )
+  })
+
+  it('signals nothing when the plan names no pid and no child is tracked', async () => {
+    const { host, state } = stubHost()
+    const adapter = new NInferAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    await adapter.stop(plan)
+    expect(state.run).toEqual([])
+    expect(state.killed).toEqual([])
+  })
+
+  it('prefers the tracked child over the plan pid', async () => {
+    const { host, state } = stubHost()
+    const adapter = new NInferAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      pid: 4321,
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    await adapter.deploy(plan)
+    await adapter.stop(plan)
+    // The tracked child (the spawn the deploy started) is signalled, not the
+    // record pid the plan also carries.
+    expect(state.killed).toEqual([1234])
+    expect(state.run).toEqual([])
+  })
 })
 
 describe('adapter modelRef (the registrar model seam)', () => {
@@ -1657,6 +1737,23 @@ describe('LlamaCppAdapter', () => {
     expect(state.killed).toContain(1234)
   })
 
+  it('signals the plan pid when no tracked child exists (a re-adopted engine)', async () => {
+    const { host, state } = stubHost()
+    const adapter = new LlamaCppAdapter(host)
+    // No deploy ran, so the adapter tracks no child: the stop reaches the
+    // process a DSH restart re-adopted through the pid the record stamped.
+    const plan: LaunchPlan = {
+      engineId: 'llamacpp',
+      kind: 'process',
+      pid: 777,
+      port: 8080,
+      healthUrl: 'http://127.0.0.1:8080/health',
+    }
+    await adapter.stop(plan)
+    expect(state.run).toContain('kill 777')
+    expect(state.killed).toEqual([])
+  })
+
   it('publishes the artifact model id the engine serves', () => {
     const { host } = stubHost()
     const adapter = new LlamaCppAdapter(host)
@@ -1961,6 +2058,24 @@ describe('StrataAdapter', () => {
     await adapter.stop(plan)
     expect(state.run[1]).toBe('docker stop strata-8080')
     expect(state.killed).toContain(1234)
+  })
+
+  it('signals the plan pid when no tracked child exists (a re-adopted engine)', async () => {
+    const { host, state } = stubHost()
+    const adapter = new StrataAdapter(host)
+    // No deploy ran, so the adapter tracks no child: the stop reaches the
+    // process a DSH restart re-adopted through the pid the record stamped.
+    const plan: LaunchPlan = {
+      engineId: 'strata',
+      kind: 'process',
+      argv: ['setup.sh'],
+      pid: 777,
+      port: 8080,
+      healthUrl: 'http://127.0.0.1:8080/health',
+    }
+    await adapter.stop(plan)
+    expect(state.run).toContain('kill 777')
+    expect(state.killed).toEqual([])
   })
 
   it('publishes the engine id until per-model data lands', () => {
@@ -2812,6 +2927,17 @@ describe('InfernixAdapter', () => {
     expect(health.healthy).toBe(true)
     await adapter.stop(plan)
     expect(state.killed).toEqual([1234])
+  })
+
+  it('signals the plan pid when no tracked child exists (a re-adopted engine)', async () => {
+    const { host, state } = stubHost()
+    const adapter = new InfernixAdapter(host)
+    // No deploy ran, so the adapter tracks no child: the stop reaches the
+    // process a DSH restart re-adopted through the pid the record stamped.
+    const plan = { ...adapter.renderLaunch({ model: 'qwen3-27b', port: 8080 }, HW), pid: 777 }
+    await adapter.stop(plan)
+    expect(state.run).toContain('kill 777')
+    expect(state.killed).toEqual([])
   })
 
   it('publishes the artifact model id the engine serves', () => {

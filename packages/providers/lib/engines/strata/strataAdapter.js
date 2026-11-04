@@ -17,7 +17,7 @@
  */
 import { join } from 'node:path';
 import { EngineAdapter } from '../../../../core/lib/index.js';
-import { customArgEnv, customArgFlags, delay, envFromSpecs, flagsFromSpecs, nodeLifecycleHost, trackChild, } from "../../adapters.js";
+import { customArgEnv, customArgFlags, delay, envFromSpecs, flagsFromSpecs, nodeLifecycleHost, stopProcessPlan, trackChild, } from "../../adapters.js";
 import { syncAndRebuildEngine } from "../../acquire.js";
 import { STRATA_PARAMETERS, strataDefaults, strataModelKey, } from "./strata.js";
 import { strataLinuxSourceLaunch } from "./strataLinux.js";
@@ -418,7 +418,12 @@ export class StrataAdapter extends EngineAdapter {
         if (handle !== undefined) {
             handle.kill();
             this.children.delete(this.planKey(plan));
+            return;
         }
+        // No tracked child (an engine a DSH restart re-adopted): signal the pid
+        // the stored launch record stamped on the plan, so the stop reaches a
+        // process this adapter instance did not spawn.
+        await stopProcessPlan(this.host, plan);
     }
     buildMode(config) {
         const mode = config.buildMode;

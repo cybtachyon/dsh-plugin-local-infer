@@ -660,6 +660,27 @@ describe('ctx.localInfer launch and stop (Phase 5)', () => {
     expect(stopped).toBe(true)
   })
 
+  it('clears the in-flight stop flag when the adapter stop throws', async () => {
+    const ctx = await seam()
+    class ThrowingStopAdapter extends StubAdapter {
+      async stop(_p: LaunchPlan): Promise<void> {
+        throw new Error('kill failed')
+      }
+    }
+    ctx.localInfer.registerEngine(new ThrowingStopAdapter('ninfer'))
+    // The plan carries the re-adopted engine's pid; the adapter's kill fails.
+    const p = { ...plan('ninfer'), pid: 4321 }
+    await expect(ctx.localInfer.stop(p)).rejects.toThrow('kill failed')
+    // The in-flight flag cleared with the failure: a busy card (no running
+    // engine) reads as unsure, not the linked read a stop in flight would
+    // have kept as running.
+    const statuses = await ctx.localInfer.providerStatuses(
+      [{ id: 'p1', engine: 'ninfer' }],
+      { gpuUsage: { totalMiB: 100, usedMiB: 90 } },
+    )
+    expect(statuses['p1']).toBe('unsure')
+  })
+
   it('reports the launch phases through the progress sink', async () => {
     const ctx = await seam()
     // The adapter reports its deploy sub-steps (download, build) through the

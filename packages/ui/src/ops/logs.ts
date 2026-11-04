@@ -65,3 +65,14 @@ export function persistGetLogs(output: string): void {
 export function persistDownloadLog(output: string): void {
   appendProcessLog(output)
 }
+
+/**
+ * persistStopLog appends one stop's failure note to the stored last-run logs
+ * and writes the note to the configured log file, so the card's Logs section
+ * and the log file name the broken stop beside the launch and get runs. The
+ * note is the stop route's own detail (the engine, the model, and the host's
+ * failure message), newline-terminated.
+ */
+export function persistStopLog(output: string): void {
+  appendProcessLog(output)
+}

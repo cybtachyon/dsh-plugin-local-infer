@@ -13,7 +13,7 @@
  */
 import { basename, dirname, isAbsolute, join } from 'node:path';
 import { EngineAdapter } from '../../../../core/lib/index.js';
-import { customArgFlags, flagsFromSpecs, nodeLifecycleHost, pollHealth, trackChild, } from "../../adapters.js";
+import { customArgFlags, flagsFromSpecs, nodeLifecycleHost, pollHealth, stopProcessPlan, trackChild, } from "../../adapters.js";
 import { syncAndRebuildEngine } from "../../acquire.js";
 import { NINFER_PARAMETERS } from "./ninfer.js";
 import { ninferLinuxBinary } from "./ninferLinux.js";
@@ -291,7 +291,12 @@ export class NInferAdapter extends EngineAdapter {
         if (handle !== undefined) {
             handle.kill();
             this.children.delete(this.planKey(plan));
+            return;
         }
+        // No tracked child (an engine a DSH restart re-adopted): signal the pid
+        // the stored launch record stamped on the plan, so the stop reaches a
+        // process this adapter instance did not spawn.
+        await stopProcessPlan(this.host, plan);
     }
     buildMode(config) {
         return config.buildMode === 'docker' ? 'docker' : 'local';

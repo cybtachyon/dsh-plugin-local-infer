@@ -812,8 +812,18 @@ export class LocalInfer extends Service {
         // flashes the "Unable to link" banner for the moment the process takes to
         // die. The flag clears when the process dies (the death observer) or the
         // detector sees the process down (a stop of an engine it cannot watch).
-        this.stoppingEngines.add(this.engineKey(plan.engineId, plan.port));
-        await adapter.stop(plan);
+        const stopKey = this.engineKey(plan.engineId, plan.port);
+        this.stoppingEngines.add(stopKey);
+        try {
+            await adapter.stop(plan);
+        }
+        catch (error) {
+            // A stop that failed (a kill the host could not deliver) settles the
+            // in-flight state: the flag clears, so the provider reads from the
+            // process state, not a stop stuck in flight.
+            this.stoppingEngines.delete(stopKey);
+            throw error;
+        }
         // Clear the live-port ledger and the plugin-launched flag, and cancel any
         // adopted-process watcher standing on the port. The port-to-model tie is
         // deferred to the death observer, so the provider keeps its linked read

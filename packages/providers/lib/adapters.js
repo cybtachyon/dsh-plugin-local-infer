@@ -444,6 +444,24 @@ export function trackChild(children, key, handle) {
     });
 }
 /**
+ * stopProcessPlan signals the engine process a stop targets when the adapter
+ * tracks no child handle for it: an engine a DSH restart re-adopted from a
+ * stored launch record carries no in-memory handle, so the stop signals the
+ * pid the record stamped on the plan (kill on Linux and macOS, taskkill on a
+ * Windows plan). A plan that names no pid is a no-op (nothing to signal), and
+ * a kill the host reports as failed throws with the host's detail, so the
+ * stop route names the broken step in the card's Logs section.
+ */
+export async function stopProcessPlan(host, plan) {
+    if (plan.pid === undefined)
+        return;
+    const command = plan.os === 'windows' ? `taskkill /PID ${plan.pid} /T` : `kill ${plan.pid}`;
+    const outcome = await host.run(command);
+    if (!outcome.ok) {
+        throw new Error(`stop: signal pid ${plan.pid} failed: ${outcome.detail ?? 'unknown'}`);
+    }
+}
+/**
  * pollHealth polls a plan's health URL until a 200 or the attempt cap, the
  * same loop the qwen-ninfer launcher runs. A poll interval of 0 skips the
  * delay, which the tests use to run the loop without a real sleep.
