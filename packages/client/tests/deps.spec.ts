@@ -352,7 +352,8 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       stream.close()
       await vi.advanceTimersByTimeAsync(0)
       await promise
-      // The summary re-read hands the Logs section back to the stored value.
+      // The repriceAll settle re-read (both read models) hands the Logs
+      // section back to the stored value.
       expect(state().ui.logs.getLogs).toBeNull()
       expect(state().summary).toEqual(summary)
       expect(state().actions.get).toEqual({ status: 'ok', detail: 'ok' })
@@ -564,8 +565,8 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       prime(store, depsWith())
       const stream = streamResponse()
       const summary = summaryWith()
-      // The summary re-read stays gated, so the failure line is observable
-      // in the buffer before the re-read clears it.
+      // The repriceAll settle re-read stays gated, so the failure line is
+      // observable in the buffer before the re-read clears it.
       let resolveSummary: (response: Response) => void = () => {}
       const summaryGate = new Promise<Response>((resolve) => {
         resolveSummary = resolve
@@ -597,8 +598,8 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       const { store, state } = makeStore()
       prime(store, depsWith())
       const stream = streamResponse()
-      // The summary re-read stays gated, so the buffer is observable before
-      // the re-read clears it.
+      // The repriceAll settle re-read stays gated, so the buffer is
+      // observable before the re-read clears it.
       let resolveSummary: (response: Response) => void = () => {}
       const summaryGate = new Promise<Response>((resolve) => {
         resolveSummary = resolve
@@ -661,8 +662,8 @@ describe('the deps panel drivers (store/deps.ts)', () => {
         draft: { engine: 'ninfer', config: { model: 'staged' } },
       })
       const stream = streamResponse()
-      // The summary re-read stays gated, so the buffer is observable before
-      // the re-read clears it.
+      // The repriceAll settle re-read stays gated, so the buffer is
+      // observable before the re-read clears it.
       let resolveSummary: (response: Response) => void = () => {}
       const summaryGate = new Promise<Response>((resolve) => {
         resolveSummary = resolve
@@ -719,7 +720,8 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       resolveSummary(new Response('{}', { status: 200 }))
       await vi.advanceTimersByTimeAsync(0)
       await promise
-      // The summary re-read hands the Logs section back to the stored value.
+      // The repriceAll settle re-read (both read models) hands the Logs
+      // section back to the stored value.
       expect(state().ui.logs.getLogs).toBeNull()
     })
 
