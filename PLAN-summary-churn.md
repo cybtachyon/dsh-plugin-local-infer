@@ -30,7 +30,7 @@ harden the build pipeline to own the whitespace normalization, and verify a re-e
 
 ## Tasks
 
-Execution order: TASK-001, TASK-002, TASK-004, TASK-003.
+Execution order: TASK-001, TASK-002, TASK-004, TASK-003, TASK-005.
 
 ### Phase 1: Source fix
 
@@ -48,6 +48,10 @@ Execution order: TASK-001, TASK-002, TASK-004, TASK-003.
 
 - [x] [TASK-003-update-memory-note](docs/PLAN-summary-churn-TASK-003-update-memory-note.md)
 
+### Phase 5: Pre-existing issue (found during TASK-004)
+
+- [x] [TASK-005-build-format-dead-fallback](docs/PLAN-summary-churn-TASK-005-build-format-dead-fallback.md)
+
 ## Refactor task
 
 Not injected: the fix touches one source file plus the build script; the preceding
@@ -60,3 +64,5 @@ commits are plan-doc commits with no code surface worth a refactor-review pass.
   verification reuses the same build chain.
 - TASK-003 depends on TASK-004 (the note records the complete fix, including the
   hardening commit).
+- TASK-005 is a cleanup of a pre-existing dead-code fallback in
+  `scripts/build-format.mjs`, found during TASK-004; it runs after TASK-003.

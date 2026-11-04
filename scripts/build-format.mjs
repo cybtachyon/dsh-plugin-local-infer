@@ -22,7 +22,7 @@ async function processDirectory(dir) {
 
         // Map entries to a list of promises so they run concurrently
         const tasks = entries.map(async (entry) => {
-            const currentDir = entry.parentPath || entry.path;
+            const currentDir = entry.parentPath;
             const fullPath = path.join(currentDir, entry.name);
 
             if (entry.isDirectory()) {
