@@ -44,6 +44,7 @@ import type {
 } from 'dsh-plugin-local-infer/core'
 import LocalInfer, {
   LocalInferError,
+  downloadRunner,
   parseWindowsProcessTable,
   runHardwareProbes,
 } from '../src/index.ts'
@@ -2213,5 +2214,68 @@ describe('model directory, hf CLI, and model download', () => {
     })
     expect(result).toEqual({ ok: true })
     expect(seenSignal).toBe(controller.signal)
+  })
+
+  it('streams the spawned runner output to onChunk in order', async () => {
+    const chunks: string[] = []
+    const result = await downloadRunner(
+      'echo first 1>&2 && echo second 1>&2',
+      undefined,
+      (chunk) => {
+        chunks.push(chunk)
+      },
+    )
+    expect(result).toEqual({ ok: true })
+    const streamed = chunks.join('')
+    // The chunks arrive in command order, so a progress parser reads the
+    // tqdm lines in order.
+    expect(streamed.indexOf('first')).toBeGreaterThanOrEqual(0)
+    expect(streamed.indexOf('first')).toBeLessThan(streamed.indexOf('second'))
+  })
+
+  it('keeps the output tail in the failure detail of a spawned command', async () => {
+    const result = await downloadRunner('echo broken line 1>&2 && exit 1')
+    expect(result.ok).toBe(false)
+    expect(result.detail).toContain('broken line')
+  })
+
+  it('settles an aborted download when the signal kills the child', async () => {
+    const controller = new AbortController()
+    // A long sleep keeps the child alive past the abort, so the kill path is
+    // the one that settles the promise.
+    const sleepCommand = process.platform === 'win32' ? 'timeout /t 10 <NUL' : 'sleep 10'
+    const pending = downloadRunner(sleepCommand, controller.signal)
+    // Abort after the child has started, so the kill lands on a live process.
+    setTimeout(() => controller.abort(), 200)
+    const result = await pending
+    expect(result.ok).toBe(false)
+  }, 15000)
+
+  it('threads onChunk through to the injected runner', async () => {
+    const ctx = await seam()
+    const entry: DefaultModel = {
+      engineId: 'ninfer',
+      modelId: 'qwen3-27b',
+      label: 'Ninfer Qwen3.8-27B',
+      url: 'https://huggingface.co/neroued/Qwen3.8-27B-nvfp4-NInfer',
+      file: 'qwen3_8_27b_nvfp4.ninfer',
+    }
+    let seenChunk: ((chunk: string) => void) | undefined
+    const runner = async (
+      _command: string,
+      _signal?: AbortSignal,
+      onChunk?: (chunk: string) => void,
+    ) => {
+      seenChunk = onChunk
+      return { ok: true }
+    }
+    const result = await ctx.localInfer.downloadModel(entry, join(home, 'models'), {
+      runner,
+      onChunk: () => {
+        /* the injected runner captures the callback; this one never runs */
+      },
+    })
+    expect(result).toEqual({ ok: true })
+    expect(typeof seenChunk).toBe('function')
   })
 })

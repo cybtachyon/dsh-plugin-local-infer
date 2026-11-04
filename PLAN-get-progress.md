@@ -76,7 +76,7 @@ by the previous commits in their phase and resolve the named code risks.
 
 - [x] [TASK-001-add-format-human](docs/PLAN-get-progress-TASK-001-add-format-human.md)
 - [x] [TASK-018-infernix-format-human](docs/PLAN-get-progress-TASK-018-infernix-format-human.md)
-- [ ] [TASK-002-spawn-runner-onchunk](docs/PLAN-get-progress-TASK-002-spawn-runner-onchunk.md)
+- [x] [TASK-002-spawn-runner-onchunk](docs/PLAN-get-progress-TASK-002-spawn-runner-onchunk.md)
 - [ ] [TASK-003-getsteps-onchunk-sink](docs/PLAN-get-progress-TASK-003-getsteps-onchunk-sink.md)
 - [ ] [TASK-004-launch-route-progress-event](docs/PLAN-get-progress-TASK-004-launch-route-progress-event.md)
 - [ ] [TASK-005-refactor-phase1](docs/PLAN-get-progress-TASK-005-refactor-phase1.md)

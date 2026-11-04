@@ -199,17 +199,24 @@ export interface DownloadResult {
 /**
  * DownloadModelOptions tunes the model download: runner injects the command
  * runner, so a test captures the rendered hf CLI command without a live hf.
- * useHubCache selects the hub-cache layout (no `--local-dir`, the
- * `models--{ns}--{name}` directories) when the model directory is the plugin
- * default; a user-overridden directory keeps the flat `--local-dir` target.
- * signal is the card's cancel: an abort interrupts the in-flight hf child
- * (SIGINT, then SIGTERM). Resume is within-invocation only (the hf CLI resumes
- * a network blip via HTTP Range inside one run); a killed run re-downloads
- * from zero on the re-run, and the orphaned `.incomplete` blob lingers until
- * `hf cache prune`.
+ * onChunk is the callback the runner hands each streamed stdout and stderr
+ * chunk to, so the card's Logs pane reads the hf CLI's progress live while a
+ * long download runs. useHubCache selects the hub-cache layout (no
+ * `--local-dir`, the `models--{ns}--{name}` directories) when the model
+ * directory is the plugin default; a user-overridden directory keeps the flat
+ * `--local-dir` target. signal is the card's cancel: an abort interrupts the
+ * in-flight hf child (SIGINT, then SIGTERM). Resume is within-invocation only
+ * (the hf CLI resumes a network blip via HTTP Range inside one run); a killed
+ * run re-downloads from zero on the re-run, and the orphaned `.incomplete`
+ * blob lingers until `hf cache prune`.
  */
 export interface DownloadModelOptions {
-  runner?: (command: string, signal?: AbortSignal) => Promise<CommandOutcome>
+  runner?: (
+    command: string,
+    signal?: AbortSignal,
+    onChunk?: (chunk: string) => void,
+  ) => Promise<CommandOutcome>
+  onChunk?: (chunk: string) => void
   useHubCache?: boolean
   signal?: AbortSignal
 }

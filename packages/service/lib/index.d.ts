@@ -18,7 +18,7 @@
  * @module dsh-plugin-local-infer/service
  */
 import { Context, Service } from '@deepseek-ai/cordis';
-import type { BuildMode, Config, DefaultModel, ModelCacheEntry, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, GpuUsageProbe, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, ProviderLaunchRecord, ProviderRef, ProviderStatus, ReLinkOutcome, RegisterResult, ReserveResolution, ResolvedDefaults, SystemDep, VramModel } from 'dsh-plugin-local-infer/core';
+import type { BuildMode, CommandOutcome, Config, DefaultModel, ModelCacheEntry, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, GpuUsageProbe, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, ProviderLaunchRecord, ProviderRef, ProviderStatus, ReLinkOutcome, RegisterResult, ReserveResolution, ResolvedDefaults, SystemDep, VramModel } from 'dsh-plugin-local-infer/core';
 import type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EngineDeathEvent, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, ProviderStatusOptions, RegisterModelOptions } from './types.ts';
 export type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EngineDeathEvent, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, ProviderStatusOptions, RegisterModelOptions, SettingsDescribeResult, SettingsForms, SettingsNamespaceDescriptor, } from './types.ts';
 declare module '@deepseek-ai/cordis' {
@@ -476,6 +476,16 @@ export declare class LocalInfer extends Service implements LocalInferService {
      */
     private collectSpecs;
 }
+/**
+ * downloadRunner is the model-download runner: it spawns the rendered hf CLI
+ * command through the system shell and reports the exit. The spawned child's
+ * stdout and stderr chunks stream to onChunk as they land (the hf CLI's tqdm
+ * progress), while the output tail keeps the last kilobyte, the same rule the
+ * install runner uses, so a failure names the broken line. An abort on the
+ * optional signal interrupts the in-flight child (SIGINT, then SIGTERM), so a
+ * canceled download stops instead of running to the timeout.
+ */
+export declare const downloadRunner: (command: string, signal?: AbortSignal, onChunk?: (chunk: string) => void) => Promise<CommandOutcome>;
 /**
  * parseWindowsProcessTable reads the `pid<TAB>commandLine` rows PowerShell's
  * Win32_Process probe emits into process lines the launch-signature matcher

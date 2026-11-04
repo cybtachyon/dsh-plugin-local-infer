@@ -17,7 +17,7 @@
  * mod-search bridge.
  * @module dsh-plugin-local-infer/service
  */
-import { exec, execFile, spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { availableParallelism, cpus, homedir, platform, release, totalmem } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -999,7 +999,7 @@ export class LocalInfer extends Service {
     async downloadModel(entry, directory, options) {
         mkdirSync(directory, { recursive: true });
         const runner = options?.runner ?? downloadRunner;
-        const result = await runner(hfDownloadCommand(entry, directory, options?.useHubCache === true), options?.signal);
+        const result = await runner(hfDownloadCommand(entry, directory, options?.useHubCache === true), options?.signal, options?.onChunk);
         if (result.ok)
             return { ok: true };
         return { ok: false, detail: `model download failed: ${result.detail ?? 'unknown'}` };
@@ -1014,7 +1014,7 @@ export class LocalInfer extends Service {
     async downloadChatTemplate(repo, directory, options) {
         mkdirSync(directory, { recursive: true });
         const runner = options?.runner ?? downloadRunner;
-        const result = await runner(hfChatTemplateCommand(repo, directory, options?.useHubCache === true), options?.signal);
+        const result = await runner(hfChatTemplateCommand(repo, directory, options?.useHubCache === true), options?.signal, options?.onChunk);
         if (result.ok)
             return { ok: true };
         return { ok: false, detail: `chat template download failed: ${result.detail ?? 'unknown'}` };
@@ -1491,21 +1491,45 @@ function watchChildAbort(child, signal) {
     signal.addEventListener('abort', onAbort, { once: true });
 }
 /**
- * downloadRunner is the model-download runner: it runs the rendered hf CLI
- * command through the system shell and reports the exit. The output tail keeps
- * the last kilobyte, the same rule the install runner uses, so a failure names
- * the broken line. An abort on the optional signal interrupts the in-flight
- * child (SIGINT, then SIGTERM), so a canceled download stops instead of
- * running to the timeout.
+ * downloadRunner is the model-download runner: it spawns the rendered hf CLI
+ * command through the system shell and reports the exit. The spawned child's
+ * stdout and stderr chunks stream to onChunk as they land (the hf CLI's tqdm
+ * progress), while the output tail keeps the last kilobyte, the same rule the
+ * install runner uses, so a failure names the broken line. An abort on the
+ * optional signal interrupts the in-flight child (SIGINT, then SIGTERM), so a
+ * canceled download stops instead of running to the timeout.
  */
-const downloadRunner = (command, signal) => new Promise(resolve => {
-    const child = exec(command, { timeout: DOWNLOAD_TIMEOUT_MS }, (error, stdout, stderr) => {
-        if (error === null) {
+export const downloadRunner = (command, signal, onChunk) => new Promise(resolve => {
+    const child = spawn(command, {
+        shell: true,
+        timeout: DOWNLOAD_TIMEOUT_MS,
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let output = '';
+    const append = (chunk) => {
+        const text = chunk.toString('utf8');
+        output += text;
+        if (output.length > INSTALL_OUTPUT_TAIL * 2) {
+            output = output.slice(-INSTALL_OUTPUT_TAIL * 2);
+        }
+        onChunk?.(text);
+    };
+    child.stdout.on('data', append);
+    child.stderr.on('data', append);
+    // Without a listener, a child that fails to start (a missing shell) emits
+    // an unlistened 'error' and throws it as an uncaughtException through the
+    // host. Read it as a failed command instead.
+    child.on('error', (error) => {
+        resolve({ ok: false, detail: error.message });
+    });
+    child.on('close', (code, killSignal) => {
+        if (code === 0) {
             resolve({ ok: true });
             return;
         }
-        const detail = `${stderr ?? ''}${stdout ?? ''}`.trim().slice(-INSTALL_OUTPUT_TAIL);
-        resolve({ ok: false, detail: detail === '' ? String(error) : detail });
+        const tail = output.trim().slice(-INSTALL_OUTPUT_TAIL);
+        const label = code !== null ? `exit ${code}` : `killed by ${killSignal ?? 'a signal'}`;
+        resolve({ ok: false, detail: tail === '' ? label : `${label}: ${tail}` });
     });
     watchChildAbort(child, signal);
 });
