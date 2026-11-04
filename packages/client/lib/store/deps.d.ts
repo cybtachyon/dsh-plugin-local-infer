@@ -72,7 +72,11 @@ export declare function performInstall(store: CardStore, t: TextTable): Promise<
  * stored value. The run registers its AbortController in the in-flight
  * registry, so the provider form's Cancel closes the stream and the route
  * interrupts the in-flight hf child; an aborted run settles without a
- * failure line (the "Canceled" line the Cancel wrote is the run's tail).
+ * failure line (the "Canceled" line the Cancel wrote is the run's tail). A
+ * second click while a run is in flight (a long download that outlived the
+ * idle cap and settled the cell) is a no-op, so it never starts a concurrent
+ * run: the in-flight download keeps streaming, and a restart needs a Cancel
+ * first.
  */
 export declare function performGet(store: CardStore, t: TextTable): Promise<void>;
 //# sourceMappingURL=deps.d.ts.map

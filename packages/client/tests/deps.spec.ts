@@ -1,6 +1,6 @@
 import type { DepsModel, LocalInferSummary } from 'dsh-plugin-local-infer/ui'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cancelInFlightRuns } from '../src/store/abort.ts'
+import { cancelInFlightRuns, clearInFlightRuns } from '../src/store/abort.ts'
 import {
   copyInstallString,
   GET_IDLE_MS,
@@ -104,6 +104,9 @@ function streamResponse() {
 describe('the deps panel drivers (store/deps.ts)', () => {
   beforeEach(() => {
     vi.useFakeTimers()
+    // The abort registry is module-level; start each test from an empty one so
+    // an in-flight run from a prior test never reads as in flight here.
+    clearInFlightRuns()
   })
 
   afterEach(() => {
@@ -361,6 +364,38 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       stream.close()
       await vi.advanceTimersByTimeAsync(0)
       await promise
+    })
+
+    it('no-ops a second click while a run is in flight (no concurrent run)', async () => {
+      const { store, state } = makeStore()
+      prime(store, depsWith())
+      const stream = streamResponse()
+      let getCalls = 0
+      const fetchMock = vi.fn(async (url: string) => {
+        if (url === '/local-infer/get') {
+          getCalls++
+          return stream.response()
+        }
+        return new Response('{}', { status: 200 })
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const promise = performGet(store, t)
+      // Advance to the idle cap: the cell settles to ok (re-enabled) while the
+      // run keeps streaming in the background, so the in-flight registry is
+      // still populated.
+      await vi.advanceTimersByTimeAsync(GET_IDLE_MS)
+      expect(state().actions.get).toEqual({ status: 'ok', detail: 'idle' })
+      // A second click while the run is in flight is a no-op: no concurrent
+      // postGet starts, so the get route is hit exactly once.
+      await performGet(store, t)
+      expect(getCalls).toBe(1)
+      // Settle the in-flight run so the registry is empty for the next test.
+      // The cell keeps the idle cap's detail: the idle settle already resolved
+      // the action promise, so the later stream-end resolve('ok') is a no-op.
+      stream.close()
+      await vi.advanceTimersByTimeAsync(0)
+      await promise
+      expect(state().actions.get).toEqual({ status: 'ok', detail: 'idle' })
     })
 
     it('appends the failure line and re-reads the summary when the stream breaks', async () => {

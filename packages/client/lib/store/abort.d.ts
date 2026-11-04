@@ -15,6 +15,19 @@
 export declare function trackGetAbort(controller: AbortController): void;
 /** forgetGetAbort drops a settled Get run's controller. */
 export declare function forgetGetAbort(controller: AbortController): void;
+/**
+ * hasInFlightGet reports whether a Get run is in flight (registered and not
+ * yet settled). A long download that outlived the idle cap and settled the get
+ * cell keeps streaming in the background, so this stays true while the cell
+ * reads as idle: a second Get click reads as a no-op, not a concurrent run.
+ */
+export declare function hasInFlightGet(): boolean;
+/**
+ * clearInFlightRuns drops every registered Get and Launch controller without
+ * aborting them, so a test starts from an empty registry (the module-level
+ * sets outlive a single test).
+ */
+export declare function clearInFlightRuns(): void;
 /** trackLaunchAbort registers an in-flight Launch run's controller under the provider id. */
 export declare function trackLaunchAbort(providerId: string, controller: AbortController): void;
 /** forgetLaunchAbort drops a settled Launch run's controller. */

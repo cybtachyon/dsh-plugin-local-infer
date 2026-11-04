@@ -21,7 +21,7 @@ import {
   type PriceQuery,
 } from '../api/routes.ts'
 import type { TextTable } from '../text.ts'
-import { forgetGetAbort, trackGetAbort } from './abort.ts'
+import { forgetGetAbort, hasInFlightGet, trackGetAbort } from './abort.ts'
 import { performAction, ACTION_TIMEOUTS, type CardStore } from './sync.ts'
 
 /**
@@ -190,12 +190,23 @@ export function performInstall(store: CardStore, t: TextTable): Promise<void> {
  * stored value. The run registers its AbortController in the in-flight
  * registry, so the provider form's Cancel closes the stream and the route
  * interrupts the in-flight hf child; an aborted run settles without a
- * failure line (the "Canceled" line the Cancel wrote is the run's tail).
+ * failure line (the "Canceled" line the Cancel wrote is the run's tail). A
+ * second click while a run is in flight (a long download that outlived the
+ * idle cap and settled the cell) is a no-op, so it never starts a concurrent
+ * run: the in-flight download keeps streaming, and a restart needs a Cancel
+ * first.
  */
 export function performGet(store: CardStore, t: TextTable): Promise<void> {
   const state = store.getSnapshot()
   const draft = state.draft
   if (state.deps === null || draft === null) {
+    return Promise.resolve()
+  }
+  // A Get already in flight keeps streaming in the background (a long download
+  // that outlived the idle cap and settled the cell to ok). A second click must
+  // not start a concurrent run, so it is a no-op; cancel the in-flight run
+  // first to restart.
+  if (hasInFlightGet()) {
     return Promise.resolve()
   }
   const platform = (draft.platform ?? {})[draft.engine]

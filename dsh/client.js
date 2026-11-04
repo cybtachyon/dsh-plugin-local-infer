@@ -1624,6 +1624,9 @@ function trackGetAbort(controller) {
 function forgetGetAbort(controller) {
   activeGets.delete(controller);
 }
+function hasInFlightGet() {
+  return activeGets.size > 0;
+}
 function trackLaunchAbort(providerId, controller) {
   activeLaunches.set(providerId, controller);
 }
@@ -1749,6 +1752,9 @@ function performGet(store, t) {
   const state = store.getSnapshot();
   const draft = state.draft;
   if (state.deps === null || draft === null) {
+    return Promise.resolve();
+  }
+  if (hasInFlightGet()) {
     return Promise.resolve();
   }
   const platform = (draft.platform ?? {})[draft.engine];
