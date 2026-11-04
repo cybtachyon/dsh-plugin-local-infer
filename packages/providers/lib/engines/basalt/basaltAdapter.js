@@ -105,9 +105,12 @@ export class BasaltAdapter extends EngineAdapter {
     }
     launchSignature(config = {}) {
         // The local plan runs the basalt binary, so the binary name is the
-        // command-line marker the reserve probe matches on.
+        // command-line marker the reserve probe matches on. The serve CLI binds
+        // the port from the basalt_config.json server block, so the argv never
+        // carries the number; the port stays the model-tie key for the
+        // launched-models map.
         const port = this.port(config);
-        return { binary: 'basalt', port };
+        return { binary: 'basalt', port, portInArgv: false };
     }
     renderLaunch(config, _hw) {
         const port = this.port(config);

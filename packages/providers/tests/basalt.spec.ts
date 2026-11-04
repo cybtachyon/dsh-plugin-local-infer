@@ -861,10 +861,21 @@ describe('BasaltAdapter model data', () => {
     expect(adapter.modelInput({ vision: 2 })).toEqual(['text', 'image'])
   })
 
-  it('signs the launch with the basalt binary and the port', () => {
+  it('signs the launch with the basalt binary and the config port carried outside argv', () => {
     const { host } = basaltStubHost()
     const adapter = new BasaltAdapter(host)
-    expect(adapter.launchSignature({ port: 8090 })).toEqual({ binary: 'basalt', port: 8090 })
-    expect(adapter.launchSignature({})).toEqual({ binary: 'basalt', port: 8080 })
+    // The serve CLI binds the port from the basalt_config.json server block,
+    // so the signature declares portInArgv false while the port stays the
+    // model-tie key. A bare config keeps the serve CLI default port.
+    expect(adapter.launchSignature({ port: 8090 })).toEqual({
+      binary: 'basalt',
+      port: 8090,
+      portInArgv: false,
+    })
+    expect(adapter.launchSignature({})).toEqual({
+      binary: 'basalt',
+      port: 8080,
+      portInArgv: false,
+    })
   })
 })
