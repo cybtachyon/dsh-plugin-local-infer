@@ -1,5 +1,9 @@
 # TASK-009: Refactor (client and wiring half)
 
+Scope: the three implementation commits `9f765d6` (TASK-006), `8c4992b`
+(TASK-007), `ff878ed` (TASK-008); docs(plan) commits between them are out of
+scope.
+
 Review the files touched by the previous 3 commits and identify the following code risks:
  - **Multiple Sources of Truth**: Same calculations done in multiple places.
  - **Duplicate Code**: Nearly-identical code in multiple methods.
@@ -31,8 +35,11 @@ commit if code changed, otherwise a short note here and no commit.
   the ui suite.
 - The committed `packages/client/lib` outputs lagged `packages/client/src`
   (TASK-007 shipped no lib outputs), so this artifact commit also lands the
-  routes/plugin/text lib updates plus the new `OrchestratorCard.*`. A later
-  plan can pin whether lib outputs must land with each source commit.
+  routes/plugin/text lib updates plus the new `OrchestratorCard.*`. Policy
+  DECIDED by the parent (2026-11-04): tracked `lib/` outputs land in the
+  same commit as their `src/` change; this repo's own specs (carrier.spec,
+  bundle.spec, client.spec) load committed artifacts, so src-only commits
+  leave them stale.
 - `tsc -b` reported "up to date" over deleted outputs because a `git clean`
   after a verification build removed the new lib files but kept the
   git-ignored `packages/*/tsconfig.tsbuildinfo`. If a rebuild emits nothing
