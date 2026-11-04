@@ -61,4 +61,4 @@ and makes the health poll stop early when the spawned engine process has exited.
 ### Phase 3: Tests and verification
 
 - [x] [TASK-004-update-tests](docs/PLAN-basalt-serve-dep-TASK-004-update-tests.md)
-- [ ] [TASK-005-build-test-lint](docs/PLAN-basalt-serve-dep-TASK-005-build-test-lint.md)
+- [x] [TASK-005-build-test-lint](docs/PLAN-basalt-serve-dep-TASK-005-build-test-lint.md)
