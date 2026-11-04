@@ -1,12 +1,17 @@
 import type { DepsModel, LocalInferSummary } from 'dsh-plugin-local-infer/ui'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cancelInFlightRuns, clearInFlightRuns } from '../src/store/abort.ts'
+import {
+  cancelInFlightRuns,
+  clearInFlightRuns,
+  hasInFlightGet,
+} from '../src/store/abort.ts'
 import {
   copyInstallString,
   GET_IDLE_MS,
   GET_PROGRESS_THROTTLE_MS,
   performAllowRun,
   performGet,
+  performGetCancel,
   performInstall,
   repriceDeps,
 } from '../src/store/deps.ts'
@@ -636,6 +641,105 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       resolveSummary(new Response('{}', { status: 200 }))
       await vi.advanceTimersByTimeAsync(0)
       expect(state().ui.logs.getLogs).toBeNull()
+    })
+  })
+
+  describe('performGetCancel', () => {
+    it('aborts the in-flight Get, appends the Canceled line, clears getProgress, and leaves the form open', async () => {
+      const { store, state } = makeStore()
+      prime(store, depsWith())
+      store.dispatch({
+        type: 'summary/ack',
+        summary: summaryWith('old logs'),
+      })
+      store.dispatch({
+        type: 'ui/patch',
+        patch: { editingProviderId: 'p1', providerFormMode: 'editing' },
+      })
+      store.dispatch({
+        type: 'draft/edit',
+        draft: { engine: 'ninfer', config: { model: 'staged' } },
+      })
+      const stream = streamResponse()
+      // The summary re-read stays gated, so the buffer is observable before
+      // the re-read clears it.
+      let resolveSummary: (response: Response) => void = () => {}
+      const summaryGate = new Promise<Response>((resolve) => {
+        resolveSummary = resolve
+      })
+      const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+        if (url === '/local-infer/get') {
+          return new Promise<Response>((resolve) => {
+            // The cancel closes the stream through the run's signal, the same
+            // way the live fetch errors the body stream on an abort.
+            init?.signal?.addEventListener(
+              'abort',
+              () => stream.fail('The operation was aborted.'),
+              { once: true },
+            )
+            resolve(stream.response())
+          })
+        }
+        return summaryGate
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const promise = performGet(store, t)
+      // A tqdm chunk lands the progress readout, so the cancel has a live
+      // getProgress to clear.
+      stream.enqueue(
+        JSON.stringify({
+          log: 'Downloading x.safetensors: 10% | 5.0G/50.0G [00:01<00:02, 1.0MB/s]\n',
+        }) + '\n',
+      )
+      await vi.advanceTimersByTimeAsync(0)
+      expect(state().ui.getProgress).not.toBeNull()
+      expect(hasInFlightGet()).toBe(true)
+      // The cancel: abort the in-flight run, keep the form open.
+      performGetCancel(store)
+      expect(hasInFlightGet()).toBe(false)
+      // The "Canceled" line lands in the buffer as the run's tail.
+      expect(state().ui.logs.getLogs).toBe(
+        'old logs\n--- ' +
+          t.getting +
+          '\nDownloading x.safetensors: 10% | 5.0G/50.0G [00:01<00:02, 1.0MB/s]\n\n--- Canceled\n',
+      )
+      // The readout clears, and the form stays open (the draft and the form
+      // mode are untouched, unlike cancelProvider).
+      expect(state().ui.getProgress).toBeNull()
+      expect(state().ui.providerFormMode).toBe('editing')
+      expect(state().ui.editingProviderId).toBe('p1')
+      expect(state().draft).toEqual({ engine: 'ninfer', config: { model: 'staged' } })
+      // The aborted run settles the get cell to error through performGet's
+      // settle path, so the 'getting' control branch stops firing.
+      await vi.advanceTimersByTimeAsync(0)
+      expect(state().actions.get).toEqual({
+        status: 'error',
+        detail: 'The operation was aborted.',
+      })
+      resolveSummary(new Response('{}', { status: 200 }))
+      await vi.advanceTimersByTimeAsync(0)
+      await promise
+      // The summary re-read hands the Logs section back to the stored value.
+      expect(state().ui.logs.getLogs).toBeNull()
+    })
+
+    it('no-ops the Canceled line when no run is in flight', async () => {
+      const { store, state } = makeStore()
+      prime(store, depsWith())
+      store.dispatch({
+        type: 'ui/patch',
+        patch: { editingProviderId: 'p1', providerFormMode: 'editing' },
+      })
+      const { fetchMock } = jsonFetch({})
+      vi.stubGlobal('fetch', fetchMock)
+      performGetCancel(store)
+      // Nothing was aborted: no "Canceled" line lands, the readout stays
+      // null, and the form stays open.
+      expect(state().ui.logs.getLogs).toBeNull()
+      expect(state().ui.getProgress).toBeNull()
+      expect(state().ui.providerFormMode).toBe('editing')
+      expect(state().ui.editingProviderId).toBe('p1')
+      expect(fetchMock).not.toHaveBeenCalled()
     })
   })
 })

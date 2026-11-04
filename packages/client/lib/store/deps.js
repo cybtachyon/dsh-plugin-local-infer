@@ -12,9 +12,10 @@
  * @module dsh-plugin-local-infer/client/store/deps
  */
 import { fetchDeps, fetchSummary, postGet, postInstall, postSave, } from "../api/routes.js";
-import { forgetGetAbort, hasInFlightGet, trackGetAbort } from "./abort.js";
+import { cancelInFlightRuns, forgetGetAbort, hasInFlightGet, trackGetAbort, } from "./abort.js";
 import { ProgressThrottle } from "./progress-throttle.js";
 import { parseHfProgress } from "./progress.js";
+import { appendCanceledLog } from "./providers.js";
 import { performAction, ACTION_TIMEOUTS } from "./sync.js";
 /**
  * GET_IDLE_MS is the Get run's output-idle cap in ms. Two minutes without a
@@ -303,5 +304,24 @@ export function performGet(store, t) {
             reject(new Error(message));
         });
     }), ACTION_TIMEOUTS.get);
+}
+/**
+ * performGetCancel cancels the in-flight Get run without collapsing the
+ * provider form. It aborts the tracked run through cancelInFlightRuns (the
+ * service's downloadRunner watchChildAbort then sends SIGINT to the hf
+ * child, escalating to SIGTERM after the grace window), appends the
+ * "Canceled" line to the Logs buffer when a run was aborted, and clears the
+ * getProgress readout back to null. The form stays open (the draft and the
+ * form mode are untouched, unlike cancelProvider). The aborted run settles
+ * the get cell to error through performGet's settle path, so the 'getting'
+ * control branch and the step chips stop firing. The cancel surfaces
+ * (TASK-016) call it.
+ */
+export function performGetCancel(store) {
+    const aborted = cancelInFlightRuns();
+    if (aborted) {
+        appendCanceledLog(store);
+    }
+    store.dispatch({ type: 'ui/patch', patch: { getProgress: null } });
 }
 //# sourceMappingURL=deps.js.map

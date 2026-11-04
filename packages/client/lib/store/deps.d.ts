@@ -91,4 +91,17 @@ export declare function performInstall(store: CardStore, t: TextTable): Promise<
  * first.
  */
 export declare function performGet(store: CardStore, t: TextTable): Promise<void>;
+/**
+ * performGetCancel cancels the in-flight Get run without collapsing the
+ * provider form. It aborts the tracked run through cancelInFlightRuns (the
+ * service's downloadRunner watchChildAbort then sends SIGINT to the hf
+ * child, escalating to SIGTERM after the grace window), appends the
+ * "Canceled" line to the Logs buffer when a run was aborted, and clears the
+ * getProgress readout back to null. The form stays open (the draft and the
+ * form mode are untouched, unlike cancelProvider). The aborted run settles
+ * the get cell to error through performGet's settle path, so the 'getting'
+ * control branch and the step chips stop firing. The cancel surfaces
+ * (TASK-016) call it.
+ */
+export declare function performGetCancel(store: CardStore): void;
 //# sourceMappingURL=deps.d.ts.map

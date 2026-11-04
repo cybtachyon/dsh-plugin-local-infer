@@ -106,7 +106,7 @@ by the previous commits in their phase and resolve the named code risks.
 
 ### Phase 5 — Cancel affordance, surfaced
 
-- [ ] [TASK-015-performgetcancel-driver](docs/PLAN-get-progress-TASK-015-performgetcancel-driver.md)
+- [x] [TASK-015-performgetcancel-driver](docs/PLAN-get-progress-TASK-015-performgetcancel-driver.md)
 - [ ] [TASK-016-cancel-surfaces](docs/PLAN-get-progress-TASK-016-cancel-surfaces.md)
 
 ### Phase 6 — Primitives mapping

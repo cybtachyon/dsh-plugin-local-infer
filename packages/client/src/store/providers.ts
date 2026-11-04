@@ -84,11 +84,11 @@ function appendProcessLog(store: CardStore, line: string): void {
   })
 }
 
-// appendCanceledLog appends the "Canceled" line to the Logs buffer when the
-// provider form's Cancel aborts an in-flight run, so the textarea reads the
-// run as canceled the moment the Cancel is clicked, the same line the route
-// persists to the log file.
-function appendCanceledLog(store: CardStore): void {
+// appendCanceledLog appends the "Canceled" line to the Logs buffer when a
+// cancel (the provider form's Cancel, the Get cancel) aborts an in-flight
+// run, so the textarea reads the run as canceled the moment the cancel is
+// clicked, the same line the route persists to the log file.
+export function appendCanceledLog(store: CardStore): void {
   appendProcessLog(store, '--- Canceled\n')
 }
 

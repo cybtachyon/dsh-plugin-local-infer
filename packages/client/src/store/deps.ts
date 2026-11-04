@@ -21,9 +21,15 @@ import {
   type PriceQuery,
 } from '../api/routes.ts'
 import type { TextTable } from '../text.ts'
-import { forgetGetAbort, hasInFlightGet, trackGetAbort } from './abort.ts'
+import {
+  cancelInFlightRuns,
+  forgetGetAbort,
+  hasInFlightGet,
+  trackGetAbort,
+} from './abort.ts'
 import { ProgressThrottle } from './progress-throttle.ts'
 import { parseHfProgress } from './progress.ts'
+import { appendCanceledLog } from './providers.ts'
 import { performAction, ACTION_TIMEOUTS, type CardStore } from './sync.ts'
 
 /**
@@ -345,4 +351,24 @@ export function performGet(store: CardStore, t: TextTable): Promise<void> {
       }),
     ACTION_TIMEOUTS.get,
   )
+}
+
+/**
+ * performGetCancel cancels the in-flight Get run without collapsing the
+ * provider form. It aborts the tracked run through cancelInFlightRuns (the
+ * service's downloadRunner watchChildAbort then sends SIGINT to the hf
+ * child, escalating to SIGTERM after the grace window), appends the
+ * "Canceled" line to the Logs buffer when a run was aborted, and clears the
+ * getProgress readout back to null. The form stays open (the draft and the
+ * form mode are untouched, unlike cancelProvider). The aborted run settles
+ * the get cell to error through performGet's settle path, so the 'getting'
+ * control branch and the step chips stop firing. The cancel surfaces
+ * (TASK-016) call it.
+ */
+export function performGetCancel(store: CardStore): void {
+  const aborted = cancelInFlightRuns()
+  if (aborted) {
+    appendCanceledLog(store)
+  }
+  store.dispatch({ type: 'ui/patch', patch: { getProgress: null } })
 }
