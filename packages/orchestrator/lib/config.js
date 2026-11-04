@@ -93,6 +93,15 @@ export function setOrchestratorPrompt(prompt) {
     effectivePrompt = toEffective(prompt);
 }
 /**
+ * hasSavedOrchestratorPrompt reports whether the file holds a saved prompt
+ * override. The empty string is the store's sentinel for "no saved prompt",
+ * so the settings routes read the flag through here instead of re-deriving
+ * the sentinel rule the holder already applies.
+ */
+export function hasSavedOrchestratorPrompt() {
+    return readOrchestratorConfig().prompt !== '';
+}
+/**
  * toEffective resolves one saved value against the default: an empty saved
  * prompt reads as no saved prompt.
  */

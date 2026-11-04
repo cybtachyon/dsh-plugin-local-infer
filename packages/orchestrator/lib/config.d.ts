@@ -53,4 +53,11 @@ export declare function getOrchestratorPrompt(): string;
  * save means "no saved prompt" and falls back to the default.
  */
 export declare function setOrchestratorPrompt(prompt: string): void;
+/**
+ * hasSavedOrchestratorPrompt reports whether the file holds a saved prompt
+ * override. The empty string is the store's sentinel for "no saved prompt",
+ * so the settings routes read the flag through here instead of re-deriving
+ * the sentinel rule the holder already applies.
+ */
+export declare function hasSavedOrchestratorPrompt(): boolean;
 //# sourceMappingURL=config.d.ts.map
