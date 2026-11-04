@@ -264,11 +264,23 @@ async function runModelDownloadStep(ctx: GetStepContext): Promise<GetStepFailure
   if (request.engineId === 'infernix') {
     for (const command of infernixGetDownloads(request.config, modelDir, useHubCache)) {
       emit(`$ ${command}\n`)
+      // The Infernix extra downloads stream through the host, so their tqdm
+      // lines reach the log sink and the onChunk progress sink together, the
+      // way the model and template downloads do. A caller that does not
+      // stream progress (onChunk absent) still lands the chunk in the log
+      // sink only.
       const outcome =
         request.host.runStream !== undefined
-          ? await request.host.runStream(command, (chunk) => emit(chunk), {
-              ...(request.signal !== undefined ? { signal: request.signal } : {}),
-            })
+          ? await request.host.runStream(
+              command,
+              (chunk) => {
+                emit(chunk)
+                ctx.onChunk?.(chunk)
+              },
+              {
+                ...(request.signal !== undefined ? { signal: request.signal } : {}),
+              },
+            )
           : await request.host.run(command)
       if (!outcome.ok) {
         emit(`!! ${command} failed: ${outcome.detail ?? 'unknown'}\n`)

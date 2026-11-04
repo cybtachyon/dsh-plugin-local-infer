@@ -3033,6 +3033,48 @@ describe('get route (git sync, deps, build)', () => {
     expect(logged).toContain('get complete')
   })
 
+  it('routes the Infernix extra-download chunks to the onChunk sink', async () => {
+    writeConfig('infernix', {}, true)
+    // The stubbed host.runStream hands the fake tqdm line to its chunk
+    // callback, the way the real runner streams the hf download's stderr.
+    const tqdmLine = '42%| 4.2G/10G [00:12<00:16, 300.0MiB/s]\n'
+    const { host } = stubGetHost({
+      exists: false,
+      stream: {
+        'hf download Wallawalla47/Qwen3.8-Flash-Next-DFlash2-Infernix': tqdmLine,
+      },
+    })
+    const chunks: string[] = []
+    let logged = ''
+    const result = await getEngine(
+      stubService([]),
+      {
+        engine: 'infernix',
+        config: {
+          spec: 'dflash2',
+          model: 'qwen38-flash-next',
+          draftModelPreset: 'Qwen3.8-Flash-Next-DFlash2-Infernix.infernix',
+          modelDirectory: MODEL_DIR,
+        },
+      },
+      (chunk) => {
+        logged += chunk
+      },
+      host,
+      undefined,
+      (chunk) => {
+        chunks.push(chunk)
+      },
+    )
+    expect(result.ok).toBe(true)
+    // The chunk reaches the onChunk progress sink and the log sink together,
+    // so the Infernix extra download feeds the same progress events the
+    // model and template downloads do.
+    expect(chunks).toEqual([tqdmLine])
+    expect(logged).toContain(tqdmLine)
+    expect(logged).toContain('get complete')
+  })
+
   it('pulls no model artifacts for a non-Infernix Get', async () => {
     writeConfig('ninfer', {}, true)
     const { host } = stubGetHost({ exists: false })

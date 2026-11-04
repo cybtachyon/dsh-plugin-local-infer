@@ -80,6 +80,7 @@ by the previous commits in their phase and resolve the named code risks.
 - [x] [TASK-019-watchchildabort-sigterm](docs/PLAN-get-progress-TASK-019-watchchildabort-sigterm.md)
 - [x] [TASK-020-providers-watchchildabort-sigterm](docs/PLAN-get-progress-TASK-020-providers-watchchildabort-sigterm.md)
 - [x] [TASK-003-getsteps-onchunk-sink](docs/PLAN-get-progress-TASK-003-getsteps-onchunk-sink.md)
+- [x] [TASK-021-infernix-progress-sink](docs/PLAN-get-progress-TASK-021-infernix-progress-sink.md)
 - [ ] [TASK-004-launch-route-progress-event](docs/PLAN-get-progress-TASK-004-launch-route-progress-event.md)
 - [ ] [TASK-005-refactor-phase1](docs/PLAN-get-progress-TASK-005-refactor-phase1.md)
 
@@ -118,6 +119,7 @@ by the previous commits in their phase and resolve the named code risks.
 - TASK-019 depends on TASK-002 (the guard lives in the runner's abort wiring).
 - TASK-020 depends on TASK-019 (the providers guard mirrors the service fix).
 - TASK-003 depends on TASK-002 (the get-steps sink threads the onChunk the runner accepts).
+- TASK-021 depends on TASK-003 (the Infernix chunks route through the sink TASK-003 added).
 - TASK-004 depends on TASK-003 (the launch route emits progress from the get-steps run).
 - TASK-005 depends on TASK-001..TASK-004 (reviews their commits).
 - TASK-007 depends on TASK-006 (the state field is typed by the parser's output).
