@@ -14,7 +14,7 @@
  * @module dsh-plugin-local-infer/client/store/actions
  */
 import { postDownload, postRegister, postSave, postUnregister, } from "../api/routes.js";
-import { repriceDeps, repriceSummary } from "./deps.js";
+import { repriceAll } from "./deps.js";
 import { ACTION_TIMEOUTS, performAction } from "./sync.js";
 /**
  * performSave upserts the provider entry the form edits through the save
@@ -61,16 +61,16 @@ export function performDiscard(store) {
         type: 'ui/patch',
         patch: { editingProviderId: null, providerFormMode: 'collapsed' },
     });
-    void repriceSummary(store);
-    void repriceDeps(store);
+    void repriceAll(store);
 }
 /**
  * performRegister publishes the engine as a DSH model through the register
  * route, pointing the agent default model at the registered engine when the
- * checkbox is on. On a published entry it re-fetches the summary (the
- * registered flag flips to true and the Remove button appears) and reports
- * the model and provider ids it wrote. A refused write settles the cell to
- * error with the route's own message.
+ * checkbox is on. On a published entry it re-fetches both read models
+ * (the summary and the deps panel) through repriceAll (the registered flag
+ * flips to true and the Remove button appears) and reports the model and
+ * provider ids it wrote. A refused write settles the cell to error with
+ * the route's own message.
  */
 export function performRegister(store, t) {
     const state = store.getSnapshot();
@@ -84,7 +84,7 @@ export function performRegister(store, t) {
         agentDefault: state.ui.agentDefault,
     }).then((result) => {
         if (result.ok && result.entry !== undefined) {
-            void repriceSummary(store, { engine: draft.engine, config: draft.config });
+            void repriceAll(store, { engine: draft.engine, config: draft.config });
             return t.registered + ' ' + result.entry.modelId + ' as ' + result.entry.providerId;
         }
         throw new Error(t.registerFailed + (result.detail ? ': ' + result.detail : ''));
@@ -94,8 +94,9 @@ export function performRegister(store, t) {
  * performUnregister removes the DSH model row the register step wrote
  * through the unregister route, keyed off the same config so the removal
  * targets the exact entry the registration published. On a removal it
- * re-fetches the summary (the registered flag flips to false and the Remove
- * button disappears).
+ * re-fetches both read models (the summary and the deps panel) through
+ * repriceAll (the registered flag flips to false and the Remove button
+ * disappears).
  */
 export function performUnregister(store, t) {
     const state = store.getSnapshot();
@@ -105,7 +106,7 @@ export function performUnregister(store, t) {
     }
     return performAction(store, 'unregister', () => postUnregister({ engine: draft.engine, config: draft.config }).then((result) => {
         if (result.removed) {
-            void repriceSummary(store, { engine: draft.engine, config: draft.config });
+            void repriceAll(store, { engine: draft.engine, config: draft.config });
             return t.unregistered;
         }
         throw new Error(t.unregisterFailed);
@@ -113,9 +114,10 @@ export function performUnregister(store, t) {
 }
 /**
  * performDownload pulls the selected model into the model directory through
- * the download route's hf CLI. On a successful pull it re-fetches the summary
- * (the model status row re-checks the directory and hides). A failed pull
- * settles the cell to error with the route's own detail.
+ * the download route's hf CLI. On a successful pull it re-fetches both read
+ * models (the summary and the deps panel) through repriceAll (the model
+ * status row re-checks the directory and hides). A failed pull settles the
+ * cell to error with the route's own detail.
  */
 export function performDownload(store, t) {
     const state = store.getSnapshot();
@@ -131,7 +133,7 @@ export function performDownload(store, t) {
         ...(directory !== undefined ? { directory } : {}),
     }).then((result) => {
         if (result.ok) {
-            void repriceSummary(store, { engine: draft.engine, config: draft.config });
+            void repriceAll(store, { engine: draft.engine, config: draft.config });
             return t.downloaded;
         }
         throw new Error(t.downloadFailed + (result.detail ? ': ' + result.detail : ''));

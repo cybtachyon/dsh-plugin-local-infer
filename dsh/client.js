@@ -3085,8 +3085,7 @@ function performDiscard(store) {
     type: "ui/patch",
     patch: { editingProviderId: null, providerFormMode: "collapsed" }
   });
-  void repriceSummary(store);
-  void repriceDeps(store);
+  void repriceAll(store);
 }
 function performRegister(store, t) {
   const state = store.getSnapshot();
@@ -3103,7 +3102,7 @@ function performRegister(store, t) {
       agentDefault: state.ui.agentDefault
     }).then((result) => {
       if (result.ok && result.entry !== void 0) {
-        void repriceSummary(store, { engine: draft.engine, config: draft.config });
+        void repriceAll(store, { engine: draft.engine, config: draft.config });
         return t.registered + " " + result.entry.modelId + " as " + result.entry.providerId;
       }
       throw new Error(t.registerFailed + (result.detail ? ": " + result.detail : ""));
@@ -3122,7 +3121,7 @@ function performUnregister(store, t) {
     "unregister",
     () => postUnregister({ engine: draft.engine, config: draft.config }).then((result) => {
       if (result.removed) {
-        void repriceSummary(store, { engine: draft.engine, config: draft.config });
+        void repriceAll(store, { engine: draft.engine, config: draft.config });
         return t.unregistered;
       }
       throw new Error(t.unregisterFailed);
@@ -3147,7 +3146,7 @@ function performDownload(store, t) {
       ...directory !== void 0 ? { directory } : {}
     }).then((result) => {
       if (result.ok) {
-        void repriceSummary(store, { engine: draft.engine, config: draft.config });
+        void repriceAll(store, { engine: draft.engine, config: draft.config });
         return t.downloaded;
       }
       throw new Error(t.downloadFailed + (result.detail ? ": " + result.detail : ""));

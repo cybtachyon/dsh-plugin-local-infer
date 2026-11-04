@@ -35,25 +35,28 @@ export declare function performDiscard(store: CardStore): void;
 /**
  * performRegister publishes the engine as a DSH model through the register
  * route, pointing the agent default model at the registered engine when the
- * checkbox is on. On a published entry it re-fetches the summary (the
- * registered flag flips to true and the Remove button appears) and reports
- * the model and provider ids it wrote. A refused write settles the cell to
- * error with the route's own message.
+ * checkbox is on. On a published entry it re-fetches both read models
+ * (the summary and the deps panel) through repriceAll (the registered flag
+ * flips to true and the Remove button appears) and reports the model and
+ * provider ids it wrote. A refused write settles the cell to error with
+ * the route's own message.
  */
 export declare function performRegister(store: CardStore, t: TextTable): Promise<void>;
 /**
  * performUnregister removes the DSH model row the register step wrote
  * through the unregister route, keyed off the same config so the removal
  * targets the exact entry the registration published. On a removal it
- * re-fetches the summary (the registered flag flips to false and the Remove
- * button disappears).
+ * re-fetches both read models (the summary and the deps panel) through
+ * repriceAll (the registered flag flips to false and the Remove button
+ * disappears).
  */
 export declare function performUnregister(store: CardStore, t: TextTable): Promise<void>;
 /**
  * performDownload pulls the selected model into the model directory through
- * the download route's hf CLI. On a successful pull it re-fetches the summary
- * (the model status row re-checks the directory and hides). A failed pull
- * settles the cell to error with the route's own detail.
+ * the download route's hf CLI. On a successful pull it re-fetches both read
+ * models (the summary and the deps panel) through repriceAll (the model
+ * status row re-checks the directory and hides). A failed pull settles the
+ * cell to error with the route's own detail.
  */
 export declare function performDownload(store: CardStore, t: TextTable): Promise<void>;
 //# sourceMappingURL=actions.d.ts.map
