@@ -294,6 +294,11 @@ export class BasaltAdapter extends EngineAdapter {
     // path. A bare name (the basalt binary, on the path after the rebuild's
     // symlink step) is left as-is.
     const resolvedArgv = resolveLaunchArgv(engineDir, spawnArgv)
+    // The plan is the launch record's argv source (launchRecordFromPlan reads
+    // it), and the re-link rule substring-matches every record argv token
+    // against the live command line, so the record must name the spawn, not
+    // the pre-swap placeholder or the build-tree relative binary.
+    plan.argv = resolvedArgv
     const handle = this.host.spawn(resolvedArgv, plan.env ?? {}, engineDir)
     trackChild(this.children, this.planKey(plan), handle)
     return withLogs({ ok: true, handle })
@@ -347,9 +352,10 @@ export class BasaltAdapter extends EngineAdapter {
 
   /**
    * withModelArgv swaps the --model flag's value token for the concrete
-   * artifact path. It builds a new array, so the plan (shared with the launch
-   * record) keeps its placeholder. A plan with no --model flag (a pre-flag
-   * plan) stands as-is.
+   * artifact path. It builds a new array rather than mutating the plan's;
+   * deploy then writes the fully resolved spawn argv back onto the plan, so
+   * the launch record carries what the process actually runs. A plan with no
+   * --model flag (a pre-flag plan) stands as-is.
    */
   private withModelArgv(argv: string[], modelPath: string): string[] {
     const modelFlag = argv.indexOf('--model')

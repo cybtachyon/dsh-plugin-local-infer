@@ -757,6 +757,33 @@ describe('BasaltAdapter.deploy', () => {
       cleanup()
     }
   })
+
+  it('writes the spawn argv back onto the plan for the launch record', async () => {
+    const { host, state } = basaltStubHost()
+    state.runOutput['rev-list'] = '0'
+    const { hub, cleanup } = seededHubCache()
+    try {
+      const adapter = new BasaltAdapter(host)
+      const plan = adapter.renderLaunch({ port: 8090 }, ADAPTER_HW)
+      const result = await adapter.deploy(plan, {
+        engineId: 'basalt',
+        engineDirectory: '/src/basalt',
+      })
+      expect(result.ok).toBe(true)
+      // The plan is the launch record's argv source, and the re-link rule
+      // substring-matches every record argv token against the live command
+      // line, so deploy leaves the plan carrying exactly what it spawned:
+      // the engine-directory-joined binary and the hub-cache snapshot
+      // --model path, not the rendered placeholder.
+      expect(plan.argv).toEqual(state.spawn[0]?.argv)
+      const modelFlag = plan.argv?.indexOf('--model') ?? -1
+      expect(plan.argv?.[modelFlag + 1]).toBe(
+        join(hub, 'models--jesdga--Qwen3.8-Flash-Next-Basalt', 'snapshots', 'c1', BASALT_MODEL_FILE),
+      )
+    } finally {
+      cleanup()
+    }
+  })
 })
 
 describe('BasaltAdapter.healthCheck', () => {
