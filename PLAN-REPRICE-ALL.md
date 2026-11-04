@@ -66,6 +66,7 @@ the draft)
 - [x] [TASK-002-convert-actions-sites](docs/PLAN-REPRICE-ALL-TASK-002-convert-actions-sites.md)
 - [x] [TASK-003-convert-providers-sites](docs/PLAN-REPRICE-ALL-TASK-003-convert-providers-sites.md)
 - [x] [TASK-006-normalize-lib-newlines](docs/PLAN-REPRICE-ALL-TASK-006-normalize-lib-newlines.md)
+- [ ] [TASK-007-settle-build-docs](docs/PLAN-REPRICE-ALL-TASK-007-settle-build-docs.md)
 - [ ] [TASK-004-refactor-review](docs/PLAN-REPRICE-ALL-TASK-004-refactor-review.md)
 
 ### Phase 2: Verify
@@ -81,6 +82,8 @@ the draft)
 - TASK-006: none (independent tooling fix for the pre-existing lib
   newline churn discovered during TASK-002; runs before the review so the
   build script change is settled).
+- TASK-007: TASK-006 (deduplicates the normalization TASK-006 added and
+  settles the remaining pre-existing build and doc issues).
 - TASK-004: TASK-001, TASK-002, TASK-003 (reviews the files those commits
   touched).
 - TASK-005: TASK-004 (the gate runs after the refactor review settles the
