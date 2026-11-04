@@ -68,7 +68,7 @@ the draft)
 - [x] [TASK-006-normalize-lib-newlines](docs/PLAN-REPRICE-ALL-TASK-006-normalize-lib-newlines.md)
 - [x] [TASK-007-settle-build-docs](docs/PLAN-REPRICE-ALL-TASK-007-settle-build-docs.md)
 - [x] [TASK-004-refactor-review](docs/PLAN-REPRICE-ALL-TASK-004-refactor-review.md)
-- [ ] [TASK-008-get-settle-reprice](docs/PLAN-REPRICE-ALL-TASK-008-get-settle-reprice.md)
+- [x] [TASK-008-get-settle-reprice](docs/PLAN-REPRICE-ALL-TASK-008-get-settle-reprice.md)
 
 ### Phase 2: Verify
 
