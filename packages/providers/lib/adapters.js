@@ -140,6 +140,11 @@ export function envFromSpecs(specs, config) {
  * key defaults to the spec key), then the result renders in the requested
  * format. A spec with no `deploy`, or no `config` target, contributes nothing.
  *
+ * A spec that carries both a `config` and a `cli` target contributes nothing
+ * here: the launch spells the CLI flag and leaves the on-disk config file (and
+ * any hand edits in it) untouched. Only a spec whose sole deploy path is the
+ * config file writes it.
+ *
  * The YAML format loads the `yaml` package lazily (a root devDependency, so the
  * JSON and env paths never touch it at runtime); a missing package throws only
  * when the YAML format is requested.
@@ -147,8 +152,14 @@ export function envFromSpecs(specs, config) {
 export function configFileFromSpecs(specs, config, format) {
     const object = {};
     for (const spec of specs) {
-        const deployTarget = deployTargets(spec).find((target) => target.target === 'config');
+        const targets = deployTargets(spec);
+        const deployTarget = targets.find((target) => target.target === 'config');
         if (deployTarget === undefined)
+            continue;
+        // Prefer the CLI flag over the config write: a spec that also carries a
+        // cli target spells the flag and leaves the on-disk config file (and any
+        // hand edits in it) untouched.
+        if (targets.some((target) => target.target === 'cli'))
             continue;
         const value = config[spec.key] ?? spec.defaultValue;
         if (value === undefined)

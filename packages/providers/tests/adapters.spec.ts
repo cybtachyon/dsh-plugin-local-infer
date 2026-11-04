@@ -1298,7 +1298,7 @@ describe('deploy multi-target (TASK 018)', () => {
     expect(deployTargets(none)).toEqual([])
   })
 
-  it('a config target inside a multi-target deploy renders to the config file', () => {
+  it('a spec with both cli and config targets spells the flag and skips the config file', () => {
     const specs: readonly ParameterSpec[] = [
       {
         key: 'port',
@@ -1313,10 +1313,10 @@ describe('deploy multi-target (TASK 018)', () => {
       },
     ]
     const config: Config = { port: 9000 }
+    // The CLI arg wins: the flag is spelled, and the config write is skipped
+    // so the on-disk file (and any hand edits in it) stays untouched.
     expect(flagsFromSpecs(specs, config)).toEqual(['--port', '9000'])
-    expect(configFileFromSpecs(specs, config, 'json')).toBe(
-      JSON.stringify({ server: { port: 9000 } }, null, 2),
-    )
+    expect(configFileFromSpecs(specs, config, 'json')).toBe('{}')
   })
 
   it('the Strata docker plan carries the shared-spec env vars and the binary plan spells the flags', () => {
@@ -1461,6 +1461,38 @@ describe('configFileFromSpecs', () => {
     const content = configFileFromSpecs(specs, {}, 'yaml')
     expect(parseYaml(content)).toEqual({
       server: { port: 8080, host: '127.0.0.1' },
+      engine: { threads: 4 },
+    })
+  })
+
+  it('skips a cli + config spec for the config file and keeps the config-only specs', () => {
+    const cliAndConfig: ParameterSpec = {
+      key: 'port',
+      label: 'Port',
+      description: 'Deployed to the CLI and the config file.',
+      form: { kind: 'number' },
+      defaultValue: 9000,
+      toArgv: (value) => ['--port', String(value)],
+      deploy: [
+        { target: 'cli' },
+        { target: 'config', format: 'json', block: 'server', key: 'port' },
+      ],
+    }
+    // The CLI arg wins: the spec spells the flag.
+    expect(flagsFromSpecs([cliAndConfig], {})).toEqual(['--port', '9000'])
+    // ... and contributes nothing to the config file, so the on-disk file
+    // (and any hand edits in it) stays untouched.
+    expect(configFileFromSpecs([cliAndConfig], {}, 'json')).toBe('{}')
+    // A config-only spec still writes the file.
+    const configOnly: ParameterSpec = {
+      key: 'threads',
+      label: 'Threads',
+      description: 'Deployed to the config file only.',
+      form: { kind: 'number' },
+      defaultValue: 4,
+      deploy: { target: 'config', format: 'json', block: 'engine', key: 'threads' },
+    }
+    expect(JSON.parse(configFileFromSpecs([configOnly], {}, 'json'))).toEqual({
       engine: { threads: 4 },
     })
   })
