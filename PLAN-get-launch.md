@@ -104,7 +104,8 @@ commands and code style already live in `AGENTS.md`; not repeated here.)
 ## Findings (from subagent runs)
 
 - TASK-001 found a cross-platform bug: `ninferAdapter.resolveChatTemplate`
-  probes file presence with a POSIX-only `[ -f ]` shell test. Folded into
-  TASK-004 to fix (node `existsSync` instead).
+  probed file presence with a POSIX-only `[ -f ]` shell test. Fixed in
+  TASK-002 (node `existsSync` for the flat layout, the concrete snapshot path
+  for the cache layout); TASK-004 verifies it.
 - Whole-repo model presence mismatch and the flat `--local-dir` adapter
-  downloads are TASK-002 scope (the hub-cache layout change settles both).
+  downloads were TASK-002 scope (the hub-cache layout change settled both).

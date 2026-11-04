@@ -24,12 +24,11 @@ Focus areas (the files the recent commits and TASK-001/002/003 touch):
 `packages/core/src/models.ts`, `packages/core/src/hf-cache.ts`,
 `packages/client/src/store/deps.ts`, `packages/client/src/text.ts`.
 
-Pre-existing issue to resolve here (found during TASK-001):
-`ninferAdapter.resolveChatTemplate` probes file presence with a POSIX-only
-`[ -f ... ]` shell command, which misbehaves on Windows cmd (the same reason
-`acquire.ts` deliberately uses a `git rev-parse` presence probe). Make the
-chat-template presence probe cross-platform (a node `existsSync` on the
-resolved path, not a shell test).
+Pre-existing issue to verify here (found during TASK-001, already fixed in
+TASK-002): `ninferAdapter.resolveChatTemplate` used a POSIX-only `[ -f ... ]`
+shell probe. TASK-002 changed it to a node `existsSync` (flat) / the concrete
+snapshot path (cache layout). Verify that fix is correct and cross-platform;
+do not redo it.
 
 ## Definition of Done
 
