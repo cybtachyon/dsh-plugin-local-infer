@@ -34,9 +34,10 @@ export declare const FORK_REMOTE = "dsh-fork";
  * the same cmake shape as NInfer; Hyper-Qwen is the compose-driven vLLM
  * engine, so it carries no local build steps (the compose up pulls the
  * image); Strata builds through its own setup.sh (the README's
- * Build-from-source route), which the source-build mode runs in the checkout.
- * The build steps are read from the per-engine OS profiles, so a build command
- * has one home (the OS-specific files under engines/).
+ * Build-from-source route), which the source-build mode runs in the checkout;
+ * Basalt builds through its own CMake route (the Ninja/MSVC variant on
+ * Windows). The build steps are read from the per-engine OS profiles, so a
+ * build command has one home (the OS-specific files under engines/).
  */
 export declare const ENGINE_SOURCES: Record<string, EngineSource>;
 /**

@@ -1,6 +1,20 @@
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import type { HardwareProfile } from 'dsh-plugin-local-infer/core'
+import type {
+  CommandOutcome,
+  FetchResult,
+  HardwareProfile,
+  LaunchPlan,
+  LifecycleHost,
+  ProcessHandle,
+} from 'dsh-plugin-local-infer/core'
 import { configFileFromSpecs } from '../src/adapters.ts'
+import {
+  BASALT_CONFIG_FILE,
+  BASALT_MODEL_FILE,
+  BASALT_MODEL_REPO,
+  BasaltAdapter,
+} from '../src/engines/basalt/basaltAdapter.ts'
 import {
   BASALT_EXPERT_CACHE_OPTIONS,
   BASALT_KV_OPTIONS,
@@ -218,5 +232,335 @@ describe('Basalt OS profiles', () => {
       'python',
       'hf-cli',
     ])
+  })
+})
+
+const ADAPTER_HW: HardwareProfile = {
+  dockerAvailable: false,
+  wsl2: false,
+  os: 'linux',
+  cpuThreads: 8,
+}
+
+/**
+ * basaltStubHost is a stub LifecycleHost that records every run, writeFile,
+ * and spawn call in a single ordered sequence, so the adapter's deploy step
+ * can be asserted on without a real build, model download, or spawn.
+ * `runOutput` feeds per-command stdout (the behind-check count) so the
+ * conditional rebuild prices the checkout without a real git repo.
+ */
+function basaltStubHost() {
+  const state = {
+    sequence: [] as string[],
+    run: [] as string[],
+    writeFile: [] as { path: string; content: string }[],
+    spawn: [] as { argv: string[]; env: Record<string, string>; cwd?: string }[],
+    killed: [] as number[],
+    runOutput: {} as Record<string, string>,
+    // Command substrings that read as failures, so a test prices one failing
+    // step (the model download) without failing the git sync.
+    runFail: [] as string[],
+    fetchStatus: 200,
+  }
+  const fails = (command: string): boolean => state.runFail.some((key) => command.includes(key))
+  const host: LifecycleHost = {
+    async run(command: string): Promise<CommandOutcome> {
+      state.run.push(command)
+      state.sequence.push(`run: ${command}`)
+      return fails(command) ? { ok: false, detail: 'run failed' } : { ok: true }
+    },
+    async runStream(
+      command: string,
+      onOutput: (chunk: string) => void,
+    ): Promise<CommandOutcome> {
+      state.run.push(command)
+      state.sequence.push(`run: ${command}`)
+      const output =
+        Object.entries(state.runOutput).find(([key]) => command.includes(key))?.[1] ?? ''
+      if (output !== '') onOutput(output)
+      return fails(command) ? { ok: false, detail: 'run failed' } : { ok: true }
+    },
+    spawn(argv: readonly string[], env: Record<string, string>, cwd?: string): ProcessHandle {
+      state.spawn.push({ argv: [...argv], env: { ...env }, cwd })
+      state.sequence.push(`spawn: ${argv.join(' ')}`)
+      return {
+        pid: 4321,
+        // A running engine that has printed output reads as starting.
+        logs: 'loading model',
+        kill: (): void => {
+          state.killed.push(4321)
+        },
+        onExit: (): void => {},
+      }
+    },
+    async writeFile(path: string, content: string): Promise<void> {
+      state.writeFile.push({ path, content })
+      state.sequence.push(`writeFile: ${path}`)
+    },
+    async fetch(): Promise<FetchResult> {
+      return { status: state.fetchStatus, ok: state.fetchStatus === 200 }
+    },
+  }
+  return { host, state }
+}
+
+describe('BasaltAdapter.renderLaunch', () => {
+  it('renders a serve process plan with the config file the surface renders', () => {
+    const { host } = basaltStubHost()
+    const adapter = new BasaltAdapter(host)
+    const config = {
+      port: 8090,
+      host: '127.0.0.1',
+      gpu: '0,1',
+      parallel: 2,
+      vision: 'dynamic',
+      model: 'models/Qwen3.8-FN-NVFP4-DQ6_K.basalt',
+      kv: 'int8',
+      maxContext: 32768,
+      expertCache: 'auto',
+      prefill: 'auto',
+      residentExperts: true,
+      spec: 8,
+      modelDirectory: 'models',
+    }
+    const plan = adapter.renderLaunch(config, ADAPTER_HW)
+    expect(plan.kind).toBe('process')
+    expect(plan.engineId).toBe('basalt')
+    expect(plan.port).toBe(8090)
+    expect(plan.healthUrl).toBe('http://127.0.0.1:8090/health')
+    const argv = plan.argv ?? []
+    expect(argv[0]).toBe('basalt')
+    expect(argv).toContain('serve')
+    expect(argv).toContain('--config')
+    // The config file content is exactly what the surface renders, and the
+    // path lands in the model directory.
+    expect(plan.configFile?.content).toBe(configFileFromSpecs(BASALT_PARAMETERS, config, 'json'))
+    const object = JSON.parse(plan.configFile?.content ?? '{}') as {
+      server: Record<string, unknown>
+      engine: Record<string, unknown>
+    }
+    expect(object.server.port).toBe(8090)
+    expect(object.engine['max-context']).toBe(32768)
+    expect(plan.configFile?.path).toBe(join('models', BASALT_CONFIG_FILE))
+    expect(plan.modelDirectory).toBe('models')
+  })
+
+  it('writes the config file into the working directory for a bare config', () => {
+    const { host } = basaltStubHost()
+    const adapter = new BasaltAdapter(host)
+    const plan = adapter.renderLaunch({}, ADAPTER_HW)
+    // A bare config (no model directory) writes the config into the spawn's
+    // working directory and launches on the CLI default port.
+    expect(plan.configFile?.path).toBe(BASALT_CONFIG_FILE)
+    expect(plan.modelDirectory).toBeUndefined()
+    expect(plan.port).toBe(8080)
+  })
+
+  it('spells the Windows binary on a Windows host', () => {
+    const { host } = basaltStubHost()
+    const adapter = new BasaltAdapter(host)
+    const windows: HardwareProfile = { ...ADAPTER_HW, os: 'windows' }
+    const plan = adapter.renderLaunch({}, windows)
+    expect(plan.argv?.[0]).toBe('basalt.exe')
+  })
+})
+
+describe('BasaltAdapter.deploy', () => {
+  it('builds, downloads the model, writes the config, and spawns in order', async () => {
+    const { host, state } = basaltStubHost()
+    // The checkout is behind the remote branch, so the conditional rebuild
+    // runs the build steps.
+    state.runOutput['rev-list'] = '3'
+    const adapter = new BasaltAdapter(host)
+    const plan = adapter.renderLaunch(
+      { port: 8090, model: 'models/Qwen3.8-FN-NVFP4-DQ6_K.basalt', modelDirectory: 'models' },
+      ADAPTER_HW,
+    )
+    const result = await adapter.deploy(plan, {
+      engineId: 'basalt',
+      engineDirectory: '/src/basalt',
+    })
+    expect(result.ok).toBe(true)
+    expect(result.handle).toBeDefined()
+    // The build step, the model download, the config write, and the spawn
+    // fire in order.
+    const buildIndex = state.sequence.findIndex((entry) => entry.includes('cmake -S /src/basalt'))
+    const downloadIndex = state.sequence.findIndex((entry) =>
+      entry.includes(`hf download ${BASALT_MODEL_REPO} ${BASALT_MODEL_FILE}`),
+    )
+    const writeIndex = state.sequence.findIndex((entry) => entry.startsWith('writeFile:'))
+    const spawnIndex = state.sequence.findIndex((entry) => entry.startsWith('spawn:'))
+    expect(buildIndex).toBeGreaterThan(-1)
+    expect(downloadIndex).toBeGreaterThan(buildIndex)
+    expect(writeIndex).toBeGreaterThan(downloadIndex)
+    expect(spawnIndex).toBeGreaterThan(writeIndex)
+    // The download targets the model directory, and the config write carries
+    // the rendered content at the model-directory path.
+    expect(state.run).toContain(
+      `hf download ${BASALT_MODEL_REPO} ${BASALT_MODEL_FILE} --local-dir models`,
+    )
+    expect(state.writeFile).toHaveLength(1)
+    expect(state.writeFile[0]?.path).toBe(join('models', BASALT_CONFIG_FILE))
+    // The spawn runs the serve command with the config flag, in the engine
+    // directory.
+    expect(state.spawn).toHaveLength(1)
+    expect(state.spawn[0]?.argv).toEqual([
+      'basalt',
+      'serve',
+      '--config',
+      join('models', BASALT_CONFIG_FILE),
+    ])
+    expect(state.spawn[0]?.cwd).toBe('/src/basalt')
+    // The rebuild decision and output ride the result logs.
+    expect(result.logs).toContain('is behind origin/main')
+    expect(result.logs).toContain('cmake -S /src/basalt')
+  })
+
+  it('skips the git sync when autoRebuild is off', async () => {
+    const { host, state } = basaltStubHost()
+    state.runOutput['rev-list'] = '3'
+    const adapter = new BasaltAdapter(host)
+    const plan = adapter.renderLaunch({ port: 8090 }, ADAPTER_HW)
+    const result = await adapter.deploy(
+      plan,
+      { engineId: 'basalt', engineDirectory: '/src/basalt' },
+      undefined,
+      { autoRebuild: false },
+    )
+    expect(result.ok).toBe(true)
+    // No git sync and no build when the Auto Rebuild checkbox is off, but the
+    // model download and the spawn still run.
+    expect(state.run).not.toContain('git -C /src/basalt rev-parse --is-inside-work-tree')
+    expect(state.run.some((c) => c.includes('cmake -S /src/basalt'))).toBe(false)
+    expect(state.run.some((c) => c.includes('hf download'))).toBe(true)
+    expect(state.spawn).toHaveLength(1)
+  })
+
+  it('resolves a relative build-tree binary against the engine directory', async () => {
+    const { host, state } = basaltStubHost()
+    state.runOutput['rev-list'] = '0'
+    const adapter = new BasaltAdapter(host)
+    // A relative launch path (a build-tree binary) is joined against the
+    // engine directory, so the spawn resolves an absolute path.
+    const relativeBinary = join('build', 'basalt')
+    const plan: LaunchPlan = {
+      engineId: 'basalt',
+      kind: 'process',
+      argv: [relativeBinary, 'serve', '--config', BASALT_CONFIG_FILE],
+      env: {},
+      port: 8090,
+      healthUrl: 'http://127.0.0.1:8090/health',
+      configFile: { path: BASALT_CONFIG_FILE, content: '{}' },
+    }
+    const result = await adapter.deploy(plan, {
+      engineId: 'basalt',
+      engineDirectory: '/src/basalt',
+    })
+    expect(result.ok).toBe(true)
+    expect(state.spawn).toHaveLength(1)
+    expect(state.spawn[0]?.argv[0]).toBe(join('/src/basalt', relativeBinary))
+  })
+
+  it('fails the launch when the model download fails', async () => {
+    const { host, state } = basaltStubHost()
+    state.runOutput['rev-list'] = '0'
+    // The hf download is the only command that fails, so the launch aborts
+    // before the config write and the spawn.
+    state.runFail.push('hf download')
+    const adapter = new BasaltAdapter(host)
+    const plan = adapter.renderLaunch({ port: 8090 }, ADAPTER_HW)
+    const result = await adapter.deploy(plan, {
+      engineId: 'basalt',
+      engineDirectory: '/src/basalt',
+    })
+    expect(result.ok).toBe(false)
+    expect(result.detail).toContain('model download failed')
+    // The config write and the spawn never run after a failed download.
+    expect(state.writeFile).toHaveLength(0)
+    expect(state.spawn).toHaveLength(0)
+  })
+})
+
+describe('BasaltAdapter.healthCheck', () => {
+  it('reports ready when the health URL returns 200', async () => {
+    const { host } = basaltStubHost()
+    const adapter = new BasaltAdapter(host)
+    const plan = adapter.renderLaunch({ port: 8090 }, ADAPTER_HW)
+    const result = await adapter.healthCheck(plan, { pollMs: 0, maxAttempts: 1 })
+    expect(result.healthy).toBe(true)
+    expect(result.state).toBe('ready')
+  })
+
+  it('reports the start phase from the tracked process output', async () => {
+    const { host, state } = basaltStubHost()
+    state.fetchStatus = 503
+    const adapter = new BasaltAdapter(host)
+    const plan = adapter.renderLaunch({ port: 8090 }, ADAPTER_HW)
+    // A tracked process that has output reads as starting (in progress), not
+    // failed.
+    await adapter.deploy(plan, { engineId: 'basalt', engineDirectory: '/src/basalt' })
+    const result = await adapter.healthCheck(plan, { pollMs: 0, maxAttempts: 1 })
+    expect(result.healthy).toBe(false)
+    expect(result.state).toBe('starting')
+  })
+
+  it('reports failed when no process is tracked', async () => {
+    const { host } = basaltStubHost()
+    host.fetch = async () => ({ status: 503, ok: false })
+    const adapter = new BasaltAdapter(host)
+    const plan = adapter.renderLaunch({ port: 8090 }, ADAPTER_HW)
+    // No deploy tracked a process, so a down health URL reads as failed.
+    const result = await adapter.healthCheck(plan, { pollMs: 0, maxAttempts: 1 })
+    expect(result.healthy).toBe(false)
+    expect(result.state).toBe('failed')
+  })
+})
+
+describe('BasaltAdapter.stop', () => {
+  it('signals the tracked handle and drops the entry', async () => {
+    const { host, state } = basaltStubHost()
+    const adapter = new BasaltAdapter(host)
+    const plan = adapter.renderLaunch({ port: 8090 }, ADAPTER_HW)
+    const result = await adapter.deploy(plan, {
+      engineId: 'basalt',
+      engineDirectory: '/src/basalt',
+    })
+    expect(result.ok).toBe(true)
+    await adapter.stop(plan)
+    expect(state.killed).toEqual([4321])
+    // A second stop finds no tracked handle, so it is a no-op.
+    await adapter.stop(plan)
+    expect(state.killed).toEqual([4321])
+  })
+})
+
+describe('BasaltAdapter model data', () => {
+  it('publishes the model path the config names, falling back to the engine name', () => {
+    const { host } = basaltStubHost()
+    const adapter = new BasaltAdapter(host)
+    expect(adapter.modelRef({ model: 'models/m.basalt' })).toEqual({
+      id: 'models/m.basalt',
+      name: 'models/m.basalt',
+    })
+    expect(adapter.modelRef({})).toEqual({ id: 'basalt', name: 'Basalt' })
+  })
+
+  it('withholds the image input only when vision is off or unset', () => {
+    const { host } = basaltStubHost()
+    const adapter = new BasaltAdapter(host)
+    expect(adapter.modelInput({ vision: 'off' })).toEqual(['text'])
+    expect(adapter.modelInput({})).toEqual(['text'])
+    expect(adapter.modelInput({ vision: 'dynamic' })).toEqual(['text', 'image'])
+    expect(adapter.modelInput({ vision: 'cpu' })).toEqual(['text', 'image'])
+    // A pinned GPU number (a string or a number) enables the image input.
+    expect(adapter.modelInput({ vision: '2' })).toEqual(['text', 'image'])
+    expect(adapter.modelInput({ vision: 2 })).toEqual(['text', 'image'])
+  })
+
+  it('signs the launch with the basalt binary and the port', () => {
+    const { host } = basaltStubHost()
+    const adapter = new BasaltAdapter(host)
+    expect(adapter.launchSignature({ port: 8090 })).toEqual({ binary: 'basalt', port: 8090 })
+    expect(adapter.launchSignature({})).toEqual({ binary: 'basalt', port: 8080 })
   })
 })

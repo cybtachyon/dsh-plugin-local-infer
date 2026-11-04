@@ -23,6 +23,9 @@ import { HYPERQWEN_WINDOWS } from "./engines/hyperqwen/hyperqwenWindows.js";
 import { STRATA_LINUX } from "./engines/strata/strataLinux.js";
 import { STRATA_MACOS } from "./engines/strata/strataMacOS.js";
 import { STRATA_WINDOWS } from "./engines/strata/strataWindows.js";
+import { BASALT_LINUX } from "./engines/basalt/basaltLinux.js";
+import { BASALT_MACOS } from "./engines/basalt/basaltMacOS.js";
+import { BASALT_WINDOWS } from "./engines/basalt/basaltWindows.js";
 /**
  * The remote name a user-provided fork is added under, so the checkout's own
  * origin (the upstream it was cloned from) survives the fork override.
@@ -41,6 +44,7 @@ const ENGINE_OS_PROFILES = {
     llamacpp: { linux: LLAMACPP_LINUX, macos: LLAMACPP_MACOS, windows: LLAMACPP_WINDOWS },
     infernix: { linux: INFERNIX_LINUX, macos: INFERNIX_MACOS, windows: INFERNIX_WINDOWS },
     strata: { linux: STRATA_LINUX, macos: STRATA_MACOS, windows: STRATA_WINDOWS },
+    basalt: { linux: BASALT_LINUX, macos: BASALT_MACOS, windows: BASALT_WINDOWS },
 };
 /**
  * The per-engine git sources, keyed by engine id. NInfer and Infernix build
@@ -48,9 +52,10 @@ const ENGINE_OS_PROFILES = {
  * the same cmake shape as NInfer; Hyper-Qwen is the compose-driven vLLM
  * engine, so it carries no local build steps (the compose up pulls the
  * image); Strata builds through its own setup.sh (the README's
- * Build-from-source route), which the source-build mode runs in the checkout.
- * The build steps are read from the per-engine OS profiles, so a build command
- * has one home (the OS-specific files under engines/).
+ * Build-from-source route), which the source-build mode runs in the checkout;
+ * Basalt builds through its own CMake route (the Ninja/MSVC variant on
+ * Windows). The build steps are read from the per-engine OS profiles, so a
+ * build command has one home (the OS-specific files under engines/).
  */
 export const ENGINE_SOURCES = {
     ninfer: {
@@ -87,6 +92,15 @@ export const ENGINE_SOURCES = {
         repo: 'https://github.com/Niko1221/Strata',
         branch: 'main',
         buildSteps: STRATA_LINUX.buildSteps,
+    },
+    basalt: {
+        // The engine's own CMake route: configure a Release build into the
+        // `build` directory, then compile it. The Windows variant adds the Ninja
+        // generator and runs in the MSVC developer shell (vcvars64.bat).
+        repo: 'https://github.com/jesdga95/basalt',
+        branch: 'main',
+        buildSteps: BASALT_LINUX.buildSteps,
+        windowsBuildSteps: BASALT_WINDOWS.buildSteps,
     },
 };
 /**
