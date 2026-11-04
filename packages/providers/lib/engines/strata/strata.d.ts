@@ -40,7 +40,10 @@ export declare const STRATA_ACCESS_OPTIONS: readonly EnumOption[];
  * spelling is the `strata launch` flag the binary and source-build modes pass;
  * the `toEnv` spelling is the container variable the docker mode passes. A
  * spec with no `toEnv` (access, dataDir) has no docker counterpart, and a spec
- * with no `toArgv` (port) is spelled by the adapter from the value.
+ * with no `toArgv` (port) is spelled by the adapter from the value. The shared
+ * specs declare both deploy targets (`cli` and `env`), so the binary and
+ * source-build plans spell the flags and the docker plan carries the env vars;
+ * `access`, `dataDir`, and `port` stay `cli`-only.
  */
 export declare const STRATA_PARAMETERS: readonly ParameterSpec[];
 /**

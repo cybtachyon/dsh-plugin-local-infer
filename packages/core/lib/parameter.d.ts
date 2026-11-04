@@ -73,7 +73,10 @@ export type ParameterForm = {
  * on the command line, in the process environment, or in a config file the
  * deploy step writes. A `config` target names the file format and the
  * nesting path: `block` is the top-level key, `key` the leaf. The config-file
- * renderer nests `toConfig(value)` (or the raw value) under that path.
+ * renderer nests `toConfig(value)` (or the raw value) under that path. A spec
+ * declares one target, or a list of targets when the value lands in more than
+ * one place (a Strata shared spec lands on the CLI in the binary mode and in
+ * the env in the docker mode).
  */
 export type ParameterDeploy = {
     target: 'cli';
@@ -96,7 +99,9 @@ export type ParameterDeploy = {
  * `description` is behavior-first: it says what the parameter does to the run,
  * not what it is. `toArgv`, `toEnv`, and `toConfig` are the engine-specific
  * spellings that turn a value into a CLI flag, an environment variable, or a
- * config-file entry. `deploy` declares which spelling the deploy step uses.
+ * config-file entry. `deploy` declares which spelling the deploy step uses;
+ * a list declares several, so one spec can serve more than one build mode
+ * (the flags in the binary mode and the env vars in the docker mode).
  */
 export interface ParameterSpec {
     key: string;
@@ -111,6 +116,6 @@ export interface ParameterSpec {
     toArgv?: (value: unknown) => string[];
     toEnv?: (value: unknown) => [string, string];
     toConfig?: (value: unknown) => unknown;
-    deploy?: ParameterDeploy;
+    deploy?: ParameterDeploy | readonly ParameterDeploy[];
 }
 //# sourceMappingURL=parameter.d.ts.map

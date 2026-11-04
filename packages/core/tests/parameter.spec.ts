@@ -35,6 +35,20 @@ describe('ParameterSpec deploy target', () => {
     expect(spec.deploy).toEqual(env)
   })
 
+  it('accepts a list of deploy targets on one spec', () => {
+    // A multi-target deploy (the Strata shared specs): the value lands on the
+    // cli in the binary mode and in the env in the docker mode.
+    const targets: readonly ParameterDeploy[] = [{ target: 'cli' }, { target: 'env' }]
+    const spec: ParameterSpec = {
+      key: 'family',
+      label: 'Model family',
+      description: 'The model family the engine serves.',
+      form: { kind: 'text' },
+      deploy: targets,
+    }
+    expect(spec.deploy).toEqual(targets)
+  })
+
   it('leaves deploy and toConfig absent on a plain spec', () => {
     const spec: ParameterSpec = {
       key: 'port',

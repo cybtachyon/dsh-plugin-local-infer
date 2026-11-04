@@ -7,6 +7,7 @@ import {
   createNodeLifecycleHost,
   customArgEnv,
   customArgFlags,
+  deployTargets,
   envFromSpecs,
   flagsFromSpecs,
   nodeLifecycleHost,
@@ -1238,6 +1239,102 @@ describe('deploy target migration (TASK 005)', () => {
     expect(flagsFromSpecs(specs, config)).toEqual(['--cli-only', 'a'])
     // The env spec spells its var; the cli spec spells no var.
     expect(envFromSpecs(specs, config)).toEqual({ ENV_ONLY: 'b' })
+  })
+})
+
+describe('deploy multi-target (TASK 018)', () => {
+  it('a multi-target deploy (cli + env) contributes to both flags and env', () => {
+    const specs: readonly ParameterSpec[] = [
+      {
+        key: 'dual',
+        label: 'dual',
+        description: 'deploys to the cli and the env',
+        form: { kind: 'text' },
+        toArgv: (value) => ['--dual', String(value)],
+        toEnv: (value) => ['DUAL', String(value)],
+        deploy: [{ target: 'cli' }, { target: 'env' }],
+      },
+    ]
+    const config: Config = { dual: 'x' }
+    expect(flagsFromSpecs(specs, config)).toEqual(['--dual', 'x'])
+    expect(envFromSpecs(specs, config)).toEqual({ DUAL: 'x' })
+  })
+
+  it('a single-target deploy keeps its single-spelling behavior', () => {
+    const specs: readonly ParameterSpec[] = [
+      {
+        key: 'cliOnly',
+        label: 'cli',
+        description: 'deploys to the cli only',
+        form: { kind: 'text' },
+        toArgv: (value) => ['--cli-only', String(value)],
+        toEnv: (value) => ['CLI_ONLY', String(value)],
+        deploy: { target: 'cli' },
+      },
+    ]
+    const config: Config = { cliOnly: 'a' }
+    expect(flagsFromSpecs(specs, config)).toEqual(['--cli-only', 'a'])
+    expect(envFromSpecs(specs, config)).toEqual({})
+  })
+
+  it('deployTargets wraps a single target, passes a list through, and reads an absent deploy as empty', () => {
+    const single: ParameterSpec = {
+      key: 'a',
+      label: 'a',
+      description: 'a',
+      form: { kind: 'text' },
+      deploy: { target: 'cli' },
+    }
+    const multi: ParameterSpec = {
+      key: 'b',
+      label: 'b',
+      description: 'b',
+      form: { kind: 'text' },
+      deploy: [{ target: 'cli' }, { target: 'env' }],
+    }
+    const none: ParameterSpec = { key: 'c', label: 'c', description: 'c', form: { kind: 'text' } }
+    expect(deployTargets(single)).toEqual([{ target: 'cli' }])
+    expect(deployTargets(multi)).toEqual([{ target: 'cli' }, { target: 'env' }])
+    expect(deployTargets(none)).toEqual([])
+  })
+
+  it('a config target inside a multi-target deploy renders to the config file', () => {
+    const specs: readonly ParameterSpec[] = [
+      {
+        key: 'port',
+        label: 'port',
+        description: 'deploys to the cli and a json config file',
+        form: { kind: 'number' },
+        toArgv: (value) => ['--port', String(value)],
+        deploy: [
+          { target: 'cli' },
+          { target: 'config', format: 'json', block: 'server', key: 'port' },
+        ],
+      },
+    ]
+    const config: Config = { port: 9000 }
+    expect(flagsFromSpecs(specs, config)).toEqual(['--port', '9000'])
+    expect(configFileFromSpecs(specs, config, 'json')).toBe(
+      JSON.stringify({ server: { port: 9000 } }, null, 2),
+    )
+  })
+
+  it('the Strata docker plan carries the shared-spec env vars and the binary plan spells the flags', () => {
+    const { host } = stubHost()
+    const adapter = new StrataAdapter(host)
+    const values: Config = { port: 8090, family: 'coder', vision: 'gpu', parallel: 4 }
+    const dockerPlan = adapter.renderLaunch({ ...values, buildMode: 'docker' }, HW)
+    const dockerArgv = dockerPlan.argv ?? []
+    // The shared specs' env spellings land in the container env again: the
+    // tuned value plus the surface default (tune stays skip).
+    for (const expected of ['FAMILY=coder', 'VISION=gpu', 'PARALLEL=4', 'TUNE=skip']) {
+      expect(dockerArgv, expected).toContain(expected)
+    }
+    // The binary plan spells the same values as flags.
+    const binaryPlan = adapter.renderLaunch(values, HW)
+    expect(binaryPlan.argv ?? []).toEqual(
+      expect.arrayContaining(['--family', 'coder', '--vision', 'gpu', '--parallel', '4']),
+    )
   })
 })
 

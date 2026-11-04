@@ -8,15 +8,24 @@
  * service wires in on a live host.
  * @module dsh-plugin-local-infer/providers/adapters
  */
-import type { Config, DebugLogger, HealthCheckOptions, HealthResult, LaunchPlan, LifecycleHost, ParameterSpec, ProcessHandle } from '../../core/lib/index.js';
+import type { Config, DebugLogger, HealthCheckOptions, HealthResult, LaunchPlan, LifecycleHost, ParameterDeploy, ParameterSpec, ProcessHandle } from '../../core/lib/index.js';
+/**
+ * deployTargets normalizes a spec's `deploy` declaration into a target list: a
+ * single target wraps in a one-element list, a list passes through, and an
+ * absent `deploy` reads as an empty list (the un-migrated fallback). The
+ * spec-to-spelling helpers key off this list, so a multi-target spec
+ * (cli + env, the Strata shared specs) contributes to every matching helper.
+ */
+export declare function deployTargets(spec: ParameterSpec): readonly ParameterDeploy[];
 /**
  * flagsFromSpecs turns a spec surface and a config into the CLI flag list: each
  * spec's `toArgv` runs over the config value (falling back to the spec
  * default), and empty results are skipped. A spec with no `toArgv` contributes
- * nothing. A declared `deploy` target gates the spelling: only a `cli` target
- * (or no target, the un-migrated fallback that reads the `toArgv` presence)
- * spells CLI flags, so a spec that deploys to the env or a config file
- * contributes no flag even when it carries a `toArgv` spelling.
+ * nothing. A declared `deploy` target gates the spelling: a `cli` target in the
+ * spec's target list (or no target, the un-migrated fallback that reads the
+ * `toArgv` presence) spells CLI flags, so a spec that deploys only to the env
+ * or a config file contributes no flag even when it carries a `toArgv`
+ * spelling.
  */
 export declare function flagsFromSpecs(specs: readonly ParameterSpec[], config: Config): string[];
 /**
@@ -41,10 +50,10 @@ export declare function customArgEnv(config: Config): Record<string, string>;
  * envFromSpecs turns a spec surface and a config into the environment map: each
  * spec's `toEnv` runs over the config value (falling back to the spec default).
  * A spec with no `toEnv` contributes nothing. A declared `deploy` target gates
- * the spelling: only an `env` target (or no target, the un-migrated fallback
- * that reads the `toEnv` presence) spells env vars, so a spec that deploys to
- * the CLI or a config file contributes no var even when it carries a `toEnv`
- * spelling.
+ * the spelling: an `env` target in the spec's target list (or no target, the
+ * un-migrated fallback that reads the `toEnv` presence) spells env vars, so a
+ * spec that deploys only to the CLI or a config file contributes no var even
+ * when it carries a `toEnv` spelling.
  */
 export declare function envFromSpecs(specs: readonly ParameterSpec[], config: Config): Record<string, string>;
 /**
@@ -54,11 +63,11 @@ export declare function envFromSpecs(specs: readonly ParameterSpec[], config: Co
 export type ConfigFileFormat = 'json' | 'yaml' | 'env';
 /**
  * configFileFromSpecs turns a spec surface and a config into the content of the
- * config file the deploy step writes: every spec whose `deploy.target` is
- * `'config'` resolves its value (`toConfig(value) ?? value`, falling back to the
- * spec default) and nests it under `deploy.block` / `deploy.key` (the key
- * defaults to the spec key), then the result renders in the requested format.
- * A spec with no `deploy`, or a non-`config` target, contributes nothing.
+ * config file the deploy step writes: every spec whose target list carries a
+ * `config` target resolves its value (`toConfig(value) ?? value`, falling back
+ * to the spec default) and nests it under that target's `block` / `key` (the
+ * key defaults to the spec key), then the result renders in the requested
+ * format. A spec with no `deploy`, or no `config` target, contributes nothing.
  *
  * The YAML format loads the `yaml` package lazily (a root devDependency, so the
  * JSON and env paths never touch it at runtime); a missing package throws only

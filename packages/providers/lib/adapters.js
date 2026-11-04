@@ -13,20 +13,39 @@ import { mkdir, writeFile as fsWriteFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname } from 'node:path';
 /**
+ * deployTargets normalizes a spec's `deploy` declaration into a target list: a
+ * single target wraps in a one-element list, a list passes through, and an
+ * absent `deploy` reads as an empty list (the un-migrated fallback). The
+ * spec-to-spelling helpers key off this list, so a multi-target spec
+ * (cli + env, the Strata shared specs) contributes to every matching helper.
+ */
+export function deployTargets(spec) {
+    const deploy = spec.deploy;
+    if (deploy === undefined)
+        return [];
+    // Array.isArray narrows to any[], which does not exclude the readonly list
+    // arm, so the single-target arm is cast to keep the union narrow.
+    if (Array.isArray(deploy))
+        return deploy;
+    return [deploy];
+}
+/**
  * flagsFromSpecs turns a spec surface and a config into the CLI flag list: each
  * spec's `toArgv` runs over the config value (falling back to the spec
  * default), and empty results are skipped. A spec with no `toArgv` contributes
- * nothing. A declared `deploy` target gates the spelling: only a `cli` target
- * (or no target, the un-migrated fallback that reads the `toArgv` presence)
- * spells CLI flags, so a spec that deploys to the env or a config file
- * contributes no flag even when it carries a `toArgv` spelling.
+ * nothing. A declared `deploy` target gates the spelling: a `cli` target in the
+ * spec's target list (or no target, the un-migrated fallback that reads the
+ * `toArgv` presence) spells CLI flags, so a spec that deploys only to the env
+ * or a config file contributes no flag even when it carries a `toArgv`
+ * spelling.
  */
 export function flagsFromSpecs(specs, config) {
     const flags = [];
     for (const spec of specs) {
         if (spec.toArgv === undefined)
             continue;
-        if (spec.deploy !== undefined && spec.deploy.target !== 'cli')
+        const targets = deployTargets(spec);
+        if (targets.length > 0 && !targets.some((target) => target.target === 'cli'))
             continue;
         const value = config[spec.key] ?? spec.defaultValue;
         if (value === undefined)
@@ -92,17 +111,18 @@ export function customArgEnv(config) {
  * envFromSpecs turns a spec surface and a config into the environment map: each
  * spec's `toEnv` runs over the config value (falling back to the spec default).
  * A spec with no `toEnv` contributes nothing. A declared `deploy` target gates
- * the spelling: only an `env` target (or no target, the un-migrated fallback
- * that reads the `toEnv` presence) spells env vars, so a spec that deploys to
- * the CLI or a config file contributes no var even when it carries a `toEnv`
- * spelling.
+ * the spelling: an `env` target in the spec's target list (or no target, the
+ * un-migrated fallback that reads the `toEnv` presence) spells env vars, so a
+ * spec that deploys only to the CLI or a config file contributes no var even
+ * when it carries a `toEnv` spelling.
  */
 export function envFromSpecs(specs, config) {
     const env = {};
     for (const spec of specs) {
         if (spec.toEnv === undefined)
             continue;
-        if (spec.deploy !== undefined && spec.deploy.target !== 'env')
+        const targets = deployTargets(spec);
+        if (targets.length > 0 && !targets.some((target) => target.target === 'env'))
             continue;
         const value = config[spec.key] ?? spec.defaultValue;
         if (value === undefined)
@@ -114,11 +134,11 @@ export function envFromSpecs(specs, config) {
 }
 /**
  * configFileFromSpecs turns a spec surface and a config into the content of the
- * config file the deploy step writes: every spec whose `deploy.target` is
- * `'config'` resolves its value (`toConfig(value) ?? value`, falling back to the
- * spec default) and nests it under `deploy.block` / `deploy.key` (the key
- * defaults to the spec key), then the result renders in the requested format.
- * A spec with no `deploy`, or a non-`config` target, contributes nothing.
+ * config file the deploy step writes: every spec whose target list carries a
+ * `config` target resolves its value (`toConfig(value) ?? value`, falling back
+ * to the spec default) and nests it under that target's `block` / `key` (the
+ * key defaults to the spec key), then the result renders in the requested
+ * format. A spec with no `deploy`, or no `config` target, contributes nothing.
  *
  * The YAML format loads the `yaml` package lazily (a root devDependency, so the
  * JSON and env paths never touch it at runtime); a missing package throws only
@@ -127,14 +147,15 @@ export function envFromSpecs(specs, config) {
 export function configFileFromSpecs(specs, config, format) {
     const object = {};
     for (const spec of specs) {
-        if (spec.deploy?.target !== 'config')
+        const deployTarget = deployTargets(spec).find((target) => target.target === 'config');
+        if (deployTarget === undefined)
             continue;
         const value = config[spec.key] ?? spec.defaultValue;
         if (value === undefined)
             continue;
         const resolved = spec.toConfig === undefined ? value : (spec.toConfig(value) ?? value);
-        const block = spec.deploy.block;
-        const key = spec.deploy.key ?? spec.key;
+        const block = deployTarget.block;
+        const key = deployTarget.key ?? spec.key;
         if (block === undefined) {
             object[key] = resolved;
             continue;

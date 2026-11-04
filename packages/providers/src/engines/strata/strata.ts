@@ -81,7 +81,10 @@ export const STRATA_ACCESS_OPTIONS: readonly EnumOption[] = [
  * spelling is the `strata launch` flag the binary and source-build modes pass;
  * the `toEnv` spelling is the container variable the docker mode passes. A
  * spec with no `toEnv` (access, dataDir) has no docker counterpart, and a spec
- * with no `toArgv` (port) is spelled by the adapter from the value.
+ * with no `toArgv` (port) is spelled by the adapter from the value. The shared
+ * specs declare both deploy targets (`cli` and `env`), so the binary and
+ * source-build plans spell the flags and the docker plan carries the env vars;
+ * `access`, `dataDir`, and `port` stay `cli`-only.
  */
 export const STRATA_PARAMETERS: readonly ParameterSpec[] = [
   {
@@ -112,7 +115,7 @@ export const STRATA_PARAMETERS: readonly ParameterSpec[] = [
     group: 'Model',
     toArgv: (value) => ['--family', String(value)],
     toEnv: (value) => ['FAMILY', String(value)],
-    deploy: { target: 'cli' },
+    deploy: [{ target: 'cli' }, { target: 'env' }],
   },
   {
     key: 'context',
@@ -125,7 +128,7 @@ export const STRATA_PARAMETERS: readonly ParameterSpec[] = [
     // envFromSpecs only calls toEnv when the value is set, so the pair is
     // always well-formed here.
     toEnv: (value) => ['CONTEXT', String(value)],
-    deploy: { target: 'cli' },
+    deploy: [{ target: 'cli' }, { target: 'env' }],
   },
   {
     key: 'vision',
@@ -137,7 +140,7 @@ export const STRATA_PARAMETERS: readonly ParameterSpec[] = [
     group: 'Engine',
     toArgv: (value) => ['--vision', String(value)],
     toEnv: (value) => ['VISION', String(value)],
-    deploy: { target: 'cli' },
+    deploy: [{ target: 'cli' }, { target: 'env' }],
   },
   {
     key: 'parallel',
@@ -148,7 +151,7 @@ export const STRATA_PARAMETERS: readonly ParameterSpec[] = [
     group: 'Concurrency',
     toArgv: (value) => (value === undefined ? [] : ['--parallel', String(value)]),
     toEnv: (value) => ['PARALLEL', String(value)],
-    deploy: { target: 'cli' },
+    deploy: [{ target: 'cli' }, { target: 'env' }],
   },
   {
     key: 'gpu',
@@ -159,7 +162,7 @@ export const STRATA_PARAMETERS: readonly ParameterSpec[] = [
     group: 'Engine',
     toArgv: (value) => (value ? ['--gpu', String(value)] : []),
     toEnv: (value) => ['GPU', String(value)],
-    deploy: { target: 'cli' },
+    deploy: [{ target: 'cli' }, { target: 'env' }],
   },
   {
     key: 'tune',
@@ -171,7 +174,7 @@ export const STRATA_PARAMETERS: readonly ParameterSpec[] = [
     group: 'Engine',
     toArgv: (value) => ['--tune', String(value)],
     toEnv: (value) => ['TUNE', String(value)],
-    deploy: { target: 'cli' },
+    deploy: [{ target: 'cli' }, { target: 'env' }],
   },
   {
     key: 'access',
@@ -194,7 +197,7 @@ export const STRATA_PARAMETERS: readonly ParameterSpec[] = [
     group: 'Engine',
     toArgv: (value) => (value ? ['--api-key', String(value)] : []),
     toEnv: (value) => ['API_KEY', String(value)],
-    deploy: { target: 'cli' },
+    deploy: [{ target: 'cli' }, { target: 'env' }],
   },
   {
     key: 'modelPath',
@@ -205,7 +208,7 @@ export const STRATA_PARAMETERS: readonly ParameterSpec[] = [
     group: 'Artifacts',
     toArgv: (value) => (value ? ['--model-path', String(value)] : []),
     toEnv: (value) => ['MODEL_PATH', String(value)],
-    deploy: { target: 'cli' },
+    deploy: [{ target: 'cli' }, { target: 'env' }],
   },
   {
     key: 'dataDir',
