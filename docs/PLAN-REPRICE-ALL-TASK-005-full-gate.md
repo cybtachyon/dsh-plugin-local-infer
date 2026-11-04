@@ -1,7 +1,15 @@
 # TASK-005: Full verification gate and bundle rebuild
 
+0. First, a docs-only commit: update the now-stale comments in
+   `packages/client/tests/deps.spec.ts` (the gated `performGet` tests,
+   around lines 355, 567, 600, 664, and 722) that say "the summary
+   re-read stays gated / hands the Logs section back". They remain true,
+   but the settle re-read is now `repriceAll` (both read models), so name
+   that. Commit with the message
+   `docs(tests): name the repriceAll settle re-read in the Get tests`.
 1. Run `pnpm build` (runs `tsc -b`, then esbuild-bundles
-   `packages/client/src/index.ts` to `dsh/client.js`).
+   `packages/client/src/index.ts` to `dsh/client.js`, then the
+   `build-format.mjs` newline normalization).
 2. Run `pnpm test` (the full `vitest run` suite).
 3. Run `pnpm lint` (repo-wide `eslint .`).
 4. Commit the rebuilt `dsh/client.js` and the re-emitted
