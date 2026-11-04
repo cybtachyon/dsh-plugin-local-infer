@@ -271,9 +271,13 @@ export const SYSTEM_DEPS = {
     requiresSudo: true,
     detect: probe('python3', ['-c', 'import regex, numpy, jinja2, yaml, tqdm, PIL, psutil']),
     install: {
-      apt: { commands: ['sudo apt-get install -y python3-pip && sudo python3 -m pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
-      dnf: { commands: ['sudo dnf install -y python3-pip && sudo python3 -m pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
-      pacman: { commands: ['sudo pacman -S --noconfirm python-pip && sudo python3 -m pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
+      // PEP 668: on Arch / CachyOS, Debian 12+, and Ubuntu 23.04+ the system
+      // python3 is externally managed, so the pip install passes
+      // --break-system-packages. The brew and winget interpreters are not
+      // externally managed, so they run the plain install.
+      apt: { commands: ['sudo apt-get install -y python3-pip && sudo python3 -m pip install --break-system-packages numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
+      dnf: { commands: ['sudo dnf install -y python3-pip && sudo python3 -m pip install --break-system-packages numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
+      pacman: { commands: ['sudo pacman -S --noconfirm python-pip && sudo python3 -m pip install --break-system-packages numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
       brew: { commands: ['python3 -m pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
       // The Windows interpreter is python, not python3, so the winget host
       // installs through the python alias the OS ships.

@@ -29,8 +29,8 @@ host.
 
 ### Phase 1: break-system-packages
 
-- [ ] [TASK-001-break-system-packages](docs/PLAN-basalt-pip-pp668-TASK-001-break-system-packages.md)
+- [x] [TASK-001-break-system-packages](docs/PLAN-basalt-pip-pp668-TASK-001-break-system-packages.md)
 
 ### Phase 2: Verification
 
-- [ ] [TASK-002-build-test-lint](docs/PLAN-basalt-pip-pp668-TASK-002-build-test-lint.md)
+- [x] [TASK-002-build-test-lint](docs/PLAN-basalt-pip-pp668-TASK-002-build-test-lint.md)
