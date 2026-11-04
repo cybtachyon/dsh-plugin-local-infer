@@ -59,6 +59,16 @@ When a parameter can be set both as a CLI argument and as a write to the engine'
 
 All values persist to `~/.dsh/local-infer/config.json`; the browser never sees a value it did not store.
 
+## Orchestrator package
+
+Local models often struggle with agentic workflows and can't "one-shot" prompts without assistance. The included **Orchestrator** package gives your model a default prompt that enables that capability.
+
+- **Enable it** on the DeepSeek Harness **Plugins** page: open this plugin's entry and flip the **Orchestrator** component toggle (the component ships disabled). After first enabling the component, restart the host so it loads.
+- **Edit the prompt** on the **Orchestrator** card that then appears: change the **Orchestrator Prompt** field and press **Save**. The default text ships in the plugin's `prompt.md`; clear the field and save to restore it.
+- **It injects while enabled.** With the component enabled, the saved prompt is part of the agent's system prompt for new requests. A Save reaches the next request; no restart is needed after Save.
+
+The saved prompt persists to `~/.dsh/local-infer/orchestrator.json`, beside the engine config.
+
 ## Supported Platforms
 
 ### Operating systems
