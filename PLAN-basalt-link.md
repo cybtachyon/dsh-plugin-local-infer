@@ -80,6 +80,19 @@ runs, and `stopped` (killable from the card) when stopped.
 - TASK-006 reviews the Phase 1 + Phase 2 commits.
 - TASK-007 runs after every implementation task.
 
+## Findings log
+
+- TASK-001 (6599881): the change is split across 8611f21 (a parallel
+  session's commit that carried an already-staged `portInArgv` hunk) and
+  6599881; combined tree is per spec. No history reword wanted.
+- Deliberate: `matchLaunchSignature`'s binary element stays a plain
+  substring test. The substring behavior is what links Basalt at all (the
+  serve launcher re-execs into `python3 -m serve.server`, where 'basalt'
+  appears only inside paths). Overstating is fenced by the model tie: a
+  marker-only match without a launched-models tie reads unsure, not
+  running. Do not tighten binary matching to path-component/token form in
+  the refactor pass.
+
 ## Answers
 
 - A1 (2026-11-04): Fix all four defects D1-D4, including the general
