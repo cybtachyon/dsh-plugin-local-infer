@@ -211,7 +211,9 @@ export class LlamaCppAdapter extends EngineAdapter {
         return { ok: true };
     }
     async healthCheck(plan, options) {
-        return pollHealth(this.host, plan, options);
+        // The tracked handle rides into the poll, so a child that exits (a
+        // crash) ends the poll early with a failed result.
+        return pollHealth(this.host, plan, options, this.children.get(this.planKey(plan)));
     }
     async stop(plan) {
         if (plan.kind === 'docker' && plan.containerName !== undefined) {
