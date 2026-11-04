@@ -1,4 +1,4 @@
-# TASK-003: basalt signature declares its port as config-carried
+# TASK-003: basalt signature declares its port as config-carried [x]
 
 Declares the basalt launch signature's port as not carried in argv, so the
 detector matches a live basalt process without requiring the port number in
