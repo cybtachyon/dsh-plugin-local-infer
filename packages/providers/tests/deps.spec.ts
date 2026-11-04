@@ -57,9 +57,18 @@ describe('SystemDep install data', () => {
     // (the checkDeps contract) instead of throwing.
     expect(typeof (await dep.detect!(APT))).toBe('boolean')
     const install = 'python3 -m pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'
-    for (const manager of ['apt', 'dnf', 'pacman']) {
-      expect(dep.install[manager]?.commands).toEqual([`sudo ${install}`])
-    }
+    // The Linux managers bootstrap pip through their python-pip package first,
+    // because the system python3 may lack the pip module (Arch without
+    // python-pip).
+    expect(dep.install.apt?.commands).toEqual([
+      `sudo apt-get install -y python3-pip && sudo ${install}`,
+    ])
+    expect(dep.install.dnf?.commands).toEqual([
+      `sudo dnf install -y python3-pip && sudo ${install}`,
+    ])
+    expect(dep.install.pacman?.commands).toEqual([
+      `sudo pacman -S --noconfirm python-pip && sudo ${install}`,
+    ])
     // The brew host runs the pip install without sudo, on python3.
     expect(dep.install.brew?.commands).toEqual([install])
     // The winget host uses the python alias, not python3, because the Windows
