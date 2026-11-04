@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   fetchDeps,
+  fetchOrchestrator,
   fetchSummary,
+  orchestratorRouteExists,
   postChatTemplate,
   postDownload,
   postGet,
   postInstall,
   postLaunch,
+  postOrchestratorSave,
   postProviderDelete,
   postRegister,
   postSave,
@@ -369,5 +372,58 @@ describe('routeExists (the bootstrap probe)', () => {
       }),
     )
     await expect(routeExists()).resolves.toBe(false)
+  })
+})
+
+describe('orchestratorRouteExists, fetchOrchestrator, and postOrchestratorSave', () => {
+  // ORCHESTRATOR answers both orchestrator routes carry.
+  const ORCHESTRATOR = {
+    prompt: 'the effective prompt',
+    defaultPrompt: 'the shipped default',
+    saved: true,
+  }
+
+  it('reads any non-404 response as present, a 404 and a network failure as absent', async () => {
+    stubFetch(() => jsonResponse(200, ORCHESTRATOR))
+    await expect(orchestratorRouteExists()).resolves.toBe(true)
+    stubFetch(() => jsonResponse(404, {}))
+    await expect(orchestratorRouteExists()).resolves.toBe(false)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new Error('the host is down')
+      }),
+    )
+    await expect(orchestratorRouteExists()).resolves.toBe(false)
+  })
+
+  it('reads the prompt model from the GET route', async () => {
+    stubFetch(() => jsonResponse(200, ORCHESTRATOR))
+    const model = await fetchOrchestrator()
+    expect(model).toEqual(ORCHESTRATOR)
+    const call = (stubFetch as { calls?: { url: string }[] }).calls?.[0]
+    expect(call?.url).toBe('/local-infer/orchestrator')
+  })
+
+  it('throws with the body error field on a failed read', async () => {
+    stubFetch(() => jsonResponse(500, { error: 'prompt store unreadable' }))
+    await expect(fetchOrchestrator()).rejects.toThrow('prompt store unreadable')
+  })
+
+  it('posts the edited prompt and answers the fresh model', async () => {
+    stubFetch(() => jsonResponse(200, { ...ORCHESTRATOR, prompt: 'an edited prompt' }))
+    const model = await postOrchestratorSave({ prompt: 'an edited prompt' })
+    expect(model.prompt).toBe('an edited prompt')
+    const call = (stubFetch as { calls?: { url: string; init?: RequestInit }[] }).calls?.[0]
+    expect(call?.url).toBe('/local-infer/orchestrator/save')
+    expect(call?.init?.method).toBe('POST')
+    expect(JSON.parse(String(call?.init?.body))).toEqual({ prompt: 'an edited prompt' })
+  })
+
+  it('throws with the body error field on a failed save', async () => {
+    stubFetch(() => jsonResponse(400, { error: 'prompt must be a string' }))
+    await expect(
+      postOrchestratorSave({ prompt: 7 as unknown as string }),
+    ).rejects.toThrow('prompt must be a string')
   })
 })

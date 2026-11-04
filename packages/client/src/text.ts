@@ -160,7 +160,10 @@ const en = {
     customArgRemove: 'Remove this row',
     customArgClear: 'Clear this row',
     customArgHelp:
-      'Extra flags appended to the engine launch command after saving.'
+      'Extra flags appended to the engine launch command after saving.',
+    orchestratorSection: 'Orchestrator',
+    orchestratorPrompt: 'Orchestrator Prompt',
+    orchestratorDefaultNote: 'Clear the prompt and save to restore the shipped default.',
 }
 
 // The label table shape: every en key with a string value.
@@ -311,6 +314,9 @@ const zh: TextTable = {
     customArgClear: '清空此行',
     customArgHelp:
       '保存后追加到引擎启动命令的额外标志。首行只清空不删除；+ 添加一行，下方行的 - 删除该行。',
+    orchestratorSection: '编排器',
+    orchestratorPrompt: '编排器提示词',
+    orchestratorDefaultNote: '清空提示词并保存即可恢复随包默认提示词。',
 }
 
 /** The card's copy tables, keyed by language. */

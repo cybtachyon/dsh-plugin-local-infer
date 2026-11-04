@@ -4,7 +4,11 @@ import { apply, inject } from 'dsh-plugin-local-infer/client'
 /**
  * The bootstrap source (plugin.ts) drives apply through the two optional
  * seams (the locale and slots scoped injects) and, on a successful route
- * probe, mounts the card into both slots. This suite drives the source
+ * probe, mounts the card into both slots. The orchestrator card rides a
+ * second, independent probe issued in the same slots inject: its route
+ * belongs to the disabled-by-default orchestrator component row, and it
+ * registers into plugins.row.config (the keyed plugins.bundle.config cell is
+ * the Engine card's alone). This suite drives the source
  * directly: react resolves from the repo's devDependency (the DSH shell's
  * React 18), and the primitives seed is absent here, so its require falls
  * back to null and the card keeps its native controls. The carrier suite
@@ -63,6 +67,24 @@ function stubFetch(status: number): void {
   })
 }
 
+// stubRoutes answers the two bootstrap probes by path: the main card probes
+// /local-infer/summary, the orchestrator card probes /local-infer/orchestrator.
+// A status of 0 makes that probe reject, modeling a network failure.
+function stubRoutes(main: number, orchestrator: number): void {
+  ;(globalThis as Record<string, unknown>).fetch = async (input: string | URL) => {
+    const url = String(input)
+    const status = url === '/local-infer/orchestrator' ? orchestrator : main
+    if (status === 0) {
+      throw new Error('the host is down')
+    }
+    return { status, json: async () => ({}) }
+  }
+}
+
+function names(registrations: unknown[]): string[] {
+  return (registrations as { name: string }[]).map((r) => r.name)
+}
+
 describe('client bootstrap source (plugin.ts)', () => {
   afterEach(() => {
     vi.restoreAllMocks()
@@ -104,9 +126,10 @@ describe('client bootstrap source (plugin.ts)', () => {
     stubFetch(200)
     apply(ctx as ApplyCtx)
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect((registrations as { name: string }[]).map((r) => r.name)).toEqual([
+    expect(names(registrations)).toEqual([
       'plugins.bundle.config',
       'settings.plugin.item',
+      'plugins.row.config',
     ])
   })
 
@@ -124,13 +147,69 @@ describe('client bootstrap source (plugin.ts)', () => {
     const registrations: unknown[] = []
     const scope = makeScope(registrations)
     const ctx = { inject: (_n: string[], fn: (s: Scope) => void) => fn(scope) }
-    stubFetch(200)
+    stubRoutes(200, 404)
     apply(ctx as ApplyCtx)
     // The mount runs in a microtask after the probe resolves.
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect((registrations as { name: string }[]).map((r) => r.name)).toEqual([
+    expect(names(registrations)).toEqual([
       'plugins.bundle.config',
       'settings.plugin.item',
     ])
+  })
+
+  it('registers the orchestrator card into plugins.row.config when its route exists', async () => {
+    const registrations: unknown[] = []
+    const scope = makeScope(registrations)
+    const ctx = { inject: (_n: string[], fn: (s: Scope) => void) => fn(scope) }
+    stubRoutes(200, 200)
+    apply(ctx as ApplyCtx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    // The main card mounts first (its probe is issued first), then the
+    // orchestrator card into its own slot; the two cards never share a cell.
+    expect(names(registrations)).toEqual([
+      'plugins.bundle.config',
+      'settings.plugin.item',
+      'plugins.row.config',
+    ])
+    const rowReg = (registrations as { name: string; key?: string }[]).find(
+      (r) => r.name === 'plugins.row.config',
+    )
+    expect(rowReg?.key).toBe('dsh-plugin-local-infer#local-infer-orchestrator')
+  })
+
+  it('skips the orchestrator card when its route 404s (component disabled)', async () => {
+    const registrations: unknown[] = []
+    const scope = makeScope(registrations)
+    const ctx = { inject: (_n: string[], fn: (s: Scope) => void) => fn(scope) }
+    stubRoutes(200, 404)
+    apply(ctx as ApplyCtx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(names(registrations)).toEqual([
+      'plugins.bundle.config',
+      'settings.plugin.item',
+    ])
+  })
+
+  it('skips the orchestrator card when its probe hits a network failure', async () => {
+    const registrations: unknown[] = []
+    const scope = makeScope(registrations)
+    const ctx = { inject: (_n: string[], fn: (s: Scope) => void) => fn(scope) }
+    stubRoutes(200, 0)
+    apply(ctx as ApplyCtx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(names(registrations)).toEqual([
+      'plugins.bundle.config',
+      'settings.plugin.item',
+    ])
+  })
+
+  it('mounts the orchestrator card without the main card route (rows toggle independently)', async () => {
+    const registrations: unknown[] = []
+    const scope = makeScope(registrations)
+    const ctx = { inject: (_n: string[], fn: (s: Scope) => void) => fn(scope) }
+    stubRoutes(404, 200)
+    apply(ctx as ApplyCtx)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(names(registrations)).toEqual(['plugins.row.config'])
   })
 })

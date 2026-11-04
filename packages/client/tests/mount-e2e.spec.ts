@@ -347,3 +347,163 @@ describe('the DSH mount E2E (the card under real React)', () => {
     })
   })
 })
+
+// The orchestrator model both orchestrator routes answer.
+const ORCHESTRATOR_MODEL = {
+  prompt: 'the effective prompt',
+  defaultPrompt: 'the shipped default prompt',
+  saved: false,
+}
+
+// installOrchestratorRoutes stubs the fetch the orchestrator card drives:
+// the GET answers the model, the summary probe 404s (only the orchestrator
+// component is enabled in this scenario), and the save route answers through
+// the test's own handler (a deferred by default).
+function installOrchestratorRoutes(
+  save: (body: Record<string, unknown>) => Promise<Response>,
+): ReturnType<typeof vi.fn> {
+  const fetchMock = vi.fn(
+    async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+      const url = String(input)
+      const path = url.split('?')[0]
+      if (path === '/local-infer/orchestrator' && init?.method !== 'POST') {
+        return json(ORCHESTRATOR_MODEL)
+      }
+      if (path === '/local-infer/orchestrator/save') {
+        return save(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      }
+      return json({ error: 'no such route' }, 404)
+    },
+  )
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
+}
+
+// mountAndRenderOrchestrator runs the bootstrap against the mocked host and
+// mounts the component the plugins.row.config registration carries, the
+// same way the shell's slot host renders the row's configuration page.
+async function mountAndRenderOrchestrator(): Promise<{
+  container: HTMLDivElement
+  root: Root
+}> {
+  const { ctx, registrations } = mockHost()
+  apply(ctx as Parameters<typeof apply>[0])
+  await flush()
+  const reg = registrations.find((entry) => entry.name === 'plugins.row.config')
+  expect(reg?.component).toBeTypeOf('function')
+  expect(reg?.key).toBe('dsh-plugin-local-infer#local-infer-orchestrator')
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  const root = createRoot(container)
+  await act(async () => {
+    root.render(reactModule.createElement(reg!.component as () => unknown))
+    await flush()
+  })
+  return { container, root }
+}
+
+describe('the DSH mount E2E (the Orchestrator card under real React)', () => {
+  it('renders the prompt field, prefilled, and posts the edited prompt on Save', async () => {
+    const fetchMock = installOrchestratorRoutes(async (body) =>
+      json({ ...ORCHESTRATOR_MODEL, prompt: String(body.prompt), saved: true }),
+    )
+    const { container, root } = await mountAndRenderOrchestrator()
+    // The card title and the field label render.
+    expect(container.textContent).toContain(TEXT.en.orchestratorSection)
+    expect(container.textContent).toContain(TEXT.en.orchestratorPrompt)
+    // The textarea is prefilled with the GET answer's prompt, and the shipped
+    // default shows as the placeholder.
+    const textarea = container.querySelector('textarea')
+    expect(textarea).not.toBeNull()
+    expect((textarea as HTMLTextAreaElement).value).toBe('the effective prompt')
+    expect((textarea as HTMLTextAreaElement).placeholder).toBe(ORCHESTRATOR_MODEL.defaultPrompt)
+    // Edit and save. The native setter bypasses React's value tracker, so
+    // the input event reads as a real user edit.
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        'value',
+      )!.set!
+      setter.call(textarea, 'edited prompt')
+      textarea!.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    const save = buttonByText(container, TEXT.en.save)
+    expect(save).toBeDefined()
+    await act(async () => {
+      save!.click()
+      await flush()
+    })
+    const saveCall = fetchMock.mock.calls.find(
+      (call) => String(call[0]) === '/local-infer/orchestrator/save',
+    )
+    expect(saveCall).toBeDefined()
+    expect(JSON.parse(String((saveCall![1] as RequestInit).body))).toEqual({
+      prompt: 'edited prompt',
+    })
+    // The saved note confirms; the field keeps the saved text.
+    expect(container.textContent).toContain(TEXT.en.saved)
+    expect((container.querySelector('textarea') as HTMLTextAreaElement).value).toBe(
+      'edited prompt',
+    )
+    await act(async () => {
+      root.unmount()
+    })
+  })
+
+  it('disables the field and Save while a save is in flight and shows the route error', async () => {
+    let settleSave: (response: Response) => void = () => {}
+    installOrchestratorRoutes(
+      () =>
+        new Promise<Response>((resolve) => {
+          settleSave = resolve
+        }),
+    )
+    const { container, root } = await mountAndRenderOrchestrator()
+    const save = buttonByText(container, TEXT.en.save)
+    expect(save).toBeDefined()
+    // The click leaves the save in flight: the control reads busy (the
+    // saving label, disabled) and the field is locked until the ack lands.
+    await act(async () => {
+      save!.click()
+    })
+    expect(buttonByText(container, TEXT.en.save)).toBeUndefined()
+    const busy = buttonByText(container, TEXT.en.saving)
+    expect(busy).toBeDefined()
+    expect(busy!.disabled).toBe(true)
+    expect((container.querySelector('textarea') as HTMLTextAreaElement).disabled).toBe(true)
+    // The route rejects with its own message; the card shows it and re-arms.
+    await act(async () => {
+      settleSave(json({ error: 'prompt must be a string' }, 400))
+      await flush()
+    })
+    expect(container.textContent).toContain('prompt must be a string')
+    expect((container.querySelector('textarea') as HTMLTextAreaElement).disabled).toBe(false)
+    await act(async () => {
+      root.unmount()
+    })
+  })
+
+  it('shows the load error when the orchestrator route fails after the probe', async () => {
+    let orchestratorGets = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request): Promise<Response> => {
+        const url = String(input)
+        if (url === '/local-infer/orchestrator') {
+          // The probe (the first GET) answers 200; the model load then breaks.
+          orchestratorGets += 1
+          return orchestratorGets === 1
+            ? json(ORCHESTRATOR_MODEL)
+            : json({ error: 'prompt store unreadable' }, 500)
+        }
+        return json({ error: 'no such route' }, 404)
+      }),
+    )
+    const { container, root } = await mountAndRenderOrchestrator()
+    expect(container.textContent).toContain('prompt store unreadable')
+    expect(container.querySelector('textarea')).toBeNull()
+    await act(async () => {
+      root.unmount()
+    })
+  })
+})
