@@ -67,5 +67,5 @@ CLI contract and the existing model-download-target rule)
 
 ### Phase 4: Tests and verification
 
-- [ ] [TASK-006-update-basalt-tests](docs/PLAN-basalt-launch-TASK-006-update-basalt-tests.md)
+- [x] [TASK-006-update-basalt-tests](docs/PLAN-basalt-launch-TASK-006-update-basalt-tests.md)
 - [ ] [TASK-007-build-test-lint](docs/PLAN-basalt-launch-TASK-007-build-test-lint.md)
