@@ -18,7 +18,7 @@ import { SYSTEM_DEPS } from '../../systemDeps.ts'
 
 export const BASALT_LINUX: EngineOsProfile = {
   buildSteps: [
-    'cmake -S {dir} -B {dir}/build -DCMAKE_BUILD_TYPE=Release && cmake --build {dir}/build -j && uv pip install -r requirements.txt',
+    'cmake -S {dir} -B {dir}/build -DCMAKE_BUILD_TYPE=Release && cmake --build {dir}/build -j && uv pip install -r {dir}/requirements.txt',
   ],
   // The CMake target sets RUNTIME_OUTPUT_DIRECTORY to the repo's bin/ folder,
   // so the basalt executable lands in bin/, not the CMake build/ tree.
