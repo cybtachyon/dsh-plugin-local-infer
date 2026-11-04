@@ -23,6 +23,7 @@ import type {
   StoredPlatformConfig,
 } from 'dsh-plugin-local-infer/ui'
 import type { LaunchEntry, LaunchEvent } from '../machine/launch.ts'
+import type { GetProgressState } from './progress.ts'
 
 /**
  * LaunchStoreEntry is the store's per-provider launch machine entry: the
@@ -128,9 +129,10 @@ export interface LogsPaneState {
 /**
  * CardUiState is the UI-local state the card keeps and never syncs: the
  * help, Auto Rebuild, and agent-default toggles, the provider form mode and
- * its editing context, the log-location field, and the Logs pane. None of
- * it crosses a server round trip; the save route persists showHelp and
- * logPath as stored preferences, not as ui state.
+ * its editing context, the log-location field, the Logs pane, and the
+ * structured Get download progress. None of it crosses a server round
+ * trip; the save route persists showHelp and logPath as stored
+ * preferences, not as ui state.
  */
 export interface CardUiState {
   help: boolean
@@ -144,6 +146,9 @@ export interface CardUiState {
   cachedDraft: CardDraft | null
   logPath: string
   logs: LogsPaneState
+  // The structured hf download state the get route's tqdm stream folds
+  // into; null while no Get run is in flight.
+  getProgress: GetProgressState | null
 }
 
 /**
@@ -241,6 +246,7 @@ export function initialCardState(): CardState {
       cachedDraft: null,
       logPath: '',
       logs: { getLogs: null, height: 96, scrollMode: 'fresh' },
+      getProgress: null,
     },
   }
 }

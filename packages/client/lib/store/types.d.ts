@@ -17,6 +17,7 @@
  */
 import type { Config, DepsModel, LocalInferSummary, StoredPlatformConfig } from 'dsh-plugin-local-infer/ui';
 import type { LaunchEntry, LaunchEvent } from '../machine/launch.ts';
+import type { GetProgressState } from './progress.ts';
 /**
  * LaunchStoreEntry is the store's per-provider launch machine entry: the
  * machine's LaunchEntry (status + cause) plus the startTime the deadline
@@ -102,9 +103,10 @@ export interface LogsPaneState {
 /**
  * CardUiState is the UI-local state the card keeps and never syncs: the
  * help, Auto Rebuild, and agent-default toggles, the provider form mode and
- * its editing context, the log-location field, and the Logs pane. None of
- * it crosses a server round trip; the save route persists showHelp and
- * logPath as stored preferences, not as ui state.
+ * its editing context, the log-location field, the Logs pane, and the
+ * structured Get download progress. None of it crosses a server round
+ * trip; the save route persists showHelp and logPath as stored
+ * preferences, not as ui state.
  */
 export interface CardUiState {
     help: boolean;
@@ -116,6 +118,7 @@ export interface CardUiState {
     cachedDraft: CardDraft | null;
     logPath: string;
     logs: LogsPaneState;
+    getProgress: GetProgressState | null;
 }
 /**
  * CardState is the card's single source of truth. summary is the last

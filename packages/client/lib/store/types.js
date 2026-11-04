@@ -56,6 +56,7 @@ export function initialCardState() {
             cachedDraft: null,
             logPath: '',
             logs: { getLogs: null, height: 96, scrollMode: 'fresh' },
+            getProgress: null,
         },
     };
 }

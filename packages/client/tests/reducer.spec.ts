@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { LocalInferSummary } from 'dsh-plugin-local-infer/ui'
 import { cardReducer, ACTION_TIMEOUT_DETAIL } from '../src/store/reducer.ts'
 import { initialCardState, type CardDraft, type CardState } from '../src/store/types.ts'
+import type { GetProgressState } from '../src/store/progress.ts'
 
 // A minimal summary carrying every field the reducer reads (engineId, config,
 // platformConfigs, showHelp, logPath). The complex view-model fields are empty
@@ -423,6 +424,24 @@ describe('client store reducer (store/reducer.ts)', () => {
       expect(next.ui.providerFormMode).toBe('editing')
       expect(next.ui.editingProviderId).toBe('p1')
       expect(next.ui.logs).toEqual({ getLogs: 'tail', height: 200, scrollMode: 'manual' })
+      // Unpatched ui fields are preserved.
+      expect(next.ui.help).toBe(true)
+    })
+
+    it('initialCardState starts getProgress at null', () => {
+      expect(initialCardState().ui.getProgress).toBeNull()
+    })
+
+    it('ui/patch updates the getProgress field', () => {
+      const progress: GetProgressState = {
+        step: 'Downloading x.safetensors',
+        percent: 42,
+        doneBytes: 5.2e9,
+        totalBytes: 43.5e9,
+        etaSeconds: 611,
+      }
+      const next = cardReducer(madeState(), { type: 'ui/patch', patch: { getProgress: progress } })
+      expect(next.ui.getProgress).toEqual(progress)
       // Unpatched ui fields are preserved.
       expect(next.ui.help).toBe(true)
     })

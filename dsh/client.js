@@ -742,7 +742,8 @@ function initialCardState() {
       deletingProviderId: null,
       cachedDraft: null,
       logPath: "",
-      logs: { getLogs: null, height: 96, scrollMode: "fresh" }
+      logs: { getLogs: null, height: 96, scrollMode: "fresh" },
+      getProgress: null
     }
   };
 }
