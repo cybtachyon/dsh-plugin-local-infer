@@ -114,12 +114,15 @@ export interface FetchResult {
  * in-flight child (SIGINT, then SIGTERM), so a canceled Get/Launch download
  * stops instead of running on behind the card. `graceMs` overrides the 5 s
  * SIGTERM escalation window of that abort path, so a test can exercise the
- * escalation without waiting.
+ * escalation without waiting. `needsSudo` declares that the command line runs
+ * sudo, stated by the caller (a hand-written link line), never parsed from
+ * the command text; the host applies the sudo-prompt rule to a declared run.
  */
 export interface RunOptions {
     shell?: string;
     signal?: AbortSignal;
     graceMs?: number;
+    needsSudo?: boolean;
 }
 /**
  * LifecycleHost is the injectable execution surface an adapter drives its

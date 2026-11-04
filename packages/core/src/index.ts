@@ -164,6 +164,14 @@ export {
   runInstall,
 } from './deps.ts'
 export {
+  guardSudoCommand,
+  sudoFailureDetail,
+  SUDO_CLI_NOTE,
+  SUDO_PASSWORD_TIMEOUT_MS,
+  SUDO_PROBE_COMMAND,
+} from './sudo.ts'
+export type { SudoGuard, SudoGuardOptions, SudoTimer } from './sudo.ts'
+export {
   CHAT_TEMPLATE_FILE,
   chatTemplateArtifactPath,
   hfChatTemplateCommand,

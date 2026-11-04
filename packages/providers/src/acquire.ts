@@ -15,6 +15,7 @@ import type {
   EnginePlatformConfig,
   LaunchProgress,
   LifecycleHost,
+  RunOptions,
 } from '../../core/lib/index.js'
 import type { EngineOsProfile } from './engines/engineOs.ts'
 import { NINFER_LINUX } from './engines/ninfer/ninferLinux.ts'
@@ -235,13 +236,14 @@ export function engineBuildSteps(
  * through plain run otherwise. The streamed copy is also collected, so a
  * caller can price the command's stdout (the dirty-check, for one). A
  * `shell` option (the engine OS profile's shell) runs the command in that
- * shell instead of the host's default.
+ * shell instead of the host's default. A `needsSudo` option declares the
+ * command runs sudo, so the host applies the sudo-prompt rule to it.
  */
 async function runLogged(
   host: LifecycleHost,
   command: string,
   log: AcquireLog,
-  options?: { echo?: boolean; shell?: string },
+  options?: { echo?: boolean; shell?: string; needsSudo?: boolean },
 ): Promise<CommandOutcome & { output: string }> {
   let output = ''
   const collect = (chunk: string): void => {
@@ -251,9 +253,13 @@ async function runLogged(
   if (options?.echo !== false) {
     log(`$ ${command}\n`)
   }
-  // exactOptionalPropertyTypes: build the options object only when a shell is
-  // named, so an absent shell never passes `{ shell: undefined }` through.
-  const runOptions = options?.shell !== undefined ? { shell: options.shell } : undefined
+  // exactOptionalPropertyTypes: carry only the options the caller set, so an
+  // absent shell or sudo declaration never passes `{ shell: undefined }`
+  // through.
+  const runOptions: RunOptions = {
+    ...(options?.shell === undefined ? {} : { shell: options.shell }),
+    ...(options?.needsSudo === undefined ? {} : { needsSudo: options.needsSudo }),
+  }
   if (host.runStream !== undefined) {
     const outcome = await host.runStream(command, collect, runOptions)
     return { ...outcome, output }
@@ -576,7 +582,9 @@ export async function syncAndRebuildEngine(
         const buildDir = engineBuildDir(request.engineId, request.os ?? 'linux')
         const link = `sudo ln -sf ${directory}/${buildDir}/${binary} /usr/local/bin/${binary}`
         if (request.allowRunDeps === true) {
-          const result = await runLogged(host, link, emit)
+          // The hand-written sudo line declares its need at this call site;
+          // the host never parses the command text to find out.
+          const result = await runLogged(host, link, emit, { needsSudo: true })
           if (!result.ok) {
             emit(`!! ${link} failed: ${result.detail ?? 'unknown'}\n`)
           }

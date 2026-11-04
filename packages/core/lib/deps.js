@@ -147,7 +147,7 @@ export async function runInstall(deps, hw, runCommand) {
         }
         let failure;
         for (const command of commands.commands) {
-            const outcome = await runCommand(command);
+            const outcome = await runCommand(command, { needsSudo: dep.requiresSudo });
             if (!outcome.ok) {
                 failure = outcome;
                 break;

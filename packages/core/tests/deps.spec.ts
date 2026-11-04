@@ -43,13 +43,19 @@ function dep(overrides: Partial<SystemDep> & { id: string }): SystemDep {
 function recordingRunner(outcomes: CommandOutcome[]): {
   runner: CommandRunner
   calls: string[]
+  callOptions: { needsSudo?: boolean }[]
 } {
   const calls: string[] = []
-  const runner: CommandRunner = async (command: string): Promise<CommandOutcome> => {
+  const callOptions: { needsSudo?: boolean }[] = []
+  const runner: CommandRunner = async (
+    command: string,
+    options?: { needsSudo?: boolean },
+  ): Promise<CommandOutcome> => {
     calls.push(command)
+    callOptions.push(options ?? {})
     return outcomes[calls.length - 1] ?? { ok: true }
   }
-  return { runner, calls }
+  return { runner, calls, callOptions }
 }
 
 describe('detectPackageManager', () => {
@@ -340,5 +346,25 @@ describe('runInstall', () => {
       runner,
     )
     expect(result.results[0]).toEqual({ id: 'cmake', status: 'missing', detail: 'no package manager detected' })
+  })
+
+  it('carries the dep sudo declaration to every command', async () => {
+    // Both deps probe missing so their commands run; the declarations, not
+    // the command text, decide what the runner is told.
+    const { runner, calls, callOptions } = recordingRunner([])
+    await runInstall(
+      [
+        dep({ id: 'cmake', install: { apt: { commands: ['apt install cmake'] } } }),
+        dep({
+          id: 'cask',
+          requiresSudo: false,
+          install: { apt: { commands: ['brew install --cask something'] } },
+        }),
+      ],
+      HW,
+      runner,
+    )
+    expect(calls).toEqual(['apt install cmake', 'brew install --cask something'])
+    expect(callOptions).toEqual([{ needsSudo: true }, { needsSudo: false }])
   })
 })
