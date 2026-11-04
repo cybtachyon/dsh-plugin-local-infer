@@ -19,18 +19,20 @@ function rule(id: string): Guideline {
 }
 
 describe('built-in guideline data', () => {
-  it('carries the four built-in rules with unique ids and sane levels', () => {
+  it('carries the five built-in rules with unique ids and sane levels', () => {
     expect(BUILTIN_GUIDELINES.map((guideline) => guideline.id)).toEqual([
       'docker-not-installed',
       'host-tiers-exceed-host-ram',
       'wsl2-dflash2-needs-pin-memory',
       'infernix-dflash2-needs-draft-model',
+      'basalt-needs-blackwell',
     ])
-    expect(new Set(BUILTIN_GUIDELINES.map((guideline) => guideline.id)).size).toBe(4)
+    expect(new Set(BUILTIN_GUIDELINES.map((guideline) => guideline.id)).size).toBe(5)
     expect(rule('docker-not-installed').level).toBe('error')
     expect(rule('host-tiers-exceed-host-ram').level).toBe('warn')
     expect(rule('wsl2-dflash2-needs-pin-memory').level).toBe('error')
     expect(rule('infernix-dflash2-needs-draft-model').level).toBe('error')
+    expect(rule('basalt-needs-blackwell').level).toBe('error')
   })
 
   it('fires docker-not-installed on a docker build mode or the docker-only engine', () => {
@@ -113,6 +115,26 @@ describe('built-in guideline data', () => {
       rule.when({ spec: 'mtp', draftModelPreset: 'custom' }, baseHw),
     ).toBe(false)
   })
+
+  it('fires basalt-needs-blackwell only on a basalt config without an sm_120 card', () => {
+    const sm86: HardwareProfile = {
+      ...baseHw,
+      gpu: { name: 'NVIDIA GeForce RTX 3090', vramGiB: 24, sm: 86 },
+    }
+    const sm120: HardwareProfile = {
+      ...baseHw,
+      gpu: { name: 'NVIDIA Blackwell', vramGiB: 32, sm: 120 },
+    }
+    // A basalt config on a non-Blackwell card fires the rule.
+    expect(rule('basalt-needs-blackwell').when({ engine: 'basalt' }, sm86)).toBe(true)
+    // A basalt config with no detected GPU fires the rule (no card at all).
+    expect(rule('basalt-needs-blackwell').when({ engine: 'basalt' }, baseHw)).toBe(true)
+    // A basalt config on an sm_120 card stays silent.
+    expect(rule('basalt-needs-blackwell').when({ engine: 'basalt' }, sm120)).toBe(false)
+    // A non-basalt config never fires the rule, even on a non-Blackwell card.
+    expect(rule('basalt-needs-blackwell').when({ engine: 'ninfer' }, sm86)).toBe(false)
+    expect(rule('basalt-needs-blackwell').when({}, sm86)).toBe(false)
+  })
 })
 
 describe('built-in guideline registration', () => {
@@ -126,6 +148,7 @@ describe('built-in guideline registration', () => {
       'host-tiers-exceed-host-ram',
       'wsl2-dflash2-needs-pin-memory',
       'infernix-dflash2-needs-draft-model',
+      'basalt-needs-blackwell',
     ])
   })
 })

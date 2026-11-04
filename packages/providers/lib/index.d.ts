@@ -20,7 +20,7 @@ export declare const inject: string[];
  */
 export { CTX_OPTIONS, HYPERQWEN_PARAMETERS, KV_OPTIONS, SPEC_OPTIONS as HYPERQWEN_SPEC_OPTIONS, } from './engines/hyperqwen/hyperqwen.ts';
 export { CHAT_TEMPLATE_OPTIONS, DEVICE_PROFILE_OPTIONS, KV_DTYPE_OPTIONS, NINFER_PARAMETERS, SPEC_OPTIONS as NINFER_SPEC_OPTIONS, } from './engines/ninfer/ninfer.ts';
-export { NINFER_VRAM_MODELS, ninferVramModel } from './vram.ts';
+export { BASALT_VRAM_MODELS, NINFER_VRAM_MODELS, basaltVramModel, ninferVramModel, } from './vram.ts';
 export { BUILTIN_GUIDELINES, HOST_STATE_IMAGE_BYTES } from './guidelines.ts';
 export { ENGINES } from './engines.ts';
 export type { EngineInfo } from './engines.ts';
@@ -46,15 +46,16 @@ export { STRATA_PARAMETERS } from './engines/strata/strata.ts';
 export { BASALT_PARAMETERS } from './engines/basalt/basalt.ts';
 export { BasaltAdapter } from './engines/basalt/basaltAdapter.ts';
 /**
- * Mount the providers. The NInfer measured VramModels register here so the
- * service's estimate prices a named model; the built-in hardware guidelines
- * register so the guideline engine warns on docker, host RAM, and WSL2
- * before the engine boots; the per-engine dep plans register so the deps,
- * installString, and runInstall entry points resolve a plan for every engine
- * the card offers; the built-in presets register so the defaults resolver
- * resolves a sane starting config for the detected hardware class; and the
- * engine adapters register so the launch, stop, and register entry points
- * route a plan to the adapter that rendered it.
+ * Mount the providers. The NInfer measured VramModels and the Basalt
+ * estimated VramModel register here so the service's estimate prices a named
+ * model; the built-in hardware guidelines register so the guideline engine
+ * warns on docker, host RAM, WSL2, and the Basalt Blackwell gate before the
+ * engine boots; the per-engine dep plans register so the deps, installString,
+ * and runInstall entry points resolve a plan for every engine the card
+ * offers; the built-in presets register so the defaults resolver resolves a
+ * sane starting config for the detected hardware class; and the engine
+ * adapters register so the launch, stop, and register entry points route a
+ * plan to the adapter that rendered it.
  */
 export declare function apply(ctx: Context): void;
 declare const plugin: {

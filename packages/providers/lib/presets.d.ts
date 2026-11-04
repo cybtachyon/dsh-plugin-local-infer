@@ -2,10 +2,12 @@
  * Built-in preset data for the local-inference defaults layer. The presets are
  * the offline floor the DefaultsResolver resolves against: the NInfer
  * measured configs (the `config-calculator.html` figures and the
- * `qwen-ninfer` launcher, on a 24 GiB sm86 card) and the Hyper-Qwen `.env`
+ * `qwen-ninfer` launcher, on a 24 GiB sm86 card), the Hyper-Qwen `.env`
  * profiles (the single-user speed, long-context, and huge-context tiers from
- * `.env.example`). Each preset is keyed by its exact (engine, model, hardware
- * class) triple, so it is only trusted for the hardware it was sourced for.
+ * `.env.example`), and the Basalt Blackwell long-context starting config
+ * (keyed to the wildcard class, since Basalt runs on any Blackwell card).
+ * Each preset is keyed by its exact (engine, model, hardware class) triple, so
+ * it is only trusted for the hardware it was sourced for.
  *
  * The `PRESET_SOURCES` list names the mod-search fetch path: the URL the
  * bridge pulls and the pure extractor that turns the fetched page into a

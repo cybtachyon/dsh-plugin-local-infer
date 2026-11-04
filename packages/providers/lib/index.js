@@ -21,7 +21,7 @@ import { createDshDebugLogger } from "./debug.js";
 import { ENGINE_DEP_PLANS } from "./deps.js";
 import { BUILTIN_GUIDELINES } from "./guidelines.js";
 import { BUILTIN_PRESETS } from "./presets.js";
-import { NINFER_VRAM_MODELS } from "./vram.js";
+import { BASALT_VRAM_MODELS, NINFER_VRAM_MODELS } from "./vram.js";
 export const name = 'local-infer-providers';
 export const inject = ['localInfer'];
 /**
@@ -31,7 +31,7 @@ export const inject = ['localInfer'];
  */
 export { CTX_OPTIONS, HYPERQWEN_PARAMETERS, KV_OPTIONS, SPEC_OPTIONS as HYPERQWEN_SPEC_OPTIONS, } from "./engines/hyperqwen/hyperqwen.js";
 export { CHAT_TEMPLATE_OPTIONS, DEVICE_PROFILE_OPTIONS, KV_DTYPE_OPTIONS, NINFER_PARAMETERS, SPEC_OPTIONS as NINFER_SPEC_OPTIONS, } from "./engines/ninfer/ninfer.js";
-export { NINFER_VRAM_MODELS, ninferVramModel } from "./vram.js";
+export { BASALT_VRAM_MODELS, NINFER_VRAM_MODELS, basaltVramModel, ninferVramModel, } from "./vram.js";
 export { BUILTIN_GUIDELINES, HOST_STATE_IMAGE_BYTES } from "./guidelines.js";
 export { ENGINES } from "./engines.js";
 export { ENGINE_SOURCES, FORK_REMOTE, buildEngineRepo, engineBuildSteps, engineSource, syncAndRebuildEngine, syncEngineRepo, } from "./acquire.js";
@@ -51,19 +51,23 @@ export { STRATA_PARAMETERS } from "./engines/strata/strata.js";
 export { BASALT_PARAMETERS } from "./engines/basalt/basalt.js";
 export { BasaltAdapter } from "./engines/basalt/basaltAdapter.js";
 /**
- * Mount the providers. The NInfer measured VramModels register here so the
- * service's estimate prices a named model; the built-in hardware guidelines
- * register so the guideline engine warns on docker, host RAM, and WSL2
- * before the engine boots; the per-engine dep plans register so the deps,
- * installString, and runInstall entry points resolve a plan for every engine
- * the card offers; the built-in presets register so the defaults resolver
- * resolves a sane starting config for the detected hardware class; and the
- * engine adapters register so the launch, stop, and register entry points
- * route a plan to the adapter that rendered it.
+ * Mount the providers. The NInfer measured VramModels and the Basalt
+ * estimated VramModel register here so the service's estimate prices a named
+ * model; the built-in hardware guidelines register so the guideline engine
+ * warns on docker, host RAM, WSL2, and the Basalt Blackwell gate before the
+ * engine boots; the per-engine dep plans register so the deps, installString,
+ * and runInstall entry points resolve a plan for every engine the card
+ * offers; the built-in presets register so the defaults resolver resolves a
+ * sane starting config for the detected hardware class; and the engine
+ * adapters register so the launch, stop, and register entry points route a
+ * plan to the adapter that rendered it.
  */
 export function apply(ctx) {
     const localInfer = ctx.localInfer;
     for (const model of NINFER_VRAM_MODELS) {
+        localInfer.registerVramModel(model);
+    }
+    for (const model of BASALT_VRAM_MODELS) {
         localInfer.registerVramModel(model);
     }
     for (const guideline of BUILTIN_GUIDELINES) {

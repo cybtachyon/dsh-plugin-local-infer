@@ -2,10 +2,12 @@
  * Built-in preset data for the local-inference defaults layer. The presets are
  * the offline floor the DefaultsResolver resolves against: the NInfer
  * measured configs (the `config-calculator.html` figures and the
- * `qwen-ninfer` launcher, on a 24 GiB sm86 card) and the Hyper-Qwen `.env`
+ * `qwen-ninfer` launcher, on a 24 GiB sm86 card), the Hyper-Qwen `.env`
  * profiles (the single-user speed, long-context, and huge-context tiers from
- * `.env.example`). Each preset is keyed by its exact (engine, model, hardware
- * class) triple, so it is only trusted for the hardware it was sourced for.
+ * `.env.example`), and the Basalt Blackwell long-context starting config
+ * (keyed to the wildcard class, since Basalt runs on any Blackwell card).
+ * Each preset is keyed by its exact (engine, model, hardware class) triple, so
+ * it is only trusted for the hardware it was sourced for.
  *
  * The `PRESET_SOURCES` list names the mod-search fetch path: the URL the
  * bridge pulls and the pure extractor that turns the fetched page into a
@@ -13,6 +15,7 @@
  * fetch date.
  * @module dsh-plugin-local-infer/providers/presets
  */
+import { WILDCARD_HARDWARE_CLASS } from '../../core/lib/index.js';
 /**
  * The hardware class every built-in preset is sourced for: a 24 GiB Ampere
  * (sm86) card, the card the NInfer constants were measured on and the card the
@@ -119,10 +122,36 @@ const HYPERQWEN_PRESETS = [
     },
 ];
 /**
+ * The Basalt built-in preset, keyed to the wildcard hardware class. Basalt is
+ * Blackwell-only, so the preset is the sane long-context starting config the
+ * resolver offers for the Qwen3.8-Flash-Next NVFP4 artifact on any detected
+ * Blackwell card: int8 KV (half the bytes of the fp16 default) and a 32k
+ * context. The engine's own spec defaults (the drafter window, the expert
+ * cache, the resident experts) stay at their surface defaults.
+ */
+const BASALT_PRESETS = [
+    {
+        engineId: 'basalt',
+        modelId: 'qwen38-flash-next',
+        hardwareClass: WILDCARD_HARDWARE_CLASS,
+        values: {
+            kv: 'int8',
+            maxContext: 32768,
+        },
+        source: 'Basalt built-in (Blackwell long-context starting config)',
+        label: 'long-context',
+        isDefault: true,
+    },
+];
+/**
  * BUILTIN_PRESETS is the combined preset list the providers register with the
  * seam. Adding a preset is a data edit here, never a resolver change.
  */
-export const BUILTIN_PRESETS = [...NINFER_PRESETS, ...HYPERQWEN_PRESETS];
+export const BUILTIN_PRESETS = [
+    ...NINFER_PRESETS,
+    ...HYPERQWEN_PRESETS,
+    ...BASALT_PRESETS,
+];
 /**
  * extractJsonBlock reads the first fenced ```json block out of a fetched page
  * and parses it as the preset values. A page with no json block (or a broken

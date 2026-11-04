@@ -27,11 +27,29 @@ describe('BUILTIN_PRESETS', () => {
     expect(huge?.values.kv).toBe('kvarn')
   })
 
+  it('ships the Basalt Blackwell long-context preset on the wildcard class', () => {
+    const basalt = BUILTIN_PRESETS.filter(preset => preset.engineId === 'basalt')
+    expect(basalt).toHaveLength(1)
+    const preset = basalt[0]
+    // Basalt runs on any Blackwell card, so the preset is keyed to the
+    // wildcard class, not a specific card.
+    expect(preset?.modelId).toBe('qwen38-flash-next')
+    expect(preset?.hardwareClass).toBe('*')
+    expect(preset?.isDefault).toBe(true)
+    expect(preset?.values).toMatchObject({
+      kv: 'int8',
+      maxContext: 32768,
+    })
+  })
+
   it('keys every preset by its exact triple and a source tag', () => {
     for (const preset of BUILTIN_PRESETS) {
       expect(preset.engineId).not.toBe('')
       expect(preset.modelId).not.toBe('')
-      expect(preset.hardwareClass).toBe('24g-sm86')
+      // Every preset names a hardware class: the sm86 card for the NInfer and
+      // Hyper-Qwen presets, the wildcard for the Basalt Blackwell preset (it
+      // runs on any detected Blackwell card).
+      expect(preset.hardwareClass).not.toBe('')
       expect(preset.source).not.toBe('')
     }
   })

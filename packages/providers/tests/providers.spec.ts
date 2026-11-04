@@ -26,15 +26,17 @@ describe('local-infer-providers scaffold', () => {
       'strata',
       'basalt',
     ])
-    // Phase 7 registers the built-in presets: the two NInfer measured presets
-    // and the three Hyper-Qwen tiers (distinct by label, one isDefault).
-    expect(ctx.localInfer.registeredPresets()).toHaveLength(5)
+    // Phase 7 registers the built-in presets: the two NInfer measured presets,
+    // the three Hyper-Qwen tiers (distinct by label, one isDefault), and the
+    // Basalt Blackwell long-context preset (wildcard class).
+    expect(ctx.localInfer.registeredPresets()).toHaveLength(6)
     expect(
       ctx.localInfer
         .registeredPresets()
         .map((preset) => `${preset.engineId}/${preset.modelId}/${preset.hardwareClass}`)
         .sort(),
     ).toEqual([
+      'basalt/qwen38-flash-next/*',
       'hyperqwen/qwen3-27b/24g-sm86',
       'hyperqwen/qwen3-27b/24g-sm86',
       'hyperqwen/qwen3-27b/24g-sm86',
@@ -46,11 +48,13 @@ describe('local-infer-providers scaffold', () => {
       'host-tiers-exceed-host-ram',
       'wsl2-dflash2-needs-pin-memory',
       'infernix-dflash2-needs-draft-model',
+      'basalt-needs-blackwell',
     ])
     expect(ctx.localInfer.registeredVramModels().map((model) => model.id)).toEqual([
       'qwen3-27b',
       'qwen3-27b-swift15',
       'qwen3-35b',
+      'qwen38-flash-next',
     ])
   })
 })

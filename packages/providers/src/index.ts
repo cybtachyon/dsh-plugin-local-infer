@@ -26,7 +26,7 @@ import { createDshDebugLogger } from './debug.ts'
 import { ENGINE_DEP_PLANS } from './deps.ts'
 import { BUILTIN_GUIDELINES } from './guidelines.ts'
 import { BUILTIN_PRESETS } from './presets.ts'
-import { NINFER_VRAM_MODELS } from './vram.ts'
+import { BASALT_VRAM_MODELS, NINFER_VRAM_MODELS } from './vram.ts'
 
 export const name = 'local-infer-providers'
 export const inject = ['localInfer']
@@ -49,7 +49,12 @@ export {
   NINFER_PARAMETERS,
   SPEC_OPTIONS as NINFER_SPEC_OPTIONS,
 } from './engines/ninfer/ninfer.ts'
-export { NINFER_VRAM_MODELS, ninferVramModel } from './vram.ts'
+export {
+  BASALT_VRAM_MODELS,
+  NINFER_VRAM_MODELS,
+  basaltVramModel,
+  ninferVramModel,
+} from './vram.ts'
 export { BUILTIN_GUIDELINES, HOST_STATE_IMAGE_BYTES } from './guidelines.ts'
 export { ENGINES } from './engines.ts'
 export type { EngineInfo } from './engines.ts'
@@ -123,19 +128,23 @@ export { BASALT_PARAMETERS } from './engines/basalt/basalt.ts'
 export { BasaltAdapter } from './engines/basalt/basaltAdapter.ts'
 
 /**
- * Mount the providers. The NInfer measured VramModels register here so the
- * service's estimate prices a named model; the built-in hardware guidelines
- * register so the guideline engine warns on docker, host RAM, and WSL2
- * before the engine boots; the per-engine dep plans register so the deps,
- * installString, and runInstall entry points resolve a plan for every engine
- * the card offers; the built-in presets register so the defaults resolver
- * resolves a sane starting config for the detected hardware class; and the
- * engine adapters register so the launch, stop, and register entry points
- * route a plan to the adapter that rendered it.
+ * Mount the providers. The NInfer measured VramModels and the Basalt
+ * estimated VramModel register here so the service's estimate prices a named
+ * model; the built-in hardware guidelines register so the guideline engine
+ * warns on docker, host RAM, WSL2, and the Basalt Blackwell gate before the
+ * engine boots; the per-engine dep plans register so the deps, installString,
+ * and runInstall entry points resolve a plan for every engine the card
+ * offers; the built-in presets register so the defaults resolver resolves a
+ * sane starting config for the detected hardware class; and the engine
+ * adapters register so the launch, stop, and register entry points route a
+ * plan to the adapter that rendered it.
  */
 export function apply(ctx: Context): void {
   const localInfer: LocalInferService = ctx.localInfer
   for (const model of NINFER_VRAM_MODELS) {
+    localInfer.registerVramModel(model)
+  }
+  for (const model of BASALT_VRAM_MODELS) {
     localInfer.registerVramModel(model)
   }
   for (const guideline of BUILTIN_GUIDELINES) {

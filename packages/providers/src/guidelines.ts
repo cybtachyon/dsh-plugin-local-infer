@@ -1,9 +1,10 @@
 /**
  * Built-in hardware guidelines. The rules that every engine shares, expressed
  * as `Guideline` data over (config, hardware): the docker-availability gate,
- * the host RAM tier ceiling, and the WSL2 pin-memory boot abort. Each is
- * registered with `ctx.localInfer` by the provider `apply`, so a per-engine
- * override or an extra rule composes on top without touching these.
+ * the host RAM tier ceiling, the WSL2 pin-memory boot abort, and the Basalt
+ * Blackwell (sm_120) gate. Each is registered with `ctx.localInfer` by the
+ * provider `apply`, so a per-engine override or an extra rule composes on top
+ * without touching these.
  *
  * The rules that need the registered VramModel (the estimator-backed
  * "exceeds usable VRAM" and "spec needs draft weights" rules) live in the
@@ -81,5 +82,18 @@ export const BUILTIN_GUIDELINES: readonly Guideline[] = [
       config.spec === 'dflash2' &&
       'draftModelPreset' in config &&
       infernixDraftModelPath(config) === null,
+  },
+  {
+    // Basalt is Blackwell-only: the engine is compiled for sm_120 and its
+    // NVFP4 expert kernels need it. A basalt config on a card that reports a
+    // different SM number (or no card at all) cannot boot, so the rule names
+    // the fix before the engine starts. It is basalt-specific: only basalt
+    // configs carry the engine key, so every other engine stays silent.
+    id: 'basalt-needs-blackwell',
+    level: 'error',
+    message:
+      'Basalt needs an NVIDIA Blackwell GPU (SM 120). This machine reports a different SM number, or no GPU at all.',
+    anchors: ['gpu'],
+    when: (config, hw) => config.engine === 'basalt' && hw.gpu?.sm !== 120,
   },
 ]

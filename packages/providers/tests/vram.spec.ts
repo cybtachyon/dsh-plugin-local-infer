@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { estimateVram } from 'dsh-plugin-local-infer/core'
 import type { HardwareProfile } from 'dsh-plugin-local-infer/core'
-import { NINFER_VRAM_MODELS, ninferVramModel } from '../src/vram.ts'
+import {
+  BASALT_VRAM_MODELS,
+  NINFER_VRAM_MODELS,
+  basaltVramModel,
+  ninferVramModel,
+} from '../src/vram.ts'
 
 const HW_3090: HardwareProfile = {
   gpu: { name: 'NVIDIA GeForce RTX 3090', vramGiB: 24, sm: 86 },
@@ -196,5 +201,48 @@ describe('NInfer VramModel data', () => {
         )
       }
     }
+  })
+})
+
+describe('Basalt VramModel data', () => {
+  it('registers the Qwen3.8-Flash-Next NVFP4 artifact as an estimated model', () => {
+    expect(BASALT_VRAM_MODELS.map((model) => model.id)).toEqual(['qwen38-flash-next'])
+    for (const model of BASALT_VRAM_MODELS) {
+      // The measured figures are not yet available, so the model is flagged
+      // estimated and the meter never reads it as authoritative.
+      expect(model.source).toBe('estimated')
+      expect(model.nativeMaxContext).toBe(262144)
+    }
+    expect(basaltVramModel('qwen38-flash-next')?.id).toBe('qwen38-flash-next')
+    expect(basaltVramModel('qwen3-27b')).toBeUndefined()
+  })
+
+  it('prices the four Basalt KV formats, with the wider format costing more', () => {
+    const model = basaltVramModel('qwen38-flash-next')!
+    // The KV per-token terms price the four formats Basalt serves, in the
+    // order the wider the format, the more bytes per token.
+    expect(model.kvBytesPerToken).toEqual({
+      fp16: 196608,
+      int8: 98304,
+      q4_0: 49152,
+      k8v4: 73728,
+    })
+    expect(model.kvBytesPerToken.fp16).toBeGreaterThan(model.kvBytesPerToken.int8)
+    expect(model.kvBytesPerToken.int8).toBeGreaterThan(model.kvBytesPerToken.q4_0)
+  })
+
+  it('labels every estimate estimated, so the meter never reads it as a measurement', () => {
+    const model = basaltVramModel('qwen38-flash-next')!
+    const blackwell: HardwareProfile = {
+      gpu: { name: 'NVIDIA Blackwell', vramGiB: 32, sm: 120 },
+      dockerAvailable: false,
+      wsl2: false,
+      os: 'linux',
+      cpuThreads: 16,
+    }
+    const estimate = estimateVram(model, { model: 'qwen38-flash-next', kvDtype: 'int8', maxContext: 4096 }, blackwell)
+    expect(estimate.source).toBe('estimated')
+    expect(estimate.verdict.status).not.toBe('not-measured')
+    expect(estimate.breakdown.total).toBeGreaterThan(0)
   })
 })
