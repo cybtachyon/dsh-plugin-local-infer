@@ -19,8 +19,8 @@ export interface EnginePlatformDefaults {
  * The per-engine platform defaults, keyed by engine id. The build command is
  * the engine's first acquisition build step; the docker tag is the upstream
  * image the adapter pulls. Hyper-Qwen is compose-driven, so its docker tag is
- * the vLLM OpenAI server image; Infernix ships no docker image, so it carries
- * a build command only.
+ * the vLLM OpenAI server image; Infernix and Basalt ship no docker image, so
+ * they carry a build command only.
  */
 export declare const ENGINE_PLATFORM_DEFAULTS: Record<string, EnginePlatformDefaults>;
 /**

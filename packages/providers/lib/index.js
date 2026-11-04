@@ -1,6 +1,6 @@
 /**
  * The concrete providers for the local-inference capability: the engine
- * adapters (ninfer, hyperqwen, llamacpp, infernix, strata), the NInfer
+ * adapters (ninfer, hyperqwen, llamacpp, infernix, strata, basalt), the NInfer
  * VramModel, the built-in presets, the built-in guidelines, and the per-OS
  * SystemDep install command data. Each registers itself with `ctx.localInfer`.
  *
@@ -11,6 +11,7 @@
  * @module dsh-plugin-local-infer/providers
  */
 import { createNodeLifecycleHost } from "./adapters.js";
+import { BasaltAdapter } from "./engines/basalt/basaltAdapter.js";
 import { HyperQwenAdapter } from "./engines/hyperqwen/hyperqwenAdapter.js";
 import { InfernixAdapter } from "./engines/infernix/infernixAdapter.js";
 import { LlamaCppAdapter } from "./engines/llamacpp/llamacppAdapter.js";
@@ -47,6 +48,8 @@ export { STRATA_DOCKER_IMAGE, StrataAdapter } from "./engines/strata/strataAdapt
 export { KV_CACHE_TYPE_OPTIONS, LLAMACPP_MODEL_ARTIFACTS, LLAMACPP_PARAMETERS, llamaCppModelKey, } from "./engines/llamacpp/llamacpp.js";
 export { DFLASH2_CUSTOM_VALUE, DFLASH2_GATE_MESSAGE, INFERNIX_DFLASH2_MODELS, INFERNIX_KV_DTYPE_OPTIONS, INFERNIX_MODEL_ARTIFACTS, INFERNIX_NGRAM_RESIDENCY_OPTIONS, INFERNIX_NGRAM_VOLUMES, INFERNIX_PARAMETERS, INFERNIX_REASONING_LOOP_OPTIONS, INFERNIX_SPEC_OPTIONS, SPEC_GATE_MESSAGE as INFERNIX_SPEC_GATE_MESSAGE, dflash2PresetOptions, infernixArtifactFor, infernixDraftModelPath, infernixGetDownloads, infernixModelKey, } from "./engines/infernix/infernix.js";
 export { STRATA_PARAMETERS } from "./engines/strata/strata.js";
+export { BASALT_PARAMETERS } from "./engines/basalt/basalt.js";
+export { BasaltAdapter } from "./engines/basalt/basaltAdapter.js";
 /**
  * Mount the providers. The NInfer measured VramModels register here so the
  * service's estimate prices a named model; the built-in hardware guidelines
@@ -83,6 +86,7 @@ export function apply(ctx) {
     localInfer.registerEngine(new LlamaCppAdapter(host));
     localInfer.registerEngine(new InfernixAdapter(host));
     localInfer.registerEngine(new StrataAdapter(host));
+    localInfer.registerEngine(new BasaltAdapter(host));
 }
 const plugin = { name, inject, apply };
 export default plugin;

@@ -6,6 +6,7 @@ import {
   engineBinary,
   engineBuildDir,
   engineBuildSteps,
+  engineOsProfile,
   engineSource,
   syncAndRebuildEngine,
   syncEngineRepo,
@@ -85,6 +86,20 @@ describe('ENGINE_SOURCES', () => {
       expect(source?.branch).toBeTruthy()
       expect(Array.isArray(source?.buildSteps)).toBe(true)
     }
+  })
+
+  it('registers the basalt source and OS profile the card offers', () => {
+    // The basalt ENGINES entry is local-build only: the C++/CUDA engine ships
+    // no container image.
+    const basalt = ENGINES.find((engine) => engine.id === 'basalt')
+    expect(basalt).toBeDefined()
+    expect(basalt?.supports).toEqual({ docker: false, local: true })
+    // The source resolves to the upstream repo and the linux profile to the
+    // CMake build steps.
+    const source = engineSource('basalt')
+    expect(source?.repo).toBe('https://github.com/jesdga95/basalt')
+    expect(source?.branch).toBe('main')
+    expect(engineOsProfile('basalt', 'linux')).toBeDefined()
   })
 
   it('names the fork remote the sync step adds a provided fork under', () => {

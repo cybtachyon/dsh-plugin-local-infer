@@ -4,15 +4,17 @@ import {
   defaultModelFor,
   defaultModelsForEngine,
 } from '../src/model-defaults.ts'
+import { BASALT_MODEL_FILE, BASALT_MODEL_REPO } from '../src/engines/basalt/basaltAdapter.ts'
 
 describe('DEFAULT_MODELS', () => {
-  it('carries the twelve default models: three NInfer, two per other dense-Qwen engine, three Infernix, two Strata', () => {
-    expect(DEFAULT_MODELS).toHaveLength(12)
+  it('carries the thirteen default models: three NInfer, two per other dense-Qwen engine, three Infernix, two Strata, one Basalt', () => {
+    expect(DEFAULT_MODELS).toHaveLength(13)
     expect(defaultModelsForEngine('ninfer')).toHaveLength(3)
     expect(defaultModelsForEngine('hyperqwen')).toHaveLength(2)
     expect(defaultModelsForEngine('llamacpp')).toHaveLength(2)
     expect(defaultModelsForEngine('infernix')).toHaveLength(3)
     expect(defaultModelsForEngine('strata')).toHaveLength(2)
+    expect(defaultModelsForEngine('basalt')).toHaveLength(1)
   })
 
   it('carries the two Strata models the README links: Gyro and DeepSeek V4.1-Flash', () => {
@@ -37,7 +39,17 @@ describe('DEFAULT_MODELS', () => {
       'https://huggingface.co/neroued/Qwen3.6-35B-A3B-NInfer',
       'https://huggingface.co/agentionai/Qwen3.8-Flash-Next-Gyro-GGUF',
       'https://huggingface.co/ISTA-DASLab/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF',
+      'https://huggingface.co/jesdga/Qwen3.8-Flash-Next-Basalt',
     ])
+  })
+
+  it('carries the single Basalt artifact the engine serves, named by the adapter constants', () => {
+    const basalt = defaultModelsForEngine('basalt')
+    expect(basalt.map((entry) => entry.modelId)).toEqual(['qwen38-flash-next'])
+    // The repo and file ride the adapter constants, so the download route and
+    // the deploy step share one source.
+    expect(basalt[0]?.url).toBe(`https://huggingface.co/${BASALT_MODEL_REPO}`)
+    expect(basalt[0]?.file).toBe(BASALT_MODEL_FILE)
   })
 
   it('reuses the 27B registry key and adds a distinct 35B-A3B key per engine', () => {

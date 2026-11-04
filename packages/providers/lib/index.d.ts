@@ -1,6 +1,6 @@
 /**
  * The concrete providers for the local-inference capability: the engine
- * adapters (ninfer, hyperqwen, llamacpp, infernix, strata), the NInfer
+ * adapters (ninfer, hyperqwen, llamacpp, infernix, strata, basalt), the NInfer
  * VramModel, the built-in presets, the built-in guidelines, and the per-OS
  * SystemDep install command data. Each registers itself with `ctx.localInfer`.
  *
@@ -43,6 +43,8 @@ export type { LlamaCppModelArtifact } from './engines/llamacpp/llamacpp.ts';
 export { DFLASH2_CUSTOM_VALUE, DFLASH2_GATE_MESSAGE, INFERNIX_DFLASH2_MODELS, INFERNIX_KV_DTYPE_OPTIONS, INFERNIX_MODEL_ARTIFACTS, INFERNIX_NGRAM_RESIDENCY_OPTIONS, INFERNIX_NGRAM_VOLUMES, INFERNIX_PARAMETERS, INFERNIX_REASONING_LOOP_OPTIONS, INFERNIX_SPEC_OPTIONS, SPEC_GATE_MESSAGE as INFERNIX_SPEC_GATE_MESSAGE, dflash2PresetOptions, infernixArtifactFor, infernixDraftModelPath, infernixGetDownloads, infernixModelKey, } from './engines/infernix/infernix.ts';
 export type { InfernixDFlash2Model, InfernixModelArtifact, InfernixNgramVolume, } from './engines/infernix/infernix.ts';
 export { STRATA_PARAMETERS } from './engines/strata/strata.ts';
+export { BASALT_PARAMETERS } from './engines/basalt/basalt.ts';
+export { BasaltAdapter } from './engines/basalt/basaltAdapter.ts';
 /**
  * Mount the providers. The NInfer measured VramModels register here so the
  * service's estimate prices a named model; the built-in hardware guidelines

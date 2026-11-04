@@ -19,6 +19,9 @@ describe('engine platform defaults', () => {
     expect(ENGINE_PLATFORM_DEFAULTS.infernix?.defaultBuildCommand).toBe(
       engineBuildSteps('infernix')[0],
     )
+    expect(ENGINE_PLATFORM_DEFAULTS.basalt?.defaultBuildCommand).toBe(
+      engineBuildSteps('basalt')[0],
+    )
   })
 
   it('seeds the docker tag from the engine upstream image', () => {
@@ -31,10 +34,11 @@ describe('engine platform defaults', () => {
   })
 
   it('omits a default the engine does not support', () => {
-    // The compose engine has no local build step; the local-only engine ships
-    // no docker image.
+    // The compose engine has no local build step; the local-only engines
+    // (Infernix, Basalt) ship no docker image.
     expect(ENGINE_PLATFORM_DEFAULTS.hyperqwen?.defaultBuildCommand).toBeUndefined()
     expect(ENGINE_PLATFORM_DEFAULTS.infernix?.defaultDockerTag).toBeUndefined()
+    expect(ENGINE_PLATFORM_DEFAULTS.basalt?.defaultDockerTag).toBeUndefined()
   })
 
   it('reads a registered engine defaults through the accessor', () => {

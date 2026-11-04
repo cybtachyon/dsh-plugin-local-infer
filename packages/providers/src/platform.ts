@@ -31,13 +31,14 @@ const NINFER_BUILD_COMMAND = engineBuildSteps('ninfer')[0]
 const LLAMACPP_BUILD_COMMAND = engineBuildSteps('llamacpp')[0]
 const INFERNIX_BUILD_COMMAND = engineBuildSteps('infernix')[0]
 const STRATA_BUILD_COMMAND = engineBuildSteps('strata')[0]
+const BASALT_BUILD_COMMAND = engineBuildSteps('basalt')[0]
 
 /**
  * The per-engine platform defaults, keyed by engine id. The build command is
  * the engine's first acquisition build step; the docker tag is the upstream
  * image the adapter pulls. Hyper-Qwen is compose-driven, so its docker tag is
- * the vLLM OpenAI server image; Infernix ships no docker image, so it carries
- * a build command only.
+ * the vLLM OpenAI server image; Infernix and Basalt ship no docker image, so
+ * they carry a build command only.
  */
 export const ENGINE_PLATFORM_DEFAULTS: Record<string, EnginePlatformDefaults> = {
   ninfer: {
@@ -66,6 +67,11 @@ export const ENGINE_PLATFORM_DEFAULTS: Record<string, EnginePlatformDefaults> = 
       ? { defaultBuildCommand: STRATA_BUILD_COMMAND }
       : {}),
     defaultDockerTag: STRATA_DOCKER_IMAGE,
+  },
+  basalt: {
+    // The CMake build command the deploy step runs in the checkout; the
+    // engine ships no container image, so no docker tag.
+    ...(BASALT_BUILD_COMMAND !== undefined ? { defaultBuildCommand: BASALT_BUILD_COMMAND } : {}),
   },
 }
 

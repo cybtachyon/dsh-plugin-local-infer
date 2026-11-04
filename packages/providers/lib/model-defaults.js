@@ -7,12 +7,16 @@
  * n-gram volume the `--ngram-volume` flag reads). Strata carries the two
  * models the README's Models section links (Gyro and DeepSeek V4.1-Flash),
  * each named by the model the engine accepts and the repo it downloads.
+ * Basalt carries the single `.basalt` artifact the engine serves (the
+ * Qwen3.8-Flash-Next NVFP4 conversion, named by the repo and file the
+ * adapter's deploy step downloads).
  *
  * The list is the single source the card's Model dropdown, the model
  * presence check, and the hf CLI download route read. Adding a model is a
  * data edit here, never a route or card rewire.
  * @module dsh-plugin-local-infer/providers/model-defaults
  */
+import { BASALT_MODEL_FILE, BASALT_MODEL_REPO } from "./engines/basalt/basaltAdapter.js";
 /**
  * DEFAULT_MODELS is the default model list, in the order the card lists them.
  * The 27B keys reuse the VramModel registry ids; the 35B-A3B entries use the
@@ -105,6 +109,17 @@ export const DEFAULT_MODELS = [
         modelId: 'ist-das-2.00bpw',
         label: 'Strata DeepSeek V4.1-Flash (2.00 bpw)',
         url: 'https://huggingface.co/ISTA-DASLab/DeepSeek-V4.1-Flash-1017-GSQ-RCO-GGUF',
+    },
+    // The single `.basalt` artifact the engine serves: the weights, tokenizer,
+    // chat template, drafter, vision projector, and default sampling all come
+    // from it. The repo and file ride the adapter constants, so the download
+    // route and the deploy step share one source.
+    {
+        engineId: 'basalt',
+        modelId: 'qwen38-flash-next',
+        label: 'Basalt Qwen3.8-Flash-Next (NVFP4 DQ6_K)',
+        url: `https://huggingface.co/${BASALT_MODEL_REPO}`,
+        file: BASALT_MODEL_FILE,
     },
 ];
 /**

@@ -1,6 +1,6 @@
 /**
  * The concrete providers for the local-inference capability: the engine
- * adapters (ninfer, hyperqwen, llamacpp, infernix, strata), the NInfer
+ * adapters (ninfer, hyperqwen, llamacpp, infernix, strata, basalt), the NInfer
  * VramModel, the built-in presets, the built-in guidelines, and the per-OS
  * SystemDep install command data. Each registers itself with `ctx.localInfer`.
  *
@@ -16,6 +16,7 @@ import type { Context } from '@deepseek-ai/cordis'
 // type import loads that augmentation without a runtime edge.
 import type { LocalInferService } from 'dsh-plugin-local-infer/service'
 import { createNodeLifecycleHost } from './adapters.ts'
+import { BasaltAdapter } from './engines/basalt/basaltAdapter.ts'
 import { HyperQwenAdapter } from './engines/hyperqwen/hyperqwenAdapter.ts'
 import { InfernixAdapter } from './engines/infernix/infernixAdapter.ts'
 import { LlamaCppAdapter } from './engines/llamacpp/llamacppAdapter.ts'
@@ -118,6 +119,8 @@ export type {
   InfernixNgramVolume,
 } from './engines/infernix/infernix.ts'
 export { STRATA_PARAMETERS } from './engines/strata/strata.ts'
+export { BASALT_PARAMETERS } from './engines/basalt/basalt.ts'
+export { BasaltAdapter } from './engines/basalt/basaltAdapter.ts'
 
 /**
  * Mount the providers. The NInfer measured VramModels register here so the
@@ -155,6 +158,7 @@ export function apply(ctx: Context): void {
   localInfer.registerEngine(new LlamaCppAdapter(host))
   localInfer.registerEngine(new InfernixAdapter(host))
   localInfer.registerEngine(new StrataAdapter(host))
+  localInfer.registerEngine(new BasaltAdapter(host))
 }
 
 const plugin = { name, inject, apply }

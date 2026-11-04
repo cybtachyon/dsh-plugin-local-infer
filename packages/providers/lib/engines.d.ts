@@ -20,10 +20,12 @@ export interface EngineInfo {
 }
 /**
  * The engines the Web card offers, in the order the card lists them. NInfer,
- * Hyper-Qwen, Infernix, llama.cpp, and Strata all carry parameter surfaces
- * (llama.cpp's is the specified set the plan names, verified when the binary
- * lands); Strata's surface is the `strata launch` flags and it supports all
- * three build modes (docker, source build, and the binary install).
+ * Hyper-Qwen, Infernix, llama.cpp, Strata, and Basalt all carry parameter
+ * surfaces (llama.cpp's is the specified set the plan names, verified when the
+ * binary lands); Strata's surface is the `strata launch` flags and it supports
+ * all three build modes (docker, source build, and the binary install);
+ * Basalt's surface is the `basalt_config.json` settings and it is local-build
+ * only (the C++/CUDA engine ships no container image).
  */
 export declare const ENGINES: readonly EngineInfo[];
 //# sourceMappingURL=engines.d.ts.map
