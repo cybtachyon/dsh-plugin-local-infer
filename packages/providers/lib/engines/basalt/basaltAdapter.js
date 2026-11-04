@@ -20,7 +20,7 @@ import { EngineAdapter, hfDownloadCommand, hubCacheSnapshotFilePath, modelArtifa
 import { configFileFromSpecs, nodeLifecycleHost, pollHealth, resolveLaunchArgv, stopProcessPlan, trackChild, } from "../../adapters.js";
 import { engineBuildDir, syncEngineForDeploy } from "../../acquire.js";
 import { defaultModelFor } from "../../model-defaults.js";
-import { BASALT_DEFAULT_PORT, BASALT_MODEL_FILE, BASALT_MODEL_REPO, BASALT_PARAMETERS, basaltModelKey, } from "./basalt.js";
+import { BASALT_DEFAULT_MODEL_ID, BASALT_DEFAULT_PORT, BASALT_MODEL_FILE, BASALT_MODEL_REPO, BASALT_PARAMETERS, basaltModelKey, } from "./basalt.js";
 import { basaltLinuxBinary } from "./basaltLinux.js";
 import { basaltMacOSBinary } from "./basaltMacOS.js";
 import { basaltWindowsBinary } from "./basaltWindows.js";
@@ -159,6 +159,11 @@ export class BasaltAdapter extends EngineAdapter {
             ],
             env: {},
             ...(modelDirectory === '' ? {} : { modelDirectory }),
+            // The raw config.model value stamps the plan's modelId (a bare config
+            // names the engine's single default model), so the service's
+            // launched-models tie compares equal against the provider's stored
+            // config.model, the infernix pattern.
+            modelId: modelValue !== '' ? modelValue : BASALT_DEFAULT_MODEL_ID,
             modelFile,
             port,
             healthUrl: `http://127.0.0.1:${port}/health`,

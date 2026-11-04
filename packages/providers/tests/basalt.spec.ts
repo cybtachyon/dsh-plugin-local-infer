@@ -32,6 +32,7 @@ import {
   BasaltAdapter,
 } from '../src/engines/basalt/basaltAdapter.ts'
 import {
+  BASALT_DEFAULT_MODEL_ID,
   BASALT_EXPERT_CACHE_OPTIONS,
   BASALT_KV_OPTIONS,
   BASALT_PARAMETERS,
@@ -281,6 +282,7 @@ describe('Basalt registration', () => {
   it('carries the single default model the adapter constants name', () => {
     const models = defaultModelsForEngine('basalt')
     expect(models).toHaveLength(1)
+    expect(models[0]?.modelId).toBe(BASALT_DEFAULT_MODEL_ID)
     expect(models[0]?.url).toBe(`https://huggingface.co/${BASALT_MODEL_REPO}`)
     expect(models[0]?.file).toBe(BASALT_MODEL_FILE)
   })
@@ -533,6 +535,24 @@ describe('BasaltAdapter.renderLaunch', () => {
     // back to the engine default artifact.
     const unknown = adapter.renderLaunch({ model: 'not-a-key' }, ADAPTER_HW)
     expect(unknown.modelFile).toBe(BASALT_MODEL_FILE)
+  })
+
+  it('stamps the plan modelId from the raw config model for the status tie', () => {
+    const { host } = basaltStubHost()
+    const adapter = new BasaltAdapter(host)
+    // The raw config.model value stamps the plan, so the service's
+    // launched-models tie compares equal against the provider's stored
+    // config.model. A registry key (the Model dropdown's selection) stamps
+    // that key.
+    const keyed = adapter.renderLaunch({ model: 'qwen38-flash-next' }, ADAPTER_HW)
+    expect(keyed.modelId).toBe('qwen38-flash-next')
+    // A .basalt file name (a directory-scan selection) stamps the path the
+    // engine serves.
+    const file = adapter.renderLaunch({ model: 'models/m.basalt' }, ADAPTER_HW)
+    expect(file.modelId).toBe('models/m.basalt')
+    // A bare config names the engine's single default model.
+    const bare = adapter.renderLaunch({}, ADAPTER_HW)
+    expect(bare.modelId).toBe(BASALT_DEFAULT_MODEL_ID)
   })
 
   it('spells the Windows binary on a Windows host', () => {
