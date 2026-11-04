@@ -48,6 +48,7 @@ import type {
 import { readConfig, writeStored } from '../config.ts'
 import { persistProcessLog } from './logs.ts'
 import { resolveEngineDirectory, runGetSteps } from './get-steps.ts'
+import type { GetStepsRequest, GetStepsResult } from './get-steps.ts'
 import { RouteError } from '../route.ts'
 import type { GetRequest, LaunchRequest } from '../request.ts'
 
@@ -159,6 +160,36 @@ function registerLaunchPlatform(
 }
 
 /**
+ * getStepsRequest builds the shared Get-steps request both getEngine and
+ * launchEngine run: the engine and config, the platform entry the checkout
+ * resolves against, the Play/Run trust gate, and the lifecycle host plus the
+ * optional cancel signal and download-progress sink. The exactOptionalProperty-
+ * types-safe spreads keep an absent field from writing `undefined`, so the
+ * host, signal, and sink travel as one group built in one place. Each caller
+ * layers its own extras on the result: the launch adds autoRebuild and the
+ * sync override, a standalone Get adds none.
+ */
+function getStepsRequest(
+  engineId: string,
+  config: Config,
+  stored: StoredConfig,
+  platform: StoredPlatformConfig | undefined,
+  host: LifecycleHost,
+  signal?: AbortSignal,
+  onChunk?: (chunk: string) => void,
+): GetStepsRequest {
+  return {
+    engineId,
+    config,
+    ...(platform !== undefined ? { platform } : {}),
+    allowRunDeps: stored.allowRunDeps,
+    host,
+    ...(signal !== undefined ? { signal } : {}),
+    ...(onChunk !== undefined ? { onChunk } : {}),
+  }
+}
+
+/**
  * launchEngine runs the shared Get-steps routine (idempotent: deps, git sync,
  * build, model download, chat-template download, each skipped when already
  * satisfied) and then renders the plan the registered adapter produces for
@@ -218,15 +249,9 @@ export async function launchEngine(
   const get = await runGetSteps(
     localInfer,
     {
-      engineId,
-      config,
-      ...(platform !== undefined ? { platform } : {}),
-      allowRunDeps: stored.allowRunDeps,
+      ...getStepsRequest(engineId, config, stored, platform, host, signal, onChunk),
       ...(request.autoRebuild !== undefined ? { autoRebuild: request.autoRebuild } : {}),
       continueOnSyncFailure: true,
-      host,
-      ...(signal !== undefined ? { signal } : {}),
-      ...(onChunk !== undefined ? { onChunk } : {}),
     },
     (chunk) => {
       getLogs += chunk
@@ -234,24 +259,15 @@ export async function launchEngine(
   )
   const plan = adapter.renderLaunch(config, hardware)
   if (!get.ok) {
-    // A Get step that failed aborts the launch before the deploy starts, and
-    // the persisted run carries the Get-step output that named the broken
-    // step, so the Logs section diagnoses it after a reload. A cancel that
-    // landed while the Get steps ran (the card's provider-form Cancel closed
-    // the stream) adds the "Canceled" line, so the run reads as canceled.
-    const result: LaunchResult = {
+    return settleGetFailure(
       plan,
-      healthy: false,
-      detail: get.detail ?? 'a Get step failed',
-    }
-    persistLaunchOutcome(
-      result,
+      get,
       engineId,
       config,
       request.providerId,
-      signal?.aborted === true ? getLogs + CANCELED_LINE : getLogs,
+      getLogs,
+      signal?.aborted === true,
     )
-    return result
   }
   applyComposeArgs(plan, localInfer, engineId)
   const commandNote = launchCommandNote(plan)
@@ -338,6 +354,37 @@ function persistLaunchOutcome(
 }
 
 /**
+ * settleGetFailure settles a launch whose Get steps failed before the deploy
+ * starts: it builds the unhealthy result (naming the broken step), persists
+ * the run (the Get-step output leads, and a cancel that landed adds the
+ * "Canceled" line, so the run reads as canceled), and returns the result so
+ * the route answers with it.
+ */
+function settleGetFailure(
+  plan: LaunchPlan,
+  get: GetStepsResult,
+  engineId: string,
+  config: Config,
+  providerId: string | undefined,
+  getLogs: string,
+  canceled: boolean,
+): LaunchResult {
+  const result: LaunchResult = {
+    plan,
+    healthy: false,
+    detail: get.detail ?? 'a Get step failed',
+  }
+  persistLaunchOutcome(
+    result,
+    engineId,
+    config,
+    providerId,
+    canceled ? getLogs + CANCELED_LINE : getLogs,
+  )
+  return result
+}
+
+/**
  * findLaunchTarget resolves the stored provider entry a launch or stop
  * targets: the entry the request names by id, or (an id the card does not
  * send, a launch of the active config) the stored entry with the same engine
@@ -361,6 +408,17 @@ function findLaunchTarget(
       entry.engine === engineId &&
       (typeof entry.config.model === 'string' ? entry.config.model : undefined) === model,
   )
+}
+
+/**
+ * withoutLaunchRecord returns a provider entry with its launch record (the
+ * engine pid and the previous-pid list) removed, so the record is gone from
+ * the file, not just ignored, and a recycled pid cannot re-link to a config
+ * whose engine is stopped or dead. The stop, death, and re-link paths share
+ * it, so the rebuilt entry shape lives in one place.
+ */
+function withoutLaunchRecord(entry: StoredProviderConfig): StoredProviderConfig {
+  return { id: entry.id, engine: entry.engine, config: entry.config, platform: entry.platform }
 }
 
 /**
@@ -408,12 +466,9 @@ function clearLaunchRecord(
   const stored = readConfig()
   const target = findLaunchTarget(stored, engineId, providerId, config)
   if (target === undefined || target.launch === undefined) return
-  const providers = stored.providers.map((entry) => {
-    if (entry.id !== target.id) return entry
-    // Rebuild the entry without the launch key, so the record (including the
-    // previous-pid list) is gone from the file, not just ignored.
-    return { id: entry.id, engine: entry.engine, config: entry.config, platform: entry.platform }
-  })
+  const providers = stored.providers.map((entry) =>
+    entry.id === target.id ? withoutLaunchRecord(entry) : entry,
+  )
   writeStored(stored, { providers })
 }
 
@@ -440,9 +495,7 @@ export function handleEngineDeath(event: EngineDeathEvent): void {
       event.port !== undefined && record.engineId === entry.engine && record.port === event.port
     if (!byPid && !byEnginePort) return entry
     matched = true
-    // Rebuild the entry without the launch key, so the record (including the
-    // previous-pid list) is gone from the file, not just ignored.
-    return { id: entry.id, engine: entry.engine, config: entry.config, platform: entry.platform }
+    return withoutLaunchRecord(entry)
   })
   if (!matched) return
   const signalNote =
@@ -574,19 +627,11 @@ export async function relinkStoredProviders(
   if (!recorded.some((provider) => outcomes[provider.id] === 'dead')) {
     return stored.providers
   }
-  const providers = stored.providers.map((provider) => {
-    if (provider.launch === undefined || outcomes[provider.id] !== 'dead') {
-      return provider
-    }
-    // Rebuild the dead entry without the launch key, so the record (including
-    // the previous-pid list) is gone from the file, not just ignored.
-    return {
-      id: provider.id,
-      engine: provider.engine,
-      config: provider.config,
-      platform: provider.platform,
-    }
-  })
+  const providers = stored.providers.map((provider) =>
+    provider.launch !== undefined && outcomes[provider.id] === 'dead'
+      ? withoutLaunchRecord(provider)
+      : provider,
+  )
   writeStored(stored, { providers })
   return providers
 }
@@ -629,15 +674,7 @@ export async function getEngine(
   const platform = registerLaunchPlatform(localInfer, request, stored, engineId, config)
   const result = await runGetSteps(
     localInfer,
-    {
-      engineId,
-      config,
-      ...(platform !== undefined ? { platform } : {}),
-      allowRunDeps: stored.allowRunDeps,
-      host,
-      ...(signal !== undefined ? { signal } : {}),
-      ...(onChunk !== undefined ? { onChunk } : {}),
-    },
+    getStepsRequest(engineId, config, stored, platform, host, signal, onChunk),
     log,
   )
   return { ok: result.ok, ...(result.detail !== undefined ? { detail: result.detail } : {}) }

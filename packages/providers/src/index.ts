@@ -75,6 +75,7 @@ export type {
   EngineStepResult,
   SyncRebuildRequest,
   SyncRebuildResult,
+  SyncStepResult,
 } from './acquire.ts'
 export { ENGINE_DEP_PLANS, SYSTEM_DEPS, engineLocalDeps } from './deps.ts'
 export { ENGINE_PLATFORM_DEFAULTS, enginePlatformDefaults } from './platform.ts'

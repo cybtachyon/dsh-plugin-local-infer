@@ -79,6 +79,17 @@ export interface EngineStepResult {
     detail?: string;
 }
 /**
+ * SyncStepResult is the sync step's EngineStepResult plus the path it took:
+ * `cloned` true means a fresh clone ran (no prior checkout), so a failure on
+ * that path leaves no current version to launch; an absent `cloned` means the
+ * checkout was present and the rebase, fetch, or dirty path ran, so a failure
+ * there leaves a launchable current version. The Get step reads the flag to
+ * decide a sync failure's fatality instead of re-probing the checkout.
+ */
+export interface SyncStepResult extends EngineStepResult {
+    cloned?: boolean;
+}
+/**
  * engineSource reads the registered acquisition data for an engine id, or
  * undefined when none is registered.
  */
@@ -97,13 +108,17 @@ export declare function engineBuildSteps(engineId: string, os?: 'linux' | 'windo
  * no fork is provided). An existing checkout with local changes aborts, so
  * the user's work is never rebased away; a clean checkout fetches the listed
  * fork (added as the named fork remote when provided, origin when not) and
- * rebases onto its branch. Every command echoes into log as it runs.
+ * rebases onto its branch. Every command echoes into log as it runs. The
+ * result's `cloned` flag names the path taken: set on a fresh clone (the
+ * checkout was absent), absent on the present-checkout path, so a caller
+ * prices a failure's fatality from the flag instead of re-probing the
+ * checkout.
  */
 export declare function syncEngineRepo(host: LifecycleHost, request: {
     engineId: string;
     directory: string;
     fork?: string;
-}, log: AcquireLog): Promise<EngineStepResult>;
+}, log: AcquireLog): Promise<SyncStepResult>;
 /**
  * SyncRebuildRequest names the checkout the conditional rebuild prices: the
  * engine, its directory, the optional fork remote, and the Play/Run trust gate

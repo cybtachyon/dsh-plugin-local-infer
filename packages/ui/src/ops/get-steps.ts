@@ -248,9 +248,13 @@ async function runSyncBuildStep(ctx: GetStepContext): Promise<GetStepFailure> {
     // sync of an existing checkout fails, the run keeps going with the
     // checkout's current version (the build is skipped, since the rebase
     // failed and the checkout stays where it is) and reports the failure
-    // non-fatally, so a broken rebase never halts the launch. A missing
-    // checkout (a clone failure, no current version to launch) stays fatal.
-    if (request.continueOnSyncFailure === true && existsSync(directory)) {
+    // non-fatally, so a broken rebase never halts the launch. The sync result
+    // names the path it took: a fresh clone (cloned) means no prior checkout
+    // to launch, so a clone failure stays fatal; a rebase, fetch, or dirty
+    // checkout of an existing checkout (no clone) is non-fatal under the
+    // override. Reading the flag keeps the checkout-presence decision in the
+    // one place that probes it (the git rev-parse in the sync step).
+    if (request.continueOnSyncFailure === true && sync.cloned !== true) {
       emit('!! engine sync failed; continuing with the current version\n')
       return SYNC_FAILED
     }
