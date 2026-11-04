@@ -358,9 +358,24 @@ export class StrataAdapter extends EngineAdapter {
         // re-polls instead of showing a broken launch.
         const pollMs = options?.pollMs ?? HEALTH_POLL_DEFAULT_MS;
         const maxAttempts = options?.maxAttempts ?? HEALTH_POLL_MAX_ATTEMPTS;
+        // The tracked handle is read before the loop: trackChild drops the map
+        // entry when the child ends, so a late read would miss the exit state
+        // the early-exit check needs.
+        const handle = this.children.get(this.planKey(plan));
         let last = { status: 0, ok: false };
         let lastPreReady = null;
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            // The state read runs before the fetch: a child that settled (a crash,
+            // a pkill, or a spawn failure) will never report 200, so the poll
+            // ends here with a failed result instead of the full attempt cap.
+            if (handle?.hasExited?.() === true) {
+                return {
+                    healthy: false,
+                    status: last.status,
+                    state: 'failed',
+                    detail: 'the engine process exited before it reported ready',
+                };
+            }
             last = await this.host.fetch(plan.healthUrl);
             if (last.status === 200) {
                 return { healthy: true, status: 200, state: 'ready' };
@@ -369,7 +384,6 @@ export class StrataAdapter extends EngineAdapter {
             // missing handle (no deploy tracked one, or the process already ended)
             // falls through to the plain poll: the health URL stays down, so the
             // loop times out and reads the start as failed.
-            const handle = this.children.get(this.planKey(plan));
             if (handle !== undefined) {
                 lastPreReady = strataPreReadyState(handle.logs ?? '');
             }

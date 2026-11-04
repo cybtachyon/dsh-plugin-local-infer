@@ -139,9 +139,13 @@ export declare const HEALTH_POLL_MAX_ATTEMPTS = 120;
 /**
  * pollHealth polls a plan's health URL until a 200 or the attempt cap, the
  * same loop the qwen-ninfer launcher runs. A poll interval of 0 skips the
- * delay, which the tests use to run the loop without a real sleep.
+ * delay, which the tests use to run the loop without a real sleep. `handle`
+ * is the tracked child the deploy step spawned: when it reports it has
+ * exited (hasExited true), the poll ends immediately with a failed result
+ * instead of running the full attempt cap, so a crash reports at once. A
+ * handle that cannot report its exit state (a stub) keeps the full poll.
  */
-export declare function pollHealth(host: LifecycleHost, plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;
+export declare function pollHealth(host: LifecycleHost, plan: LaunchPlan, options?: HealthCheckOptions, handle?: ProcessHandle): Promise<HealthResult>;
 /**
  * delay waits `ms` milliseconds. The health polls use it between attempts; a
  * poll interval of 0 skips the wait, which the tests use to run the loop

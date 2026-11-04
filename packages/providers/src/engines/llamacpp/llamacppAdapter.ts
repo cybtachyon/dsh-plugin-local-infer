@@ -265,7 +265,9 @@ export class LlamaCppAdapter extends EngineAdapter {
   }
 
   async healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult> {
-    return pollHealth(this.host, plan, options)
+    // The tracked handle rides into the poll, so a child that exits (a
+    // crash) ends the poll early with a failed result.
+    return pollHealth(this.host, plan, options, this.children.get(this.planKey(plan)))
   }
 
   async stop(plan: LaunchPlan): Promise<void> {

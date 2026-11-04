@@ -371,12 +371,19 @@ export class BasaltAdapter extends EngineAdapter {
     // times out). Basalt downloads its model in the deploy step, so the
     // engine's own start has no download phase: a tracked process that is
     // still coming up reads as starting, and a missing handle (no deploy
-    // tracked one, or the process already ended) reads as failed.
-    const result = await pollHealth(this.host, plan, options)
+    // tracked one) reads as failed. The tracked handle rides into the poll,
+    // so a child that exits (a crash) ends the poll early with the failed
+    // state the poll stamps.
+    const handle = this.children.get(this.planKey(plan))
+    const result = await pollHealth(this.host, plan, options, handle)
     if (result.healthy) {
       return { ...result, state: 'ready' }
     }
-    const handle = this.children.get(this.planKey(plan))
+    if (result.state === 'failed') {
+      // The poll ended early because the tracked child exited: the process
+      // is gone, so the start reads as failed, not starting.
+      return result
+    }
     const state: EngineLaunchState =
       handle !== undefined && (handle.logs ?? '') !== '' ? 'starting' : 'failed'
     return { ...result, state }

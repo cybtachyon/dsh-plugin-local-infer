@@ -563,13 +563,27 @@ export const HEALTH_POLL_MAX_ATTEMPTS = 120;
 /**
  * pollHealth polls a plan's health URL until a 200 or the attempt cap, the
  * same loop the qwen-ninfer launcher runs. A poll interval of 0 skips the
- * delay, which the tests use to run the loop without a real sleep.
+ * delay, which the tests use to run the loop without a real sleep. `handle`
+ * is the tracked child the deploy step spawned: when it reports it has
+ * exited (hasExited true), the poll ends immediately with a failed result
+ * instead of running the full attempt cap, so a crash reports at once. A
+ * handle that cannot report its exit state (a stub) keeps the full poll.
  */
-export async function pollHealth(host, plan, options) {
+export async function pollHealth(host, plan, options, handle) {
     const pollMs = options?.pollMs ?? HEALTH_POLL_DEFAULT_MS;
     const maxAttempts = options?.maxAttempts ?? HEALTH_POLL_MAX_ATTEMPTS;
     let last = { status: 0, ok: false };
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        // The state read runs before the fetch: a child that settled (a crash,
+        // a pkill, or a spawn failure) will never report 200, so the poll ends
+        // here with a failed result naming the exit.
+        if (handle?.hasExited?.() === true) {
+            return {
+                healthy: false,
+                state: 'failed',
+                detail: 'the engine process exited before it reported ready',
+            };
+        }
         last = await host.fetch(plan.healthUrl);
         if (last.status === 200) {
             return { healthy: true, status: 200 };
