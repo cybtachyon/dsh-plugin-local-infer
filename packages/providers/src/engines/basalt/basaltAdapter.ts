@@ -53,6 +53,7 @@ import {
 import { engineBuildDir, syncEngineForDeploy } from '../../acquire.ts'
 import { defaultModelFor } from '../../model-defaults.ts'
 import {
+  BASALT_DEFAULT_MODEL_ID,
   BASALT_DEFAULT_PORT,
   BASALT_MODEL_FILE,
   BASALT_MODEL_REPO,
@@ -207,6 +208,11 @@ export class BasaltAdapter extends EngineAdapter {
       ],
       env: {},
       ...(modelDirectory === '' ? {} : { modelDirectory }),
+      // The raw config.model value stamps the plan's modelId (a bare config
+      // names the engine's single default model), so the service's
+      // launched-models tie compares equal against the provider's stored
+      // config.model, the infernix pattern.
+      modelId: modelValue !== '' ? modelValue : BASALT_DEFAULT_MODEL_ID,
       modelFile,
       port,
       healthUrl: `http://127.0.0.1:${port}/health`,

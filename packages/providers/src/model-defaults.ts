@@ -18,7 +18,11 @@
  */
 
 import type { DefaultModel } from 'dsh-plugin-local-infer/core'
-import { BASALT_MODEL_FILE, BASALT_MODEL_REPO } from './engines/basalt/basalt.ts'
+import {
+  BASALT_DEFAULT_MODEL_ID,
+  BASALT_MODEL_FILE,
+  BASALT_MODEL_REPO,
+} from './engines/basalt/basalt.ts'
 
 /**
  * DEFAULT_MODELS is the default model list, in the order the card lists them.
@@ -119,7 +123,7 @@ export const DEFAULT_MODELS: readonly DefaultModel[] = [
   // route and the deploy step share one source.
   {
     engineId: 'basalt',
-    modelId: 'qwen38-flash-next',
+    modelId: BASALT_DEFAULT_MODEL_ID,
     label: 'Basalt Qwen3.8-Flash-Next (NVFP4 DQ6_K)',
     url: `https://huggingface.co/${BASALT_MODEL_REPO}`,
     file: BASALT_MODEL_FILE,
