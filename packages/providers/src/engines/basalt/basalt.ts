@@ -34,6 +34,13 @@ export const BASALT_MODEL_REPO = 'jesdga/Qwen3.8-Flash-Next-Basalt'
 export const BASALT_MODEL_FILE = 'Qwen3.8-FN-NVFP4-DQ6_K.basalt'
 
 /**
+ * The loopback port the basalt serve CLI binds by default, so a config that
+ * names no port launches on it. The port spec's defaultValue and the adapter's
+ * port fallback share this one constant.
+ */
+export const BASALT_DEFAULT_PORT = 8080
+
+/**
  * The KV cache storage formats Basalt serves, in the order the form
  * dropdown lists them. `note` carries the tradeoff text the dropdown shows
  * beside each choice.
@@ -108,10 +115,9 @@ export const BASALT_PARAMETERS: readonly ParameterSpec[] = [
     // The port is a typed number, not a range strip: a 1..65535 drag slider is
     // noise, so `slider: false` renders the plain number entry only.
     form: { kind: 'number', min: 1, max: 65535, step: 1, slider: false },
-    // 8080 is the port the basalt serve CLI binds by default, so the form
-    // seeds the value the adapter's own fallback uses when a config names no
-    // port.
-    defaultValue: 8080,
+    // The port the basalt serve CLI binds by default, so the form seeds the
+    // value the adapter's own fallback uses when a config names no port.
+    defaultValue: BASALT_DEFAULT_PORT,
     group: 'Engine',
     deploy: { target: 'config', format: 'json', block: 'server' },
   },

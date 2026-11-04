@@ -53,6 +53,7 @@ import {
 import { engineBuildDir, syncEngineForDeploy } from '../../acquire.ts'
 import { defaultModelFor } from '../../model-defaults.ts'
 import {
+  BASALT_DEFAULT_PORT,
   BASALT_MODEL_FILE,
   BASALT_MODEL_REPO,
   BASALT_PARAMETERS,
@@ -175,16 +176,19 @@ export class BasaltAdapter extends EngineAdapter {
     const binary = BASALT_BINARY[_hw.os]()
     const buildDir = engineBuildDir(this.id, _hw.os)
     const binaryPath = buildDir === '' ? binary : join(buildDir, binary)
-    // The --model flag names the .basalt artifact the engine serves. The
-    // value is a placeholder the deploy step resolves to the concrete
-    // artifact path after the model download: the flat join for a user model
-    // directory, the hub-cache snapshot path for the default layout. The
-    // file name comes from config.model (a registry key, a .basalt file
-    // name, or the engine default). The --engine-bin flag names the same
-    // build-tree binary the argv's first token carries, so the serve CLI
+    // The .basalt artifact the engine serves, resolved from config.model (a
+    // registry key, a .basalt file name, or the engine default). It stamps
+    // both the --model placeholder and the plan's modelFile field, so the
+    // deploy step downloads exactly the file the flag points at without
+    // re-parsing the rendered argv. The --model value is a placeholder the
+    // deploy step resolves to the concrete artifact path after the model
+    // download (the flat join for a user model directory, the hub-cache
+    // snapshot path for the default layout). The --engine-bin flag names the
+    // same build-tree binary the argv's first token carries, so the serve CLI
     // spawns the engine binary it already names.
     const modelValue = typeof config.model === 'string' ? config.model : ''
-    const modelPath = join(baseDir, basaltModelFileName(modelValue))
+    const modelFile = basaltModelFileName(modelValue)
+    const modelPath = join(baseDir, modelFile)
     return {
       engineId: this.id,
       kind: 'process',
@@ -200,6 +204,7 @@ export class BasaltAdapter extends EngineAdapter {
       ],
       env: {},
       ...(modelDirectory === '' ? {} : { modelDirectory }),
+      modelFile,
       port,
       healthUrl: `http://127.0.0.1:${port}/health`,
       os: _hw.os,
@@ -251,24 +256,55 @@ export class BasaltAdapter extends EngineAdapter {
     const withLogs = (result: DeployResult): DeployResult =>
       buildLogs !== '' ? { ...result, logs: buildLogs } : result
     // The .basalt model artifact the engine serves, downloaded into the model
-    // directory. A bare config (no model directory) downloads into the hub
-    // cache (the hub-cache layout, no --local-dir); a user-overridden model
-    // directory keeps the flat --local-dir target. A model the shared
-    // Get-steps routine already downloaded is on disk, so the deploy step
-    // skips the re-fetch and a launch after a Get does no duplicate download.
+    // directory. The file name is the basename of the plan's modelFile
+    // (renderLaunch stamps it from config.model), so the download fetches
+    // exactly the file the --model flag points at. A bare config (no model
+    // directory) downloads into the hub cache (the hub-cache layout, no
+    // --local-dir); a user-overridden model directory keeps the flat
+    // --local-dir target. A model the shared Get-steps routine already
+    // downloaded is on disk, so the deploy step skips the re-fetch and a
+    // launch after a Get does no duplicate download.
     const { baseDir, useHubCache } = modelDownloadTarget(plan.modelDirectory)
-    // The .basalt artifact the --model flag names: the basename of the
-    // placeholder renderLaunch wrote (join(baseDir, basaltModelFileName(modelValue))),
-    // so the download fetches exactly the file the flag points at (a registry
-    // key's artifact, a directory-scan .basalt name, or the engine default). A
-    // plan with no --model flag (rendered before the flag existed) falls back
-    // to the engine default.
-    const planArgv = plan.argv ?? []
-    const planModelFlag = planArgv.indexOf('--model')
-    const modelFile =
-      planModelFlag >= 0 && basename(planArgv[planModelFlag + 1] ?? '') !== ''
-        ? basename(planArgv[planModelFlag + 1] ?? '')
-        : BASALT_MODEL_FILE
+    const modelFile = basename(plan.modelFile ?? BASALT_MODEL_FILE)
+    const artifact = await this.ensureModelArtifact(modelFile, baseDir, useHubCache, onProgress)
+    if (!artifact.ok) {
+      return withLogs({ ok: false, detail: artifact.detail })
+    }
+    // Swap the --model placeholder for the concrete artifact path. The flat
+    // layout placeholder is already concrete, so the swap is a no-op there;
+    // the hub-cache layout swaps to the snapshot path.
+    const spawnArgv = this.withModelArgv(plan.argv ?? [], artifact.path)
+    // Write the config file the plan names, so the engine's --config flag
+    // points at a path that exists.
+    const configFailure = await this.writeConfigFile(plan)
+    if (configFailure !== null) {
+      return withLogs({ ok: false, detail: configFailure })
+    }
+    // A relative launch path (a build-tree binary) is joined against the
+    // engine directory the spawn runs in, so the spawn resolves an absolute
+    // path. A bare name (the basalt binary, on the path after the rebuild's
+    // symlink step) is left as-is.
+    const resolvedArgv = resolveLaunchArgv(engineDir, spawnArgv)
+    const handle = this.host.spawn(resolvedArgv, plan.env ?? {}, engineDir)
+    trackChild(this.children, this.planKey(plan), handle)
+    return withLogs({ ok: true, handle })
+  }
+
+  /**
+   * ensureModelArtifact downloads the .basalt model file into the model
+   * directory and resolves the concrete path the engine serves. A model the
+   * Get-steps routine already downloaded is on disk, so the re-fetch is
+   * skipped. With the hub-cache layout the concrete path is the
+   * content-addressed snapshot path (only known after the download); with the
+   * flat layout it is the flat join. Returns the path, or a detail when the
+   * download fails or leaves no snapshot.
+   */
+  private async ensureModelArtifact(
+    modelFile: string,
+    baseDir: string,
+    useHubCache: boolean,
+    onProgress?: LaunchProgress,
+  ): Promise<{ ok: true; path: string } | { ok: false; detail: string }> {
     const entry: DefaultModel = {
       engineId: this.id,
       modelId: 'basalt',
@@ -280,64 +316,54 @@ export class BasaltAdapter extends EngineAdapter {
       onProgress?.('download')
       const download = await this.host.run(hfDownloadCommand(entry, baseDir, useHubCache))
       if (!download.ok) {
-        return withLogs({
-          ok: false,
-          detail: `model download failed: ${download.detail ?? 'unknown'}`,
-        })
+        return { ok: false, detail: `model download failed: ${download.detail ?? 'unknown'}` }
       }
     }
-    // Resolve the concrete model artifact path the --model flag names. The
-    // flat layout (a user model directory) placeholder renderLaunch wrote is
-    // already the concrete path, so the argv stands as-is. The hub-cache
-    // layout (the default) placeholder is the flat join; the hf CLI writes
-    // the content-addressed snapshots tree, whose commit directory is only
-    // known after the download, so the value swaps to the snapshot path.
-    let spawnArgv = plan.argv ?? []
     if (useHubCache) {
-      const snapshotPath = hubCacheSnapshotFilePath(
-        baseDir,
-        repoIdFromUrl(entry.url),
-        modelFile,
-      )
+      // The hf CLI writes the content-addressed snapshots tree, whose commit
+      // directory is only known after the download. A download that left no
+      // snapshot (a failed or partial fetch the hf CLI reported as ok) leaves
+      // no artifact to serve.
+      const snapshotPath = hubCacheSnapshotFilePath(baseDir, repoIdFromUrl(entry.url), modelFile)
       if (snapshotPath === null) {
-        // A download that left no snapshot (a failed or partial fetch the
-        // hf CLI reported as ok) leaves no artifact to serve.
-        return withLogs({
+        return {
           ok: false,
           detail: `model artifact missing: ${modelFile} (no hub-cache snapshot after download)`,
-        })
+        }
       }
-      // The swap builds a new array; plan.argv is shared with the launch
-      // record, so the plan keeps its placeholder. The --engine-bin value
-      // keeps the build-tree binary path.
-      const modelFlag = spawnArgv.indexOf('--model')
-      if (modelFlag >= 0) {
-        spawnArgv = spawnArgv.map((token, index) =>
-          index === modelFlag + 1 ? snapshotPath : token,
-        )
-      }
+      return { ok: true, path: snapshotPath }
     }
-    // Write the config file the plan names, so the engine's --config flag
-    // points at a path that exists. A host that cannot write files (a test
-    // stub) fails the launch rather than spawn an engine that reads no
-    // config.
-    if (plan.configFile !== undefined) {
-      if (this.host.writeFile === undefined) {
-        return withLogs({ ok: false, detail: 'the host cannot write the config file' })
-      }
-      // The config path is always absolute (renderLaunch joins the model
-      // download target base directory), so the file is written as-is into the
-      // model download target directory, never the engine's git checkout.
-      await this.host.writeFile(plan.configFile.path, plan.configFile.content)
+    return { ok: true, path: join(baseDir, modelFile) }
+  }
+
+  /**
+   * withModelArgv swaps the --model flag's value token for the concrete
+   * artifact path. It builds a new array, so the plan (shared with the launch
+   * record) keeps its placeholder. A plan with no --model flag (a pre-flag
+   * plan) stands as-is.
+   */
+  private withModelArgv(argv: string[], modelPath: string): string[] {
+    const modelFlag = argv.indexOf('--model')
+    if (modelFlag < 0) return argv
+    return argv.map((token, index) => (index === modelFlag + 1 ? modelPath : token))
+  }
+
+  /**
+   * writeConfigFile writes the config file the plan names, so the engine's
+   * --config flag points at a path that exists. The config path is always
+   * absolute (renderLaunch joins the model download target base directory),
+   * so the file lands in the model download target directory, never the
+   * engine's git checkout. Returns a failure detail (a host that cannot write
+   * files, a test stub) or null when the write succeeded or the plan names no
+   * config file.
+   */
+  private async writeConfigFile(plan: LaunchPlan): Promise<string | null> {
+    if (plan.configFile === undefined) return null
+    if (this.host.writeFile === undefined) {
+      return 'the host cannot write the config file'
     }
-    // A relative launch path (a build-tree binary) is joined against the
-    // engine directory the spawn runs in, so the spawn resolves an absolute
-    // path. A bare name (the basalt binary, on the path after the rebuild's
-    // symlink step) is left as-is.
-    const resolvedArgv = resolveLaunchArgv(engineDir, spawnArgv)
-    const handle = this.host.spawn(resolvedArgv, plan.env ?? {}, engineDir)
-    trackChild(this.children, this.planKey(plan), handle)
-    return withLogs({ ok: true, handle })
+    await this.host.writeFile(plan.configFile.path, plan.configFile.content)
+    return null
   }
 
   async healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult> {
@@ -372,8 +398,8 @@ export class BasaltAdapter extends EngineAdapter {
   }
 
   private port(config: Config): number {
-    // 8080 is the port the basalt serve CLI binds by default, so a bare
-    // config launches on it.
-    return typeof config.port === 'number' ? config.port : 8080
+    // The port the basalt serve CLI binds by default, so a bare config
+    // launches on it.
+    return typeof config.port === 'number' ? config.port : BASALT_DEFAULT_PORT
   }
 }

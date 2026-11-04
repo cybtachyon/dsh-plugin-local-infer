@@ -38,6 +38,14 @@ export interface LaunchPlan {
   containerName?: string
   modelId?: string
   modelDirectory?: string
+  // The model artifact the engine serves, stamped by renderLaunch from the
+  // config's model field: a file name (a registry key's artifact, a directory
+  // scan's .basalt name, the engine default) or a path the user typed. The
+  // deploy step downloads exactly this file (its basename) and points the
+  // engine's model flag at it, so the download and the launch target one
+  // artifact without the deploy step re-parsing the rendered argv. Absent for
+  // engines that name no single artifact file.
+  modelFile?: string
   port: number
   healthUrl: string
   // The host OS the plan renders for, stamped by renderLaunch from the

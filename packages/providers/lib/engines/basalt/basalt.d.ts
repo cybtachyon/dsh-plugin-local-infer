@@ -25,6 +25,12 @@ import type { ComboOption, Config, EnumOption, ParameterSpec } from 'dsh-plugin-
 export declare const BASALT_MODEL_REPO = "jesdga/Qwen3.8-Flash-Next-Basalt";
 export declare const BASALT_MODEL_FILE = "Qwen3.8-FN-NVFP4-DQ6_K.basalt";
 /**
+ * The loopback port the basalt serve CLI binds by default, so a config that
+ * names no port launches on it. The port spec's defaultValue and the adapter's
+ * port fallback share this one constant.
+ */
+export declare const BASALT_DEFAULT_PORT = 8080;
+/**
  * The KV cache storage formats Basalt serves, in the order the form
  * dropdown lists them. `note` carries the tradeoff text the dropdown shows
  * beside each choice.

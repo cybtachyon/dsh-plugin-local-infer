@@ -32,6 +32,7 @@ export interface LaunchPlan {
     containerName?: string;
     modelId?: string;
     modelDirectory?: string;
+    modelFile?: string;
     port: number;
     healthUrl: string;
     os?: 'linux' | 'windows' | 'macos';
