@@ -20,8 +20,10 @@ import { join } from 'node:path'
 import {
   EngineAdapter,
   hfDownloadCommand,
+  hubCacheSnapshotFilePath,
   modelArtifactPath,
   modelDownloadTarget,
+  repoIdFromUrl,
 } from '../../../../core/lib/index.js'
 import type {
   Config,
@@ -91,8 +93,8 @@ export const BASALT_CONFIG_FILE = 'basalt_config.json'
  * directory-scan selection) passes through; a registry key (a default-model
  * selection, e.g. `qwen38-flash-next`) maps to its artifact file through the
  * default model list; and a bare config falls back to the engine's default
- * artifact. The deploy step (TASK-004) resolves the file name to the
- * concrete artifact path after the model download.
+ * artifact. The deploy step resolves the file name to the concrete artifact
+ * path after the model download.
  */
 function basaltModelFileName(modelValue: string): string {
   if (modelValue !== '' && modelValue.endsWith('.basalt')) return modelValue
@@ -272,6 +274,37 @@ export class BasaltAdapter extends EngineAdapter {
         })
       }
     }
+    // Resolve the concrete model artifact path the --model flag names. The
+    // flat layout (a user model directory) placeholder renderLaunch wrote is
+    // already the concrete path, so the argv stands as-is. The hub-cache
+    // layout (the default) placeholder is the flat join; the hf CLI writes
+    // the content-addressed snapshots tree, whose commit directory is only
+    // known after the download, so the value swaps to the snapshot path.
+    let spawnArgv = plan.argv ?? []
+    if (useHubCache) {
+      const snapshotPath = hubCacheSnapshotFilePath(
+        baseDir,
+        repoIdFromUrl(entry.url),
+        BASALT_MODEL_FILE,
+      )
+      if (snapshotPath === null) {
+        // A download that left no snapshot (a failed or partial fetch the
+        // hf CLI reported as ok) leaves no artifact to serve.
+        return withLogs({
+          ok: false,
+          detail: `model artifact missing: ${BASALT_MODEL_FILE} (no hub-cache snapshot after download)`,
+        })
+      }
+      // The swap builds a new array; plan.argv is shared with the launch
+      // record, so the plan keeps its placeholder. The --engine-bin value
+      // keeps the build-tree binary path.
+      const modelFlag = spawnArgv.indexOf('--model')
+      if (modelFlag >= 0) {
+        spawnArgv = spawnArgv.map((token, index) =>
+          index === modelFlag + 1 ? snapshotPath : token,
+        )
+      }
+    }
     // Write the config file the plan names, so the engine's --config flag
     // points at a path that exists. A host that cannot write files (a test
     // stub) fails the launch rather than spawn an engine that reads no
@@ -289,7 +322,7 @@ export class BasaltAdapter extends EngineAdapter {
     // engine directory the spawn runs in, so the spawn resolves an absolute
     // path. A bare name (the basalt binary, on the path after the rebuild's
     // symlink step) is left as-is.
-    const resolvedArgv = resolveLaunchArgv(engineDir, plan.argv)
+    const resolvedArgv = resolveLaunchArgv(engineDir, spawnArgv)
     const handle = this.host.spawn(resolvedArgv, plan.env ?? {}, engineDir)
     trackChild(this.children, this.planKey(plan), handle)
     return withLogs({ ok: true, handle })
