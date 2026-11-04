@@ -64,7 +64,7 @@ the draft)
 
 - [x] [TASK-001-convert-card-pairs](docs/PLAN-REPRICE-ALL-TASK-001-convert-card-pairs.md)
 - [x] [TASK-002-convert-actions-sites](docs/PLAN-REPRICE-ALL-TASK-002-convert-actions-sites.md)
-- [ ] [TASK-003-convert-providers-sites](docs/PLAN-REPRICE-ALL-TASK-003-convert-providers-sites.md)
+- [x] [TASK-003-convert-providers-sites](docs/PLAN-REPRICE-ALL-TASK-003-convert-providers-sites.md)
 - [ ] [TASK-006-normalize-lib-newlines](docs/PLAN-REPRICE-ALL-TASK-006-normalize-lib-newlines.md)
 - [ ] [TASK-004-refactor-review](docs/PLAN-REPRICE-ALL-TASK-004-refactor-review.md)
 

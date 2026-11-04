@@ -81,8 +81,9 @@ export declare function openEntryLogs(store: CardStore, provider: ProviderSummar
  * becomes Stop), a downloading result settles to downloading (a busy
  * throbber the card re-polls), and a failed result, a stream that ends
  * without a result, or a fetch failure settles to failed (the control becomes
- * a red Logs). A result re-fetches the summary so the provider's status dot
- * repaints from red to green.
+ * a red Logs). A result re-fetches the summary and deps read models, so the
+ * provider's status dot repaints from red to green and the deps panel
+ * re-prices.
  */
 export declare function performEntryLaunch(store: CardStore, provider: ProviderSummaryEntry, t: TextTable): EntryTimerHandle;
 /**
@@ -102,7 +103,8 @@ export declare function performEntryStop(store: CardStore, provider: ProviderSum
  * event, the form's control shows no phase labels) and settles the draft's
  * launch cell. A healthy result reads as running (the control becomes Stop),
  * a not-healthy or missing result reads as the launch-failed note. The
- * summary re-fetches so the provider's status dot repaints. The run registers
+ * summary and deps read models re-fetch so the provider's status dot repaints
+ * and the deps panel re-prices. The run registers
  * its AbortController under the form's provider id (the "draft" key when the
  * form is not a provider), so the provider form's Cancel closes the stream
  * and the route interrupts the in-flight Get-step hf child on the host.
@@ -112,8 +114,8 @@ export declare function performDraftLaunch(store: CardStore, t: TextTable): Prom
  * performDraftStop runs the form's own Stop control (the title-bar control's
  * draft target): it signals the tracked process through the stop route and
  * settles the draft's stop cell. A successful stop reads as stopped (the
- * control becomes Launch). The summary re-fetches so the provider's status
- * dot repaints.
+ * control becomes Launch). The summary and deps read models re-fetch so the
+ * provider's status dot repaints and the deps panel re-prices.
  */
 export declare function performDraftStop(store: CardStore, t: TextTable): Promise<void>;
 //# sourceMappingURL=providers.d.ts.map

@@ -206,8 +206,9 @@ export function openEntryLogs(store: CardStore, provider: ProviderSummaryEntry):
  * becomes Stop), a downloading result settles to downloading (a busy
  * throbber the card re-polls), and a failed result, a stream that ends
  * without a result, or a fetch failure settles to failed (the control becomes
- * a red Logs). A result re-fetches the summary so the provider's status dot
- * repaints from red to green.
+ * a red Logs). A result re-fetches the summary and deps read models, so the
+ * provider's status dot repaints from red to green and the deps panel
+ * re-prices.
  */
 export function performEntryLaunch(
   store: CardStore,
@@ -304,9 +305,9 @@ export function performEntryLaunch(
         move(store, provider.id, { type: 'failed' })
       }
       // The provider status dots price the process probe on a summary fetch,
-      // so a launch that turned an engine healthy re-fetches the summary to
-      // repaint the dot from red to green.
-      void repriceSummary(store, { engine: provider.engine, config: provider.config })
+      // so a launch that turned an engine healthy re-fetches the summary and
+      // deps read models to repaint the dot and re-price the deps panel.
+      void repriceAll(store, { engine: provider.engine, config: provider.config })
     })
     .catch(() => {
       if (settle() !== true) {
@@ -377,6 +378,7 @@ export function performEntryStop(
       clearTimers()
       return
     }
+    // Summary only: stopping an engine does not change the deps the panel prices.
     void repriceSummary(store)
     poll = setTimeout(pollFn, STOP_POLL_MS)
   }
@@ -433,7 +435,8 @@ function draftLaunchBody(store: CardStore): LaunchRequest {
  * event, the form's control shows no phase labels) and settles the draft's
  * launch cell. A healthy result reads as running (the control becomes Stop),
  * a not-healthy or missing result reads as the launch-failed note. The
- * summary re-fetches so the provider's status dot repaints. The run registers
+ * summary and deps read models re-fetch so the provider's status dot repaints
+ * and the deps panel re-prices. The run registers
  * its AbortController under the form's provider id (the "draft" key when the
  * form is not a provider), so the provider form's Cancel closes the stream
  * and the route interrupts the in-flight Get-step hf child on the host.
@@ -454,7 +457,7 @@ export function performDraftLaunch(store: CardStore, t: TextTable): Promise<void
       postLaunch(draftLaunchBody(store), undefined, controller.signal)
         .then((result) => {
           if (result !== null && result.healthy === true) {
-            void repriceSummary(store, { engine: draft.engine, config: draft.config })
+            void repriceAll(store, { engine: draft.engine, config: draft.config })
             return t.runningOn + ' ' + (result.plan !== undefined ? String(result.plan.port) : '')
           }
           if (result !== null) {
@@ -477,8 +480,8 @@ export function performDraftLaunch(store: CardStore, t: TextTable): Promise<void
  * performDraftStop runs the form's own Stop control (the title-bar control's
  * draft target): it signals the tracked process through the stop route and
  * settles the draft's stop cell. A successful stop reads as stopped (the
- * control becomes Launch). The summary re-fetches so the provider's status
- * dot repaints.
+ * control becomes Launch). The summary and deps read models re-fetch so the
+ * provider's status dot repaints and the deps panel re-prices.
  */
 export function performDraftStop(store: CardStore, t: TextTable): Promise<void> {
   const state = store.getSnapshot()
@@ -491,7 +494,7 @@ export function performDraftStop(store: CardStore, t: TextTable): Promise<void> 
     'stop',
     () =>
       postStop(draftLaunchBody(store)).then(() => {
-        void repriceSummary(store, { engine: draft.engine, config: draft.config })
+        void repriceAll(store, { engine: draft.engine, config: draft.config })
         return t.stopped
       }),
     ACTION_TIMEOUTS.stop,

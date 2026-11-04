@@ -2584,7 +2584,7 @@ function performEntryLaunch(store, provider, t) {
     } else {
       move(store, provider.id, { type: "failed" });
     }
-    void repriceSummary(store, { engine: provider.engine, config: provider.config });
+    void repriceAll(store, { engine: provider.engine, config: provider.config });
   }).catch(() => {
     if (settle() !== true) {
       return;
@@ -2686,7 +2686,7 @@ function performDraftLaunch(store, t) {
     "launch",
     () => postLaunch(draftLaunchBody(store), void 0, controller.signal).then((result) => {
       if (result !== null && result.healthy === true) {
-        void repriceSummary(store, { engine: draft.engine, config: draft.config });
+        void repriceAll(store, { engine: draft.engine, config: draft.config });
         return t.runningOn + " " + (result.plan !== void 0 ? String(result.plan.port) : "");
       }
       if (result !== null) {
@@ -2710,7 +2710,7 @@ function performDraftStop(store, t) {
     store,
     "stop",
     () => postStop(draftLaunchBody(store)).then(() => {
-      void repriceSummary(store, { engine: draft.engine, config: draft.config });
+      void repriceAll(store, { engine: draft.engine, config: draft.config });
       return t.stopped;
     }),
     ACTION_TIMEOUTS.stop
