@@ -97,9 +97,13 @@ export interface CommandOutcome {
 /**
  * CommandRunner runs one shell command line and reports the exit. The
  * Play/Run path takes it as a parameter, so the tests stub it and never run a
- * real sudo in CI.
+ * real sudo in CI. `needsSudo` carries the dep's sudo declaration
+ * (SystemDep.requiresSudo) to the runner so it can apply the sudo-prompt rule;
+ * the need is declared in data, never parsed from the command text.
  */
-export type CommandRunner = (command: string) => Promise<CommandOutcome>;
+export type CommandRunner = (command: string, options?: {
+    needsSudo?: boolean;
+}) => Promise<CommandOutcome>;
 /**
  * InstallResult is the outcome of the Play/Run path: overall success and the
  * per-dep status after re-running the probes.

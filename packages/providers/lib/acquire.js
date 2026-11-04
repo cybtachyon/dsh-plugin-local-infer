@@ -158,7 +158,8 @@ export function engineBuildSteps(engineId, os = 'linux') {
  * through plain run otherwise. The streamed copy is also collected, so a
  * caller can price the command's stdout (the dirty-check, for one). A
  * `shell` option (the engine OS profile's shell) runs the command in that
- * shell instead of the host's default.
+ * shell instead of the host's default. A `needsSudo` option declares the
+ * command runs sudo, so the host applies the sudo-prompt rule to it.
  */
 async function runLogged(host, command, log, options) {
     let output = '';
@@ -169,9 +170,13 @@ async function runLogged(host, command, log, options) {
     if (options?.echo !== false) {
         log(`$ ${command}\n`);
     }
-    // exactOptionalPropertyTypes: build the options object only when a shell is
-    // named, so an absent shell never passes `{ shell: undefined }` through.
-    const runOptions = options?.shell !== undefined ? { shell: options.shell } : undefined;
+    // exactOptionalPropertyTypes: carry only the options the caller set, so an
+    // absent shell or sudo declaration never passes `{ shell: undefined }`
+    // through.
+    const runOptions = {
+        ...(options?.shell === undefined ? {} : { shell: options.shell }),
+        ...(options?.needsSudo === undefined ? {} : { needsSudo: options.needsSudo }),
+    };
     if (host.runStream !== undefined) {
         const outcome = await host.runStream(command, collect, runOptions);
         return { ...outcome, output };
@@ -415,7 +420,9 @@ export async function syncAndRebuildEngine(host, request, log) {
                 const buildDir = engineBuildDir(request.engineId, request.os ?? 'linux');
                 const link = `sudo ln -sf ${directory}/${buildDir}/${binary} /usr/local/bin/${binary}`;
                 if (request.allowRunDeps === true) {
-                    const result = await runLogged(host, link, emit);
+                    // The hand-written sudo line declares its need at this call site;
+                    // the host never parses the command text to find out.
+                    const result = await runLogged(host, link, emit, { needsSudo: true });
                     if (!result.ok) {
                         emit(`!! ${link} failed: ${result.detail ?? 'unknown'}\n`);
                     }
