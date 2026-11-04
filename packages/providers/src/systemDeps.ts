@@ -287,7 +287,9 @@ export const SYSTEM_DEPS = {
       dnf: { commands: ['sudo python3 -m pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
       pacman: { commands: ['sudo python3 -m pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
       brew: { commands: ['python3 -m pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
-      winget: { commands: ['python3 -m pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
+      // The Windows interpreter is python, not python3, so the winget host
+      // installs through the python alias the OS ships.
+      winget: { commands: ['python -m pip install numpy jinja2 markupsafe regex pyyaml tqdm pillow psutil'] },
     },
   },
 } satisfies Record<string, SystemDep>
