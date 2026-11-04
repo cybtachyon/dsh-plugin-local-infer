@@ -54,6 +54,7 @@ Count the total number of sequential tasks generated. Execute branch **A** or **
 1. **Append To-Dos**: Use the `todo_write` tool to insert your tasks directly into the global todo list.
 2. **Add Finalizer To-Do**: Append a final `Finalize` item to the end of that list.
 3. **Interview User**: For every open question identified in Step 1, invoke the `ask_user_question` tool individually.
+   Provide at least one recommended answer and leave a spot open for the user to answer with their own input.
 4. **Persist Answers**: As answers arrive, write them directly into `PLAN-{{1OR2WORD-SLUG}}.md` (or the specific task file if using Branch A).
 5. **Close Questionnaire**: Mark the Questionnaire task as complete.
 6. **Commit Blueprint**: If on Branch A (High-Complexity), commit the created `PLAN` file (and accompanying `docs/` task files if applicable) to repository version control.
