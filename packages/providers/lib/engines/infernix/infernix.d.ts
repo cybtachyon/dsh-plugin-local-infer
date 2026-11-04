@@ -142,7 +142,10 @@ export declare function infernixDraftModelPath(config: Config): string | null;
  * layout the `--draft-model` path expects) when a preset is selected, and the
  * model key's PLE n-gram volume (into the model directory) when the key names
  * one. The commands are the single source the Get route streams, so a Get
- * leaves the model directory ready to launch.
+ * leaves the model directory ready to launch. Every command carries
+ * `--format human`, which overrides the non-TTY default (`auto` picks
+ * `agent`, which prints no progress) so the hf CLI prints tqdm progress
+ * lines to stderr, matching the core `hfDownloadCommand` builder contract.
  */
 export declare function infernixGetDownloads(config: Config, modelDir: string, useHubCache?: boolean): string[];
 /**

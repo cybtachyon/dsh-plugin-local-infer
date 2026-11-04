@@ -75,6 +75,7 @@ by the previous commits in their phase and resolve the named code risks.
 ### Phase 1 — Server-side progress streaming
 
 - [x] [TASK-001-add-format-human](docs/PLAN-get-progress-TASK-001-add-format-human.md)
+- [x] [TASK-018-infernix-format-human](docs/PLAN-get-progress-TASK-018-infernix-format-human.md)
 - [ ] [TASK-002-spawn-runner-onchunk](docs/PLAN-get-progress-TASK-002-spawn-runner-onchunk.md)
 - [ ] [TASK-003-getsteps-onchunk-sink](docs/PLAN-get-progress-TASK-003-getsteps-onchunk-sink.md)
 - [ ] [TASK-004-launch-route-progress-event](docs/PLAN-get-progress-TASK-004-launch-route-progress-event.md)
@@ -109,6 +110,8 @@ by the previous commits in their phase and resolve the named code risks.
 
 ## Task dependencies
 
+- TASK-018 depends on TASK-001 (the flag contract TASK-001 established in the
+  core builders).
 - TASK-002 depends on TASK-001 (the runner streams the command TASK-001 renders).
 - TASK-003 depends on TASK-002 (the get-steps sink threads the onChunk the runner accepts).
 - TASK-004 depends on TASK-003 (the launch route emits progress from the get-steps run).

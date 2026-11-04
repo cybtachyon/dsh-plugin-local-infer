@@ -2993,12 +2993,12 @@ describe('get route (git sync, deps, build)', () => {
     // The selected DFlash2 drafter downloads into the model directory, the
     // layout the --draft-model path expects, joined with the host separator.
     expect(logged).toContain(
-      `$ hf download Wallawalla47/Qwen3.8-Flash-Next-DFlash2-Infernix Qwen3.8-Flash-Next-DFlash2-Infernix.infernix --local-dir ${join(MODEL_DIR, 'Qwen3.8-Flash-Next-DFlash2-Infernix.infernix')}`,
+      `$ hf download Wallawalla47/Qwen3.8-Flash-Next-DFlash2-Infernix Qwen3.8-Flash-Next-DFlash2-Infernix.infernix --local-dir ${join(MODEL_DIR, 'Qwen3.8-Flash-Next-DFlash2-Infernix.infernix')} --format human`,
     )
     // The Flash-Next model's PLE n-gram volume downloads into the model
     // directory, so the --ngram-volume flag reads a file the same Get left.
     expect(logged).toContain(
-      `$ hf download Wallawalla47/Qwen3.8-Flash-Next-NVIDIA-NVFP4-Dense8-Infernix Qwen3.8-Flash-Next-NVIDIA-NVFP4-Infernix.ngram --local-dir ${MODEL_DIR}`,
+      `$ hf download Wallawalla47/Qwen3.8-Flash-Next-NVIDIA-NVFP4-Dense8-Infernix Qwen3.8-Flash-Next-NVIDIA-NVFP4-Infernix.ngram --local-dir ${MODEL_DIR} --format human`,
     )
     expect(logged).toContain('get complete')
   })

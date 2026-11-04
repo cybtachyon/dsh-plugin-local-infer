@@ -201,7 +201,10 @@ export function infernixDraftModelPath(config) {
  * layout the `--draft-model` path expects) when a preset is selected, and the
  * model key's PLE n-gram volume (into the model directory) when the key names
  * one. The commands are the single source the Get route streams, so a Get
- * leaves the model directory ready to launch.
+ * leaves the model directory ready to launch. Every command carries
+ * `--format human`, which overrides the non-TTY default (`auto` picks
+ * `agent`, which prints no progress) so the hf CLI prints tqdm progress
+ * lines to stderr, matching the core `hfDownloadCommand` builder contract.
  */
 export function infernixGetDownloads(config, modelDir, useHubCache = false) {
     const commands = [];
@@ -214,15 +217,15 @@ export function infernixGetDownloads(config, modelDir, useHubCache = false) {
             // keeps the flat --local-dir target under the drafter's own folder.
             const target = useHubCache ? '' : join(modelDir, model.file);
             commands.push(target === ''
-                ? `hf download ${model.repo} ${model.file}`
-                : `hf download ${model.repo} ${model.file} --local-dir ${target}`);
+                ? `hf download ${model.repo} ${model.file} --format human`
+                : `hf download ${model.repo} ${model.file} --local-dir ${target} --format human`);
         }
     }
     const volume = INFERNIX_NGRAM_VOLUMES[infernixModelKey(config)];
     if (volume !== undefined) {
         commands.push(useHubCache
-            ? `hf download ${volume.repo} ${volume.file}`
-            : `hf download ${volume.repo} ${volume.file} --local-dir ${modelDir}`);
+            ? `hf download ${volume.repo} ${volume.file} --format human`
+            : `hf download ${volume.repo} ${volume.file} --local-dir ${modelDir} --format human`);
     }
     return commands;
 }

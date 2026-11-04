@@ -265,9 +265,10 @@ describe('Infernix parameter surface', () => {
     )
     // The drafter target joins the model dir with the host separator; the
     // n-gram volume targets the bare model dir, so only the first line joins.
+    // Every command carries --format human, the core builders' contract.
     expect(commands).toEqual([
-      `hf download Wallawalla47/Qwen3.8-Flash-Next-DFlash2-Infernix ${presetFile} --local-dir ${join('/models', presetFile)}`,
-      `hf download ${INFERNIX_NGRAM_VOLUMES['qwen38-flash-next']!.repo} ${INFERNIX_NGRAM_VOLUMES['qwen38-flash-next']!.file} --local-dir /models`,
+      `hf download Wallawalla47/Qwen3.8-Flash-Next-DFlash2-Infernix ${presetFile} --local-dir ${join('/models', presetFile)} --format human`,
+      `hf download ${INFERNIX_NGRAM_VOLUMES['qwen38-flash-next']!.repo} ${INFERNIX_NGRAM_VOLUMES['qwen38-flash-next']!.file} --local-dir /models --format human`,
     ])
     // A Custom drafter pulls no preset, so only the n-gram volume downloads.
     const custom = infernixGetDownloads(
