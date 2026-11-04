@@ -87,6 +87,25 @@ describe('computeProviderStatuses', () => {
     expect(statuses).toEqual({ x: 'unsure' })
   })
 
+  it('reads an empty-string model as no model named on either side of the tie', () => {
+    // The card writes the saved config.model string straight into the ref, so
+    // a config saved with an empty model field names no model exactly like an
+    // absent one: the provider confirms against its model-tied engine.
+    const blank: ProviderRef[] = [{ id: 'x', engine: 'basalt', model: '', port: 18020 }]
+    const tied: RunningEngineRef[] = [
+      { engineId: 'basalt', port: 18020, modelId: 'qwen38-flash-next' },
+    ]
+    expect(computeProviderStatuses({ providers: blank, running: tied, gpuBusy: false })).toEqual({
+      x: 'running',
+    })
+    // The ref side reads the same rule: a tie stamped with an empty modelId is
+    // no tie, so the provider stays unsure, not a guess.
+    const untied: RunningEngineRef[] = [{ engineId: 'basalt', port: 18020, modelId: '' }]
+    expect(computeProviderStatuses({ providers: blank, running: untied, gpuBusy: false })).toEqual({
+      x: 'unsure',
+    })
+  })
+
   it('reads a provider as stopped when its engine is not among the running set', () => {
     const running: RunningEngineRef[] = [{ engineId: 'hyperqwen', port: 8080, modelId: 'qwen3-27b' }]
     const statuses = computeProviderStatuses({ providers, running, gpuBusy: false })

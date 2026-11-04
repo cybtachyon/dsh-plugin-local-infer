@@ -22,6 +22,7 @@ import type {
   Preset,
   PresetSource,
 } from 'dsh-plugin-local-infer/core'
+import { BASALT_DEFAULT_MODEL_ID } from './engines/basalt/basalt.ts'
 
 /**
  * The hardware class every built-in preset is sourced for: a 24 GiB Ampere
@@ -142,7 +143,7 @@ const HYPERQWEN_PRESETS: readonly Preset[] = [
 const BASALT_PRESETS: readonly Preset[] = [
   {
     engineId: 'basalt',
-    modelId: 'qwen38-flash-next',
+    modelId: BASALT_DEFAULT_MODEL_ID,
     hardwareClass: WILDCARD_HARDWARE_CLASS,
     values: {
       kv: 'int8',
