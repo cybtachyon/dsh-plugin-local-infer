@@ -42,11 +42,11 @@ Execution order: TASK-001, TASK-002, TASK-004, TASK-003.
 
 ### Phase 3: Build hardening
 
-- [ ] [TASK-004-build-format-trim](docs/PLAN-summary-churn-TASK-004-build-format-trim.md)
+- [x] [TASK-004-build-format-trim](docs/PLAN-summary-churn-TASK-004-build-format-trim.md)
 
 ### Phase 4: Housekeeping
 
-- [ ] [TASK-003-update-memory-note](docs/PLAN-summary-churn-TASK-003-update-memory-note.md)
+- [x] [TASK-003-update-memory-note](docs/PLAN-summary-churn-TASK-003-update-memory-note.md)
 
 ## Refactor task
 
