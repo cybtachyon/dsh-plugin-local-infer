@@ -191,6 +191,34 @@ function getStepsRequest(
 }
 
 /**
+ * registerSudoObserver registers the run's sudo observer with the service and
+ * returns its disposer. launchEngine and getEngine share it so the sudo-note
+ * rule has one home: a guarded command waiting for the user's password on the
+ * launching CLI writes noteLine through the run's own log sink (the note rides
+ * the streamed run and the run text persisted when the step settles) and
+ * through persistProcessLog (so a run still hung on the prompt reads the note
+ * in the Logs section and the log file before it settles), then calls onSudo,
+ * the route's stream event; a Get passes none because its control keeps its
+ * throbber. The caller invokes the disposer in a finally so a failed run
+ * leaves no observer behind, and a second run never observes another's sudo.
+ */
+function registerSudoObserver(
+  localInfer: LocalInferService,
+  noteLine: string,
+  noteTo: (text: string) => void,
+  onSudo?: () => void,
+): () => void {
+  localInfer.setSudoObserver(() => {
+    noteTo(noteLine)
+    persistProcessLog(noteLine.replace(/\n$/, ''))
+    onSudo?.()
+  })
+  return () => {
+    localInfer.setSudoObserver(undefined)
+  }
+}
+
+/**
  * launchEngine runs the shared Get-steps routine (idempotent: deps, git sync,
  * build, model download, chat-template download, each skipped when already
  * satisfied) and then renders the plan the registered adapter produces for
@@ -257,18 +285,17 @@ export async function launchEngine(
     getLogs += chunk
   }
   // The run owns the sudo observer, not the route, so the note lands in the
-  // persisted run and in the stream from one place: a guarded command waiting
-  // for a password on the launching CLI appends the CLI note to the Get-step
-  // log sink (composeLaunchLogs and persistLaunchOutcome carry it into the
-  // last-run logs and the log file), persists it to disk while the run is
-  // still hung waiting on the prompt, and tells the route's stream writer.
-  // The finally leaves no observer behind a failed run, so a second card
-  // never observes another run's sudo.
-  localInfer.setSudoObserver(() => {
-    appendGetLogs(`${SUDO_CLI_NOTE}\n`)
-    persistProcessLog(SUDO_CLI_NOTE)
-    onSudo?.()
-  })
+  // persisted run and in the stream from one place (see
+  // registerSudoObserver): the CLI note appends to the Get-step log sink
+  // (composeLaunchLogs and persistLaunchOutcome carry it into the last-run
+  // logs and the log file), persists to disk while the run is still hung
+  // waiting on the prompt, and tells the route's stream writer.
+  const clearSudoObserver = registerSudoObserver(
+    localInfer,
+    `${SUDO_CLI_NOTE}\n`,
+    appendGetLogs,
+    onSudo,
+  )
   try {
     const get = await runGetSteps(
       localInfer,
@@ -326,7 +353,7 @@ export async function launchEngine(
     persistLaunchOutcome(result, engineId, config, request.providerId, '')
     return result
   } finally {
-    localInfer.setSudoObserver(undefined)
+    clearSudoObserver()
   }
 }
 
@@ -683,7 +710,14 @@ export type GetOutcome = { ok: true } | { ok: false; detail?: string }
  * failure), so an orphaned partial blob lingers until `hf cache prune`. The
  * optional onChunk is the hf download's raw stderr progress sink: the
  * download runner hands each streamed chunk to it as it lands, separate from
- * the log sink, so the route parses the tqdm lines into progress events.
+ * the log sink, so the route parses the tqdm lines into progress events. The
+ * run registers the same sudo observer a launch does: a guarded command
+ * waiting for the user's password on the launching CLI writes the core CLI
+ * note through log as a `!! ` line, the same prefix the step's own failure
+ * lines use, so the note rides the streamed run and the run text the route
+ * persists, and through persistProcessLog so a run still hung on the prompt
+ * reads it before it settles. The Get control keeps its throbber, so the
+ * observer announces nothing beyond the note line.
  */
 export async function getEngine(
   localInfer: LocalInferService,
@@ -697,12 +731,19 @@ export async function getEngine(
   // Register the request's platform override the same way launchEngine does,
   // so the next launch reads the Engine Directory / Engine Fork the Get used.
   const platform = registerLaunchPlatform(localInfer, request, stored, engineId, config)
-  const result = await runGetSteps(
-    localInfer,
-    getStepsRequest(engineId, config, stored, platform, host, signal, onChunk),
-    log,
-  )
-  return { ok: result.ok, ...(result.detail !== undefined ? { detail: result.detail } : {}) }
+  // The Get run owns the sudo observer for the run's duration (see
+  // registerSudoObserver); the finally leaves none behind a failed run.
+  const clearSudoObserver = registerSudoObserver(localInfer, `!! ${SUDO_CLI_NOTE}\n`, log)
+  try {
+    const result = await runGetSteps(
+      localInfer,
+      getStepsRequest(engineId, config, stored, platform, host, signal, onChunk),
+      log,
+    )
+    return { ok: result.ok, ...(result.detail !== undefined ? { detail: result.detail } : {}) }
+  } finally {
+    clearSudoObserver()
+  }
 }
 
 /**

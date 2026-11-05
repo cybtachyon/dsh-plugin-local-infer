@@ -57,7 +57,7 @@ Answers are recorded at the bottom of this file. See
 
  - [x] [TASK-012-publish-notify-seam](docs/PLAN-sudo-launch-prompt-TASK-012-publish-notify-seam.md)
  - [x] [TASK-004-launch-route](docs/PLAN-sudo-launch-prompt-TASK-004-launch-route.md)
- - [ ] [TASK-005-get-route-note](docs/PLAN-sudo-launch-prompt-TASK-005-get-route-note.md)
+ - [x] [TASK-005-get-route-note](docs/PLAN-sudo-launch-prompt-TASK-005-get-route-note.md)
 
 ### Phase 3: the card control
 

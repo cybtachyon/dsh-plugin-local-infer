@@ -1,5 +1,7 @@
 # TASK-005 Get route sudo note
 
+- [x] Done.
+
 **Phase 2. Depends on TASK-004. Definition of Done: `pnpm vitest run packages/ui`
 passes and `pnpm lint` is clean.**
 
