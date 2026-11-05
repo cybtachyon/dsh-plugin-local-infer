@@ -130,6 +130,7 @@ declare const en: {
     entryPrereqs: string;
     entryDownloading: string;
     entryBuilding: string;
+    entrySudo: string;
     entryLaunching: string;
     chatTemplatePreset: string;
     customChatTemplate: string;

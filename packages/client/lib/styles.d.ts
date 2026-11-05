@@ -31,6 +31,7 @@ export declare const INSTALL_BLOCK_STYLE: CSSProperties;
 export declare const CUSTOM_ARGS_GRID_STYLE: CSSProperties;
 export declare const CUSTOM_ARGS_HEADER_STYLE: CSSProperties;
 export declare const CUSTOM_ARGS_BUTTONS_STYLE: CSSProperties;
+export declare const SUDO_STATE_LABEL_COLOR = "var(--dsw-alias-state-warn-primary, var(--dsw-alias-label-warning, #ff9f0a))";
 export declare function HELP_BUTTON_STYLE(active: boolean): CSSProperties;
 export declare const PROGRESS_STRIP_TRACK: CSSProperties;
 export declare function clampPercent(percent: number): number;

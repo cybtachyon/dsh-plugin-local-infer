@@ -19,7 +19,7 @@
  * launch, stop, download, and chat-template drivers).
  * @module dsh-plugin-local-infer/client/Card
  */
-import { BANNER_STYLE, CARD_STYLE, FOOTER_STYLE, GHOST_BUTTON, HELP_BUTTON_STYLE, INLINE_WARNING_STYLE, INPUT_STYLE, LABEL_STYLE, ROW_STYLE, SECTION_STYLE, WARNING_BANNER_STYLE, } from "./styles.js";
+import { BANNER_STYLE, CARD_STYLE, FOOTER_STYLE, GHOST_BUTTON, HELP_BUTTON_STYLE, INLINE_WARNING_STYLE, INPUT_STYLE, LABEL_STYLE, ROW_STYLE, SECTION_STYLE, SUDO_STATE_LABEL_COLOR, WARNING_BANNER_STYLE, } from "./styles.js";
 import { labels } from "./text.js";
 import { renderButton, renderCheckbox, renderHelpRow, renderProcessButton, renderProgressStrip, renderSelect, } from "./render/primitives.js";
 import { react } from "./render/react.js";
@@ -192,16 +192,20 @@ function renderField(props) {
 // the thin progress strip as one flex row: the readout button on the left,
 // the strip stretching the remaining width, and the ghost Cancel (the
 // performGetCancel driver) after the strip. A null progress renders no
-// strip (the readout alone carries the branch).
+// strip (the readout alone carries the branch). A warn phase (the sudo
+// wait) wraps its throbber in the warning-token color: the busy button
+// reads color: 'inherit', so the wrapper paints the label text (the
+// throbber keeps its own token colors).
 function renderTitleBarControl(control, onControlClick, onCancel, cancelLabel) {
     if (control.kind === 'phase') {
-        return renderProcessButton({
+        const throbber = renderProcessButton({
             busy: true,
             label: control.label,
             busyLabel: control.busyLabel,
             variant: control.variant,
             onClick: () => { },
         });
+        return control.warn === true ? (react.createElement("span", { style: { color: SUDO_STATE_LABEL_COLOR } }, throbber)) : (throbber);
     }
     if (control.kind === 'stop') {
         return renderButton('ghost', { onClick: onControlClick }, control.label);

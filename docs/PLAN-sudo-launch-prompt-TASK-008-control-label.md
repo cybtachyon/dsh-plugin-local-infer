@@ -1,5 +1,10 @@
 # TASK-008 Sudo needed control label
 
+- [x] Done 2026-11-04: `pnpm vitest run packages/client` passes (511 tests),
+  `pnpm lint` and `prek run --files <paths>` are clean; the tracked
+  `packages/client/lib` outputs regenerate with solely this change (`dsh/`
+  untouched, its rebuild stays TASK-009's).
+
 **Phase 3. Depends on TASK-007. Definition of Done: `pnpm vitest run
 packages/client` passes and `pnpm lint` is clean.**
 

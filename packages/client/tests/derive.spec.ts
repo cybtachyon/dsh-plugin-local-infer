@@ -100,6 +100,7 @@ describe('client store derive (store/derive.ts)', () => {
         ['download', t.entryDownloading],
         ['downloading', t.entryDownloading],
         ['build', t.entryBuilding],
+        ['sudo', t.entrySudo],
         ['launch', t.entryLaunching],
         ['stopping', t.stopping],
       ]
@@ -118,9 +119,58 @@ describe('client store derive (store/derive.ts)', () => {
             disabled: false,
             target: 'entry',
             action: 'none',
+            ...(status === 'sudo' ? { warn: true } : {}),
           })
         })
       }
+
+      it('renders the Sudo needed throbber from the draft sudoPending flag (no machine entry)', () => {
+        const state = makeState([], {
+          actions: {
+            ...initialCardState().actions,
+            launch: { status: 'pending', detail: '' },
+          },
+          ui: { ...initialCardState().ui, editingProviderId: null, sudoPending: true },
+        })
+        expect(deriveLifecycleControl(state, t)).toEqual({
+          kind: 'phase',
+          label: t.entrySudo,
+          variant: 'ghost',
+          busy: true,
+          busyLabel: t.entrySudo,
+          disabled: false,
+          target: 'draft',
+          action: 'none',
+          warn: true,
+        })
+      })
+
+      it('keeps the machine branch when the sudoPending flag meets a machine entry', () => {
+        // An edited provider at idle with a stale draft flag still reads as
+        // Launch: the flag labels only the fresh-draft control.
+        const state = makeState(['p1'], {
+          launch: { p1: launchEntry('idle') },
+          ui: { ...initialCardState().ui, editingProviderId: 'p1', sudoPending: true },
+        })
+        expect(deriveLifecycleControl(state, t)).toMatchObject({
+          kind: 'launchStop',
+          label: t.launch,
+        })
+      })
+
+      it('drops the sudo throbber once the draft flag clears', () => {
+        const state = makeState([], {
+          actions: {
+            ...initialCardState().actions,
+            launch: { status: 'pending', detail: '' },
+          },
+          ui: { ...initialCardState().ui, editingProviderId: null, sudoPending: false },
+        })
+        expect(deriveLifecycleControl(state, t)).toMatchObject({
+          kind: 'launchStop',
+          busyLabel: t.launching,
+        })
+      })
     })
 
     it('renders a ghost Stop when the edited provider is running', () => {

@@ -54,6 +54,8 @@ export function phaseLabelFor(status, t) {
             return t.entryDownloading;
         case 'build':
             return t.entryBuilding;
+        case 'sudo':
+            return t.entrySudo;
         case 'launch':
             return t.entryLaunching;
         case 'stopping':
@@ -157,13 +159,17 @@ function deriveGettingControl(state, t, isFresh) {
  * draft's action cells for a fresh provider and routing the click to the
  * entry for an edited one. A Get run in flight renders the 'getting'
  * throbber with the live readout instead of the greyed-out Launch the gate
- * used to render.
+ * used to render. A sudo wait renders the "Sudo needed" warn throbber from
+ * the machine's sudo status, or from the ui sudoPending flag for a fresh
+ * draft (its control has no machine entry to read).
  */
 export function deriveLifecycleControl(state, t) {
     const provider = editingProvider(state);
     const status = provider !== undefined ? state.launch[provider.id]?.status : undefined;
     // A rebuild phase, the model fetch, or a stop in flight for the edited
-    // provider: a busy throbber with the phase label, no click.
+    // provider: a busy throbber with the phase label, no click. The sudo
+    // state's throbber carries the warn marker the renderers paint the
+    // warning token color from.
     const phaseLabel = phaseLabelFor(status, t);
     if (phaseLabel !== undefined) {
         return {
@@ -175,6 +181,23 @@ export function deriveLifecycleControl(state, t) {
             disabled: false,
             target: 'entry',
             action: 'none',
+            ...(status === 'sudo' ? { warn: true } : {}),
+        };
+    }
+    // The fresh-draft form's sudo wait: its control has no machine entry to
+    // read, so the ui flag performDraftLaunch sets drives the same sudo
+    // throbber. It prices only when no machine state claims the control.
+    if (status === undefined && state.ui.sudoPending) {
+        return {
+            kind: 'phase',
+            label: t.entrySudo,
+            variant: 'ghost',
+            busy: true,
+            busyLabel: t.entrySudo,
+            disabled: false,
+            target: 'draft',
+            action: 'none',
+            warn: true,
         };
     }
     // The edited provider is running: a ghost Stop that drives the entry.
