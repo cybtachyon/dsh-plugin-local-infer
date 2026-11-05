@@ -1,5 +1,10 @@
 # TASK-011 sudo deadline ownership
 
+- [x] Done: `deadlineKind` ownership landed in `performEntryLaunch` (a step
+  event clears only a sudo-owned deadline, the `launch` step then arms the
+  health cap); `cancelProvider` and `newProvider` clear `ui.sudoPending`.
+  `pnpm vitest run packages/client` (503 passed) and `pnpm lint` are green.
+
 **Phase 3 insert, executes before TASK-008. Definition of Done: `pnpm vitest run
 packages/client` passes and `pnpm lint` is clean.**
 
