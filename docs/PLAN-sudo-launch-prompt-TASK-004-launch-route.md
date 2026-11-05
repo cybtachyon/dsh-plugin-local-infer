@@ -1,5 +1,20 @@
 # TASK-004 launch route sudo event
 
+- [x] Done 2026-11-04: `launchEngine` takes the optional `onSudo` and owns the
+  service sudo observer for the run (register before the Get steps, clear in a
+  `finally`); the observer appends the `SUDO_CLI_NOTE` line to the run's
+  Get-step log sink, calls `persistProcessLog(SUDO_CLI_NOTE)` while the run is
+  hung, then the route's `onSudo`, and the route streams the exact
+  `{"sudo":true}` line; `apply` builds the route host through
+  `createNodeLifecycleHost(undefined, { notify: (command) =>
+  localInfer.notifySudoNeeded(command) })` and passes it to both route slots.
+  The card's `providers/lib/index.js` import source is unavailable (the index
+  does not re-export `createNodeLifecycleHost`, carried to TASK-010), so the
+  import is from the emitted `providers/lib/adapters.js`. `pnpm vitest run
+  packages/ui` passes (207 tests; the full suite 1486) and `pnpm lint` is
+  clean; the tracked `packages/ui/lib` outputs regenerate with the `src`
+  change and `dsh/client.js` stayed untouched.
+
 **Phase 2. Depends on TASK-002, TASK-003. Definition of Done: `pnpm vitest run
 packages/ui` passes and `pnpm lint` is clean.**
 

@@ -56,7 +56,7 @@ Answers are recorded at the bottom of this file. See
 ### Phase 2: routes, stream events, persistence
 
  - [x] [TASK-012-publish-notify-seam](docs/PLAN-sudo-launch-prompt-TASK-012-publish-notify-seam.md)
- - [ ] [TASK-004-launch-route](docs/PLAN-sudo-launch-prompt-TASK-004-launch-route.md)
+ - [x] [TASK-004-launch-route](docs/PLAN-sudo-launch-prompt-TASK-004-launch-route.md)
  - [ ] [TASK-005-get-route-note](docs/PLAN-sudo-launch-prompt-TASK-005-get-route-note.md)
 
 ### Phase 3: the card control
@@ -98,6 +98,11 @@ Answers are recorded at the bottom of this file. See
 - The service sudo guard signals the spawned shell only. A process-group kill
   (detached plus `kill(-pid)`) belongs there too now that the providers host
   shares `signalChild`; the two kill paths should end up on one rule.
+- `createNodeLifecycleHost` and `SudoHook` are not re-exported from the
+  `packages/providers` index, so the ui `apply` imports the builder from the
+  emitted `packages/providers/lib/adapters.js` subpath, off the workspace's
+  `*/lib/index.js` import convention. Re-export both from the providers index
+  and repoint the ui import.
 
 ## Answers
 
