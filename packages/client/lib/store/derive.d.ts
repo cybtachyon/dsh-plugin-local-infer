@@ -37,7 +37,9 @@ export type LifecycleControlAction = 'launch' | 'stop' | 'logs' | 'none';
  * plus action route the click to the owning action (the provider entry's
  * machine, or the draft's action cells). progress carries the live download
  * state the 'getting' branch renders as the progress strip; it is absent on
- * every other branch.
+ * every other branch. warn marks a sudo wait: the renderers paint the
+ * label's text with the styles SUDO_STATE_LABEL_COLOR token; it is absent
+ * on every other state.
  */
 export interface LifecycleControl {
     kind: LifecycleControlKind;
@@ -49,6 +51,7 @@ export interface LifecycleControl {
     target: LifecycleControlTarget;
     action: LifecycleControlAction;
     progress?: GetProgressState | null;
+    warn?: boolean;
 }
 /**
  * phaseLabelFor maps a machine status to the throbber label it renders, or
@@ -93,7 +96,9 @@ export declare function formatProgressReadout(state: GetProgressState, t: TextTa
  * draft's action cells for a fresh provider and routing the click to the
  * entry for an edited one. A Get run in flight renders the 'getting'
  * throbber with the live readout instead of the greyed-out Launch the gate
- * used to render.
+ * used to render. A sudo wait renders the "Sudo needed" warn throbber from
+ * the machine's sudo status, or from the ui sudoPending flag for a fresh
+ * draft (its control has no machine entry to read).
  */
 export declare function deriveLifecycleControl(state: CardState, t: TextTable): LifecycleControl;
 /**

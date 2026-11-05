@@ -13,7 +13,7 @@
  * launch or stop never keeps re-fetching the summary.
  * @module dsh-plugin-local-infer/client/render/ProviderList
  */
-import { GHOST_BUTTON } from "../styles.js";
+import { GHOST_BUTTON, SUDO_STATE_LABEL_COLOR } from "../styles.js";
 import { PROGRESS_READOUT_SEPARATOR, deriveProviderFormMode, formatProgressReadout, isGettingInFlight, phaseLabelFor, } from "../store/derive.js";
 import { cancelProvider, deleteProvider, editProvider, newProvider, openEntryLogs, performEntryLaunch, performEntryStop, } from "../store/providers.js";
 import { renderButton, renderProcessButton, renderStateDot, } from "./primitives.js";
@@ -186,7 +186,9 @@ export function ProviderRow(props) {
 // alongside its Edit and Delete controls. Idle reads as a Launch button that
 // starts the entry's engine; a rebuild in flight shows a disabled control with
 // the spinner and the phase label (Prereqs, Downloading, Building, Launching);
-// a healthy engine reads as an enabled Stop; a launch that timed out reads as
+// a sudo wait reads as a "Sudo needed" throbber painted in the warning token
+// color (the title-bar control's sudo branch shares the derivation); a healthy
+// engine reads as an enabled Stop; a launch that timed out reads as
 // a red Logs control that opens the entry for editing. The control reads the
 // entry's launch machine (the only lifecycle source), so it always agrees with
 // the title-bar control.
@@ -196,20 +198,24 @@ export function EntryLaunchButton(props) {
     const status = state.launch[provider.id]?.status ?? 'idle';
     // A rebuild phase, the model fetch (a busy throbber that reads as in
     // progress, not a failure: the card re-polls until the engine reports
-    // ready), or a stop in flight: a disabled control with the spinner and the
-    // phase label, so the button reads the step that is actually running. The
-    // shared phaseLabelFor lookup (the title-bar control's source) reads as
-    // undefined for a non-phase status, and the control falls through to the
-    // Stop / Logs / Launch branches.
+    // ready), a sudo wait, or a stop in flight: a disabled control with the
+    // spinner and the phase label, so the button reads the step that is
+    // actually running. The shared phaseLabelFor lookup (the title-bar
+    // control's source) reads as undefined for a non-phase status, and the
+    // control falls through to the Stop / Logs / Launch branches. The sudo
+    // throbber is wrapped in the warning-token color: the busy button reads
+    // color: 'inherit', so the wrapper paints the label text (the throbber
+    // keeps its own token colors).
     const phaseLabel = phaseLabelFor(status, t);
     if (phaseLabel !== undefined) {
-        return renderProcessButton({
+        const throbber = renderProcessButton({
             busy: true,
             label: phaseLabel,
             busyLabel: phaseLabel,
             variant: 'ghost',
             onClick: () => { },
         });
+        return status === 'sudo' ? (react.createElement("span", { style: { color: SUDO_STATE_LABEL_COLOR } }, throbber)) : (throbber);
     }
     // The Stop control reads from the provider status dot, not just the
     // per-entry launch state: the launch state is lost when the user navigates

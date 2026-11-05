@@ -9,6 +9,7 @@ import {
 } from '../src/store/useCardStore.ts'
 import { clearInFlightRuns, trackGetAbort } from '../src/store/abort.ts'
 import type { CardDraft } from '../src/store/types.ts'
+import { SUDO_STATE_LABEL_COLOR } from '../src/styles.ts'
 import { TEXT } from '../src/text.ts'
 
 const t = TEXT.en
@@ -493,6 +494,68 @@ describe('the card composer (src/Card.tsx)', () => {
       vi.useRealTimers()
       vi.unstubAllGlobals()
     }
+  })
+
+  // sudoPainted finds the wrapper span the Sudo needed throbber renders
+  // inside: the only span carrying the warning-token color.
+  function sudoPainted(node: unknown): El | undefined {
+    return find(
+      node,
+      (e) =>
+        e.type === 'span' &&
+        (e.props?.style as Record<string, unknown> | undefined)?.color === SUDO_STATE_LABEL_COLOR,
+    )
+  }
+
+  it('paints the title-bar control as the Sudo needed throbber at the sudo machine status', () => {
+    const summary = fullSummary({
+      providers: [
+        {
+          id: 'p1',
+          engine: 'ninfer',
+          model: 'a-model',
+          status: 'stopped',
+          config: {},
+          platform: {},
+        },
+      ] as unknown as LocalInferSummary['providers'],
+    })
+    const { store, rerender } = renderCard({
+      summary,
+      draft: fullDraft(),
+      ui: { editingProviderId: 'p1', providerFormMode: 'editing' },
+    })
+    store.dispatch({ type: 'launch/move', providerId: 'p1', event: { type: 'start' } })
+    store.dispatch({ type: 'launch/move', providerId: 'p1', event: { type: 'sudoNeeded' } })
+    const tree = rerender()
+    // The English copy itself: the control reads "Sudo needed", not Launch.
+    expect(text(tree)).toContain('Sudo needed')
+    const sudoThrobber = find(
+      tree,
+      (e) => e.type === 'button' && e.props?.['aria-label'] === t.entrySudo,
+    )
+    expect(sudoThrobber).toBeDefined()
+    expect(sudoThrobber?.props?.disabled).toBe(true)
+    expect(sudoPainted(tree)).toBeDefined()
+  })
+
+  it('paints the title-bar control as the Sudo needed throbber from the draft sudoPending flag', () => {
+    const { store, rerender } = renderCard({ summary: fullSummary(), draft: fullDraft() })
+    store.dispatch({ type: 'ui/patch', patch: { sudoPending: true } })
+    const tree = rerender()
+    expect(text(tree)).toContain(t.entrySudo)
+    const sudoThrobber = find(
+      tree,
+      (e) => e.type === 'button' && e.props?.['aria-label'] === t.entrySudo,
+    )
+    expect(sudoThrobber).toBeDefined()
+    expect(sudoThrobber?.props?.disabled).toBe(true)
+    expect(sudoPainted(tree)).toBeDefined()
+    // The flag cleared (the run settled): the control falls back to Launch.
+    store.dispatch({ type: 'ui/patch', patch: { sudoPending: false } })
+    const settled = rerender()
+    expect(sudoPainted(settled)).toBeUndefined()
+    expect(find(settled, (e) => e.type === 'button' && text(e) === t.launch)).toBeDefined()
   })
 
   it('renders the getting throbber with the progress strip while a Get run is in flight', () => {

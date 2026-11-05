@@ -7,6 +7,7 @@ import {
   INLINE_WARNING_STYLE,
   PRIMARY_BUTTON,
   SEGMENT_COLORS,
+  SUDO_STATE_LABEL_COLOR,
   WARNING_BANNER_STYLE,
   clampPercent,
 } from '../src/styles.ts'
@@ -53,6 +54,12 @@ describe('client styles (styles.ts)', () => {
     )
     expect(INLINE_WARNING_STYLE('neutral').color).toBe(
       'var(--dsw-alias-label-tertiary, rgba(127,127,127,0.8))',
+    )
+  })
+
+  it('paints the sudo wait control label with the state-warn token pair', () => {
+    expect(SUDO_STATE_LABEL_COLOR).toBe(
+      'var(--dsw-alias-state-warn-primary, var(--dsw-alias-label-warning, #ff9f0a))',
     )
   })
 

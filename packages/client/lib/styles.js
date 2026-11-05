@@ -202,6 +202,12 @@ export const CUSTOM_ARGS_BUTTONS_STYLE = {
     gap: 4,
     justifyContent: 'flex-end',
 };
+// The "Sudo needed" control label: the state-warn token pair both
+// renderers paint on the Launch control's text while the host waits for a
+// password on the launching terminal (the title-bar control and the
+// provider entry's Launch button). The legacy warning token and literal
+// stay as fallbacks for a host without the state-warn family.
+export const SUDO_STATE_LABEL_COLOR = 'var(--dsw-alias-state-warn-primary, var(--dsw-alias-label-warning, #ff9f0a))';
 // The circular header buttons: the "?" help toggle and the refresh
 // action. The active state reads as the accent fill; the inactive state
 // as the muted outline. The help preference persists through the save

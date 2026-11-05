@@ -20,6 +20,7 @@ import { cardReducer } from '../src/store/reducer.ts'
 import type { CardStore } from '../src/store/sync.ts'
 import { initialCardState, type CardState } from '../src/store/types.ts'
 import { setReactModule, type ReactLike } from '../src/store/useCardStore.ts'
+import { SUDO_STATE_LABEL_COLOR } from '../src/styles.ts'
 import { TEXT } from '../src/text.ts'
 
 const t = TEXT.en
@@ -463,6 +464,24 @@ describe('the per-entry Launch control (render/ProviderList.tsx EntryLaunchButto
     const throbber = renderEntry(store)
     expect(el(throbber).props.disabled).toBe(true)
     expect(el(throbber).props['aria-label']).toBe(t.entryDownloading)
+  })
+
+  it('reads as a Sudo needed throbber painted with the warning color at the sudo status', () => {
+    const { store } = makeStore()
+    store.dispatch({ type: 'summary/ack', summary: summaryWith([providerWith()]) })
+    store.dispatch({ type: 'launch/move', providerId: 'p1', event: { type: 'start' } })
+    store.dispatch({ type: 'launch/move', providerId: 'p1', event: { type: 'sudoNeeded' } })
+    // The sudo throbber is wrapped in the warning-token span; the button
+    // inside keeps the busy throbber contract (disabled, the label carries).
+    const wrapped = renderEntry(store)
+    expect(el(wrapped).type).toBe('span')
+    expect((el(wrapped).props.style as Record<string, unknown>).color).toBe(
+      SUDO_STATE_LABEL_COLOR,
+    )
+    const throbber = buttons(wrapped)[0]
+    expect(el(throbber).props.disabled).toBe(true)
+    expect(el(throbber).props['aria-label']).toBe(t.entrySudo)
+    expect(text(wrapped)).toBe(t.entrySudo)
   })
 })
 
