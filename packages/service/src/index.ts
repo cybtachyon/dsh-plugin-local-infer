@@ -38,6 +38,7 @@ import {
   detectPackageManager,
   evaluateGuidelines,
   estimateVram,
+  guardSudoCommand,
   hfChatTemplateCommand,
   hfDatasetsCacheDirectory,
   hfDownloadCommand,
@@ -59,10 +60,13 @@ import {
   resolveDefaults as resolveDefaultsFromPresets,
   resolveOsReserve,
   runInstall,
+  SUDO_PROBE_COMMAND,
+  sudoFailureDetail,
 } from '../../core/lib/index.js'
 import type {
   BuildMode,
   CommandOutcome,
+  CommandRunner,
   Config,
   DefaultModel,
   ModelCacheEntry,
@@ -95,6 +99,7 @@ import type {
   ResolvedDefaults,
   RunningEngineRef,
   SettingsOp,
+  SudoGuard,
   SystemDep,
   VramModel,
 } from 'dsh-plugin-local-infer/core'
@@ -234,6 +239,11 @@ export class LocalInfer extends Service implements LocalInferService {
   // provider entry's cleared state; a headless profile registers none and the
   // service still settles its own live state.
   private deathObserver: ((event: EngineDeathEvent) => void) | undefined
+  // The route-registered hook for sudo commands the guard found waiting for a
+  // password on the CLI. The observer writes the note line into the run's
+  // Logs; a headless profile registers none and the guard still announces
+  // internally and caps the wait.
+  private sudoObserver: ((command: string) => void) | undefined
 
   constructor(ctx: Context) {
     super(ctx, 'localInfer')
@@ -652,12 +662,17 @@ export class LocalInfer extends Service implements LocalInferService {
 
   /**
    * runInstall is the Play/Run path: it runs the resolved dep plan's commands
-   * through the shell runner and re-probes each dep. The runner captures the
-   * per-command exit, so a failure names the command that broke.
+   * through the guarded shell runner and re-probes each dep. The runner
+   * captures the per-command exit, so a failure names the command that broke,
+   * and a declared-sudo command whose probe finds no cached credentials
+   * announces the CLI prompt through the sudo observer and fails at the
+   * sudo deadline.
    */
   async runInstall(engineId: string, buildMode: BuildMode, hw: HardwareProfile): Promise<InstallResult> {
     const deps = await this.deps(engineId, buildMode, hw)
-    return runInstall(deps, hw, shellRunCommand)
+    // The guarded runner is built per call so every sudo announcement reads
+    // the observer registered when this call runs.
+    return runInstall(deps, hw, guardedShellRunner((command) => this.notifySudoNeeded(command)))
   }
 
   /**
@@ -858,6 +873,32 @@ export class LocalInfer extends Service implements LocalInferService {
    */
   setEngineDeathObserver(observer: ((event: EngineDeathEvent) => void) | undefined): void {
     this.deathObserver = observer
+  }
+
+  /**
+   * setSudoObserver registers the route's hook for commands the sudo guard
+   * found waiting for a password on the launching CLI: the observer shows the
+   * "Check your CLI for a sudo prompt" note while the command waits. Passing
+   * undefined clears it, which the route's effect does on dispose.
+   */
+  setSudoObserver(observer: ((command: string) => void) | undefined): void {
+    this.sudoObserver = observer
+  }
+
+  /**
+   * notifySudoNeeded announces one guarded command to the registered sudo
+   * observer, if any. A throwing observer is swallowed: the note is a log
+   * courtesy, and a broken route must not fail the install that is already
+   * racing the sudo deadline.
+   */
+  private notifySudoNeeded(command: string): void {
+    const observer = this.sudoObserver
+    if (observer === undefined) return
+    try {
+      observer(command)
+    } catch {
+      // The sudo deadline still settles a passwordless wait.
+    }
   }
 
   /**
@@ -1696,34 +1737,98 @@ function tailOutput(): { append: (text: string) => void; tail: () => string } {
 }
 
 /**
- * shellRunCommand is the Play/Run runner: it runs one command line through
- * the system shell and reports the exit. stdin is closed, so a sudo password
- * prompt that cannot read a terminal fails fast instead of hanging the panel;
- * the copy/paste path is the fallback the plan names for exactly this.
+ * sudoProbe answers whether sudo already holds cached (or NOPASSWD)
+ * credentials: it runs SUDO_PROBE_COMMAND non-interactively through the
+ * probe timeout and reads a clean exit as "no prompt is coming". A refused
+ * -n, a missing sudo, and a hung probe all read as "a prompt is coming",
+ * the safe side: the run announces and caps instead of dead-locking on a
+ * TTY the card user cannot see.
  */
-const shellRunCommand = (command: string): Promise<CommandOutcome> =>
-  new Promise(resolve => {
-    const child = spawn(command, { shell: true, stdio: ['ignore', 'pipe', 'pipe'] })
-    const tail = tailOutput()
-    const append = (chunk: Buffer): void => {
-      tail.append(chunk.toString('utf8'))
-    }
-    child.stdout.on('data', append)
-    child.stderr.on('data', append)
-    // Without a listener, a child that fails to start (a missing shell) emits
-    // an unlistened 'error' and throws it as an uncaughtException through the
-    // host. Read it as a failed command instead.
-    child.on('error', (error) => {
-      resolve({ ok: false, detail: error.message })
-    })
-    child.on('close', code => {
-      if (code === 0) {
-        resolve({ ok: true })
-        return
-      }
-      resolve({ ok: false, detail: `exit ${code}: ${tail.tail()}` })
-    })
+export async function sudoProbe(): Promise<boolean> {
+  const [command, ...args] = SUDO_PROBE_COMMAND
+  if (command === undefined) return false
+  const { ok } = await runCommand(command, [...args])
+  return ok
+}
+
+/**
+ * sudoGuardFor is the service-side binding of core's guardSudoCommand: it
+ * supplies sudoProbe, so this package's install runner and the providers'
+ * lifecycle host drive one probe and one rule from one function. Calling
+ * it is itself the sudo declaration (needsSudo is true); callers gate on
+ * their own needsSudo fact first and never run a plain command through it.
+ */
+export function sudoGuardFor(
+  command: string,
+  notify: (command: string) => void,
+  kill: () => void,
+  timeoutMs?: number,
+): Promise<SudoGuard> {
+  return guardSudoCommand({
+    needsSudo: true,
+    command,
+    probe: sudoProbe,
+    notify,
+    kill,
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
   })
+}
+
+/**
+ * guardedShellRunner builds the Play/Run runner: it runs one command line
+ * through the system shell and reports the exit. stdin stays closed. When
+ * core hands the command the dep's sudo declaration and sudoProbe finds no
+ * cached credentials, core's guard announces the CLI prompt through notify
+ * and arms the password deadline; its fire SIGTERMs the child and the run
+ * settles with sudoFailureDetail instead of the shell's bare signal exit.
+ * The guard adds only probe, notify, and deadline to the existing spawn;
+ * the copy/paste path stays the fallback for a passwordless host.
+ */
+export function guardedShellRunner(notify: (command: string) => void): CommandRunner {
+  return async (command, options) => {
+    let child: ChildProcess | undefined
+    const guard = options?.needsSudo === true
+      ? await sudoGuardFor(command, notify, () => {
+          child?.kill('SIGTERM')
+        })
+      : undefined
+    try {
+      const outcome = await new Promise<CommandOutcome>((resolve) => {
+        // The local keeps the spawn overload's non-null stream typing; the
+        // outer child exists for the guard's kill.
+        const started = spawn(command, { shell: true, stdio: ['ignore', 'pipe', 'pipe'] })
+        child = started
+        const tail = tailOutput()
+        const append = (chunk: Buffer): void => {
+          tail.append(chunk.toString('utf8'))
+        }
+        started.stdout.on('data', append)
+        started.stderr.on('data', append)
+        // Without a listener, a child that fails to start (a missing shell) emits
+        // an unlistened 'error' and throws it as an uncaughtException through the
+        // host. Read it as a failed command instead.
+        started.on('error', (error) => {
+          resolve({ ok: false, detail: error.message })
+        })
+        started.on('close', code => {
+          if (code === 0) {
+            resolve({ ok: true })
+            return
+          }
+          resolve({ ok: false, detail: `exit ${code}: ${tail.tail()}` })
+        })
+      })
+      if (guard !== undefined && guard.timedOut() && !outcome.ok) {
+        // The password deadline killed the child: name the missed sudo
+        // prompt instead of the shell's signal exit.
+        return { ok: false, detail: sudoFailureDetail(command) }
+      }
+      return outcome
+    } finally {
+      guard?.disarm()
+    }
+  }
+}
 
 /**
  * The download timeout. A model download moves tens of GiB, so the cap is

@@ -18,7 +18,7 @@
  * @module dsh-plugin-local-infer/service
  */
 import { Context, Service } from '@deepseek-ai/cordis';
-import type { BuildMode, CommandOutcome, Config, DefaultModel, ModelCacheEntry, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, GpuUsageProbe, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, ProviderLaunchRecord, ProviderRef, ProviderStatus, ReLinkOutcome, RegisterResult, ReserveResolution, ResolvedDefaults, SystemDep, VramModel } from 'dsh-plugin-local-infer/core';
+import type { BuildMode, CommandOutcome, CommandRunner, Config, DefaultModel, ModelCacheEntry, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, GpuUsageProbe, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, ProviderLaunchRecord, ProviderRef, ProviderStatus, ReLinkOutcome, RegisterResult, ReserveResolution, ResolvedDefaults, SudoGuard, SystemDep, VramModel } from 'dsh-plugin-local-infer/core';
 import type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EngineDeathEvent, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, ProviderStatusOptions, RegisterModelOptions } from './types.ts';
 export type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EngineDeathEvent, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, ProviderStatusOptions, RegisterModelOptions, SettingsDescribeResult, SettingsForms, SettingsNamespaceDescriptor, } from './types.ts';
 declare module '@deepseek-ai/cordis' {
@@ -56,6 +56,7 @@ export declare class LocalInfer extends Service implements LocalInferService {
     private readonly launchingEngines;
     private readonly stoppingEngines;
     private deathObserver;
+    private sudoObserver;
     constructor(ctx: Context);
     registerEngine(adapter: EngineAdapter): () => void;
     registerPreset(preset: Preset): () => void;
@@ -185,8 +186,11 @@ export declare class LocalInfer extends Service implements LocalInferService {
     installString(engineId: string, buildMode: BuildMode, hw: HardwareProfile): Promise<string>;
     /**
      * runInstall is the Play/Run path: it runs the resolved dep plan's commands
-     * through the shell runner and re-probes each dep. The runner captures the
-     * per-command exit, so a failure names the command that broke.
+     * through the guarded shell runner and re-probes each dep. The runner
+     * captures the per-command exit, so a failure names the command that broke,
+     * and a declared-sudo command whose probe finds no cached credentials
+     * announces the CLI prompt through the sudo observer and fails at the
+     * sudo deadline.
      */
     runInstall(engineId: string, buildMode: BuildMode, hw: HardwareProfile): Promise<InstallResult>;
     /**
@@ -229,6 +233,20 @@ export declare class LocalInfer extends Service implements LocalInferService {
      * clears it, which the route's effect does on dispose.
      */
     setEngineDeathObserver(observer: ((event: EngineDeathEvent) => void) | undefined): void;
+    /**
+     * setSudoObserver registers the route's hook for commands the sudo guard
+     * found waiting for a password on the launching CLI: the observer shows the
+     * "Check your CLI for a sudo prompt" note while the command waits. Passing
+     * undefined clears it, which the route's effect does on dispose.
+     */
+    setSudoObserver(observer: ((command: string) => void) | undefined): void;
+    /**
+     * notifySudoNeeded announces one guarded command to the registered sudo
+     * observer, if any. A throwing observer is swallowed: the note is a log
+     * courtesy, and a broken route must not fail the install that is already
+     * racing the sudo deadline.
+     */
+    private notifySudoNeeded;
     /**
      * watchLaunchedHandle ties a launched child's one-shot exit to the live
      * state: the host's close/error event (a crash, a pkill, or the stop kill)
@@ -476,6 +494,34 @@ export declare class LocalInfer extends Service implements LocalInferService {
      */
     private collectSpecs;
 }
+/**
+ * sudoProbe answers whether sudo already holds cached (or NOPASSWD)
+ * credentials: it runs SUDO_PROBE_COMMAND non-interactively through the
+ * probe timeout and reads a clean exit as "no prompt is coming". A refused
+ * -n, a missing sudo, and a hung probe all read as "a prompt is coming",
+ * the safe side: the run announces and caps instead of dead-locking on a
+ * TTY the card user cannot see.
+ */
+export declare function sudoProbe(): Promise<boolean>;
+/**
+ * sudoGuardFor is the service-side binding of core's guardSudoCommand: it
+ * supplies sudoProbe, so this package's install runner and the providers'
+ * lifecycle host drive one probe and one rule from one function. Calling
+ * it is itself the sudo declaration (needsSudo is true); callers gate on
+ * their own needsSudo fact first and never run a plain command through it.
+ */
+export declare function sudoGuardFor(command: string, notify: (command: string) => void, kill: () => void, timeoutMs?: number): Promise<SudoGuard>;
+/**
+ * guardedShellRunner builds the Play/Run runner: it runs one command line
+ * through the system shell and reports the exit. stdin stays closed. When
+ * core hands the command the dep's sudo declaration and sudoProbe finds no
+ * cached credentials, core's guard announces the CLI prompt through notify
+ * and arms the password deadline; its fire SIGTERMs the child and the run
+ * settles with sudoFailureDetail instead of the shell's bare signal exit.
+ * The guard adds only probe, notify, and deadline to the existing spawn;
+ * the copy/paste path stays the fallback for a passwordless host.
+ */
+export declare function guardedShellRunner(notify: (command: string) => void): CommandRunner;
 /**
  * downloadRunner is the model-download runner: it spawns the rendered hf CLI
  * command through the system shell and reports the exit. The spawned child's
