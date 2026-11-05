@@ -3263,6 +3263,60 @@ describe('get route (git sync, deps, build)', () => {
     expect(readConfig().lastLogs).toContain('get complete')
   })
 
+  it('streams and persists the CLI sudo note when the host announces a waiting sudo', async () => {
+    writeConfig('ninfer', {}, true)
+    const observerSets: Array<((command: string) => void) | undefined> = []
+    const service = stubService([], {
+      onSetSudoObserver: (observer) => {
+        observerSets.push(observer)
+      },
+    })
+    // The stub host plays the guarded node host: the body's sudo build
+    // command is announced through the service's notify seam before it runs,
+    // the way the real host announces after a credential probe that found
+    // nothing cached.
+    const host = stubGetHost({
+      announceSudo: (command) => service.notifySudoNeeded(command),
+    }).host
+    const route = getRouteWith(host, service)
+    const res = fakeStreamRes()
+    await route.handler(
+      fakePost(
+        JSON.stringify({
+          engine: 'ninfer',
+          config: { modelDirectory: MODEL_DIR },
+          platform: { buildCommands: 'sudo ln -sf ./build/engine /usr/local/bin/engine' },
+        }),
+      ),
+      res,
+    )
+    expect(res.status).toBe(200)
+    const events = ndjsonEvents(res.chunks)
+    const logText = events
+      .filter((event) => event.log !== undefined)
+      .map((event) => event.log!)
+      .join('')
+    // The note lands in the streamed run exactly once, prefixed with the
+    // `!!` marker the Get step's own failure lines use.
+    expect(logText).toContain(`!! ${SUDO_CLI_NOTE}\n`)
+    expect(logText.split(SUDO_CLI_NOTE).length - 1).toBe(1)
+    // The note persists through persistProcessLog while the run is still
+    // hung on the prompt, and the streamed run persists with it under the
+    // "Getting engine and model..." separator.
+    expect(readConfig().lastLogs).toContain(`!! ${SUDO_CLI_NOTE}`)
+    expect(readConfig().lastLogs).toContain('--- Getting engine and model...')
+    // The Get route streams no control-state event: the card's Get control
+    // keeps its throbber, so the body carries only log (and progress) lines.
+    expect(events.every((event) => event.log !== undefined || event.progress !== undefined)).toBe(
+      true,
+    )
+    // The run registered its observer and cleared it when it settled:
+    // registered, then cleared.
+    expect(observerSets).toHaveLength(2)
+    expect(observerSets[0]).toBeTypeOf('function')
+    expect(observerSets[1]).toBeUndefined()
+  })
+
   it('writes the Get run (commands and output) to the configured log file', async () => {
     writeConfig('ninfer', {}, true)
     const { host } = stubGetHost({ exists: false })

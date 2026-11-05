@@ -142,7 +142,14 @@ export type GetOutcome = {
  * failure), so an orphaned partial blob lingers until `hf cache prune`. The
  * optional onChunk is the hf download's raw stderr progress sink: the
  * download runner hands each streamed chunk to it as it lands, separate from
- * the log sink, so the route parses the tqdm lines into progress events.
+ * the log sink, so the route parses the tqdm lines into progress events. The
+ * run registers the same sudo observer a launch does: a guarded command
+ * waiting for the user's password on the launching CLI writes the core CLI
+ * note through log as a `!! ` line, the same prefix the step's own failure
+ * lines use, so the note rides the streamed run and the run text the route
+ * persists, and through persistProcessLog so a run still hung on the prompt
+ * reads it before it settles. The Get control keeps its throbber, so the
+ * observer announces nothing beyond the note line.
  */
 export declare function getEngine(localInfer: LocalInferService, request: GetRequest, log: (chunk: string) => void, host?: LifecycleHost, signal?: AbortSignal, onChunk?: (chunk: string) => void): Promise<GetOutcome>;
 /**
