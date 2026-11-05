@@ -3,6 +3,11 @@
 **Phase 1. Definition of Done: `pnpm vitest run packages/service` passes, coverage
 of the new module is exercised by fake timers, and `pnpm lint` is clean.**
 
+- [x] Done in commit 4ba99b5: `guardedShellRunner`, `sudoGuardFor`, `sudoProbe`,
+  and the `setSudoObserver` seam shipped; `packages/service/tests/sudo.spec.ts`
+  drives the (a)-(d) cases with a mocked `node:child_process` and fake timers
+  (12 new tests; service suite 127 passed; `pnpm lint` clean).
+
 In `packages/service/src/index.ts`:
 
 1. Add the sudo observer seam to `LocalInferService`, mirroring the existing

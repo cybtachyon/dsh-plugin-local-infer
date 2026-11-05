@@ -49,7 +49,7 @@ Answers are recorded at the bottom of this file. See
 ### Phase 1: the host rule
 
  - [x] [TASK-001-core-sudo-primitives](docs/PLAN-sudo-launch-prompt-TASK-001-core-sudo-primitives.md)
- - [ ] [TASK-002-service-sudo-seam](docs/PLAN-sudo-launch-prompt-TASK-002-service-sudo-seam.md)
+ - [x] [TASK-002-service-sudo-seam](docs/PLAN-sudo-launch-prompt-TASK-002-service-sudo-seam.md)
  - [ ] [TASK-003-host-guard](docs/PLAN-sudo-launch-prompt-TASK-003-host-guard.md)
 
 ### Phase 2: routes, stream events, persistence
