@@ -85,6 +85,14 @@ Answers are recorded at the bottom of this file. See
 - Any `tsc -b` of a dependent project re-dirties its tracked `lib/` outputs with
   trailing-newline-only diffs; `scripts/build-format.mjs` inside `pnpm build` is
   the canonical normalization, so run the full build last.
+- `performDiscard` (`packages/client/src/store/actions.ts`) and
+  `deleteProvider`'s form-collapse path abandon the draft form without clearing
+  `ui.sudoPending`, the gap TASK-011 closed only inside
+  `packages/client/src/store/providers.ts`. Route every draft-abandon path
+  through one clear-the-flag helper.
+- A sudo wait that resumes must hand the deadline back to the health cap
+  (TASK-011). Confirm the single-owner rule survives the refactor: no second
+  timer, no re-armed sudo deadline.
 
 ## Answers
 
