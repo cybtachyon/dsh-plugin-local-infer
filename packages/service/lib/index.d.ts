@@ -235,9 +235,9 @@ export declare class LocalInfer extends Service implements LocalInferService {
     setEngineDeathObserver(observer: ((event: EngineDeathEvent) => void) | undefined): void;
     /**
      * setSudoObserver registers the route's hook for commands the sudo guard
-     * found waiting for a password on the launching CLI: the observer shows the
-     * "Check your CLI for a sudo prompt" note while the command waits. Passing
-     * undefined clears it, which the route's effect does on dispose.
+     * found waiting for a password on the launching CLI: the observer lands
+     * core's SUDO_CLI_NOTE line while the command waits. Passing undefined
+     * clears it, which the route's effect does on dispose.
      */
     setSudoObserver(observer: ((command: string) => void) | undefined): void;
     /**
@@ -518,10 +518,12 @@ export declare function sudoGuardFor(command: string, notify: (command: string) 
  * through the system shell and reports the exit. stdin stays closed. When
  * core hands the command the dep's sudo declaration and sudoProbe finds no
  * cached credentials, core's guard announces the CLI prompt through notify
- * and arms the password deadline; its fire SIGTERMs the child and the run
- * settles with sudoFailureDetail instead of the shell's bare signal exit.
- * The guard adds only probe, notify, and deadline to the existing spawn;
- * the copy/paste path stays the fallback for a passwordless host.
+ * and arms the password deadline; its fire signals the child through the
+ * shared signalChild rule (SIGINT, then SIGTERM; the group signal reaches a
+ * sudo survivor of a compound line) and the run settles with
+ * sudoFailureDetail instead of the shell's bare signal exit. The guard adds
+ * only probe, notify, and deadline to the existing spawn; the copy/paste
+ * path stays the fallback for a passwordless host.
  */
 export declare function guardedShellRunner(notify: (command: string) => void): CommandRunner;
 /**

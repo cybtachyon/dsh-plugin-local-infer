@@ -31,7 +31,8 @@ export { ENGINE_PLATFORM_DEFAULTS, enginePlatformDefaults } from './platform.ts'
 export type { EnginePlatformDefaults } from './platform.ts';
 export { BUILTIN_PRESETS, PRESET_SOURCES, extractJsonBlock } from './presets.ts';
 export { DEFAULT_MODELS, defaultModelFor, defaultModelsForEngine } from './model-defaults.ts';
-export { customArgEnv, customArgFlags, envFromSpecs, flagsFromSpecs, nodeLifecycleHost, pollHealth, resolveLaunchArgv, } from './adapters.ts';
+export { createNodeLifecycleHost, customArgEnv, customArgFlags, envFromSpecs, flagsFromSpecs, nodeLifecycleHost, pollHealth, resolveLaunchArgv, } from './adapters.ts';
+export type { SudoHook } from './adapters.ts';
 export { HyperQwenAdapter } from './engines/hyperqwen/hyperqwenAdapter.ts';
 export { InfernixAdapter } from './engines/infernix/infernixAdapter.ts';
 export { LLAMACPP_DOCKER_IMAGE, LlamaCppAdapter } from './engines/llamacpp/llamacppAdapter.ts';

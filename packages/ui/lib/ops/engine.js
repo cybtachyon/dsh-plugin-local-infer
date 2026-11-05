@@ -33,6 +33,13 @@ import { RouteError } from "../route.js";
  */
 export const CANCELED_LINE = '--- Canceled\n';
 /**
+ * GET_EVENT_PREFIX leads a Get run's event lines in the streamed and
+ * persisted run (the route's `get failed` line and getEngine's sudo CLI
+ * note), so both read alike and the `!!` marker has one home (routes/get.ts
+ * and getEngine both build it from here).
+ */
+export const GET_EVENT_PREFIX = '!! ';
+/**
  * resolveAdapter picks the registered engine adapter an engine id routes to. A
  * card that names an engine no adapter serves gets a 404, not a blank panel.
  */
@@ -548,11 +555,11 @@ export async function relinkStoredProviders(localInfer, stored) {
  * the log sink, so the route parses the tqdm lines into progress events. The
  * run registers the same sudo observer a launch does: a guarded command
  * waiting for the user's password on the launching CLI writes the core CLI
- * note through log as a `!! ` line, the same prefix the step's own failure
- * lines use, so the note rides the streamed run and the run text the route
- * persists, and through persistProcessLog so a run still hung on the prompt
- * reads it before it settles. The Get control keeps its throbber, so the
- * observer announces nothing beyond the note line.
+ * note through log as a GET_EVENT_PREFIX line, the same marker the route's
+ * own failure line uses, so the note rides the streamed run and the run text
+ * the route persists, and through persistProcessLog so a run still hung on
+ * the prompt reads it before it settles. The Get control keeps its throbber,
+ * so the observer announces nothing beyond the note line.
  */
 export async function getEngine(localInfer, request, log, host = nodeLifecycleHost, signal, onChunk) {
     const { stored, engineId, config } = resolveStoredRequest(request);
@@ -561,7 +568,7 @@ export async function getEngine(localInfer, request, log, host = nodeLifecycleHo
     const platform = registerLaunchPlatform(localInfer, request, stored, engineId, config);
     // The Get run owns the sudo observer for the run's duration (see
     // registerSudoObserver); the finally leaves none behind a failed run.
-    const clearSudoObserver = registerSudoObserver(localInfer, `!! ${SUDO_CLI_NOTE}\n`, log);
+    const clearSudoObserver = registerSudoObserver(localInfer, `${GET_EVENT_PREFIX}${SUDO_CLI_NOTE}\n`, log);
     try {
         const result = await runGetSteps(localInfer, getStepsRequest(engineId, config, stored, platform, host, signal, onChunk), log);
         return { ok: result.ok, ...(result.detail !== undefined ? { detail: result.detail } : {}) };

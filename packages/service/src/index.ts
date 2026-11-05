@@ -172,6 +172,14 @@ export class LocalInferError extends Error {
 const PROBE_TIMEOUT_MS = 5000
 
 /**
+ * The page-fetch deadline the modsearch CLI is told to cap itself with (its
+ * --deadline argument, milliseconds as text): the CLI kills its own fetch
+ * past this, so the spawned bridge process returns instead of sitting on an
+ * unreachable URL.
+ */
+const MODSEARCH_DEADLINE_ARG = '60000'
+
+/**
  * The adopted-process poll interval. A re-adopted engine (a surviving process
  * with no ChildProcess after a DSH restart) is watched for death through a
  * liveness probe on this cadence: fast enough that a pkill settles the
@@ -877,9 +885,9 @@ export class LocalInfer extends Service implements LocalInferService {
 
   /**
    * setSudoObserver registers the route's hook for commands the sudo guard
-   * found waiting for a password on the launching CLI: the observer shows the
-   * "Check your CLI for a sudo prompt" note while the command waits. Passing
-   * undefined clears it, which the route's effect does on dispose.
+   * found waiting for a password on the launching CLI: the observer lands
+   * core's SUDO_CLI_NOTE line while the command waits. Passing undefined
+   * clears it, which the route's effect does on dispose.
    */
   setSudoObserver(observer: ((command: string) => void) | undefined): void {
     this.sudoObserver = observer
@@ -1426,7 +1434,7 @@ export class LocalInfer extends Service implements LocalInferService {
     return new Promise((resolve, reject) => {
       const child = spawn(
         'node',
-        [cliPath, 'search', '-u', url, '--deadline', '60000'],
+        [cliPath, 'search', '-u', url, '--deadline', MODSEARCH_DEADLINE_ARG],
         { stdio: ['ignore', 'pipe', 'pipe'] },
       )
       let stdout = ''
@@ -1781,25 +1789,37 @@ export function sudoGuardFor(
  * through the system shell and reports the exit. stdin stays closed. When
  * core hands the command the dep's sudo declaration and sudoProbe finds no
  * cached credentials, core's guard announces the CLI prompt through notify
- * and arms the password deadline; its fire SIGTERMs the child and the run
- * settles with sudoFailureDetail instead of the shell's bare signal exit.
- * The guard adds only probe, notify, and deadline to the existing spawn;
- * the copy/paste path stays the fallback for a passwordless host.
+ * and arms the password deadline; its fire signals the child through the
+ * shared signalChild rule (SIGINT, then SIGTERM; the group signal reaches a
+ * sudo survivor of a compound line) and the run settles with
+ * sudoFailureDetail instead of the shell's bare signal exit. The guard adds
+ * only probe, notify, and deadline to the existing spawn; the copy/paste
+ * path stays the fallback for a passwordless host.
  */
 export function guardedShellRunner(notify: (command: string) => void): CommandRunner {
   return async (command, options) => {
     let child: ChildProcess | undefined
     const guard = options?.needsSudo === true
       ? await sudoGuardFor(command, notify, () => {
-          child?.kill('SIGTERM')
+          if (child !== undefined) signalChild(child)
         })
       : undefined
     try {
       const outcome = await new Promise<CommandOutcome>((resolve) => {
         // The local keeps the spawn overload's non-null stream typing; the
-        // outer child exists for the guard's kill.
-        const started = spawn(command, { shell: true, stdio: ['ignore', 'pipe', 'pipe'] })
+        // outer child exists for the guard's kill. The shell spawns detached
+        // so it leads its own process group and signalChild's negative-pid
+        // signal reaches the whole line. libuv's detached spawn only changes
+        // the process group (Node >= 22 ships libuv >= 1.48, which does not
+        // create a session), so a sudo prompt still reaches the launching
+        // terminal and the guard's whole point survives the detach.
+        const started = spawn(command, {
+          shell: true,
+          detached: true,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        })
         child = started
+        detachedChildren.add(started)
         const tail = tailOutput()
         const append = (chunk: Buffer): void => {
           tail.append(chunk.toString('utf8'))
@@ -1847,15 +1867,67 @@ const DOWNLOAD_TIMEOUT_MS = 7_200_000
 const DOWNLOAD_ABORT_GRACE_MS = 5_000
 
 /**
+ * The install shells the guarded runner spawned detached (process-group
+ * leaders). signalProcess reads the set so the negative-pid group signal
+ * only ever targets a child that actually leads its group; a child that
+ * stays in the host's group (the download runner's shell) gets the direct
+ * signal, so a stray negative pid can never fan out beyond the child.
+ */
+const detachedChildren = new WeakSet<ChildProcess>()
+
+/**
+ * signalProcess delivers one signal to one child: a process-group leader
+ * gets it through its negative pid, so a compound command line
+ * (`a && sudo b`) dies whole instead of leaving sudo as a group survivor;
+ * every other child gets the direct signal. A group that is already gone
+ * (ESRCH) or a platform that rejects negative pids falls back to the direct
+ * signal, which reaches the shell itself.
+ */
+function signalProcess(child: ChildProcess, signal: NodeJS.Signals): void {
+  if (child.pid !== undefined && detachedChildren.has(child)) {
+    try {
+      process.kill(-child.pid, signal)
+      return
+    } catch {
+      // Group gone or unsupported: the direct signal below still reaches the
+      // shell, and a child that already exited no-ops the way ChildProcess
+      // .kill always does.
+    }
+  }
+  child.kill(signal)
+}
+
+/**
+ * signalChild applies the cancel rule: SIGINT first, SIGTERM after the grace
+ * period if the child is still alive. The child already marked killed or
+ * exited is left alone. The optional graceMs overrides the 5 s constant so a
+ * test can exercise the escalation without waiting. The abort watch and the
+ * sudo deadline kill share this one rule, the mirror of the providers'
+ * lifecycle host copy (packages/providers/src/adapters.ts, signalChild):
+ * each package owns its child-process wiring, so a change to the escalation
+ * rule lands in two places by design.
+ */
+function signalChild(child: ChildProcess, graceMs?: number): void {
+  if (child.killed || child.exitCode !== null) return
+  signalProcess(child, 'SIGINT')
+  const escalate = setTimeout(() => {
+    // A group signal never marks ChildProcess.kill, so the guard reads the
+    // exit state: a child that has neither exited nor been signalled is
+    // still alive and gets SIGTERM.
+    if (child.exitCode === null && child.signalCode === null) signalProcess(child, 'SIGTERM')
+  }, graceMs ?? DOWNLOAD_ABORT_GRACE_MS)
+  escalate.unref()
+}
+
+/**
  * watchChildAbort kills the in-flight child when the signal aborts (the card's
  * cancel): SIGINT first, SIGTERM after the grace period if the child is still
- * alive. A signal that is already aborted kills immediately. The optional
- * graceMs overrides the 5 s constant so a test can exercise the escalation
- * without waiting. A near-identical copy lives in the providers package
- * (packages/providers/src/adapters.ts, the lifecycle host's run and runStream
- * abort path): each package owns its own child-process wiring, and the guard
- * fix (the SIGTERM escalation) was applied to both copies, so a change to the
- * escalation rule lands in two places by design.
+ * alive, through the shared signalChild rule. A signal that is already
+ * aborted kills immediately. A near-identical copy lives in the providers
+ * package (packages/providers/src/adapters.ts, the lifecycle host's run and
+ * runStream abort path): each package owns its own child-process wiring, and
+ * the guard fix (the SIGTERM escalation) was applied to both copies, so a
+ * change to the escalation rule lands in two places by design.
  */
 function watchChildAbort(
   child: ChildProcess,
@@ -1864,15 +1936,7 @@ function watchChildAbort(
 ): void {
   if (signal === undefined) return
   const onAbort = (): void => {
-    if (child.killed || child.exitCode !== null) return
-    child.kill('SIGINT')
-    const escalate = setTimeout(() => {
-      // child.killed is already true from the SIGINT, so the guard reads the
-      // exit state: a child that has neither exited nor been signalled is
-      // still alive and gets SIGTERM.
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
-    }, graceMs ?? DOWNLOAD_ABORT_GRACE_MS)
-    escalate.unref()
+    signalChild(child, graceMs)
   }
   if (signal.aborted) {
     onAbort()

@@ -8,8 +8,8 @@
  * @module dsh-plugin-local-infer/ui/routes/get
  */
 import { parseStoredPlatformConfig } from "../config.js";
-import { CANCELED_LINE, getEngine } from "../ops/engine.js";
-import { persistProcessLog } from "../ops/logs.js";
+import { CANCELED_LINE, GET_EVENT_PREFIX, getEngine } from "../ops/engine.js";
+import { captureRunBaseline, finishRunSection } from "../ops/logs.js";
 import { defineRoute } from "../route.js";
 import { abortOnResponseClose, ndjsonLine, throttledProgressSink } from "./stream.js";
 /**
@@ -38,6 +38,11 @@ export function getRoute(localInfer, getHost) {
                 request.platform = platform;
             }
             res.ndjsonStream();
+            // The stored last-run logs as they stand before the run persists
+            // anything: the sudo observer persists its note while the run hangs on
+            // the prompt, and finishRunSection closes the run over the baseline so
+            // that provisional line and the collected run text persist once.
+            const baseline = captureRunBaseline();
             let collected = '';
             // The log sink collects the plain-text run (the persisted log) and
             // streams it as NDJSON log events, one event per chunk.
@@ -60,7 +65,7 @@ export function getRoute(localInfer, getHost) {
                 await getEngine(localInfer, request, log, getHost, signal, onChunk);
             }
             catch (error) {
-                log(`!! get failed: ${String(error?.message ?? error)}\n`);
+                log(`${GET_EVENT_PREFIX}get failed: ${String(error?.message ?? error)}\n`);
             }
             // A cancel that closed the stream appends the "Canceled" line, so the
             // persisted run (and the log file) read the run as canceled, the same
@@ -72,8 +77,9 @@ export function getRoute(localInfer, getHost) {
             // The "Getting engine and model..." separator leads the persisted run,
             // so the Logs section and the log file read the run as a fresh process
             // section, the same line the card writes when the Get button is
-            // clicked.
-            persistProcessLog(`--- Getting engine and model...\n${collected}`);
+            // clicked. finishRunSection closes the run over the baseline captured
+            // before it started, not a second append over its own provisional notes.
+            finishRunSection(baseline, `--- Getting engine and model...\n${collected}`);
             res.end();
         },
     });

@@ -9,7 +9,7 @@
  * from; Phase 8 wires them into one panel with the lifecycle controls.
  * @module dsh-plugin-local-infer/ui
  */
-import { createNodeLifecycleHost } from '../../providers/lib/adapters.js';
+import { createNodeLifecycleHost } from '../../providers/lib/index.js';
 import { registerLocalInferRoute } from "./route.js";
 export const name = 'local-infer-ui';
 export const inject = ['localInfer'];
