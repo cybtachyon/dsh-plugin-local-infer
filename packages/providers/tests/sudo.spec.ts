@@ -6,8 +6,9 @@
  * drive the 60 s password deadline and the SIGINT-to-SIGTERM escalation. The
  * rule itself lives in core; these tests pin the host wiring: a declared run
  * probes, announces once, signals the child through the shared rule at the
- * deadline, and settles with the sudo failure detail; undeclared runs and a
- * hookless host never touch the guard. The file is separate from
+ * deadline (the detached streaming shell through its negative group pid), and
+ * settles with the sudo failure detail; undeclared runs and a hookless host
+ * never touch the guard. The file is separate from
  * adapters.spec.ts because that suite drives real child processes and this
  * one replaces node:child_process module-wide, the same split the service's
  * sudo seam test made (packages/service/tests/sudo.spec.ts).
@@ -50,7 +51,7 @@ function probePrompts(): void {
 interface FakeChild {
   /** The child's event emitter: tests emit 'close' to settle the run. */
   events: EventEmitter
-  /** The kill signal recorder: the shared signalChild rule lands here. */
+  /** The direct-kill recorder: the shared signalChild rule lands here. */
   kill: ReturnType<typeof vi.fn>
   /** The object handed back by the exec/spawn mocks. */
   node: EventEmitter & {
@@ -66,12 +67,15 @@ interface FakeChild {
 /**
  * A fake child the signal rule can read: exitCode and signalCode stay null
  * (so a SIGINT-ignoring child escalates to SIGTERM) until a test settles it.
+ * An optional pid makes the child a process-group target for the group-kill
+ * test; without one, signalChild delivers the direct kill.
  */
-function fakeChild(): FakeChild {
+function fakeChild(pid?: number): FakeChild {
   const events = new EventEmitter()
   const kill = vi.fn()
   const node = Object.assign(events, {
     kill,
+    ...(pid === undefined ? {} : { pid }),
     killed: false,
     exitCode: null,
     signalCode: null,
@@ -189,6 +193,49 @@ describe('createNodeLifecycleHost sudo hook', () => {
     // even a nominally clean one.
     child.events.emit('close', 0)
     await expect(pending).resolves.toEqual({ ok: false, detail: sudoFailureDetail(LINK) })
+  })
+
+  it('group-kills the detached streaming shell through its negative pid at the deadline', async () => {
+    vi.useFakeTimers()
+    probePrompts()
+    const pid = 43_210
+    const child = fakeChild(pid)
+    fakeSpawn(child)
+    // The build shell spawns detached (a process-group leader), so the
+    // guard's kill signals the whole group and a sudo survivor of a
+    // compound line dies with the shell. The mock answers the SIGINT, then
+    // reads ESRCH on the SIGTERM tick to exercise the direct-kill fallback.
+    const groupSignals: Array<[number, string]> = []
+    const killSpy = vi
+      .spyOn(process, 'kill')
+      .mockImplementation(((target: number, signal: string) => {
+        groupSignals.push([target as number, String(signal)])
+        if (groupSignals.length > 1) {
+          throw Object.assign(new Error('no such process group'), { code: 'ESRCH' })
+        }
+        return true
+      }) as unknown as typeof process.kill)
+    try {
+      const host = createNodeLifecycleHost(undefined, { notify: vi.fn() })
+      const pending = host.runStream(LINK, () => {}, { needsSudo: true, graceMs: 100 })
+      await vi.advanceTimersByTimeAsync(60_000)
+      // The streaming host spawns the shell detached so the guard's signal
+      // can reach the whole process group.
+      expect(cpMock.spawn).toHaveBeenCalledWith(
+        LINK,
+        expect.objectContaining({ detached: true, shell: true }),
+      )
+      expect(groupSignals).toEqual([[-pid, 'SIGINT']])
+      expect(child.kill).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(100)
+      expect(groupSignals).toHaveLength(2)
+      // The group read ESRCH: the escalation falls back to the direct kill.
+      expect(child.kill).toHaveBeenCalledWith('SIGTERM')
+      child.events.emit('close', null)
+      await expect(pending).resolves.toEqual({ ok: false, detail: sudoFailureDetail(LINK) })
+    } finally {
+      killSpy.mockRestore()
+    }
   })
 
   it('settles a plain run with the sudo detail when the deadline fires', async () => {

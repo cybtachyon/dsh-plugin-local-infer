@@ -271,7 +271,25 @@ function stubService(
     notifySudoNeeded: (command: string): void => {
       sudoObserver?.(command)
     },
-  } as unknown as LocalInferService
+    // The registration seam no route touches: the literal carries no-op
+    // registrations and empty reads so the whole stub is one shape with the
+    // interface and type-checks without a cast. Widening LocalInferService
+    // then fails this literal's type check until the stub catches up,
+    // instead of surfacing at runtime in a route (the old `as unknown as`
+    // cast hid exactly that; this spec is not in a tsc project today, so
+    // the check lives in the editor until the tests gain a type-check gate).
+    registerEngine: () => () => {},
+    registerPreset: () => () => {},
+    registerGuideline: () => () => {},
+    registerVramModel: () => () => {},
+    registerDepPlan: () => () => {},
+    registeredPresets: () => [],
+    registeredGuidelines: () => [],
+    registeredDepPlans: () => new Map(),
+    installString: async () => '',
+    defaultDatasetDirectory: () => MODEL_DIR,
+    listModelCache: () => [],
+  }
 }
 
 /**
@@ -3302,8 +3320,11 @@ describe('get route (git sync, deps, build)', () => {
     expect(logText.split(SUDO_CLI_NOTE).length - 1).toBe(1)
     // The note persists through persistProcessLog while the run is still
     // hung on the prompt, and the streamed run persists with it under the
-    // "Getting engine and model..." separator.
+    // "Getting engine and model..." separator. finishRunSection closes the
+    // run over the pre-run baseline, so the provisional mid-run note line
+    // and the collected run text persist the note exactly once.
     expect(readConfig().lastLogs).toContain(`!! ${SUDO_CLI_NOTE}`)
+    expect(readConfig().lastLogs.split(SUDO_CLI_NOTE).length - 1).toBe(1)
     expect(readConfig().lastLogs).toContain('--- Getting engine and model...')
     // The Get route streams no control-state event: the card's Get control
     // keeps its throbber, so the body carries only log (and progress) lines.
@@ -3319,6 +3340,12 @@ describe('get route (git sync, deps, build)', () => {
 
   it('writes the Get run (commands and output) to the configured log file', async () => {
     writeConfig('ninfer', {}, true)
+    // The per-run log name carries a second-resolution timestamp: an earlier
+    // test's run in a different second would otherwise sort first under the
+    // same ninfer- prefix and be read here. Clear the directory so this
+    // run's file is the only ninfer-*.log to find.
+    const logDir = join(home, '.dsh', 'local-infer', 'logs')
+    rmSync(logDir, { recursive: true, force: true })
     const { host } = stubGetHost({ exists: false })
     const route = getRouteWith(host)
     const res = fakeStreamRes()
@@ -3329,7 +3356,6 @@ describe('get route (git sync, deps, build)', () => {
     // The Get step owns a per-run log file too: the commands and their output
     // land in the configured log directory under the "Getting engine and
     // model..." separator.
-    const logDir = join(home, '.dsh', 'local-infer', 'logs')
     const entries = existsSync(logDir) ? readdirSync(logDir) : []
     const logFile = entries.find((name) => name.startsWith('ninfer-') && name.endsWith('.log'))
     expect(logFile).toBeDefined()

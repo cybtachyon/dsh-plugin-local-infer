@@ -11,7 +11,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { createNodeLifecycleHost } from '../../providers/lib/adapters.js'
+import { createNodeLifecycleHost } from '../../providers/lib/index.js'
 import { registerLocalInferRoute } from './route.ts'
 import type { WebServerService } from './route.ts'
 

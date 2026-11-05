@@ -29,7 +29,9 @@ export declare function performSave(store: CardStore, t: TextTable): Promise<voi
  * discard) and collapses it back to the provider entry list (the new-provider
  * form when the stored config has no entries). It re-prices the meter and
  * deps panel from the stored config, so the readouts return to the last-saved
- * state. It is local-only: no server round trip.
+ * state. Like the Cancel, the Discard abandons a draft run's sudo wait, so
+ * the shared abandonedFormPatch clears the ui.sudoPending flag. It is
+ * local-only: no server round trip.
  */
 export declare function performDiscard(store: CardStore): void;
 /**

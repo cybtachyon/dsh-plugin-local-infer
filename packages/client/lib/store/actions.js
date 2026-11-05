@@ -15,6 +15,7 @@
  */
 import { postDownload, postRegister, postSave, postUnregister, } from "../api/routes.js";
 import { repriceAll } from "./deps.js";
+import { abandonedFormPatch } from "./providers.js";
 import { ACTION_TIMEOUTS, performAction } from "./sync.js";
 /**
  * performSave upserts the provider entry the form edits through the save
@@ -53,14 +54,13 @@ export function performSave(store, t) {
  * discard) and collapses it back to the provider entry list (the new-provider
  * form when the stored config has no entries). It re-prices the meter and
  * deps panel from the stored config, so the readouts return to the last-saved
- * state. It is local-only: no server round trip.
+ * state. Like the Cancel, the Discard abandons a draft run's sudo wait, so
+ * the shared abandonedFormPatch clears the ui.sudoPending flag. It is
+ * local-only: no server round trip.
  */
 export function performDiscard(store) {
     store.dispatch({ type: 'draft/discard' });
-    store.dispatch({
-        type: 'ui/patch',
-        patch: { editingProviderId: null, providerFormMode: 'collapsed' },
-    });
+    store.dispatch({ type: 'ui/patch', patch: abandonedFormPatch('collapsed') });
     void repriceAll(store);
 }
 /**

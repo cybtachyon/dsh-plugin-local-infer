@@ -2494,6 +2494,9 @@ function move(store, providerId, event) {
 function formModeForProviderCount(count) {
   return count > 0 ? "collapsed" : "new";
 }
+function abandonedFormPatch(providerFormMode) {
+  return { editingProviderId: null, providerFormMode, sudoPending: false };
+}
 function editProvider(store, provider) {
   const state = store.getSnapshot();
   store.dispatch({
@@ -2521,11 +2524,7 @@ function cancelProvider(store, providerId) {
   const state = store.getSnapshot();
   store.dispatch({
     type: "ui/patch",
-    patch: {
-      editingProviderId: null,
-      providerFormMode: formModeForProviderCount(state.summary?.providers.length ?? 0),
-      sudoPending: false
-    }
+    patch: abandonedFormPatch(formModeForProviderCount(state.summary?.providers.length ?? 0))
   });
   store.dispatch({ type: "draft/discard" });
   void repriceAll(store);
@@ -2537,10 +2536,7 @@ function newProvider(store) {
     config: {},
     platform: state.draft?.platform ?? {}
   };
-  store.dispatch({
-    type: "ui/patch",
-    patch: { editingProviderId: null, providerFormMode: "new", sudoPending: false }
-  });
+  store.dispatch({ type: "ui/patch", patch: abandonedFormPatch("new") });
   store.dispatch({ type: "draft/load", draft: next });
   void repriceAll(store, { engine: next.engine, config: next.config });
 }
@@ -2555,10 +2551,7 @@ function deleteProvider(store, providerId) {
     if (ui.editingProviderId === providerId) {
       store.dispatch({
         type: "ui/patch",
-        patch: {
-          editingProviderId: null,
-          providerFormMode: formModeForProviderCount(summary.providers.length)
-        }
+        patch: abandonedFormPatch(formModeForProviderCount(summary.providers.length))
       });
     }
     store.dispatch({ type: "ui/patch", patch: { deletingProviderId: null } });
@@ -3166,10 +3159,7 @@ function performSave(store, t) {
 }
 function performDiscard(store) {
   store.dispatch({ type: "draft/discard" });
-  store.dispatch({
-    type: "ui/patch",
-    patch: { editingProviderId: null, providerFormMode: "collapsed" }
-  });
+  store.dispatch({ type: "ui/patch", patch: abandonedFormPatch("collapsed") });
   void repriceAll(store);
 }
 function performRegister(store, t) {

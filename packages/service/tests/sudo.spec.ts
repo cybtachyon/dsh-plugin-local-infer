@@ -2,11 +2,14 @@
  * The service sudo seam: sudoProbe, the sudoGuardFor binding, and the
  * guarded install runner. No test runs a real sudo or waits a real clock:
  * node:child_process is mocked (execFile answers the probe, spawn hands back
- * a fake child) and vitest's fake timers drive the 60 s password deadline.
- * The rule itself lives in core; these tests pin the wiring: the probe only
- * runs for a declared-sudo command, the announcement fires once per waiting
- * command, the deadline is armed and disarmed around the child, and the
- * published notify seam reaches the observer without breaking its caller.
+ * a fake child) and vitest's fake timers drive the 60 s password deadline and
+ * the SIGINT-to-SIGTERM escalation of the shared signalChild rule. The rule
+ * itself lives in core; these tests pin the wiring: the probe only runs for a
+ * declared-sudo command, the announcement fires once per waiting command, the
+ * deadline is armed and disarmed around the child, the deadline kill rides the
+ * shared rule (the detached shell is group-killed through its negative pid),
+ * and the published notify seam reaches the observer without breaking its
+ * caller.
  */
 import { EventEmitter } from 'node:events'
 import { Context } from '@deepseek-ai/cordis'
@@ -52,15 +55,29 @@ function probePrompts(): void {
 interface FakeChild {
   /** The child's event emitter: tests emit 'close' to settle the run. */
   events: EventEmitter
+  /** The direct-kill recorder: the signalChild fallback lands here. */
   kill: ReturnType<typeof vi.fn>
 }
 
-/** Arms the spawn mock to hand back one fake child with kill and pipes. */
-function fakeChild(): FakeChild {
+/**
+ * Arms the spawn mock to hand back one fake child with kill and pipes. The
+ * exit-state fields keep the shared signalChild rule reading the child alive
+ * (so a SIGINT that does not exit escalates to SIGTERM); an optional pid
+ * makes the child a process-group target for the group-kill test.
+ */
+function fakeChild(pid?: number): FakeChild {
   const events = new EventEmitter()
   const kill = vi.fn()
   cpMock.spawn.mockReturnValue(
-    Object.assign(events, { stdout: new EventEmitter(), stderr: new EventEmitter(), kill }),
+    Object.assign(events, {
+      stdout: new EventEmitter(),
+      stderr: new EventEmitter(),
+      kill,
+      ...(pid === undefined ? {} : { pid }),
+      killed: false,
+      exitCode: null,
+      signalCode: null,
+    }),
   )
   return { events, kill }
 }
@@ -144,9 +161,12 @@ describe('guardedShellRunner', () => {
     const runner = guardedShellRunner(notify)
     const undeclared = runner('apt-get install -y cmake')
     await vi.advanceTimersByTimeAsync(0)
-    // The stdin-closed shell spawn is untouched for an unguarded command.
+    // The stdin-closed shell spawn is untouched for an unguarded command;
+    // the shell spawns detached so the sudo guard's signalChild can reach a
+    // compound line's whole process group.
     expect(cpMock.spawn).toHaveBeenCalledWith('apt-get install -y cmake', {
       shell: true,
+      detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     })
     child.events.emit('close', 0)
@@ -178,7 +198,7 @@ describe('guardedShellRunner', () => {
     expect(child.kill).not.toHaveBeenCalled()
   })
 
-  it('notifies once and SIGTERMs the child when the sudo deadline fires', async () => {
+  it('notifies once and signals the child through the shared rule when the sudo deadline fires', async () => {
     vi.useFakeTimers()
     probePrompts()
     const child = fakeChild()
@@ -191,10 +211,52 @@ describe('guardedShellRunner', () => {
     expect(notify).toHaveBeenCalledWith(command)
     expect(child.kill).not.toHaveBeenCalled()
     await vi.advanceTimersByTimeAsync(1)
+    // The kill rides the shared signalChild rule: SIGINT first.
+    expect(child.kill).toHaveBeenCalledWith('SIGINT')
+    // A shell that survives SIGINT (the fake never exits) escalates to
+    // SIGTERM after the grace period, the same rule the abort watch applies.
+    await vi.advanceTimersByTimeAsync(5_000)
     expect(child.kill).toHaveBeenCalledWith('SIGTERM')
     child.events.emit('close', null)
     // The signal exit is replaced by the note-carrying sudo detail.
     await expect(pending).resolves.toEqual({ ok: false, detail: sudoFailureDetail(command) })
+  })
+
+  it('group-kills the detached shell through its negative pid at the sudo deadline', async () => {
+    vi.useFakeTimers()
+    probePrompts()
+    const pid = 43_210
+    const child = fakeChild(pid)
+    const groupSignals: Array<[number, string]> = []
+    // The detached spawn makes the shell a process-group leader: the guard's
+    // kill signals the whole group, so a sudo survivor of a compound line
+    // (`a && sudo b`) dies with the shell. The mock answers the SIGINT, then
+    // reads ESRCH on the SIGTERM tick to exercise the direct-kill fallback.
+    const killSpy = vi
+      .spyOn(process, 'kill')
+      .mockImplementation(((target: number, signal: string) => {
+        groupSignals.push([target as number, String(signal)])
+        if (groupSignals.length > 1) {
+          throw Object.assign(new Error('no such process group'), { code: 'ESRCH' })
+        }
+        return true
+      }) as unknown as typeof process.kill)
+    try {
+      const runner = guardedShellRunner(vi.fn())
+      const command = 'sudo apt-get install -y cuda-toolkit && sudo ln -sf x /usr/bin/x'
+      const pending = runner(command, { needsSudo: true })
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(groupSignals).toEqual([[-pid, 'SIGINT']])
+      expect(child.kill).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(groupSignals).toHaveLength(2)
+      // The group read ESRCH: the escalation falls back to the direct kill.
+      expect(child.kill).toHaveBeenCalledWith('SIGTERM')
+      child.events.emit('close', null)
+      await expect(pending).resolves.toEqual({ ok: false, detail: sudoFailureDetail(command) })
+    } finally {
+      killSpy.mockRestore()
+    }
   })
 
   it('disarms the deadline when the child settles early', async () => {
@@ -287,6 +349,10 @@ describe('ctx.localInfer runInstall sudo seam', () => {
     expect(observer).toHaveBeenCalledTimes(1)
     expect(observer).toHaveBeenCalledWith(command)
     await vi.advanceTimersByTimeAsync(1)
+    // The deadline kill rides the shared signalChild rule: SIGINT, then
+    // SIGTERM once the grace period finds the shell still alive.
+    expect(child.kill).toHaveBeenCalledWith('SIGINT')
+    await vi.advanceTimersByTimeAsync(5_000)
     expect(child.kill).toHaveBeenCalledWith('SIGTERM')
     child.events.emit('close', null)
     const result = await pending
@@ -330,6 +396,8 @@ describe('ctx.localInfer runInstall sudo seam', () => {
     const child = fakeChild()
     const pending = ctx.localInfer.runInstall('sudoengine', 'local', HW)
     await vi.advanceTimersByTimeAsync(60_000)
+    expect(child.kill).toHaveBeenCalledWith('SIGINT')
+    await vi.advanceTimersByTimeAsync(5_000)
     expect(child.kill).toHaveBeenCalledWith('SIGTERM')
     child.events.emit('close', null)
     const result = await pending

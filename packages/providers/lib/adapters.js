@@ -281,22 +281,56 @@ function sudoProbeCached() {
     });
 }
 /**
+ * The streaming children createNodeLifecycleHost spawned detached (process-
+ * group leaders). signalProcess reads the set so the negative-pid group
+ * signal only ever targets a child that actually leads its group: the plain
+ * run's exec'd child (exec's options cannot set detached) stays in the
+ * host's group and gets the direct signal.
+ */
+const detachedChildren = new WeakSet();
+/**
+ * signalProcess delivers one signal to one child: a process-group leader
+ * gets it through its negative pid, so a compound command line
+ * (`a && sudo b`) dies whole instead of leaving sudo as a group survivor;
+ * every other child gets the direct signal. A simple sudo line is already
+ * safe there: the shell execs a lone command, so the shell process is sudo
+ * itself. A group that is already gone (ESRCH) or a platform that rejects
+ * negative pids falls back to the direct signal, which reaches the shell.
+ */
+function signalProcess(child, signal) {
+    if (child.pid !== undefined && detachedChildren.has(child)) {
+        try {
+            process.kill(-child.pid, signal);
+            return;
+        }
+        catch {
+            // Group gone or unsupported: the direct signal below still reaches the
+            // shell, and a child that already exited no-ops the way ChildProcess
+            // .kill always does.
+        }
+    }
+    child.kill(signal);
+}
+/**
  * signalChild signals an in-flight child with the cancel rule: SIGINT first,
  * and SIGTERM after the grace period if the child is still alive. The child
  * already marked killed or exited is left alone. The optional graceMs
  * overrides the 5 s constant so a test can exercise the escalation without
- * waiting. The abort watch and the sudo deadline kill share this one rule.
+ * waiting. The abort watch and the sudo deadline kill share this one rule,
+ * the mirror of the service's copy (packages/service/src/index.ts,
+ * signalChild): each package owns its child-process wiring, so a change to
+ * the escalation rule lands in two places by design.
  */
 function signalChild(child, graceMs) {
     if (child.killed || child.exitCode !== null)
         return;
-    child.kill('SIGINT');
+    signalProcess(child, 'SIGINT');
     const escalate = setTimeout(() => {
-        // child.killed is already true from the SIGINT, so the guard reads the
+        // A group signal never marks ChildProcess.kill, so the guard reads the
         // exit state: a child that has neither exited nor been signalled is
         // still alive and gets SIGTERM.
         if (child.exitCode === null && child.signalCode === null)
-            child.kill('SIGTERM');
+            signalProcess(child, 'SIGTERM');
     }, graceMs ?? RUN_ABORT_GRACE_MS);
     escalate.unref();
 }
@@ -367,6 +401,9 @@ export function createNodeLifecycleHost(debug, sudo) {
             log?.(`run: ${command}`);
             // The guard arms before the exec; the outer child exists so the
             // deadline's kill reaches the run through the shared signalChild rule.
+            // The exec'd child cannot spawn detached (exec's options forbid it), so
+            // it takes the direct signal; the deploy lines this path runs are
+            // single `sudo ln -sf ...` commands, whose shell execs sudo itself.
             let child;
             const guard = await guardSudo(command, options, () => {
                 if (child !== undefined)
@@ -413,11 +450,19 @@ export function createNodeLifecycleHost(debug, sudo) {
                     // the card prices a stalled step with its own output-idle watchdog.
                     // A profile shell (the Windows vcpkg route's pwsh.exe) runs the
                     // command line in that shell; absent keeps the system default.
+                    // The build shell spawns detached so it leads its own process
+                    // group and signalProcess's negative-pid signal reaches the whole
+                    // line (build commands are compound). libuv's detached spawn only
+                    // changes the process group (Node >= 22 ships libuv >= 1.48, which
+                    // does not create a session), so a sudo prompt still reaches the
+                    // launching terminal.
                     const started = nodeSpawn(command, {
                         shell: options?.shell ?? true,
+                        detached: true,
                         stdio: ['ignore', 'pipe', 'pipe'],
                     });
                     child = started;
+                    detachedChildren.add(started);
                     watchChildAbort(started, options?.signal, options?.graceMs);
                     let output = '';
                     const append = (chunk) => {

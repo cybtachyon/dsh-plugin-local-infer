@@ -18,6 +18,7 @@
 import type { ProviderSummaryEntry } from 'dsh-plugin-local-infer/ui';
 import type { TextTable } from '../text.ts';
 import { type CardStore } from './sync.ts';
+import type { CardUiState, ProviderFormMode } from './types.ts';
 /**
  * SUDO_DEADLINE_MS caps the card's wait after a launch stream announces a
  * sudo prompt: the host kills the process at 60 s (core's
@@ -38,6 +39,14 @@ export interface EntryTimerHandle {
     cancel(): void;
 }
 /**
+ * abandonedFormPatch builds the ui patch every draft-abandon path dispatches
+ * (the Cancel, New provider, Discard, and the delete's form collapse): the
+ * form closes and the sudo-wait flag clears in the same patch, so no path can
+ * leave a stale flag painting the control "Sudo needed" after its run is
+ * gone. All four paths go through this one helper.
+ */
+export declare function abandonedFormPatch(providerFormMode: ProviderFormMode): Pick<CardUiState, 'editingProviderId' | 'providerFormMode' | 'sudoPending'>;
+/**
  * editProvider loads a stored provider's engine, config, and platform into
  * the form (the next Save updates that entry in place). It caches the form's
  * current values first (a later "New provider" restores them), opens the form
@@ -54,17 +63,18 @@ export declare function editProvider(store: CardStore, provider: ProviderSummary
  * named provider's in-flight Launch run (the route's response close
  * interrupts the in-flight hf child on the host), and appends the "Canceled"
  * line to the Logs buffer, so the run reads as canceled in the textarea and
- * the log file. The Cancel abandons a draft run's sudo wait too: it clears
- * the ui.sudoPending flag so a stale flag can never paint the form control
- * "Sudo needed" after the run is gone.
+ * the log file. The Cancel abandons a draft run's sudo wait too: the shared
+ * abandonedFormPatch clears the ui.sudoPending flag so a stale flag can never
+ * paint the form control "Sudo needed" after the run is gone.
  */
 export declare function cancelProvider(store: CardStore, providerId?: string): void;
 /**
  * newProvider resets the form to a fresh provider (the next Save mints an id
  * and prepends it). It restores the cached in-progress values (the form state
  * before the last edit); with no cache a fresh provider starts from the
- * current engine and a blank config. Like the Cancel, a new provider
- * abandons a draft run's sudo wait, so it clears the ui.sudoPending flag.
+ * current engine and a blank config. Like the Cancel, a new provider abandons
+ * a draft run's sudo wait, so the shared abandonedFormPatch clears the
+ * ui.sudoPending flag.
  */
 export declare function newProvider(store: CardStore): void;
 /**
@@ -72,7 +82,9 @@ export declare function newProvider(store: CardStore): void;
  * route and stores the fresh summary. A delete in flight for another entry is
  * a no-op (a second click does not fire a second request). If the form was
  * editing the deleted entry, it stops editing it and collapses back to the
- * entry list (the new-provider form when the delete leaves no entries).
+ * entry list (the new-provider form when the delete leaves no entries); the
+ * collapse rides the shared abandonedFormPatch, so a draft run's sudo-wait
+ * flag clears with the form.
  */
 export declare function deleteProvider(store: CardStore, providerId: string): Promise<void>;
 /**
@@ -111,7 +123,11 @@ export declare function performEntryLaunch(store: CardStore, provider: ProviderS
  * is down. A provider still running when the 10-second deadline fires settles
  * to the red Logs state (the same path a failed launch takes). A stop that
  * fails leaves the entry in its last state; the fast-poll and the deadline
- * settle it.
+ * settle it. The stop keeps its own deadline pair (poll plus deadline, one
+ * settle each) instead of riding the launch driver's armDeadline slot: the
+ * launch deadline serves two owners (health and sudo) of one run, while the
+ * stop settles through the machine's cause-aware stopFailed event, so the two
+ * paths share no timer state to drift apart.
  */
 export declare function performEntryStop(store: CardStore, provider: ProviderSummaryEntry): EntryTimerHandle;
 /**

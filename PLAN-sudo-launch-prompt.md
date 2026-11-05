@@ -72,7 +72,7 @@ Answers are recorded at the bottom of this file. See
 
 ### Phase 5: refactor
 
- - [ ] [TASK-010-refactor](docs/PLAN-sudo-launch-prompt-TASK-010-refactor.md)
+ - [x] [TASK-010-refactor](docs/PLAN-sudo-launch-prompt-TASK-010-refactor.md)
 
 ## Carried issues for TASK-010
 

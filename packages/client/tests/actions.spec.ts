@@ -162,6 +162,7 @@ describe('the form server-mutation drivers (store/actions.ts)', () => {
     seedDraft(store, provider)
     store.dispatch({ type: 'draft/edit', draft: { engine: 'ninfer', config: { model: 'edited' } } })
     expect(state().dirty).toBe(true)
+    store.dispatch({ type: 'ui/patch', patch: { sudoPending: true } })
     const { fetchMock } = routeFetch({
       '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
       '/local-infer/deps': () => jsonAnswer({ engineId: 'ninfer' }),
@@ -172,6 +173,9 @@ describe('the form server-mutation drivers (store/actions.ts)', () => {
     expect(state().dirty).toBe(false)
     expect(state().ui.editingProviderId).toBeNull()
     expect(state().ui.providerFormMode).toBe('collapsed')
+    // The Discard abandons a draft run's sudo wait through the shared
+    // abandonedFormPatch, so a stale flag can never paint a later form.
+    expect(state().ui.sudoPending).toBe(false)
   })
 
   it('performRegister publishes the model and re-fetches the summary', async () => {

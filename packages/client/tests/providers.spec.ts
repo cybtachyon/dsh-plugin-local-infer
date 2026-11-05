@@ -412,6 +412,27 @@ describe('the provider list drivers (store/providers.ts)', () => {
       expect(state().ui.providerFormMode).toBe('new')
     })
 
+    it('clears ui.sudoPending when the deleted entry was being edited', async () => {
+      const { store, state } = makeStore()
+      const provider = providerWith()
+      store.dispatch({
+        type: 'summary/ack',
+        summary: summaryWith([provider]),
+      })
+      store.dispatch({
+        type: 'ui/patch',
+        patch: { editingProviderId: 'p1', providerFormMode: 'editing', sudoPending: true },
+      })
+      const { fetchMock } = routeFetch({
+        '/local-infer/provider-delete': () => jsonAnswer(summaryWith([])),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      await deleteProvider(store, 'p1')
+      // The delete's form collapse rides the shared abandonedFormPatch, so
+      // the abandoned draft run's sudo flag cannot paint a later form.
+      expect(state().ui.sudoPending).toBe(false)
+    })
+
     it('no-ops a second delete while one is in flight', async () => {
       const { store } = makeStore()
       // A delete in flight for another entry: the guard reads the flag.
@@ -716,6 +737,37 @@ describe('the provider list drivers (store/providers.ts)', () => {
       expect(state().launch['p1']?.status).toBe('launch')
       // Past the 150 s health cap (armed at the launch step) the hung run
       // fails, confirming the health cap owns the deadline.
+      await vi.advanceTimersByTimeAsync(LAUNCH_HEALTH_DEADLINE_MS - SUDO_DEADLINE_MS)
+      expect(state().launch['p1']?.status).toBe('failed')
+    })
+
+    it('never re-arms the sudo deadline once the health cap owns the slot', async () => {
+      const { store, state } = makeStore()
+      const provider = providerWith()
+      store.dispatch({
+        type: 'summary/ack',
+        summary: summaryWith([provider]),
+      })
+      const stream = launchStream()
+      const { fetchMock } = routeFetch({
+        '/local-infer/launch': () => stream.response(),
+        '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      performEntryLaunch(store, provider, t)
+      stream.enqueue('{"step":"prereqs"}\n{"sudo":true}')
+      await flush()
+      stream.enqueue('{"step":"launch"}')
+      await flush()
+      expect(state().launch['p1']?.status).toBe('launch')
+      // A late sudo event for the resumed run: armDeadline's single-owner
+      // rule keeps the health cap in the slot, so the run cannot settle 65 s
+      // into a legitimately launching engine.
+      stream.enqueue('{"sudo":true}')
+      await flush()
+      expect(state().launch['p1']?.status).toBe('sudo')
+      await vi.advanceTimersByTimeAsync(SUDO_DEADLINE_MS)
+      expect(state().launch['p1']?.status).toBe('sudo')
       await vi.advanceTimersByTimeAsync(LAUNCH_HEALTH_DEADLINE_MS - SUDO_DEADLINE_MS)
       expect(state().launch['p1']?.status).toBe('failed')
     })
