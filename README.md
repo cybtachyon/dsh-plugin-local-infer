@@ -59,6 +59,8 @@ When a parameter can be set both as a CLI argument and as a write to the engine'
 
 All values persist to `~/.dsh/local-infer/config.json`; the browser never sees a value it did not store.
 
+A **Get** or **Launch** that must run `sudo` first checks whether sudo credentials are cached. When they are not, both Launch buttons read **Sudo needed** (painted as a warning) and the line `Check your CLI for a sudo prompt` appears in the **Logs** section and the run's log file: the password prompt lands on the terminal that launched the harness, not in the browser. Type the password there. Without one within 60 seconds the run is killed and fails through the normal error path, and the buttons switch to **Logs**.
+
 ## Orchestrator package
 
 Local models often struggle with agentic workflows and can't "one-shot" prompts without assistance. The included **Orchestrator** package gives your model a default prompt that enables that capability.

@@ -171,6 +171,7 @@ var CUSTOM_ARGS_BUTTONS_STYLE = {
   gap: 4,
   justifyContent: "flex-end"
 };
+var SUDO_STATE_LABEL_COLOR = "var(--dsw-alias-state-warn-primary, var(--dsw-alias-label-warning, #ff9f0a))";
 function HELP_BUTTON_STYLE(active) {
   return {
     width: 20,
@@ -338,6 +339,7 @@ var en = {
   entryPrereqs: "Prereqs...",
   entryDownloading: "Downloading...",
   entryBuilding: "Building...",
+  entrySudo: "Sudo needed",
   entryLaunching: "Launching...",
   chatTemplatePreset: "Chat template preset",
   customChatTemplate: "Custom Chat template",
@@ -484,6 +486,7 @@ var zh = {
   entryPrereqs: "\u524D\u7F6E\u6761\u4EF6\u2026",
   entryDownloading: "\u4E0B\u8F7D\u4E2D\u2026",
   entryBuilding: "\u6784\u5EFA\u4E2D\u2026",
+  entrySudo: "\u9700\u8981 sudo",
   entryLaunching: "\u542F\u52A8\u4E2D\u2026",
   chatTemplatePreset: "\u804A\u5929\u6A21\u677F\u9884\u8BBE",
   customChatTemplate: "\u81EA\u5B9A\u4E49\u804A\u5929\u6A21\u677F",
@@ -807,7 +810,8 @@ function initialCardState() {
       cachedDraft: null,
       logPath: "",
       logs: { getLogs: null, height: 96, scrollMode: "fresh" },
-      getProgress: null
+      getProgress: null,
+      sudoPending: false
     }
   };
 }
@@ -1302,7 +1306,7 @@ async function readNdjsonLines(body, onEvent) {
   }
   handleLine(buffer);
 }
-async function readLaunchStream(response, onStep, onProgress) {
+async function readLaunchStream(response, onStep, onProgress, onSudo) {
   if (!response.ok) {
     const text = await response.text();
     throw new Error(text || "HTTP " + response.status);
@@ -1314,6 +1318,8 @@ async function readLaunchStream(response, onStep, onProgress) {
   await readNdjsonLines(response.body, (event) => {
     if (event.step !== void 0) {
       onStep?.(event.step);
+    } else if (event.sudo === true) {
+      onSudo?.();
     } else if (event.progress !== void 0) {
       onProgress?.(event.progress);
     } else if (event.result !== void 0) {
@@ -1406,9 +1412,9 @@ function postRegister(request) {
 function postUnregister(request) {
   return postJson("/local-infer/unregister", request);
 }
-async function postLaunch(request, onStep, signal) {
+async function postLaunch(request, onStep, signal, onSudo) {
   const response = await post("/local-infer/launch", request, signal);
-  return readLaunchStream(response, onStep);
+  return readLaunchStream(response, onStep, void 0, onSudo);
 }
 function postStop(request) {
   return postJson("/local-infer/stop", request);
@@ -1993,6 +1999,7 @@ function stepForLine(line) {
 
 // packages/client/src/store/logs.ts
 var SEPARATOR_PREFIX = "--- ";
+var SUDO_NOTE_LINE = "Check your CLI for a sudo prompt";
 function joinLine(base, line) {
   return base + (base === "" ? "" : "\n") + line;
 }
@@ -2245,6 +2252,8 @@ function phaseLabelFor(status, t) {
       return t.entryDownloading;
     case "build":
       return t.entryBuilding;
+    case "sudo":
+      return t.entrySudo;
     case "launch":
       return t.entryLaunching;
     case "stopping":
@@ -2313,7 +2322,21 @@ function deriveLifecycleControl(state, t) {
       busyLabel: phaseLabel,
       disabled: false,
       target: "entry",
-      action: "none"
+      action: "none",
+      ...status === "sudo" ? { warn: true } : {}
+    };
+  }
+  if (status === void 0 && state.ui.sudoPending) {
+    return {
+      kind: "phase",
+      label: t.entrySudo,
+      variant: "ghost",
+      busy: true,
+      busyLabel: t.entrySudo,
+      disabled: false,
+      target: "draft",
+      action: "none",
+      warn: true
     };
   }
   if (status === "running") {
@@ -2462,6 +2485,7 @@ function DepsPanel(props) {
 }
 
 // packages/client/src/store/providers.ts
+var SUDO_DEADLINE_MS = 65e3;
 var noHandle = { cancel() {
 } };
 function move(store, providerId, event) {
@@ -2499,7 +2523,8 @@ function cancelProvider(store, providerId) {
     type: "ui/patch",
     patch: {
       editingProviderId: null,
-      providerFormMode: formModeForProviderCount(state.summary?.providers.length ?? 0)
+      providerFormMode: formModeForProviderCount(state.summary?.providers.length ?? 0),
+      sudoPending: false
     }
   });
   store.dispatch({ type: "draft/discard" });
@@ -2514,7 +2539,7 @@ function newProvider(store) {
   };
   store.dispatch({
     type: "ui/patch",
-    patch: { editingProviderId: null, providerFormMode: "new" }
+    patch: { editingProviderId: null, providerFormMode: "new", sudoPending: false }
   });
   store.dispatch({ type: "draft/load", draft: next });
   void repriceAll(store, { engine: next.engine, config: next.config });
@@ -2557,11 +2582,13 @@ function performEntryLaunch(store, provider, t) {
   move(store, provider.id, { type: "start" });
   let settled = false;
   let deadline = null;
+  let deadlineKind = null;
   const clearDeadline = () => {
     if (deadline !== null) {
       clearTimeout(deadline);
       deadline = null;
     }
+    deadlineKind = null;
   };
   const controller = new AbortController();
   trackLaunchAbort(provider.id, controller);
@@ -2579,26 +2606,35 @@ function performEntryLaunch(store, provider, t) {
       settle();
     }
   };
-  const armDeadline = () => {
-    if (deadline !== null || settled) {
+  const armDeadline = (kind, timeoutMs) => {
+    if (deadlineKind !== null || settled) {
       return;
     }
+    deadlineKind = kind;
     deadline = setTimeout(() => {
       if (settled) {
         return;
       }
       settled = true;
       move(store, provider.id, { type: "failed" });
-    }, LAUNCH_HEALTH_DEADLINE_MS);
+    }, timeoutMs);
   };
   const onStep = (step) => {
+    if (deadlineKind === "sudo") {
+      clearDeadline();
+    }
     move(store, provider.id, { type: "step", step });
     if (step === "build") {
       appendProcessLog(store, separatorLine(t.entryBuilding));
     }
     if (step === "launch") {
-      armDeadline();
+      armDeadline("health", LAUNCH_HEALTH_DEADLINE_MS);
     }
+  };
+  const onSudo = () => {
+    move(store, provider.id, { type: "sudoNeeded" });
+    appendProcessLog(store, SUDO_NOTE_LINE);
+    armDeadline("sudo", SUDO_DEADLINE_MS);
   };
   postLaunch(
     {
@@ -2608,7 +2644,8 @@ function performEntryLaunch(store, provider, t) {
       providerId: provider.id
     },
     onStep,
-    controller.signal
+    controller.signal,
+    onSudo
   ).then((result) => {
     if (settle() !== true) {
       return;
@@ -2722,7 +2759,14 @@ function performDraftLaunch(store, t) {
   return performAction(
     store,
     "launch",
-    () => postLaunch(draftLaunchBody(store), void 0, controller.signal).then((result) => {
+    () => postLaunch(
+      draftLaunchBody(store),
+      void 0,
+      controller.signal,
+      // The draft control has no machine entry to read, so the sudo wait
+      // rides the ui flag; the settle below clears it.
+      () => store.dispatch({ type: "ui/patch", patch: { sudoPending: true } })
+    ).then((result) => {
       if (result !== null && result.healthy === true) {
         void repriceAll(store, { engine: draft.engine, config: draft.config });
         return t.runningOn + " " + (result.plan !== void 0 ? String(result.plan.port) : "");
@@ -2734,6 +2778,8 @@ function performDraftLaunch(store, t) {
     }).catch((error) => {
       forgetLaunchAbort(abortKey);
       throw error;
+    }).finally(() => {
+      store.dispatch({ type: "ui/patch", patch: { sudoPending: false } });
     }),
     ACTION_TIMEOUTS.launch
   );
@@ -2911,7 +2957,7 @@ function EntryLaunchButton(props) {
   const status = state.launch[provider.id]?.status ?? "idle";
   const phaseLabel = phaseLabelFor(status, t);
   if (phaseLabel !== void 0) {
-    return renderProcessButton({
+    const throbber = renderProcessButton({
       busy: true,
       label: phaseLabel,
       busyLabel: phaseLabel,
@@ -2919,6 +2965,7 @@ function EntryLaunchButton(props) {
       onClick: () => {
       }
     });
+    return status === "sudo" ? /* @__PURE__ */ react.createElement("span", { style: { color: SUDO_STATE_LABEL_COLOR } }, throbber) : throbber;
   }
   if (status === "running" || provider.status === "running") {
     return renderButton(
@@ -3348,7 +3395,7 @@ function renderField(props) {
 }
 function renderTitleBarControl(control, onControlClick, onCancel, cancelLabel) {
   if (control.kind === "phase") {
-    return renderProcessButton({
+    const throbber = renderProcessButton({
       busy: true,
       label: control.label,
       busyLabel: control.busyLabel,
@@ -3356,6 +3403,7 @@ function renderTitleBarControl(control, onControlClick, onCancel, cancelLabel) {
       onClick: () => {
       }
     });
+    return control.warn === true ? /* @__PURE__ */ react.createElement("span", { style: { color: SUDO_STATE_LABEL_COLOR } }, throbber) : throbber;
   }
   if (control.kind === "stop") {
     return renderButton("ghost", { onClick: onControlClick }, control.label);

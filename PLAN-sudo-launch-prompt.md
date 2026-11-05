@@ -68,7 +68,7 @@ Answers are recorded at the bottom of this file. See
 
 ### Phase 4: build and gates
 
- - [ ] [TASK-009-build-gates](docs/PLAN-sudo-launch-prompt-TASK-009-build-gates.md)
+ - [x] [TASK-009-build-gates](docs/PLAN-sudo-launch-prompt-TASK-009-build-gates.md)
 
 ### Phase 5: refactor
 
