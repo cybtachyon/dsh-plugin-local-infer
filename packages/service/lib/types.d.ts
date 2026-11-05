@@ -272,6 +272,14 @@ export interface LocalInferService {
      * clears it, which the route's effect does on dispose.
      */
     setEngineDeathObserver(observer: ((event: EngineDeathEvent) => void) | undefined): void;
+    /**
+     * setSudoObserver registers the callback the route uses to announce that a
+     * sudo command is waiting for the user's password on the CLI: the observer
+     * writes the note line into the run's Logs so the card user learns where
+     * the prompt landed. Passing undefined clears it, which the route's effect
+     * does on dispose.
+     */
+    setSudoObserver(observer: ((command: string) => void) | undefined): void;
     registerModel(plan: LaunchPlan, model: ModelRow, options?: RegisterModelOptions): Promise<RegisterResult>;
     removeModel(providerId: string, modelId: string): Promise<void>;
     resolveDefaults(engineId: string, modelId: string, hw: HardwareProfile, explicit?: Config): Promise<ResolvedDefaults>;

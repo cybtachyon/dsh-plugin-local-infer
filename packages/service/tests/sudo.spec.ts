@@ -1,0 +1,312 @@
+/**
+ * The service sudo seam: sudoProbe, the sudoGuardFor binding, and the
+ * guarded install runner. No test runs a real sudo or waits a real clock:
+ * node:child_process is mocked (execFile answers the probe, spawn hands back
+ * a fake child) and vitest's fake timers drive the 60 s password deadline.
+ * The rule itself lives in core; these tests pin the wiring: the probe only
+ * runs for a declared-sudo command, the announcement fires once per waiting
+ * command, and the deadline is armed and disarmed around the child.
+ */
+import { EventEmitter } from 'node:events'
+import { Context } from '@deepseek-ai/cordis'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { SUDO_PROBE_COMMAND, sudoFailureDetail } from 'dsh-plugin-local-infer/core'
+import type { EngineDepPlan, HardwareProfile, SystemDep } from 'dsh-plugin-local-infer/core'
+import LocalInfer, { guardedShellRunner, sudoGuardFor, sudoProbe } from '../src/index.ts'
+
+// The child-process mock: the suite owns execFile (the sudo probe) and spawn
+// (the install child). Everything else in the namespace stays real, the same
+// delegate-to-original shape the node:os mock uses in local-infer.spec.
+const cpMock = vi.hoisted(() => ({
+  execFile: vi.fn(),
+  spawn: vi.fn(),
+}))
+vi.mock('node:child_process', async (importOriginal) => {
+  const original = await importOriginal<typeof import('node:child_process')>()
+  return { ...original, execFile: cpMock.execFile, spawn: cpMock.spawn }
+})
+
+const HW: HardwareProfile = {
+  dockerAvailable: false,
+  wsl2: false,
+  os: 'linux',
+  cpuThreads: 4,
+  packageManager: 'apt',
+}
+
+/** Arms the probe mock to answer that sudo holds cached credentials. */
+function probeCached(): void {
+  cpMock.execFile.mockImplementation((_cmd, _args, _opts, callback) => {
+    callback(null, '', '')
+  })
+}
+
+/** Arms the probe mock to answer that sudo is about to prompt on the CLI. */
+function probePrompts(): void {
+  cpMock.execFile.mockImplementation((_cmd, _args, _opts, callback) => {
+    callback(new Error('sudo: a password is required'), '', '')
+  })
+}
+
+interface FakeChild {
+  /** The child's event emitter: tests emit 'close' to settle the run. */
+  events: EventEmitter
+  kill: ReturnType<typeof vi.fn>
+}
+
+/** Arms the spawn mock to hand back one fake child with kill and pipes. */
+function fakeChild(): FakeChild {
+  const events = new EventEmitter()
+  const kill = vi.fn()
+  cpMock.spawn.mockReturnValue(
+    Object.assign(events, { stdout: new EventEmitter(), stderr: new EventEmitter(), kill }),
+  )
+  return { events, kill }
+}
+
+/** A sudo-requiring dep whose one apt command is the named command line. */
+function sudoDep(id: string, command: string, detect?: () => Promise<boolean>): SystemDep {
+  return {
+    id,
+    purpose: 'a sudo toolchain',
+    requiresSudo: true,
+    ...(detect === undefined ? {} : { detect }),
+    install: { apt: { commands: [command] } },
+  }
+}
+
+function depPlan(dep: SystemDep): EngineDepPlan {
+  return { docker: [], local: { linux: [dep] } }
+}
+
+/** Loads the service into a fresh Context through the published seam. */
+async function seam(): Promise<Context> {
+  const ctx = new Context()
+  await ctx.plugin(LocalInfer)
+  return ctx
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+})
+
+afterEach(() => {
+  vi.useRealTimers()
+})
+
+describe('sudoProbe', () => {
+  it('reads a clean sudo -n true exit as cached credentials', async () => {
+    vi.useFakeTimers()
+    probeCached()
+    await expect(sudoProbe()).resolves.toBe(true)
+    expect(cpMock.execFile).toHaveBeenCalledWith(
+      SUDO_PROBE_COMMAND[0],
+      [...SUDO_PROBE_COMMAND.slice(1)],
+      expect.objectContaining({ timeout: expect.any(Number) }),
+      expect.any(Function),
+    )
+  })
+
+  it('reads a refused probe as a prompt coming', async () => {
+    vi.useFakeTimers()
+    probePrompts()
+    await expect(sudoProbe()).resolves.toBe(false)
+  })
+})
+
+describe('sudoGuardFor', () => {
+  it('supplies the probe, announces once, and fires kill at the deadline', async () => {
+    vi.useFakeTimers()
+    probePrompts()
+    const notify = vi.fn()
+    const kill = vi.fn()
+    const command = 'sudo ln -sf /usr/local/bin/llama-server /usr/bin/llama-server'
+    const guard = await sudoGuardFor(command, notify, kill)
+    expect(guard.announced).toBe(true)
+    expect(notify).toHaveBeenCalledTimes(1)
+    expect(notify).toHaveBeenCalledWith(command)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(kill).toHaveBeenCalledTimes(1)
+    guard.disarm()
+    // A disarm after the fire keeps the rule single-shot.
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(kill).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('guardedShellRunner', () => {
+  it('never probes or notifies a command the runner did not declare sudo for', async () => {
+    vi.useFakeTimers()
+    probeCached()
+    const child = fakeChild()
+    const notify = vi.fn()
+    const runner = guardedShellRunner(notify)
+    const undeclared = runner('apt-get install -y cmake')
+    await vi.advanceTimersByTimeAsync(0)
+    // The stdin-closed shell spawn is untouched for an unguarded command.
+    expect(cpMock.spawn).toHaveBeenCalledWith('apt-get install -y cmake', {
+      shell: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    child.events.emit('close', 0)
+    await expect(undeclared).resolves.toEqual({ ok: true })
+    // A present-but-false declaration is equally unguarded.
+    const second = fakeChild()
+    const declined = runner('sudo -u builder make', { needsSudo: false })
+    await vi.advanceTimersByTimeAsync(0)
+    second.events.emit('close', 0)
+    await expect(declined).resolves.toEqual({ ok: true })
+    expect(cpMock.execFile).not.toHaveBeenCalled()
+    expect(notify).not.toHaveBeenCalled()
+  })
+
+  it('runs a declared-sudo command with cached credentials unguarded', async () => {
+    vi.useFakeTimers()
+    probeCached()
+    const child = fakeChild()
+    const notify = vi.fn()
+    const runner = guardedShellRunner(notify)
+    const command = 'sudo apt-get install -y cmake'
+    const pending = runner(command, { needsSudo: true })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(cpMock.execFile).toHaveBeenCalledTimes(1)
+    child.events.emit('close', 0)
+    await expect(pending).resolves.toEqual({ ok: true })
+    expect(notify).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(child.kill).not.toHaveBeenCalled()
+  })
+
+  it('notifies once and SIGTERMs the child when the sudo deadline fires', async () => {
+    vi.useFakeTimers()
+    probePrompts()
+    const child = fakeChild()
+    const notify = vi.fn()
+    const runner = guardedShellRunner(notify)
+    const command = 'sudo apt-get install -y cuda-toolkit'
+    const pending = runner(command, { needsSudo: true })
+    await vi.advanceTimersByTimeAsync(59_999)
+    expect(notify).toHaveBeenCalledTimes(1)
+    expect(notify).toHaveBeenCalledWith(command)
+    expect(child.kill).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(child.kill).toHaveBeenCalledWith('SIGTERM')
+    child.events.emit('close', null)
+    // The signal exit is replaced by the note-carrying sudo detail.
+    await expect(pending).resolves.toEqual({ ok: false, detail: sudoFailureDetail(command) })
+  })
+
+  it('disarms the deadline when the child settles early', async () => {
+    vi.useFakeTimers()
+    probePrompts()
+    const child = fakeChild()
+    const notify = vi.fn()
+    const runner = guardedShellRunner(notify)
+    const pending = runner('sudo apt-get install -y cmake', { needsSudo: true })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(notify).toHaveBeenCalledTimes(1)
+    child.events.emit('close', 0)
+    await expect(pending).resolves.toEqual({ ok: true })
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(child.kill).not.toHaveBeenCalled()
+  })
+
+  it('keeps the shell exit detail when a guarded command fails before the deadline', async () => {
+    vi.useFakeTimers()
+    probePrompts()
+    const child = fakeChild()
+    const runner = guardedShellRunner(vi.fn())
+    const command = 'sudo apt-get install -y cmake'
+    const pending = runner(command, { needsSudo: true })
+    await vi.advanceTimersByTimeAsync(0)
+    child.events.emit('close', 1)
+    const outcome = await pending
+    expect(outcome.ok).toBe(false)
+    expect(outcome.detail).toContain('exit 1')
+    expect(outcome.detail).not.toBe(sudoFailureDetail(command))
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(child.kill).not.toHaveBeenCalled()
+  })
+
+  it('reports a child that fails to start as a failed command', async () => {
+    vi.useFakeTimers()
+    probeCached()
+    const events = new EventEmitter()
+    cpMock.spawn.mockReturnValue(
+      Object.assign(events, { stdout: new EventEmitter(), stderr: new EventEmitter(), kill: vi.fn() }),
+    )
+    const runner = guardedShellRunner(vi.fn())
+    const pending = runner('apt-get install -y cmake')
+    await vi.advanceTimersByTimeAsync(0)
+    events.emit('error', new Error('spawn sh ENOENT'))
+    const outcome = await pending
+    expect(outcome).toEqual({ ok: false, detail: 'spawn sh ENOENT' })
+  })
+})
+
+describe('ctx.localInfer runInstall sudo seam', () => {
+  it('announces a waiting install command to the sudo observer and fails at the deadline', async () => {
+    const ctx = await seam()
+    vi.useFakeTimers()
+    const command = 'sudo apt-get install -y cmake'
+    ctx.localInfer.registerDepPlan('sudoengine', depPlan(sudoDep('cmake', command)))
+    const observer = vi.fn()
+    ctx.localInfer.setSudoObserver(observer)
+    probePrompts()
+    const child = fakeChild()
+    const pending = ctx.localInfer.runInstall('sudoengine', 'local', HW)
+    await vi.advanceTimersByTimeAsync(59_999)
+    expect(observer).toHaveBeenCalledTimes(1)
+    expect(observer).toHaveBeenCalledWith(command)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(child.kill).toHaveBeenCalledWith('SIGTERM')
+    child.events.emit('close', null)
+    const result = await pending
+    expect(result.ok).toBe(false)
+    expect(result.results).toEqual([
+      { id: 'cmake', status: 'failed', detail: sudoFailureDetail(command) },
+    ])
+  })
+
+  it('survives a sudo observer that throws and settles the run normally', async () => {
+    const ctx = await seam()
+    vi.useFakeTimers()
+    // The dep's probe answers unsatisfied once, then satisfied: the command
+    // run sits between the two checks.
+    let probed = 0
+    const command = 'sudo apt-get install -y cuda-toolkit'
+    ctx.localInfer.registerDepPlan(
+      'sudoengine',
+      depPlan(sudoDep('cuda', command, async () => ++probed > 1)),
+    )
+    ctx.localInfer.setSudoObserver(() => {
+      throw new Error('the route is gone')
+    })
+    probePrompts()
+    const child = fakeChild()
+    const pending = ctx.localInfer.runInstall('sudoengine', 'local', HW)
+    await vi.advanceTimersByTimeAsync(0)
+    child.events.emit('close', 0)
+    const result = await pending
+    // The throwing observer was swallowed: the run reads as satisfied.
+    expect(result).toEqual({ ok: true, results: [{ id: 'cuda', status: 'satisfied' }] })
+  })
+
+  it('caps a waiting command at the deadline even with no observer registered', async () => {
+    const ctx = await seam()
+    vi.useFakeTimers()
+    const command = 'sudo apt-get install -y cmake'
+    ctx.localInfer.registerDepPlan('sudoengine', depPlan(sudoDep('cmake', command)))
+    // No setSudoObserver call: the headless profile still guards and kills.
+    probePrompts()
+    const child = fakeChild()
+    const pending = ctx.localInfer.runInstall('sudoengine', 'local', HW)
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(child.kill).toHaveBeenCalledWith('SIGTERM')
+    child.events.emit('close', null)
+    const result = await pending
+    expect(result.results).toEqual([
+      { id: 'cmake', status: 'failed', detail: sudoFailureDetail(command) },
+    ])
+  })
+})
