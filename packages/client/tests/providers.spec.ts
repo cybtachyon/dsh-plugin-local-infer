@@ -220,6 +220,29 @@ describe('the provider list drivers (store/providers.ts)', () => {
       expect(state().ui.providerFormMode).toBe('new')
     })
 
+    it('clears ui.sudoPending so an abandoned draft run cannot paint the control', async () => {
+      const { store, state } = makeStore()
+      const provider = providerWith()
+      store.dispatch({
+        type: 'summary/ack',
+        summary: summaryWith([provider]),
+      })
+      store.dispatch({
+        type: 'ui/patch',
+        patch: { editingProviderId: 'p1', providerFormMode: 'editing', sudoPending: true },
+      })
+      const { fetchMock } = routeFetch({
+        '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
+        '/local-infer/deps': () => jsonAnswer({ engineId: 'ninfer' }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      cancelProvider(store, 'p1')
+      await flush()
+      // The Cancel abandoned the sudo wait: the flag is cleared so the form
+      // control can never read "Sudo needed" for a run that is gone.
+      expect(state().ui.sudoPending).toBe(false)
+    })
+
     it('aborts the in-flight launch and appends the Canceled line to the Logs buffer', async () => {
       const { store, state } = makeStore()
       const provider = providerWith()
@@ -302,6 +325,24 @@ describe('the provider list drivers (store/providers.ts)', () => {
       // loaded draft is not clobbered by the re-price it triggers.
       await flush()
       expect(state().draft?.config).toEqual({ model: 'in-progress' })
+    })
+
+    it('clears ui.sudoPending when a fresh provider abandons the draft run', async () => {
+      const { store, state } = makeStore()
+      const provider = providerWith()
+      store.dispatch({
+        type: 'summary/ack',
+        summary: summaryWith([provider]),
+      })
+      store.dispatch({ type: 'ui/patch', patch: { sudoPending: true } })
+      const { fetchMock } = routeFetch({
+        '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
+        '/local-infer/deps': () => jsonAnswer({ engineId: 'ninfer' }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      newProvider(store)
+      await flush()
+      expect(state().ui.sudoPending).toBe(false)
     })
 
     it('starts from the current engine and a blank config with no cache', async () => {
@@ -642,9 +683,41 @@ describe('the provider list drivers (store/providers.ts)', () => {
       stream.close()
       await flush(50)
       expect(state().launch['p1']?.status).toBe('running')
-      // The settle cleared the sudo deadline, so a late tick is a no-op.
+      // The settle cleared the armed deadline, so a late tick is a no-op.
       await vi.advanceTimersByTimeAsync(SUDO_DEADLINE_MS + LAUNCH_HEALTH_DEADLINE_MS)
       expect(state().launch['p1']?.status).toBe('running')
+    })
+
+    it('hands the deadline to the health cap when a resumed sudo wait reaches the launch step', async () => {
+      const { store, state } = makeStore()
+      const provider = providerWith()
+      store.dispatch({
+        type: 'summary/ack',
+        summary: summaryWith([provider]),
+      })
+      const stream = launchStream()
+      const { fetchMock } = routeFetch({
+        '/local-infer/launch': () => stream.response(),
+        '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      performEntryLaunch(store, provider, t)
+      stream.enqueue('{"step":"prereqs"}\n{"sudo":true}')
+      await flush()
+      expect(state().launch['p1']?.status).toBe('sudo')
+      // The user typed the password: the launch step resumes the run, so the
+      // sudo deadline is cleared and the health-poll cap owns the run.
+      stream.enqueue('{"step":"launch"}')
+      await flush()
+      expect(state().launch['p1']?.status).toBe('launch')
+      // The stale 65 s sudo timer must not settle the run: past it the
+      // legitimately launching engine is still on launch.
+      await vi.advanceTimersByTimeAsync(SUDO_DEADLINE_MS)
+      expect(state().launch['p1']?.status).toBe('launch')
+      // Past the 150 s health cap (armed at the launch step) the hung run
+      // fails, confirming the health cap owns the deadline.
+      await vi.advanceTimersByTimeAsync(LAUNCH_HEALTH_DEADLINE_MS - SUDO_DEADLINE_MS)
+      expect(state().launch['p1']?.status).toBe('failed')
     })
   })
 

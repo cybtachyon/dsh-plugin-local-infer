@@ -80,7 +80,9 @@ export function editProvider(store, provider) {
  * named provider's in-flight Launch run (the route's response close
  * interrupts the in-flight hf child on the host), and appends the "Canceled"
  * line to the Logs buffer, so the run reads as canceled in the textarea and
- * the log file.
+ * the log file. The Cancel abandons a draft run's sudo wait too: it clears
+ * the ui.sudoPending flag so a stale flag can never paint the form control
+ * "Sudo needed" after the run is gone.
  */
 export function cancelProvider(store, providerId) {
     if (cancelInFlightRuns(providerId)) {
@@ -92,6 +94,7 @@ export function cancelProvider(store, providerId) {
         patch: {
             editingProviderId: null,
             providerFormMode: formModeForProviderCount(state.summary?.providers.length ?? 0),
+            sudoPending: false,
         },
     });
     store.dispatch({ type: 'draft/discard' });
@@ -101,7 +104,8 @@ export function cancelProvider(store, providerId) {
  * newProvider resets the form to a fresh provider (the next Save mints an id
  * and prepends it). It restores the cached in-progress values (the form state
  * before the last edit); with no cache a fresh provider starts from the
- * current engine and a blank config.
+ * current engine and a blank config. Like the Cancel, a new provider
+ * abandons a draft run's sudo wait, so it clears the ui.sudoPending flag.
  */
 export function newProvider(store) {
     const state = store.getSnapshot();
@@ -114,7 +118,7 @@ export function newProvider(store) {
         };
     store.dispatch({
         type: 'ui/patch',
-        patch: { editingProviderId: null, providerFormMode: 'new' },
+        patch: { editingProviderId: null, providerFormMode: 'new', sudoPending: false },
     });
     store.dispatch({ type: 'draft/load', draft: next });
     void repriceAll(store, { engine: next.engine, config: next.config });
@@ -172,7 +176,9 @@ export function openEntryLogs(store, provider) {
  * minutes, so a client-side deadline just past that cap forces a hung launch
  * to the red Logs state); a sudo event moves the machine to sudo, appends the
  * CLI-note line, and arms the shorter sudo deadline through the same settle
- * path. A healthy result settles to running (the control
+ * path. A step event after a sudo wait means the run resumed, so the sudo
+ * timer hands the single deadline slot back and the launch step arms the
+ * health cap as it always has. A healthy result settles to running (the control
  * becomes Stop), a downloading result settles to downloading (a busy
  * throbber the card re-polls), and a failed result, a stream that ends
  * without a result, or a fetch failure settles to failed (the control becomes
@@ -192,11 +198,16 @@ export function performEntryLaunch(store, provider, t) {
     move(store, provider.id, { type: 'start' });
     let settled = false;
     let deadline = null;
+    // deadlineKind tracks which timeout owns the armed deadline, so a resumed
+    // sudo wait can hand the slot to the health-poll cap instead of the stale
+    // sudo timer settling a legitimately launching run.
+    let deadlineKind = null;
     const clearDeadline = () => {
         if (deadline !== null) {
             clearTimeout(deadline);
             deadline = null;
         }
+        deadlineKind = null;
     };
     // The run's abort: the provider form's Cancel closes the stream through it,
     // and the route's response close interrupts the in-flight Get-step hf child
@@ -225,13 +236,15 @@ export function performEntryLaunch(store, provider, t) {
     // The deadline arms two ways: only for the launch (health-poll) step with
     // the health-poll cap, or on a sudo event with the sudo cap (the rebuild
     // steps before the launch run without a timeout, so a slow build never
-    // reads as a failure). One deadline variable, one settle path, so a hung
-    // health poll and a hung password wait both reach the red Logs state
-    // through this code path; whichever arms first owns the run.
-    const armDeadline = (timeoutMs) => {
-        if (deadline !== null || settled) {
+    // reads as a failure). One deadline variable, one owner, one settle path,
+    // so a hung health poll and a hung password wait both reach the red Logs
+    // state through this code path. The owner keeps the slot until the run
+    // settles or a step event resumes it out of the sudo wait (see onStep).
+    const armDeadline = (kind, timeoutMs) => {
+        if (deadlineKind !== null || settled) {
             return;
         }
+        deadlineKind = kind;
         deadline = setTimeout(() => {
             if (settled) {
                 return;
@@ -241,12 +254,19 @@ export function performEntryLaunch(store, provider, t) {
         }, timeoutMs);
     };
     const onStep = (step) => {
+        // A reported step means the run resumed (the password landed): a sudo
+        // deadline no longer describes the wait, so it is cleared and the slot
+        // is free for the launch step's health cap below. A health-poll
+        // deadline is never cleared by a step event.
+        if (deadlineKind === 'sudo') {
+            clearDeadline();
+        }
         move(store, provider.id, { type: 'step', step });
         if (step === 'build') {
             appendProcessLog(store, separatorLine(t.entryBuilding));
         }
         if (step === 'launch') {
-            armDeadline(LAUNCH_HEALTH_DEADLINE_MS);
+            armDeadline('health', LAUNCH_HEALTH_DEADLINE_MS);
         }
     };
     // The host announced a password wait on its CLI: the control reads "Sudo
@@ -255,7 +275,7 @@ export function performEntryLaunch(store, provider, t) {
     const onSudo = () => {
         move(store, provider.id, { type: 'sudoNeeded' });
         appendProcessLog(store, SUDO_NOTE_LINE);
-        armDeadline(SUDO_DEADLINE_MS);
+        armDeadline('sudo', SUDO_DEADLINE_MS);
     };
     postLaunch({
         engine: provider.engine,

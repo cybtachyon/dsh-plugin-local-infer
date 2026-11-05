@@ -54,14 +54,17 @@ export declare function editProvider(store: CardStore, provider: ProviderSummary
  * named provider's in-flight Launch run (the route's response close
  * interrupts the in-flight hf child on the host), and appends the "Canceled"
  * line to the Logs buffer, so the run reads as canceled in the textarea and
- * the log file.
+ * the log file. The Cancel abandons a draft run's sudo wait too: it clears
+ * the ui.sudoPending flag so a stale flag can never paint the form control
+ * "Sudo needed" after the run is gone.
  */
 export declare function cancelProvider(store: CardStore, providerId?: string): void;
 /**
  * newProvider resets the form to a fresh provider (the next Save mints an id
  * and prepends it). It restores the cached in-progress values (the form state
  * before the last edit); with no cache a fresh provider starts from the
- * current engine and a blank config.
+ * current engine and a blank config. Like the Cancel, a new provider
+ * abandons a draft run's sudo wait, so it clears the ui.sudoPending flag.
  */
 export declare function newProvider(store: CardStore): void;
 /**
@@ -89,7 +92,9 @@ export declare function openEntryLogs(store: CardStore, provider: ProviderSummar
  * minutes, so a client-side deadline just past that cap forces a hung launch
  * to the red Logs state); a sudo event moves the machine to sudo, appends the
  * CLI-note line, and arms the shorter sudo deadline through the same settle
- * path. A healthy result settles to running (the control
+ * path. A step event after a sudo wait means the run resumed, so the sudo
+ * timer hands the single deadline slot back and the launch step arms the
+ * health cap as it always has. A healthy result settles to running (the control
  * becomes Stop), a downloading result settles to downloading (a busy
  * throbber the card re-polls), and a failed result, a stream that ends
  * without a result, or a fetch failure settles to failed (the control becomes
