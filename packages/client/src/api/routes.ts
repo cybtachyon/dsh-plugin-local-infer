@@ -9,7 +9,8 @@
  * JSON answer that is not OK throws with the route's error field, so the
  * caller's catch reads
  * the host's own message. The launch route streams NDJSON (a step event as
- * each phase begins, a progress event when the Get-steps hf download's tqdm
+ * each phase begins, a sudo event when a sudo command waits for the password
+ * on the host's CLI, a progress event when the Get-steps hf download's tqdm
  * output folds into a structured state, then a final result event), and the
  * get route streams NDJSON too (a log event per log line, a progress event
  * per folded download state), so the two readers live here. readNdjsonLines buffers
@@ -147,16 +148,18 @@ export interface HfProgressShape {
 }
 
 // One NDJSON line the launch route streams: a step event as a phase begins,
-// a progress event when the Get-steps hf download's tqdm output folds into
-// a structured state, or the final result event. The result is the full
-// launch result, or the broken-launch fallback that names the failure (a
-// structurally smaller LaunchResult). The explicit undefined keys keep the
-// union discriminable: a line carries a step, a progress, or a result,
-// never two at once.
+// a sudo event when a sudo command starts waiting for the password on the
+// host's CLI, a progress event when the Get-steps hf download's tqdm output
+// folds into a structured state, or the final result event. The result is
+// the full launch result, or the broken-launch fallback that names the
+// failure (a structurally smaller LaunchResult). The explicit undefined keys
+// keep the union discriminable: a line carries a step, a sudo, a progress,
+// or a result, never two at once.
 export type LaunchStreamEvent =
-  | { step: string; result?: undefined; progress?: undefined }
-  | { step?: undefined; result: LaunchResult; progress?: undefined }
-  | { step?: undefined; result?: undefined; progress: HfProgressShape }
+  | { step: string; result?: undefined; progress?: undefined; sudo?: undefined }
+  | { step?: undefined; result: LaunchResult; progress?: undefined; sudo?: undefined }
+  | { step?: undefined; result?: undefined; progress: HfProgressShape; sudo?: undefined }
+  | { step?: undefined; result?: undefined; progress?: undefined; sudo: true }
 
 // One NDJSON line the get route streams: the log text the card appends to
 // its Logs section, or the structured download progress state. The
@@ -220,18 +223,20 @@ export async function readNdjsonLines<T>(
 
 /**
  * readLaunchStream reads the launch route's NDJSON answer and returns the
- * final result event, handing each step event to onStep and each progress
- * event to onProgress (absent onProgress ignores the progress events, so a
- * caller that only reads the steps and the result is untouched). A non-OK
- * response throws with the body text. A response with no streamable body (a
- * host that cannot stream) reads the whole body as the result JSON. A stream
- * that ends without a result event returns null, so the caller settles its
- * control to failed.
+ * final result event, handing each step event to onStep, each progress
+ * event to onProgress, and calling the optional onSudo once per sudo event
+ * (absent callbacks ignore their events, so a caller that only reads the
+ * steps and the result is untouched). A sudo line never clears a collected
+ * result: each line carries exactly one event kind. A non-OK response throws
+ * with the body text. A response with no streamable body (a host that cannot
+ * stream) reads the whole body as the result JSON. A stream that ends without
+ * a result event returns null, so the caller settles its control to failed.
  */
 export async function readLaunchStream(
   response: Response,
   onStep?: (step: string) => void,
   onProgress?: (progress: HfProgressShape) => void,
+  onSudo?: () => void,
 ): Promise<LaunchResultEvent | null> {
   if (!response.ok) {
     const text = await response.text()
@@ -244,6 +249,8 @@ export async function readLaunchStream(
   await readNdjsonLines<LaunchStreamEvent>(response.body, (event) => {
     if (event.step !== undefined) {
       onStep?.(event.step)
+    } else if (event.sudo === true) {
+      onSudo?.()
     } else if (event.progress !== undefined) {
       onProgress?.(event.progress)
     } else if (event.result !== undefined) {
@@ -386,18 +393,20 @@ export function postUnregister(request: RegisterRequest): Promise<{ removed: boo
 
 /**
  * postLaunch runs the deploy and the health poll through the launch route's
- * NDJSON stream, handing each step event to onStep and returning the final
- * result event (null when the stream ended without one). The optional signal
- * is the card's cancel: an abort closes the in-flight stream, and the route
- * interrupts the in-flight Get-step hf child on the host.
+ * NDJSON stream, handing each step event to onStep and each sudo event to
+ * the optional onSudo, and returning the final result event (null when the
+ * stream ended without one). The optional signal is the card's cancel: an
+ * abort closes the in-flight stream, and the route interrupts the in-flight
+ * Get-step hf child on the host.
  */
 export async function postLaunch(
   request: LaunchRequest,
   onStep?: (step: string) => void,
   signal?: AbortSignal,
+  onSudo?: () => void,
 ): Promise<LaunchResultEvent | null> {
   const response = await post('/local-infer/launch', request, signal)
-  return readLaunchStream(response, onStep)
+  return readLaunchStream(response, onStep, undefined, onSudo)
 }
 
 /** postStop signals the tracked process or container. */

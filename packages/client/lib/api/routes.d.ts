@@ -9,7 +9,8 @@
  * JSON answer that is not OK throws with the route's error field, so the
  * caller's catch reads
  * the host's own message. The launch route streams NDJSON (a step event as
- * each phase begins, a progress event when the Get-steps hf download's tqdm
+ * each phase begins, a sudo event when a sudo command waits for the password
+ * on the host's CLI, a progress event when the Get-steps hf download's tqdm
  * output folds into a structured state, then a final result event), and the
  * get route streams NDJSON too (a log event per log line, a progress event
  * per folded download state), so the two readers live here. readNdjsonLines buffers
@@ -109,14 +110,22 @@ export type LaunchStreamEvent = {
     step: string;
     result?: undefined;
     progress?: undefined;
+    sudo?: undefined;
 } | {
     step?: undefined;
     result: LaunchResult;
     progress?: undefined;
+    sudo?: undefined;
 } | {
     step?: undefined;
     result?: undefined;
     progress: HfProgressShape;
+    sudo?: undefined;
+} | {
+    step?: undefined;
+    result?: undefined;
+    progress?: undefined;
+    sudo: true;
 };
 export type GetStreamEvent = {
     log: string;
@@ -139,15 +148,16 @@ export type LaunchResultEvent = Omit<LaunchResult, 'plan'> & {
 export declare function readNdjsonLines<T>(body: ReadableStream<Uint8Array>, onEvent: (event: T) => void): Promise<void>;
 /**
  * readLaunchStream reads the launch route's NDJSON answer and returns the
- * final result event, handing each step event to onStep and each progress
- * event to onProgress (absent onProgress ignores the progress events, so a
- * caller that only reads the steps and the result is untouched). A non-OK
- * response throws with the body text. A response with no streamable body (a
- * host that cannot stream) reads the whole body as the result JSON. A stream
- * that ends without a result event returns null, so the caller settles its
- * control to failed.
+ * final result event, handing each step event to onStep, each progress
+ * event to onProgress, and calling the optional onSudo once per sudo event
+ * (absent callbacks ignore their events, so a caller that only reads the
+ * steps and the result is untouched). A sudo line never clears a collected
+ * result: each line carries exactly one event kind. A non-OK response throws
+ * with the body text. A response with no streamable body (a host that cannot
+ * stream) reads the whole body as the result JSON. A stream that ends without
+ * a result event returns null, so the caller settles its control to failed.
  */
-export declare function readLaunchStream(response: Response, onStep?: (step: string) => void, onProgress?: (progress: HfProgressShape) => void): Promise<LaunchResultEvent | null>;
+export declare function readLaunchStream(response: Response, onStep?: (step: string) => void, onProgress?: (progress: HfProgressShape) => void, onSudo?: () => void): Promise<LaunchResultEvent | null>;
 /**
  * readGetStream reads the get route's NDJSON answer and hands each log event
  * to onChunk and each progress event to onProgress. A non-OK response throws
@@ -177,12 +187,13 @@ export declare function postUnregister(request: RegisterRequest): Promise<{
 }>;
 /**
  * postLaunch runs the deploy and the health poll through the launch route's
- * NDJSON stream, handing each step event to onStep and returning the final
- * result event (null when the stream ended without one). The optional signal
- * is the card's cancel: an abort closes the in-flight stream, and the route
- * interrupts the in-flight Get-step hf child on the host.
+ * NDJSON stream, handing each step event to onStep and each sudo event to
+ * the optional onSudo, and returning the final result event (null when the
+ * stream ended without one). The optional signal is the card's cancel: an
+ * abort closes the in-flight stream, and the route interrupts the in-flight
+ * Get-step hf child on the host.
  */
-export declare function postLaunch(request: LaunchRequest, onStep?: (step: string) => void, signal?: AbortSignal): Promise<LaunchResultEvent | null>;
+export declare function postLaunch(request: LaunchRequest, onStep?: (step: string) => void, signal?: AbortSignal, onSudo?: () => void): Promise<LaunchResultEvent | null>;
 /** postStop signals the tracked process or container. */
 export declare function postStop(request: LaunchRequest): Promise<{
     stopped: boolean;

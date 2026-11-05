@@ -8,8 +8,8 @@
  * dirty (draft/load), and a delete rides the provider-delete route and stores
  * the fresh summary. The per-entry launch and stop drive the per-provider
  * launch machine through launch/move events, so the entry's control and the
- * title-bar control read the same lifecycle. The launch health-poll deadline
- * and the stop fast-poll arm off the machine's timers, and each driver
+ * title-bar control read the same lifecycle. The launch health-poll and sudo
+ * deadlines and the stop fast-poll arm off the machine's timers, and each driver
  * returns a handle the panel owns: cancel clears the pending timers and marks
  * the run settled, so a late stream event or poll tick after an unmount never
  * moves the machine.
@@ -19,8 +19,18 @@ import { postLaunch, postProviderDelete, postStop, } from "../api/routes.js";
 import { LAUNCH_HEALTH_DEADLINE_MS, STOP_HEALTH_DEADLINE_MS, STOP_POLL_MS, } from "../machine/launch.js";
 import { cancelInFlightRuns, forgetLaunchAbort, trackLaunchAbort, } from "./abort.js";
 import { repriceAll, repriceSummary } from "./deps.js";
-import { appendCanceledLog, appendProcessLog, separatorLine, seedProcessLog, } from "./logs.js";
+import { appendCanceledLog, appendProcessLog, seedProcessLog, separatorLine, SUDO_NOTE_LINE, } from "./logs.js";
 import { ACTION_TIMEOUTS, performAction } from "./sync.js";
+/**
+ * SUDO_DEADLINE_MS caps the card's wait after a launch stream announces a
+ * sudo prompt: the host kills the process at 60 s (core's
+ * SUDO_PASSWORD_TIMEOUT_MS) and this card-side deadline just past that cap
+ * forces a hung password wait to the red Logs state, the same settle path as
+ * the health-poll timeout. The client bundle cannot import the node-side
+ * core package, so the number is mirrored here; the two change together by
+ * hand.
+ */
+export const SUDO_DEADLINE_MS = 65_000;
 // noHandle is the handle a guarded-out action returns: nothing to cancel.
 const noHandle = { cancel() { } };
 // move dispatches one launch/move event for the provider, the single path the
@@ -160,7 +170,9 @@ export function openEntryLogs(store, provider) {
  * phase label; the build step writes a "Building..." separator; the launch
  * step arms the health-poll deadline (the route's poll runs up to two
  * minutes, so a client-side deadline just past that cap forces a hung launch
- * to the red Logs state). A healthy result settles to running (the control
+ * to the red Logs state); a sudo event moves the machine to sudo, appends the
+ * CLI-note line, and arms the shorter sudo deadline through the same settle
+ * path. A healthy result settles to running (the control
  * becomes Stop), a downloading result settles to downloading (a busy
  * throbber the card re-polls), and a failed result, a stream that ends
  * without a result, or a fetch failure settles to failed (the control becomes
@@ -210,10 +222,13 @@ export function performEntryLaunch(store, provider, t) {
             settle();
         },
     };
-    // The health-poll deadline arms only for the launch (health-poll) step; the
-    // rebuild steps (prereqs, download, build) run without a timeout, so a slow
-    // build never reads as a failure.
-    const armDeadline = () => {
+    // The deadline arms two ways: only for the launch (health-poll) step with
+    // the health-poll cap, or on a sudo event with the sudo cap (the rebuild
+    // steps before the launch run without a timeout, so a slow build never
+    // reads as a failure). One deadline variable, one settle path, so a hung
+    // health poll and a hung password wait both reach the red Logs state
+    // through this code path; whichever arms first owns the run.
+    const armDeadline = (timeoutMs) => {
         if (deadline !== null || settled) {
             return;
         }
@@ -223,7 +238,7 @@ export function performEntryLaunch(store, provider, t) {
             }
             settled = true;
             move(store, provider.id, { type: 'failed' });
-        }, LAUNCH_HEALTH_DEADLINE_MS);
+        }, timeoutMs);
     };
     const onStep = (step) => {
         move(store, provider.id, { type: 'step', step });
@@ -231,15 +246,23 @@ export function performEntryLaunch(store, provider, t) {
             appendProcessLog(store, separatorLine(t.entryBuilding));
         }
         if (step === 'launch') {
-            armDeadline();
+            armDeadline(LAUNCH_HEALTH_DEADLINE_MS);
         }
+    };
+    // The host announced a password wait on its CLI: the control reads "Sudo
+    // needed", the note line tells the user where to type, and the sudo
+    // deadline settles the control if the password never lands.
+    const onSudo = () => {
+        move(store, provider.id, { type: 'sudoNeeded' });
+        appendProcessLog(store, SUDO_NOTE_LINE);
+        armDeadline(SUDO_DEADLINE_MS);
     };
     postLaunch({
         engine: provider.engine,
         config: provider.config,
         platform: { [provider.engine]: provider.platform },
         providerId: provider.id,
-    }, onStep, controller.signal)
+    }, onStep, controller.signal, onSudo)
         .then((result) => {
         if (settle() !== true) {
             return;
@@ -378,10 +401,12 @@ function draftLaunchBody(store) {
  * performDraftLaunch runs the form's own Launch control (the title-bar
  * control's draft target): it reads the launch stream (keeping only the result
  * event, the form's control shows no phase labels) and settles the draft's
- * launch cell. A healthy result reads as running (the control becomes Stop),
- * a not-healthy or missing result reads as the launch-failed note. The
- * summary and deps read models re-fetch so the provider's status dot repaints
- * and the deps panel re-prices. The run registers
+ * launch cell. A sudo event sets the ui.sudoPending flag the control renders
+ * "Sudo needed" from (the draft has no machine entry to read) and the flag
+ * clears when the run settles. A healthy result reads as running (the control
+ * becomes Stop), a not-healthy or missing result reads as the launch-failed
+ * note. The summary and deps read models re-fetch so the provider's status
+ * dot repaints and the deps panel re-prices. The run registers
  * its AbortController under the form's provider id (the "draft" key when the
  * form is not a provider), so the provider form's Cancel closes the stream
  * and the route interrupts the in-flight Get-step hf child on the host.
@@ -395,7 +420,10 @@ export function performDraftLaunch(store, t) {
     const abortKey = state.ui.editingProviderId ?? 'draft';
     const controller = new AbortController();
     trackLaunchAbort(abortKey, controller);
-    return performAction(store, 'launch', () => postLaunch(draftLaunchBody(store), undefined, controller.signal)
+    return performAction(store, 'launch', () => postLaunch(draftLaunchBody(store), undefined, controller.signal,
+    // The draft control has no machine entry to read, so the sudo wait
+    // rides the ui flag; the settle below clears it.
+    () => store.dispatch({ type: 'ui/patch', patch: { sudoPending: true } }))
         .then((result) => {
         if (result !== null && result.healthy === true) {
             void repriceAll(store, { engine: draft.engine, config: draft.config });
@@ -412,6 +440,9 @@ export function performDraftLaunch(store, t) {
         // in flight, so a later Cancel reads it as nothing to abort.
         forgetLaunchAbort(abortKey);
         throw error;
+    })
+        .finally(() => {
+        store.dispatch({ type: 'ui/patch', patch: { sudoPending: false } });
     }), ACTION_TIMEOUTS.launch);
 }
 /**

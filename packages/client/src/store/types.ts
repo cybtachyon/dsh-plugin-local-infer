@@ -149,6 +149,10 @@ export interface CardUiState {
   // The structured hf download state the get route's tqdm stream folds
   // into; null while no Get run is in flight.
   getProgress: GetProgressState | null
+  // The fresh-draft form's sudo wait: its control has no machine entry to
+  // read, so performDraftLaunch sets this flag when the launch stream
+  // announces a sudo prompt and clears it when the run settles.
+  sudoPending: boolean
 }
 
 /**
@@ -247,6 +251,7 @@ export function initialCardState(): CardState {
       logPath: '',
       logs: { getLogs: null, height: 96, scrollMode: 'fresh' },
       getProgress: null,
+      sudoPending: false,
     },
   }
 }

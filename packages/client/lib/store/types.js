@@ -57,6 +57,7 @@ export function initialCardState() {
             logPath: '',
             logs: { getLogs: null, height: 96, scrollMode: 'fresh' },
             getProgress: null,
+            sudoPending: false,
         },
     };
 }
