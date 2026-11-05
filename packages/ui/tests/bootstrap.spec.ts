@@ -92,12 +92,14 @@ describe('ui entry bootstrap', () => {
     const registered: string[] = []
     let disposed = 0
     // The stub carries only what the route effect touches: the platform-
-    // config registry sync, the death observer, and the re-link. readConfig
-    // reads the real ~/.dsh config, so a machine with stored providers still
-    // boots through the reLinkProviders no-op.
+    // config registry sync, the death and sudo observers, and the re-link.
+    // readConfig reads the real ~/.dsh config, so a machine with stored
+    // providers still boots through the reLinkProviders no-op.
     const stubService = {
       registerEnginePlatformConfig: (): (() => void) => () => undefined,
       setEngineDeathObserver: (): void => undefined,
+      setSudoObserver: (): void => undefined,
+      notifySudoNeeded: (): void => undefined,
       reLinkProviders: async (): Promise<Record<string, string>> => ({}),
     }
     const ctx = {

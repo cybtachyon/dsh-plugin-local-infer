@@ -280,6 +280,14 @@ export interface LocalInferService {
      * does on dispose.
      */
     setSudoObserver(observer: ((command: string) => void) | undefined): void;
+    /**
+     * notifySudoNeeded is the seam a command runner reports a waiting sudo
+     * prompt through: a guarded runner calls it when its probe finds no cached
+     * credentials, and the service forwards the command to the observer
+     * setSudoObserver registered. No observer, or a throwing one, never fails
+     * the run that is already racing the sudo deadline.
+     */
+    notifySudoNeeded(command: string): void;
     registerModel(plan: LaunchPlan, model: ModelRow, options?: RegisterModelOptions): Promise<RegisterResult>;
     removeModel(providerId: string, modelId: string): Promise<void>;
     resolveDefaults(engineId: string, modelId: string, hw: HardwareProfile, explicit?: Config): Promise<ResolvedDefaults>;

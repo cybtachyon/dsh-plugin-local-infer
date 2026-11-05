@@ -706,7 +706,9 @@ export class LocalInfer extends Service {
      * notifySudoNeeded announces one guarded command to the registered sudo
      * observer, if any. A throwing observer is swallowed: the note is a log
      * courtesy, and a broken route must not fail the install that is already
-     * racing the sudo deadline.
+     * racing the sudo deadline. Published on the service surface so a command
+     * runner outside this package (the providers' lifecycle host) reports
+     * through the same seam.
      */
     notifySudoNeeded(command) {
         const observer = this.sudoObserver;

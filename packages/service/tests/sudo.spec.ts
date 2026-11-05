@@ -5,7 +5,8 @@
  * a fake child) and vitest's fake timers drive the 60 s password deadline.
  * The rule itself lives in core; these tests pin the wiring: the probe only
  * runs for a declared-sudo command, the announcement fires once per waiting
- * command, and the deadline is armed and disarmed around the child.
+ * command, the deadline is armed and disarmed around the child, and the
+ * published notify seam reaches the observer without breaking its caller.
  */
 import { EventEmitter } from 'node:events'
 import { Context } from '@deepseek-ai/cordis'
@@ -241,6 +242,33 @@ describe('guardedShellRunner', () => {
     events.emit('error', new Error('spawn sh ENOENT'))
     const outcome = await pending
     expect(outcome).toEqual({ ok: false, detail: 'spawn sh ENOENT' })
+  })
+})
+
+describe('ctx.localInfer notifySudoNeeded', () => {
+  it('hands the command to the observer registered through the seam', async () => {
+    const ctx = await seam()
+    const observer = vi.fn()
+    ctx.localInfer.setSudoObserver(observer)
+    const command = 'sudo ln -sf /usr/local/bin/llama-server /usr/bin/llama-server'
+    ctx.localInfer.notifySudoNeeded(command)
+    expect(observer).toHaveBeenCalledTimes(1)
+    expect(observer).toHaveBeenCalledWith(command)
+  })
+
+  it('swallows a throwing observer so the caller is never broken', async () => {
+    const ctx = await seam()
+    ctx.localInfer.setSudoObserver(() => {
+      throw new Error('the route is gone')
+    })
+    expect(() => ctx.localInfer.notifySudoNeeded('sudo apt-get install -y cmake')).not.toThrow()
+  })
+
+  it('reads as a no-op when nobody is listening', async () => {
+    const ctx = await seam()
+    // No setSudoObserver call: the announce stays quiet, so a runner outside
+    // this package can call the seam against a headless profile.
+    expect(() => ctx.localInfer.notifySudoNeeded('sudo apt-get install -y cmake')).not.toThrow()
   })
 })
 
