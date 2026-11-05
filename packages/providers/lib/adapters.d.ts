@@ -80,6 +80,17 @@ export type ConfigFileFormat = 'json' | 'yaml' | 'env';
  */
 export declare function configFileFromSpecs(specs: readonly ParameterSpec[], config: Config, format: ConfigFileFormat): string;
 /**
+ * SudoHook is the optional sudo wiring createNodeLifecycleHost takes: `notify`
+ * announces a guarded command the probe found waiting for a password on the
+ * launching CLI (the service's sudo observer turns it into the Logs note), and
+ * `timeoutMs` overrides the 60 s password deadline. A host built without the
+ * hook never probes, announces, or caps a run.
+ */
+export interface SudoHook {
+    notify: (command: string) => void;
+    timeoutMs?: number;
+}
+/**
  * createNodeLifecycleHost builds the node `LifecycleHost`: `run` through the
  * system shell (a 10-minute cap, so a hung CUDA build cannot hang the panel),
  * `spawn` a detached child the stop step can signal, `writeFile` the config
@@ -91,9 +102,13 @@ export declare function configFileFromSpecs(specs: readonly ParameterSpec[], con
  * `RunOptions.shell` (the engine OS profile's shell, e.g. pwsh.exe for
  * the Windows vcpkg route) runs the command line in that shell instead of the
  * system default. A `RunOptions.graceMs` overrides the 5 s SIGTERM escalation
- * window of the abort path for that run.
+ * window of the abort path for that run. The optional `sudo` hook wires the
+ * sudo-prompt rule: a run whose `RunOptions.needsSudo` declares sudo probes
+ * cached credentials first, announces a waiting prompt through the hook once,
+ * and dies at the password deadline with the `sudoFailureDetail` outcome. A
+ * host built without the hook never probes, announces, or caps a run.
  */
-export declare function createNodeLifecycleHost(debug?: DebugLogger): LifecycleHost;
+export declare function createNodeLifecycleHost(debug?: DebugLogger, sudo?: SudoHook): LifecycleHost;
 /**
  * nodeLifecycleHost is the default live host the service wires in: the node
  * implementation with no debug logger, so a normal (non-debug) run logs no

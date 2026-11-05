@@ -9,12 +9,17 @@
  * @module dsh-plugin-local-infer/providers/adapters
  */
 
-import { exec, spawn as nodeSpawn } from 'node:child_process'
+import { exec, execFile, spawn as nodeSpawn } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 import { mkdir, writeFile as fsWriteFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join } from 'node:path'
-import { LOG_TAIL_BYTES } from '../../core/lib/index.js'
+import {
+  guardSudoCommand,
+  LOG_TAIL_BYTES,
+  SUDO_PROBE_COMMAND,
+  sudoFailureDetail,
+} from '../../core/lib/index.js'
 import type {
   CommandOutcome,
   Config,
@@ -29,6 +34,7 @@ import type {
   ProcessExitInfo,
   ProcessHandle,
   RunOptions,
+  SudoGuard,
 } from '../../core/lib/index.js'
 
 /**
@@ -286,15 +292,69 @@ const STREAM_OUTPUT_HIGH_WATER = 2_048
 const STREAM_OUTPUT_TAIL = 1_024
 
 /**
+ * The credential probe's timeout: a hung sudo must not sit in front of the
+ * guarded command, so a slow probe reads as "a prompt is coming" (the safe
+ * side), matching the service install runner's probe timeout.
+ */
+const SUDO_PROBE_TIMEOUT_MS = 5_000
+
+/**
+ * SudoHook is the optional sudo wiring createNodeLifecycleHost takes: `notify`
+ * announces a guarded command the probe found waiting for a password on the
+ * launching CLI (the service's sudo observer turns it into the Logs note), and
+ * `timeoutMs` overrides the 60 s password deadline. A host built without the
+ * hook never probes, announces, or caps a run.
+ */
+export interface SudoHook {
+  notify: (command: string) => void
+  timeoutMs?: number
+}
+
+/**
+ * sudoProbeCached answers whether sudo already holds cached (or NOPASSWD)
+ * credentials: it runs SUDO_PROBE_COMMAND non-interactively and reads a clean
+ * exit as cached. A refused -n, a missing sudo, and a hung probe all read as
+ * "a prompt is coming", the safe side. Each package owns its child-process
+ * wiring (the watchChildAbort note), so the lifecycle host keeps its own copy
+ * beside the service's sudoProbe.
+ */
+function sudoProbeCached(): Promise<boolean> {
+  const [command, ...args] = SUDO_PROBE_COMMAND
+  if (command === undefined) return Promise.resolve(false)
+  return new Promise(resolve => {
+    execFile(command, args, { timeout: SUDO_PROBE_TIMEOUT_MS }, (error) => {
+      resolve(error === null)
+    })
+  })
+}
+
+/**
+ * signalChild signals an in-flight child with the cancel rule: SIGINT first,
+ * and SIGTERM after the grace period if the child is still alive. The child
+ * already marked killed or exited is left alone. The optional graceMs
+ * overrides the 5 s constant so a test can exercise the escalation without
+ * waiting. The abort watch and the sudo deadline kill share this one rule.
+ */
+function signalChild(child: ChildProcess, graceMs?: number): void {
+  if (child.killed || child.exitCode !== null) return
+  child.kill('SIGINT')
+  const escalate = setTimeout(() => {
+    // child.killed is already true from the SIGINT, so the guard reads the
+    // exit state: a child that has neither exited nor been signalled is
+    // still alive and gets SIGTERM.
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
+  }, graceMs ?? RUN_ABORT_GRACE_MS)
+  escalate.unref()
+}
+
+/**
  * watchChildAbort kills the in-flight child when the RunOptions signal
- * aborts (the card's cancel of a Get/Launch download): SIGINT first, SIGTERM
- * after the grace period if the child is still alive. A signal that is already
- * aborted kills immediately. The optional graceMs overrides the 5 s constant
- * so a test can exercise the escalation without waiting. A near-identical
- * copy lives in the service package (packages/service/src/index.ts, the
- * download runner's abort path): each package owns its own child-process
- * wiring, and the guard fix (the SIGTERM escalation) was applied to both
- * copies, so a change to the escalation rule lands in two places by design.
+ * aborts (the card's cancel of a Get/Launch download) through the shared
+ * signalChild rule. A signal that is already aborted kills immediately. A
+ * near-identical copy lives in the service package
+ * (packages/service/src/index.ts, the download runner's abort path): each
+ * package owns its own child-process wiring, so a change to the escalation
+ * rule lands in two places by design.
  */
 function watchChildAbort(
   child: ChildProcess,
@@ -303,15 +363,7 @@ function watchChildAbort(
 ): void {
   if (signal === undefined) return
   const onAbort = (): void => {
-    if (child.killed || child.exitCode !== null) return
-    child.kill('SIGINT')
-    const escalate = setTimeout(() => {
-      // child.killed is already true from the SIGINT, so the guard reads the
-      // exit state: a child that has neither exited nor been signalled is
-      // still alive and gets SIGTERM.
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM')
-    }, graceMs ?? RUN_ABORT_GRACE_MS)
-    escalate.unref()
+    signalChild(child, graceMs)
   }
   if (signal.aborted) {
     onAbort()
@@ -332,34 +384,79 @@ function watchChildAbort(
  * `RunOptions.shell` (the engine OS profile's shell, e.g. pwsh.exe for
  * the Windows vcpkg route) runs the command line in that shell instead of the
  * system default. A `RunOptions.graceMs` overrides the 5 s SIGTERM escalation
- * window of the abort path for that run.
+ * window of the abort path for that run. The optional `sudo` hook wires the
+ * sudo-prompt rule: a run whose `RunOptions.needsSudo` declares sudo probes
+ * cached credentials first, announces a waiting prompt through the hook once,
+ * and dies at the password deadline with the `sudoFailureDetail` outcome. A
+ * host built without the hook never probes, announces, or caps a run.
  */
-export function createNodeLifecycleHost(debug?: DebugLogger): LifecycleHost {
+export function createNodeLifecycleHost(debug?: DebugLogger, sudo?: SudoHook): LifecycleHost {
   // The debug logger is a no-op outside debug mode, so the guard reads as
   // "log when a real sink is wired" and the command path stays quiet otherwise.
   const log = debug ?? undefined
+  /**
+   * guardSudo drives core's sudo-prompt rule for one declared run: the run
+   * carries needsSudo and the host has the hook, so the command probes first,
+   * announces once, and arms the password deadline whose fire calls kill. An
+   * undeclared run, or a host without the hook, resolves undefined: the run
+   * goes through exactly as before.
+   */
+  const guardSudo = async (
+    command: string,
+    options: RunOptions | undefined,
+    kill: () => void,
+  ): Promise<SudoGuard | undefined> => {
+    if (sudo === undefined || options?.needsSudo !== true) return undefined
+    return guardSudoCommand({
+      needsSudo: true,
+      command,
+      probe: sudoProbeCached,
+      notify: sudo.notify,
+      kill,
+      ...(sudo.timeoutMs === undefined ? {} : { timeoutMs: sudo.timeoutMs }),
+    })
+  }
   return {
     async run(command: string, options?: RunOptions): Promise<CommandOutcome> {
       log?.(`run: ${command}`)
-      return new Promise(resolve => {
-        // A profile shell (the Windows vcpkg route's pwsh.exe) runs the
-        // command line in that shell; absent keeps the system default.
-        const child = exec(
-          command,
-          { timeout: RUN_TIMEOUT_MS, shell: options?.shell },
-          (error, stdout, stderr) => {
-            if (error === null) {
-              resolve({ ok: true })
-              return
-            }
-            const detail = `${stderr ?? ''}${stdout ?? ''}${String(error)}`.trim().slice(
-              -COMMAND_DETAIL_TAIL,
-            )
-            resolve({ ok: false, detail })
-          },
-        )
-        watchChildAbort(child, options?.signal, options?.graceMs)
+      // The guard arms before the exec; the outer child exists so the
+      // deadline's kill reaches the run through the shared signalChild rule.
+      let child: ChildProcess | undefined
+      const guard = await guardSudo(command, options, () => {
+        if (child !== undefined) signalChild(child, options?.graceMs)
       })
+      try {
+        const outcome = await new Promise<CommandOutcome>((resolve) => {
+          // A profile shell (the Windows vcpkg route's pwsh.exe) runs the
+          // command line in that shell; absent keeps the system default.
+          const started = exec(
+            command,
+            { timeout: RUN_TIMEOUT_MS, shell: options?.shell },
+            (error, stdout, stderr) => {
+              if (error === null) {
+                resolve({ ok: true })
+                return
+              }
+              const detail = `${stderr ?? ''}${stdout ?? ''}${String(error)}`.trim().slice(
+                -COMMAND_DETAIL_TAIL,
+              )
+              resolve({ ok: false, detail })
+            },
+          )
+          child = started
+          watchChildAbort(started, options?.signal, options?.graceMs)
+        })
+        // The password deadline killed the child: name the missed sudo prompt
+        // regardless of the exit the signalled child reported.
+        if (guard?.timedOut() === true) {
+          return { ok: false, detail: sudoFailureDetail(command) }
+        }
+        return outcome
+      } finally {
+        // The command settled (its close or error path resolved it): the
+        // password deadline is no longer owed.
+        guard?.disarm()
+      }
     },
     async runStream(
       command: string,
@@ -367,41 +464,56 @@ export function createNodeLifecycleHost(debug?: DebugLogger): LifecycleHost {
       options?: RunOptions,
     ): Promise<CommandOutcome> {
       log?.(`run: ${command}`)
-      return new Promise(resolve => {
-        // No overall timeout: a full CUDA build legitimately runs long, and
-        // the card prices a stalled step with its own output-idle watchdog.
-        // A profile shell (the Windows vcpkg route's pwsh.exe) runs the
-        // command line in that shell; absent keeps the system default.
-        const child = nodeSpawn(command, {
-          shell: options?.shell ?? true,
-          stdio: ['ignore', 'pipe', 'pipe'],
-        })
-        watchChildAbort(child, options?.signal, options?.graceMs)
-        let output = ''
-        const append = (chunk: Buffer): void => {
-          const text = chunk.toString('utf8')
-          onOutput(text)
-          output += text
-          if (output.length > STREAM_OUTPUT_HIGH_WATER) {
-            output = output.slice(-STREAM_OUTPUT_TAIL)
+      let child: ChildProcess | undefined
+      const guard = await guardSudo(command, options, () => {
+        if (child !== undefined) signalChild(child, options?.graceMs)
+      })
+      try {
+        const outcome = await new Promise<CommandOutcome>((resolve) => {
+          // No overall timeout: a full CUDA build legitimately runs long, and
+          // the card prices a stalled step with its own output-idle watchdog.
+          // A profile shell (the Windows vcpkg route's pwsh.exe) runs the
+          // command line in that shell; absent keeps the system default.
+          const started = nodeSpawn(command, {
+            shell: options?.shell ?? true,
+            stdio: ['ignore', 'pipe', 'pipe'],
+          })
+          child = started
+          watchChildAbort(started, options?.signal, options?.graceMs)
+          let output = ''
+          const append = (chunk: Buffer): void => {
+            const text = chunk.toString('utf8')
+            onOutput(text)
+            output += text
+            if (output.length > STREAM_OUTPUT_HIGH_WATER) {
+              output = output.slice(-STREAM_OUTPUT_TAIL)
+            }
           }
-        }
-        child.stdout.on('data', append)
-        child.stderr.on('data', append)
-        child.on('error', error => {
-          resolve({ ok: false, detail: error.message })
-        })
-        child.on('close', code => {
-          if (code === 0) {
-            resolve({ ok: true })
-            return
-          }
-          resolve({
-            ok: false,
-            detail: `exit ${code}: ${output.trim().slice(-COMMAND_DETAIL_TAIL)}`,
+          started.stdout.on('data', append)
+          started.stderr.on('data', append)
+          started.on('error', error => {
+            resolve({ ok: false, detail: error.message })
+          })
+          started.on('close', code => {
+            if (code === 0) {
+              resolve({ ok: true })
+              return
+            }
+            resolve({
+              ok: false,
+              detail: `exit ${code}: ${output.trim().slice(-COMMAND_DETAIL_TAIL)}`,
+            })
           })
         })
-      })
+        // The password deadline killed the child: name the missed sudo prompt
+        // regardless of the exit the signalled child reported.
+        if (guard?.timedOut() === true) {
+          return { ok: false, detail: sudoFailureDetail(command) }
+        }
+        return outcome
+      } finally {
+        guard?.disarm()
+      }
     },
     spawn(argv: readonly string[], env: Record<string, string>, cwd?: string): ProcessHandle {
       log?.(`spawn: ${argv.join(' ')}${cwd !== undefined ? ` (cwd: ${cwd})` : ''}`)
