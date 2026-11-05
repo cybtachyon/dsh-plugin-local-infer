@@ -109,6 +109,13 @@ Answers are recorded at the bottom of this file. See
   providers package index, so `packages/ui/src/index.ts` imports the emitted
   `packages/providers/lib/adapters.js` subpath, off this repo's `*/lib/index.js`
   convention.
+- Nothing gates `dsh/client.js` freshness: feature commits updated
+  `packages/client/lib` while the shipped bundle stayed stale until TASK-009
+  rebuilt it. Add the check that fails when the bundle predates
+  `packages/client/src`, as a test or a hook.
+- `performDiscard` and `deleteProvider` need the same `ui.sudoPending` clear
+  that TASK-011 added to `cancelProvider` and `newProvider`; route all four
+  through one helper.
 - `createNodeLifecycleHost` and `SudoHook` are not re-exported from the
   `packages/providers` index, so the ui `apply` imports the builder from the
   emitted `packages/providers/lib/adapters.js` subpath, off the workspace's
