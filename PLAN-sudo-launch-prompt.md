@@ -61,6 +61,7 @@ Answers are recorded at the bottom of this file. See
 
  - [x] [TASK-006-machine-state](docs/PLAN-sudo-launch-prompt-TASK-006-machine-state.md)
  - [x] [TASK-007-client-driver](docs/PLAN-sudo-launch-prompt-TASK-007-client-driver.md)
+ - [ ] [TASK-011-sudo-deadline-ownership](docs/PLAN-sudo-launch-prompt-TASK-011-sudo-deadline-ownership.md)
  - [ ] [TASK-008-control-label](docs/PLAN-sudo-launch-prompt-TASK-008-control-label.md)
 
 ### Phase 4: build and gates
@@ -70,6 +71,20 @@ Answers are recorded at the bottom of this file. See
 ### Phase 5: refactor
 
  - [ ] [TASK-010-refactor](docs/PLAN-sudo-launch-prompt-TASK-010-refactor.md)
+
+## Carried issues for TASK-010
+
+- `packages/ui/tests/bootstrap.spec.ts` and `route.spec.ts` service stubs do not
+  carry `setSudoObserver`, which the interface now requires. The suites pass
+  because the big stub is cast, so a route that calls it at runtime would throw:
+  add no-op stub members.
+- The sudo kill signals the spawned shell with SIGTERM only. A simple
+  `sudo ...` line in dash execs, so sudo itself dies; a compound line
+  (`a && sudo b`) leaves sudo as a survivor. A process-group kill (detached
+  spawn plus `kill(-pid)`) is the review candidate.
+- Any `tsc -b` of a dependent project re-dirties its tracked `lib/` outputs with
+  trailing-newline-only diffs; `scripts/build-format.mjs` inside `pnpm build` is
+  the canonical normalization, so run the full build last.
 
 ## Answers
 
