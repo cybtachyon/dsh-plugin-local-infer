@@ -1,5 +1,10 @@
 # TASK-003 lifecycle host sudo guard
 
+Status: done 2026-11-04. `pnpm vitest run packages/providers` passes (the
+suite lives in packages/providers/tests/sudo.spec.ts, split from
+adapters.spec.ts because it replaces node:child_process module-wide, the same
+split as the service's sudo seam test) and `pnpm lint` is clean.
+
 **Phase 1. Depends on TASK-001, TASK-002. Definition of Done: `pnpm vitest run
 packages/providers` passes with a stubbed child and an injected timer, and
 `pnpm lint` is clean.**
