@@ -14,8 +14,10 @@ import {
   editProvider,
   newProvider,
   openEntryLogs,
+  performDraftLaunch,
   performEntryLaunch,
   performEntryStop,
+  SUDO_DEADLINE_MS,
 } from '../src/store/providers.ts'
 import { cardReducer } from '../src/store/reducer.ts'
 import type { CardStore } from '../src/store/sync.ts'
@@ -581,6 +583,69 @@ describe('the provider list drivers (store/providers.ts)', () => {
       // The deadline was cleared on cancel, so the machine stays on the phase.
       expect(state().launch['p1']?.status).toBe('launch')
     })
+
+    it('moves to sudo on a sudo event, writes the CLI note line, and fails at the sudo deadline', async () => {
+      const { store, state } = makeStore()
+      const provider = providerWith()
+      store.dispatch({
+        type: 'summary/ack',
+        summary: summaryWith([provider], 'old logs'),
+      })
+      const stream = launchStream()
+      const { fetchMock } = routeFetch({
+        '/local-infer/launch': () => stream.response(),
+        '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      performEntryLaunch(store, provider, t)
+      stream.enqueue('{"step":"prereqs"}')
+      await flush()
+      stream.enqueue('{"sudo":true}')
+      await flush()
+      expect(state().launch['p1']?.status).toBe('sudo')
+      // The note line is asserted literally (not through the client constant)
+      // so the client's copy stays pinned to the host's core SUDO_CLI_NOTE.
+      expect(state().ui.logs.getLogs).toBe(
+        'old logs\n--- ' + t.entryLaunching + '\n\nCheck your CLI for a sudo prompt',
+      )
+      // A password that never lands settles the control through the shared
+      // failed path just past the host's 60 s kill.
+      await vi.advanceTimersByTimeAsync(SUDO_DEADLINE_MS - 1)
+      expect(state().launch['p1']?.status).toBe('sudo')
+      await vi.advanceTimersByTimeAsync(1)
+      expect(state().launch['p1']?.status).toBe('failed')
+    })
+
+    it('resumes the run after the sudo wait and clears the sudo deadline', async () => {
+      const { store, state } = makeStore()
+      const provider = providerWith()
+      store.dispatch({
+        type: 'summary/ack',
+        summary: summaryWith([provider]),
+      })
+      const stream = launchStream()
+      const { fetchMock } = routeFetch({
+        '/local-infer/launch': () => stream.response(),
+        '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      performEntryLaunch(store, provider, t)
+      stream.enqueue('{"step":"prereqs"}\n{"sudo":true}')
+      await flush()
+      expect(state().launch['p1']?.status).toBe('sudo')
+      // The user typed the password: the host reports the resumed step, and
+      // the healthy result settles to running (the control becomes Stop).
+      stream.enqueue('{"step":"launch"}')
+      await flush()
+      expect(state().launch['p1']?.status).toBe('launch')
+      stream.enqueue('{"result":{"healthy":true}}')
+      stream.close()
+      await flush(50)
+      expect(state().launch['p1']?.status).toBe('running')
+      // The settle cleared the sudo deadline, so a late tick is a no-op.
+      await vi.advanceTimersByTimeAsync(SUDO_DEADLINE_MS + LAUNCH_HEALTH_DEADLINE_MS)
+      expect(state().launch['p1']?.status).toBe('running')
+    })
   })
 
   describe('performEntryStop', () => {
@@ -669,6 +734,56 @@ describe('the provider list drivers (store/providers.ts)', () => {
       // The poll and deadline were cleared on cancel, so the machine stays
       // on stopping.
       expect(state().launch['p1']?.status).toBe('stopping')
+    })
+  })
+
+  describe('performDraftLaunch', () => {
+    // draftLaunchHarness builds the store performDraftLaunch reads (the
+    // summary ack seeds the draft, so the form launches under the "draft"
+    // abort key) plus the hand-driven launch stream it answers with.
+    function draftLaunchHarness(provider: ProviderSummaryEntry) {
+      const made = makeStore()
+      made.store.dispatch({
+        type: 'summary/ack',
+        summary: summaryWith([provider]),
+      })
+      const stream = launchStream()
+      const { fetchMock } = routeFetch({
+        '/local-infer/launch': () => stream.response(),
+        '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
+        '/local-infer/deps': () => jsonAnswer({ engineId: 'ninfer' }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      return { ...made, stream }
+    }
+
+    it('sets ui.sudoPending on a sudo event and clears it when the run settles healthy', async () => {
+      const provider = providerWith()
+      const { store, state, stream } = draftLaunchHarness(provider)
+      const run = performDraftLaunch(store, t)
+      stream.enqueue('{"sudo":true}')
+      await flush()
+      expect(state().ui.sudoPending).toBe(true)
+      stream.enqueue('{"result":{"healthy":true,"plan":{"port":11435}}}')
+      stream.close()
+      await run
+      // The run settled, so the draft control stops reading "Sudo needed".
+      expect(state().ui.sudoPending).toBe(false)
+      expect(state().actions.launch.status).toBe('ok')
+    })
+
+    it('clears ui.sudoPending when the run settles to a failure', async () => {
+      const provider = providerWith()
+      const { store, state, stream } = draftLaunchHarness(provider)
+      const run = performDraftLaunch(store, t)
+      stream.enqueue('{"sudo":true}')
+      await flush()
+      expect(state().ui.sudoPending).toBe(true)
+      stream.enqueue('{"result":{"healthy":false,"detail":"no gpu"}}')
+      stream.close()
+      await run
+      expect(state().ui.sudoPending).toBe(false)
+      expect(state().actions.launch.status).toBe('error')
     })
   })
 })

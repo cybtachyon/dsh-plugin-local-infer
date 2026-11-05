@@ -8,8 +8,8 @@
  * dirty (draft/load), and a delete rides the provider-delete route and stores
  * the fresh summary. The per-entry launch and stop drive the per-provider
  * launch machine through launch/move events, so the entry's control and the
- * title-bar control read the same lifecycle. The launch health-poll deadline
- * and the stop fast-poll arm off the machine's timers, and each driver
+ * title-bar control read the same lifecycle. The launch health-poll and sudo
+ * deadlines and the stop fast-poll arm off the machine's timers, and each driver
  * returns a handle the panel owns: cancel clears the pending timers and marks
  * the run settled, so a late stream event or poll tick after an unmount never
  * moves the machine.
@@ -18,6 +18,16 @@
 import type { ProviderSummaryEntry } from 'dsh-plugin-local-infer/ui';
 import type { TextTable } from '../text.ts';
 import { type CardStore } from './sync.ts';
+/**
+ * SUDO_DEADLINE_MS caps the card's wait after a launch stream announces a
+ * sudo prompt: the host kills the process at 60 s (core's
+ * SUDO_PASSWORD_TIMEOUT_MS) and this card-side deadline just past that cap
+ * forces a hung password wait to the red Logs state, the same settle path as
+ * the health-poll timeout. The client bundle cannot import the node-side
+ * core package, so the number is mirrored here; the two change together by
+ * hand.
+ */
+export declare const SUDO_DEADLINE_MS = 65000;
 /**
  * EntryTimerHandle is the panel's ownership of a per-entry timer: cancel
  * clears the pending poll and deadline timers and marks the run settled, so
@@ -77,7 +87,9 @@ export declare function openEntryLogs(store: CardStore, provider: ProviderSummar
  * phase label; the build step writes a "Building..." separator; the launch
  * step arms the health-poll deadline (the route's poll runs up to two
  * minutes, so a client-side deadline just past that cap forces a hung launch
- * to the red Logs state). A healthy result settles to running (the control
+ * to the red Logs state); a sudo event moves the machine to sudo, appends the
+ * CLI-note line, and arms the shorter sudo deadline through the same settle
+ * path. A healthy result settles to running (the control
  * becomes Stop), a downloading result settles to downloading (a busy
  * throbber the card re-polls), and a failed result, a stream that ends
  * without a result, or a fetch failure settles to failed (the control becomes
@@ -101,10 +113,12 @@ export declare function performEntryStop(store: CardStore, provider: ProviderSum
  * performDraftLaunch runs the form's own Launch control (the title-bar
  * control's draft target): it reads the launch stream (keeping only the result
  * event, the form's control shows no phase labels) and settles the draft's
- * launch cell. A healthy result reads as running (the control becomes Stop),
- * a not-healthy or missing result reads as the launch-failed note. The
- * summary and deps read models re-fetch so the provider's status dot repaints
- * and the deps panel re-prices. The run registers
+ * launch cell. A sudo event sets the ui.sudoPending flag the control renders
+ * "Sudo needed" from (the draft has no machine entry to read) and the flag
+ * clears when the run settles. A healthy result reads as running (the control
+ * becomes Stop), a not-healthy or missing result reads as the launch-failed
+ * note. The summary and deps read models re-fetch so the provider's status
+ * dot repaints and the deps panel re-prices. The run registers
  * its AbortController under the form's provider id (the "draft" key when the
  * form is not a provider), so the provider form's Cancel closes the stream
  * and the route interrupts the in-flight Get-step hf child on the host.

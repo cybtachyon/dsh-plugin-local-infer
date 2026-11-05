@@ -119,6 +119,7 @@ export interface CardUiState {
     logPath: string;
     logs: LogsPaneState;
     getProgress: GetProgressState | null;
+    sudoPending: boolean;
 }
 /**
  * CardState is the card's single source of truth. summary is the last

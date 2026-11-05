@@ -60,7 +60,7 @@ Answers are recorded at the bottom of this file. See
 ### Phase 3: the card control
 
  - [x] [TASK-006-machine-state](docs/PLAN-sudo-launch-prompt-TASK-006-machine-state.md)
- - [ ] [TASK-007-client-driver](docs/PLAN-sudo-launch-prompt-TASK-007-client-driver.md)
+ - [x] [TASK-007-client-driver](docs/PLAN-sudo-launch-prompt-TASK-007-client-driver.md)
  - [ ] [TASK-008-control-label](docs/PLAN-sudo-launch-prompt-TASK-008-control-label.md)
 
 ### Phase 4: build and gates

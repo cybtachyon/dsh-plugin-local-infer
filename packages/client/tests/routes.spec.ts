@@ -261,6 +261,39 @@ describe('readLaunchStream (the launch route answer)', () => {
     expect(result).toEqual({ healthy: true })
   })
 
+  it('calls onSudo for a sudo event and still returns the result', async () => {
+    const steps: string[] = []
+    let sudoCount = 0
+    const response = streamResponse([
+      '{"step":"prereqs"}\n{"sudo":true}\n',
+      '{"result":{"healthy":true,"plan":{"port":11435}}}\n',
+    ])
+    const result = await readLaunchStream(
+      response,
+      (step) => steps.push(step),
+      undefined,
+      () => {
+        sudoCount += 1
+      },
+    )
+    expect(sudoCount).toBe(1)
+    expect(steps).toEqual(['prereqs'])
+    expect(result).toEqual({ healthy: true, plan: { port: 11435 } })
+  })
+
+  it('never clears a collected result on a sudo line', async () => {
+    const onSudo = vi.fn()
+    const response = streamResponse(['{"result":{"healthy":true}}\n{"sudo":true}\n'])
+    const result = await readLaunchStream(response, undefined, undefined, onSudo)
+    expect(onSudo).toHaveBeenCalledTimes(1)
+    expect(result).toEqual({ healthy: true })
+  })
+
+  it('ignores sudo events when no onSudo is given', async () => {
+    const response = streamResponse(['{"sudo":true}\n{"result":{"healthy":true}}\n'])
+    await expect(readLaunchStream(response)).resolves.toEqual({ healthy: true })
+  })
+
   it('ignores progress events when no onProgress is given', async () => {
     const response = streamResponse([
       '{"progress":{"percent":12}}\n{"result":{"healthy":true}}\n',
@@ -315,6 +348,14 @@ describe('postLaunch and postGet (the streamed routes)', () => {
   it('streams the launch answer and returns the result event', async () => {
     stubFetch(() => streamResponse(['{"result":{"healthy":true}}\n']))
     const result = await postLaunch({ engine: 'ninfer' })
+    expect(result).toEqual({ healthy: true })
+  })
+
+  it('threads the onSudo callback through the launch stream', async () => {
+    stubFetch(() => streamResponse(['{"sudo":true}\n{"result":{"healthy":true}}\n']))
+    const onSudo = vi.fn()
+    const result = await postLaunch({ engine: 'ninfer' }, undefined, undefined, onSudo)
+    expect(onSudo).toHaveBeenCalledTimes(1)
     expect(result).toEqual({ healthy: true })
   })
 
