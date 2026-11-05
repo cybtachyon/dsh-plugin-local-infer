@@ -36,7 +36,8 @@ Answers are recorded at the bottom of this file. See
 - TASK-002 depends on TASK-001 (imports the core rule).
 - TASK-003 depends on TASK-001 and TASK-002 (imports the guard binding and the
   service seam).
-- TASK-004 depends on TASK-002 and TASK-003 (the notify must reach the service).
+- TASK-012 depends on TASK-002 and TASK-003 (it publishes the seam they use).
+- TASK-004 depends on TASK-012 (the notify must reach the service).
 - TASK-005 depends on TASK-004 (shares the observer helper).
 - TASK-006 depends on TASK-004 (the event shape the client must read).
 - TASK-007 depends on TASK-006.
@@ -54,6 +55,7 @@ Answers are recorded at the bottom of this file. See
 
 ### Phase 2: routes, stream events, persistence
 
+ - [ ] [TASK-012-publish-notify-seam](docs/PLAN-sudo-launch-prompt-TASK-012-publish-notify-seam.md)
  - [ ] [TASK-004-launch-route](docs/PLAN-sudo-launch-prompt-TASK-004-launch-route.md)
  - [ ] [TASK-005-get-route-note](docs/PLAN-sudo-launch-prompt-TASK-005-get-route-note.md)
 
