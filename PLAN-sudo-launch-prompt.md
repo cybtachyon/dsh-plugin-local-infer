@@ -55,7 +55,7 @@ Answers are recorded at the bottom of this file. See
 
 ### Phase 2: routes, stream events, persistence
 
- - [ ] [TASK-012-publish-notify-seam](docs/PLAN-sudo-launch-prompt-TASK-012-publish-notify-seam.md)
+ - [x] [TASK-012-publish-notify-seam](docs/PLAN-sudo-launch-prompt-TASK-012-publish-notify-seam.md)
  - [ ] [TASK-004-launch-route](docs/PLAN-sudo-launch-prompt-TASK-004-launch-route.md)
  - [ ] [TASK-005-get-route-note](docs/PLAN-sudo-launch-prompt-TASK-005-get-route-note.md)
 
@@ -76,10 +76,6 @@ Answers are recorded at the bottom of this file. See
 
 ## Carried issues for TASK-010
 
-- `packages/ui/tests/bootstrap.spec.ts` and `route.spec.ts` service stubs do not
-  carry `setSudoObserver`, which the interface now requires. The suites pass
-  because the big stub is cast, so a route that calls it at runtime would throw:
-  add no-op stub members.
 - The sudo kill signals the spawned shell with SIGTERM only. A simple
   `sudo ...` line in dash execs, so sudo itself dies; a compound line
   (`a && sudo b`) leaves sudo as a survivor. A process-group kill (detached

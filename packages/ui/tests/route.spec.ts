@@ -254,6 +254,10 @@ function stubService(
     ): void => {
       extras.onSetDeathObserver?.(observer)
     },
+    // The sudo seam: no route calls it yet, so the members exist to satisfy
+    // the published interface, mirroring the real service's no-observer case.
+    setSudoObserver: (): void => undefined,
+    notifySudoNeeded: (): void => undefined,
   } as unknown as LocalInferService
 }
 

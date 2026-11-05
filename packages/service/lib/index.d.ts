@@ -244,9 +244,11 @@ export declare class LocalInfer extends Service implements LocalInferService {
      * notifySudoNeeded announces one guarded command to the registered sudo
      * observer, if any. A throwing observer is swallowed: the note is a log
      * courtesy, and a broken route must not fail the install that is already
-     * racing the sudo deadline.
+     * racing the sudo deadline. Published on the service surface so a command
+     * runner outside this package (the providers' lifecycle host) reports
+     * through the same seam.
      */
-    private notifySudoNeeded;
+    notifySudoNeeded(command: string): void;
     /**
      * watchLaunchedHandle ties a launched child's one-shot exit to the live
      * state: the host's close/error event (a crash, a pkill, or the stop kill)

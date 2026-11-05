@@ -1,5 +1,13 @@
 # TASK-012 publish the sudo notify seam
 
+- [x] Done 2026-11-04: `notifySudoNeeded` is public on the class and declared on
+  `LocalInferService`; `sudoAnnouncer` is gone and the lifecycle host calls the
+  interface method; the ui service stubs carry the no-op sudo members, closing
+  the carried issue. `pnpm vitest run packages/service packages/providers
+  packages/ui` passes (710 tests) and `pnpm lint` is clean; the tracked
+  `packages/service/lib` and `packages/providers/lib` outputs regenerate with
+  only this change.
+
 **Phase 2 prerequisite for TASK-004. Definition of Done: `pnpm vitest run
 packages/service packages/providers packages/ui` passes and `pnpm lint` is
 clean.**
