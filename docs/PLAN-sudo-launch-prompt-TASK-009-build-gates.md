@@ -2,6 +2,9 @@
 
 **Phase 4. Depends on TASK-001 .. TASK-008. Definition of Done: every gate below
 exits 0 and the emitted artifacts are committed with the source change.**
+ - [x] Done: all five gates exit 0; `dsh/client.js` was stale at HEAD and the
+       rebuilt bundle (with the sudo client half) is committed with the README
+       paragraph.
 
 1. `pnpm build` (runs `tsc -b`, then `node scripts/build-client.mjs`, then
    `node scripts/build-format.mjs`). Commit the tracked `packages/*/lib`
