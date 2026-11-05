@@ -4,9 +4,10 @@
  * the health poll). The launch streams its progress as NDJSON: a step event
  * as each phase (prereqs, download, build, launch) begins, a progress event
  * when the Get-steps hf download's tqdm stderr folds into a structured
- * state, then a final result event. The card's Launch control reads the step
- * that is running and times out only the launch (health-poll) step; the
- * rebuild steps run as long as they need to.
+ * state, a sudo event when a guarded command waits for the user's password
+ * on the launching CLI, then a final result event. The card's Launch control
+ * reads the step that is running and times out only the launch (health-poll)
+ * step; the rebuild steps run as long as they need to.
  * @module dsh-plugin-local-infer/ui/routes/launch
  */
 import type { LifecycleHost } from 'dsh-plugin-local-infer/core';

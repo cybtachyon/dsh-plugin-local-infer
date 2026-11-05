@@ -11,6 +11,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { createNodeLifecycleHost } from '../../providers/lib/adapters.js'
 import { registerLocalInferRoute } from './route.ts'
 import type { WebServerService } from './route.ts'
 
@@ -70,7 +71,21 @@ export function apply(ctx: Context): void {
   if (typeof ctx.inject === 'function') {
     ctx.inject(['webServer'], (scope) => {
       try {
-        registerLocalInferRoute(scope as Context & { webServer: WebServerService }, localInfer)
+        // The route host is built here (not the bare node default) so its
+        // sudo hook reaches the service: a guarded command whose credential
+        // probe found nothing announces through notifySudoNeeded, and the
+        // launch run's sudo observer (ops/engine.ts) turns it into the
+        // streamed sudo event and the Logs note. The same host drives the
+        // Get and launch routes' Get steps.
+        const host = createNodeLifecycleHost(undefined, {
+          notify: (command) => localInfer.notifySudoNeeded(command),
+        })
+        registerLocalInferRoute(
+          scope as Context & { webServer: WebServerService },
+          localInfer,
+          host,
+          host,
+        )
       } catch (error) {
         console.error(`[local-infer] settings route skipped: ${error}`)
       }
