@@ -98,6 +98,17 @@ Answers are recorded at the bottom of this file. See
 - The service sudo guard signals the spawned shell only. A process-group kill
   (detached plus `kill(-pid)`) belongs there too now that the providers host
   shares `signalChild`; the two kill paths should end up on one rule.
+- A Get run persists the sudo note twice: the mid-run `persistProcessLog` and
+  then the route's final append of the collected run text, which embeds the
+  same line. `launchEngine` escapes it because `persistLaunchLogs` overwrites.
+  Give the Get path a clear-then-append or a dedup rule, or accept it on
+  purpose and say so in a comment.
+- The `!! ` Get failure marker is a literal in two places
+  (`packages/ui/src/routes/get.ts` and `getEngine`); give the marker one home.
+- `createNodeLifecycleHost` and `SudoHook` are not re-exported from the
+  providers package index, so `packages/ui/src/index.ts` imports the emitted
+  `packages/providers/lib/adapters.js` subpath, off this repo's `*/lib/index.js`
+  convention.
 - `createNodeLifecycleHost` and `SudoHook` are not re-exported from the
   `packages/providers` index, so the ui `apply` imports the builder from the
   emitted `packages/providers/lib/adapters.js` subpath, off the workspace's
