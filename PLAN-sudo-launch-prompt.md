@@ -91,6 +91,13 @@ Answers are recorded at the bottom of this file. See
 - A sudo wait that resumes must hand the deadline back to the health cap
   (TASK-011). Confirm the single-owner rule survives the refactor: no second
   timer, no re-armed sudo deadline.
+- Both `packages/ui` service stubs are cast (`as unknown as
+  LocalInferService`), so widening the interface is invisible to the type
+  checker and a missing member only fails at runtime in a route. Type one stub
+  without the cast, or add a `satisfies` check.
+- The service sudo guard signals the spawned shell only. A process-group kill
+  (detached plus `kill(-pid)`) belongs there too now that the providers host
+  shares `signalChild`; the two kill paths should end up on one rule.
 
 ## Answers
 
