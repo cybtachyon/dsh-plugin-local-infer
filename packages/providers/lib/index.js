@@ -83,14 +83,32 @@ export function apply(ctx) {
     // (the HARNESS_LOG_LEVEL env var or the DSH logger level config), the host
     // logs every command it issues to an engine, from build to launch, through
     // the cordis logger's debug method. A normal run wires the no-debug host, so
-    // the command path stays quiet.
-    const host = createNodeLifecycleHost(createDshDebugLogger(ctx));
+    // the command path stays quiet. The sudo hook reports a waiting
+    // `sudo ln -sf ...` deploy link through the service's sudo seam, so the
+    // route-registered observer can show the CLI note while the card waits.
+    const host = createNodeLifecycleHost(createDshDebugLogger(ctx), {
+        notify: sudoAnnouncer(localInfer),
+    });
     localInfer.registerEngine(new NInferAdapter(host));
     localInfer.registerEngine(new HyperQwenAdapter(host));
     localInfer.registerEngine(new LlamaCppAdapter(host));
     localInfer.registerEngine(new InfernixAdapter(host));
     localInfer.registerEngine(new StrataAdapter(host));
     localInfer.registerEngine(new BasaltAdapter(host));
+}
+/**
+ * sudoAnnouncer adapts one service to the lifecycle host's sudo notify hook:
+ * it calls notifySudoNeeded, the service's announce path into the
+ * route-registered sudo observer. The published LocalInferService surface has
+ * not listed the method yet, so it is read through this narrow shape; a
+ * service that lacks the method gets a no-op, so the announce never fails a
+ * guarded run.
+ */
+function sudoAnnouncer(localInfer) {
+    const { notifySudoNeeded } = localInfer;
+    if (typeof notifySudoNeeded !== 'function')
+        return () => { };
+    return (command) => notifySudoNeeded.call(localInfer, command);
 }
 const plugin = { name, inject, apply };
 export default plugin;
