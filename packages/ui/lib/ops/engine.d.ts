@@ -58,9 +58,14 @@ export declare function resolveAdapter(localInfer: LocalInferService, engineId: 
  * child, and the persisted run carries a "Canceled" line. The optional
  * onChunk is the hf download's raw stderr progress sink: the download runner
  * hands each streamed chunk to it as it lands, so a launch that runs the Get
- * steps streams the download progress the same way a Get does.
+ * steps streams the download progress the same way a Get does. The optional
+ * onSudo is the route's sudo-event writer: while the run is in flight, the
+ * service's sudo observer answers a guarded command waiting for a password on
+ * the launching CLI by landing the core CLI note in the run logs and the log
+ * file and calling onSudo; the observer is unregistered when the run settles,
+ * failed or not, so a failing run leaves none behind.
  */
-export declare function launchEngine(localInfer: LocalInferService, request: LaunchRequest, onProgress?: (step: LaunchStep) => void, host?: LifecycleHost, signal?: AbortSignal, onChunk?: (chunk: string) => void): Promise<LaunchResult>;
+export declare function launchEngine(localInfer: LocalInferService, request: LaunchRequest, onProgress?: (step: LaunchStep) => void, host?: LifecycleHost, signal?: AbortSignal, onChunk?: (chunk: string) => void, onSudo?: () => void): Promise<LaunchResult>;
 /**
  * handleEngineDeath persists a provider entry's state when its engine process
  * dies outside the plugin's stop path: a crash, a pkill of a plugin-launched

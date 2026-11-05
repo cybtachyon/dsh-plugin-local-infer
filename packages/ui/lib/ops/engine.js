@@ -20,7 +20,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname } from 'node:path';
-import { LOG_TAIL_BYTES, formatLaunchCommand, launchRecordFromPlan, resolveLogPath, } from '../../../core/lib/index.js';
+import { LOG_TAIL_BYTES, SUDO_CLI_NOTE, formatLaunchCommand, launchRecordFromPlan, resolveLogPath, } from '../../../core/lib/index.js';
 import { nodeLifecycleHost } from '../../../providers/lib/index.js';
 import { readConfig, writeStored } from "../config.js";
 import { persistProcessLog } from "./logs.js";
@@ -163,9 +163,14 @@ function getStepsRequest(engineId, config, stored, platform, host, signal, onChu
  * child, and the persisted run carries a "Canceled" line. The optional
  * onChunk is the hf download's raw stderr progress sink: the download runner
  * hands each streamed chunk to it as it lands, so a launch that runs the Get
- * steps streams the download progress the same way a Get does.
+ * steps streams the download progress the same way a Get does. The optional
+ * onSudo is the route's sudo-event writer: while the run is in flight, the
+ * service's sudo observer answers a guarded command waiting for a password on
+ * the launching CLI by landing the core CLI note in the run logs and the log
+ * file and calling onSudo; the observer is unregistered when the run settles,
+ * failed or not, so a failing run leaves none behind.
  */
-export async function launchEngine(localInfer, request, onProgress, host = nodeLifecycleHost, signal, onChunk) {
+export async function launchEngine(localInfer, request, onProgress, host = nodeLifecycleHost, signal, onChunk, onSudo) {
     const { stored, engineId, config } = resolveStoredRequest(request);
     const adapter = resolveAdapter(localInfer, engineId);
     const hardware = await localInfer.detectHardware();
@@ -187,48 +192,67 @@ export async function launchEngine(localInfer, request, onProgress, host = nodeL
     // syncFailed on the result (the run keeps going with the checkout's
     // current version) instead of halting the launch.
     let getLogs = '';
-    const get = await runGetSteps(localInfer, {
-        ...getStepsRequest(engineId, config, stored, platform, host, signal, onChunk),
-        ...(request.autoRebuild !== undefined ? { autoRebuild: request.autoRebuild } : {}),
-        continueOnSyncFailure: true,
-    }, (chunk) => {
+    const appendGetLogs = (chunk) => {
         getLogs += chunk;
+    };
+    // The run owns the sudo observer, not the route, so the note lands in the
+    // persisted run and in the stream from one place: a guarded command waiting
+    // for a password on the launching CLI appends the CLI note to the Get-step
+    // log sink (composeLaunchLogs and persistLaunchOutcome carry it into the
+    // last-run logs and the log file), persists it to disk while the run is
+    // still hung waiting on the prompt, and tells the route's stream writer.
+    // The finally leaves no observer behind a failed run, so a second card
+    // never observes another run's sudo.
+    localInfer.setSudoObserver(() => {
+        appendGetLogs(`${SUDO_CLI_NOTE}\n`);
+        persistProcessLog(SUDO_CLI_NOTE);
+        onSudo?.();
     });
-    const plan = adapter.renderLaunch(config, hardware);
-    if (!get.ok) {
-        return settleGetFailure(plan, get, engineId, config, request.providerId, getLogs, signal?.aborted === true);
+    try {
+        const get = await runGetSteps(localInfer, {
+            ...getStepsRequest(engineId, config, stored, platform, host, signal, onChunk),
+            ...(request.autoRebuild !== undefined ? { autoRebuild: request.autoRebuild } : {}),
+            continueOnSyncFailure: true,
+        }, appendGetLogs);
+        const plan = adapter.renderLaunch(config, hardware);
+        if (!get.ok) {
+            return settleGetFailure(plan, get, engineId, config, request.providerId, getLogs, signal?.aborted === true);
+        }
+        applyComposeArgs(plan, localInfer, engineId);
+        const commandNote = launchCommandNote(plan);
+        if (commandNote !== undefined) {
+            // Persist before the deploy starts: a slow or hung launch keeps the Get
+            // steps and the command readable in the Logs section across a card
+            // reload, where the engine output has not landed yet.
+            persistStoredLogs(getLogs + commandNote);
+        }
+        // The trust gate and the auto-rebuild flag ride into the deploy step, which
+        // reads them to decide whether a rebuild's missing-binary symlink into
+        // /usr/local/bin runs (on) or is written to the card's Logs section (off),
+        // and whether the deploy's own git sync (fetch, rebase, rebuild) runs at
+        // all. A Get sync that failed under the override threads autoRebuild:
+        // false into the deploy, which skips its own git sync (it would hit the
+        // same rebase conflict) and launches the checkout's current version; a Get
+        // run whose sync passed keeps the request's autoRebuild.
+        const launchAutoRebuild = get.syncFailed === true ? false : request.autoRebuild;
+        const result = await localInfer.launch(plan, {
+            ...(onProgress !== undefined ? { onProgress } : {}),
+            allowRunDeps: stored.allowRunDeps,
+            ...(launchAutoRebuild !== undefined ? { autoRebuild: launchAutoRebuild } : {}),
+        });
+        // A cancel that landed after the Get steps (the card's provider-form Cancel
+        // closed the stream during the deploy or health poll) adds the "Canceled"
+        // line, so the persisted run reads as canceled.
+        composeLaunchLogs(result, getLogs, commandNote, signal?.aborted === true);
+        // The result's logs field already carries the Get-step output via
+        // composeLaunchLogs, so the persisted run leads with no getLogs. Passing
+        // getLogs again would include the Get steps twice in the persisted run.
+        persistLaunchOutcome(result, engineId, config, request.providerId, '');
+        return result;
     }
-    applyComposeArgs(plan, localInfer, engineId);
-    const commandNote = launchCommandNote(plan);
-    if (commandNote !== undefined) {
-        // Persist before the deploy starts: a slow or hung launch keeps the Get
-        // steps and the command readable in the Logs section across a card
-        // reload, where the engine output has not landed yet.
-        persistStoredLogs(getLogs + commandNote);
+    finally {
+        localInfer.setSudoObserver(undefined);
     }
-    // The trust gate and the auto-rebuild flag ride into the deploy step, which
-    // reads them to decide whether a rebuild's missing-binary symlink into
-    // /usr/local/bin runs (on) or is written to the card's Logs section (off),
-    // and whether the deploy's own git sync (fetch, rebase, rebuild) runs at
-    // all. A Get sync that failed under the override threads autoRebuild:
-    // false into the deploy, which skips its own git sync (it would hit the
-    // same rebase conflict) and launches the checkout's current version; a Get
-    // run whose sync passed keeps the request's autoRebuild.
-    const launchAutoRebuild = get.syncFailed === true ? false : request.autoRebuild;
-    const result = await localInfer.launch(plan, {
-        ...(onProgress !== undefined ? { onProgress } : {}),
-        allowRunDeps: stored.allowRunDeps,
-        ...(launchAutoRebuild !== undefined ? { autoRebuild: launchAutoRebuild } : {}),
-    });
-    // A cancel that landed after the Get steps (the card's provider-form Cancel
-    // closed the stream during the deploy or health poll) adds the "Canceled"
-    // line, so the persisted run reads as canceled.
-    composeLaunchLogs(result, getLogs, commandNote, signal?.aborted === true);
-    // The result's logs field already carries the Get-step output via
-    // composeLaunchLogs, so the persisted run leads with no getLogs. Passing
-    // getLogs again would include the Get steps twice in the persisted run.
-    persistLaunchOutcome(result, engineId, config, request.providerId, '');
-    return result;
 }
 /**
  * composeLaunchLogs orders a launch's run logs: the Get-step output the

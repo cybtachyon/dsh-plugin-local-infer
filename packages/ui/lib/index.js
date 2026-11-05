@@ -9,6 +9,7 @@
  * from; Phase 8 wires them into one panel with the lifecycle controls.
  * @module dsh-plugin-local-infer/ui
  */
+import { createNodeLifecycleHost } from '../../providers/lib/adapters.js';
 import { registerLocalInferRoute } from "./route.js";
 export const name = 'local-infer-ui';
 export const inject = ['localInfer'];
@@ -32,7 +33,16 @@ export function apply(ctx) {
     if (typeof ctx.inject === 'function') {
         ctx.inject(['webServer'], (scope) => {
             try {
-                registerLocalInferRoute(scope, localInfer);
+                // The route host is built here (not the bare node default) so its
+                // sudo hook reaches the service: a guarded command whose credential
+                // probe found nothing announces through notifySudoNeeded, and the
+                // launch run's sudo observer (ops/engine.ts) turns it into the
+                // streamed sudo event and the Logs note. The same host drives the
+                // Get and launch routes' Get steps.
+                const host = createNodeLifecycleHost(undefined, {
+                    notify: (command) => localInfer.notifySudoNeeded(command),
+                });
+                registerLocalInferRoute(scope, localInfer, host, host);
             }
             catch (error) {
                 console.error(`[local-infer] settings route skipped: ${error}`);

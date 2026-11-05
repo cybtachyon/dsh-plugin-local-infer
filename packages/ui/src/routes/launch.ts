@@ -4,9 +4,10 @@
  * the health poll). The launch streams its progress as NDJSON: a step event
  * as each phase (prereqs, download, build, launch) begins, a progress event
  * when the Get-steps hf download's tqdm stderr folds into a structured
- * state, then a final result event. The card's Launch control reads the step
- * that is running and times out only the launch (health-poll) step; the
- * rebuild steps run as long as they need to.
+ * state, a sudo event when a guarded command waits for the user's password
+ * on the launching CLI, then a final result event. The card's Launch control
+ * reads the step that is running and times out only the launch (health-poll)
+ * step; the rebuild steps run as long as they need to.
  * @module dsh-plugin-local-infer/ui/routes/launch
  */
 
@@ -22,14 +23,17 @@ import { abortOnResponseClose, ndjsonLine, throttledProgressSink } from './strea
 /**
  * LaunchStreamEvent is one NDJSON line the launch route streams: a step
  * event as a phase begins, a progress event when the Get-steps hf download's
- * tqdm stderr folds into a structured state, or the final result event. The
- * object literal union keeps the card's reader honest: a line is a step, a
- * progress, or a result, and a result is either the full launch result or
- * the broken-launch fallback that names the failure.
+ * tqdm stderr folds into a structured state, a sudo event when the run's
+ * sudo observer announces a guarded command waiting for the user's password
+ * on the launching CLI, or the final result event. The object literal union
+ * keeps the card's reader honest: a line is a step, a progress, a sudo, or a
+ * result, and a result is either the full launch result or the broken-launch
+ * fallback that names the failure.
  */
 type LaunchStreamEvent =
   | { step: LaunchStep }
   | { progress: HfProgress }
+  | { sudo: true }
   | { result: LaunchResult | { healthy: false; detail: string } }
 
 /**
@@ -62,6 +66,12 @@ export function launchRoute(
       // progress event when a fold yields one (throttled to the half-second
       // cadence), between the step and result events.
       const onChunk = throttledProgressSink((progress) => writeLine({ progress }))
+      // The run's sudo observer calls this when a guarded command waits for
+      // the password on the launching CLI (see launchEngine): the card reads
+      // the line as "Sudo needed" on its Launch control.
+      const onSudo = (): void => {
+        writeLine({ sudo: true })
+      }
       // The card's provider-form Cancel aborts the fetch, which closes the
       // response: the abort interrupts the in-flight Get-step hf child
       // (SIGINT, then SIGTERM), and the persisted run carries the "Canceled"
@@ -75,6 +85,7 @@ export function launchRoute(
           launchHost,
           signal,
           onChunk,
+          onSudo,
         )
         writeLine({ result })
       } catch (error) {

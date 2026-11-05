@@ -25,7 +25,7 @@ import type {
   VramModel,
   VramVerdict,
 } from 'dsh-plugin-local-infer/core'
-import { DEFAULT_LOG_PATH_TEMPLATE, providerIdFor, resolveLogPath } from 'dsh-plugin-local-infer/core'
+import { DEFAULT_LOG_PATH_TEMPLATE, SUDO_CLI_NOTE, providerIdFor, resolveLogPath } from 'dsh-plugin-local-infer/core'
 import { LocalInfer } from 'dsh-plugin-local-infer/service'
 import type {
   DownloadResult,
@@ -164,8 +164,15 @@ function stubService(
     onSetDeathObserver?: (
       observer: ((event: EngineDeathEvent) => void) | undefined,
     ) => void
+    onSetSudoObserver?: (
+      observer: ((command: string) => void) | undefined,
+    ) => void
   } = {},
 ): LocalInferService {
+  // The sudo seam: the stub keeps the observer setSudoObserver registers and
+  // notifySudoNeeded dispatches the command to it, mirroring the real
+  // service, so a test can drive a guarded announcement end to end.
+  let sudoObserver: ((command: string) => void) | undefined
   return {
     detectHardware: async () => HW,
     estimate: async () => ({
@@ -254,10 +261,16 @@ function stubService(
     ): void => {
       extras.onSetDeathObserver?.(observer)
     },
-    // The sudo seam: no route calls it yet, so the members exist to satisfy
-    // the published interface, mirroring the real service's no-observer case.
-    setSudoObserver: (): void => undefined,
-    notifySudoNeeded: (): void => undefined,
+    // The sudo seam: setSudoObserver stores (or clears) the observer the
+    // launch run registers, and notifySudoNeeded dispatches to it, the way
+    // the real service forwards a guarded command to the route's hook.
+    setSudoObserver: (observer: ((command: string) => void) | undefined): void => {
+      sudoObserver = observer
+      extras.onSetSudoObserver?.(observer)
+    },
+    notifySudoNeeded: (command: string): void => {
+      sudoObserver?.(command)
+    },
   } as unknown as LocalInferService
 }
 
@@ -285,9 +298,18 @@ function pointHomeAt(dir: string): void {
  * whose run fails (the sync and build steps stream through `runStream`, so
  * a failed rebase or clone is a `runStream` failure). The launch route tests
  * inject it too, so a launch's Get steps never clone a real repo in CI.
+ * The optional `announceSudo` plays the guarded node host's rule: a command
+ * containing `sudo` is announced through the hook before it runs, the way
+ * `createNodeLifecycleHost` announces a command whose credential probe found
+ * no cached credentials.
  */
 function stubGetHost(
-  options?: { exists?: boolean; stream?: Record<string, string>; fail?: string[] },
+  options?: {
+    exists?: boolean
+    stream?: Record<string, string>
+    fail?: string[]
+    announceSudo?: (command: string) => void
+  },
 ) {
   const state = { run: [] as string[], streamed: [] as string[], logged: '' }
   const streamText = (command: string): string => {
@@ -297,9 +319,15 @@ function stubGetHost(
   }
   const fails = (command: string): boolean =>
     (options?.fail ?? []).some((needle) => command.includes(needle))
+  const announceSudo = (command: string): void => {
+    if (command.includes('sudo')) {
+      options?.announceSudo?.(command)
+    }
+  }
   const host: LifecycleHost = {
     async run(command: string) {
       state.run.push(command)
+      announceSudo(command)
       if (command.includes('rev-parse --is-inside-work-tree')) {
         return options?.exists === false ? { ok: false } : { ok: true }
       }
@@ -307,6 +335,7 @@ function stubGetHost(
     },
     async runStream(command: string, onOutput: (chunk: string) => void) {
       state.streamed.push(command)
+      announceSudo(command)
       const text = streamText(command)
       if (text !== '') {
         onOutput(text)
@@ -1844,6 +1873,94 @@ describe('route handlers over a fake web server', () => {
       'result',
     ])
     expect(events[events.length - 1].result.healthy).toBe(true)
+  })
+
+  it('streams a sudo event and persists the CLI note when the host announces a waiting sudo', async () => {
+    writeConfig('ninfer', {}, true)
+    const observerSets: Array<((command: string) => void) | undefined> = []
+    const service = stubService([], {
+      onSetSudoObserver: (observer) => {
+        observerSets.push(observer)
+      },
+    })
+    // The stub host plays the guarded node host: the body's sudo build
+    // command is announced through the service's notify seam before it
+    // runs, the way the real host announces after a credential probe that
+    // found nothing cached.
+    const host = stubGetHost({
+      announceSudo: (command) => service.notifySudoNeeded(command),
+    }).host
+    const routes = registeredRoutes(service, host)
+    const launchRoute = routes.find((route) => route.path === '/local-infer/launch')
+    const res = fakeRes()
+    await launchRoute?.handler(
+      fakeReq(
+        'POST',
+        '/local-infer/launch',
+        JSON.stringify({
+          engine: 'ninfer',
+          platform: { buildCommands: 'sudo ln -sf ./build/engine /usr/local/bin/engine' },
+        }),
+      ),
+      res,
+    )
+    expect(res.status).toBe(200)
+    const lines = res.body.split('\n').filter((line) => line !== '')
+    // The sudo event is its own exact NDJSON line.
+    expect(lines).toContain('{"sudo":true}')
+    const kinds = lines
+      .map((line) => JSON.parse(line))
+      .map((event) =>
+        event.step !== undefined
+          ? event.step
+          : event.progress !== undefined
+            ? 'progress'
+            : event.sudo === true
+              ? 'sudo'
+              : 'result',
+      )
+    // The sudo event lands between the phases and the result, while the
+    // command is still waiting on the prompt.
+    expect(kinds).toEqual(['prereqs', 'sudo', 'result'])
+    // The note line lands in the persisted last-run logs exactly once: the
+    // run's log sink carries it into the composed run.
+    const lastLogs = readConfig().lastLogs
+    expect(lastLogs).toContain(`${SUDO_CLI_NOTE}\n`)
+    expect(lastLogs.split(SUDO_CLI_NOTE).length - 1).toBe(1)
+    // The run registered its observer and cleared it when it settled:
+    // registered, then cleared.
+    expect(observerSets).toHaveLength(2)
+    expect(observerSets[0]).toBeTypeOf('function')
+    expect(observerSets[1]).toBeUndefined()
+  })
+
+  it('leaves no sudo observer registered after a failing launch run', async () => {
+    writeConfig('ninfer', {}, false)
+    const observerSets: Array<((command: string) => void) | undefined> = []
+    const service = stubService([], {
+      onSetSudoObserver: (observer) => {
+        observerSets.push(observer)
+      },
+    })
+    service.launch = async (): Promise<LaunchResult> => {
+      throw new Error('deploy exploded')
+    }
+    const routes = registeredRoutes(service, stubGetHost().host)
+    const launchRoute = routes.find((route) => route.path === '/local-infer/launch')
+    const res = fakeRes()
+    await launchRoute?.handler(
+      fakeReq('POST', '/local-infer/launch', JSON.stringify({ engine: 'ninfer' })),
+      res,
+    )
+    // The broken deploy still settles the stream with an unhealthy result.
+    const events = res.body.split('\n').filter((line) => line !== '').map((line) => JSON.parse(line))
+    expect(events[events.length - 1].result.healthy).toBe(false)
+    expect(events[events.length - 1].result.detail).toContain('deploy exploded')
+    // The failed run unregistered its observer too, so a second launch
+    // never announces through the dead run's stream writer.
+    expect(observerSets).toHaveLength(2)
+    expect(observerSets[0]).toBeTypeOf('function')
+    expect(observerSets[1]).toBeUndefined()
   })
 
   it('streams a progress event between the step and result events', async () => {

@@ -4,9 +4,10 @@
  * the health poll). The launch streams its progress as NDJSON: a step event
  * as each phase (prereqs, download, build, launch) begins, a progress event
  * when the Get-steps hf download's tqdm stderr folds into a structured
- * state, then a final result event. The card's Launch control reads the step
- * that is running and times out only the launch (health-poll) step; the
- * rebuild steps run as long as they need to.
+ * state, a sudo event when a guarded command waits for the user's password
+ * on the launching CLI, then a final result event. The card's Launch control
+ * reads the step that is running and times out only the launch (health-poll)
+ * step; the rebuild steps run as long as they need to.
  * @module dsh-plugin-local-infer/ui/routes/launch
  */
 import { nodeLifecycleHost } from '../../../providers/lib/index.js';
@@ -41,13 +42,19 @@ export function launchRoute(localInfer, launchHost = nodeLifecycleHost) {
             // progress event when a fold yields one (throttled to the half-second
             // cadence), between the step and result events.
             const onChunk = throttledProgressSink((progress) => writeLine({ progress }));
+            // The run's sudo observer calls this when a guarded command waits for
+            // the password on the launching CLI (see launchEngine): the card reads
+            // the line as "Sudo needed" on its Launch control.
+            const onSudo = () => {
+                writeLine({ sudo: true });
+            };
             // The card's provider-form Cancel aborts the fetch, which closes the
             // response: the abort interrupts the in-flight Get-step hf child
             // (SIGINT, then SIGTERM), and the persisted run carries the "Canceled"
             // line. A close after the run settled is the normal end, not a cancel.
             const { signal, markFinished } = abortOnResponseClose(res);
             try {
-                const result = await launchEngine(localInfer, launchRequestFromBody(body), onProgress, launchHost, signal, onChunk);
+                const result = await launchEngine(localInfer, launchRequestFromBody(body), onProgress, launchHost, signal, onChunk, onSudo);
                 writeLine({ result });
             }
             catch (error) {
