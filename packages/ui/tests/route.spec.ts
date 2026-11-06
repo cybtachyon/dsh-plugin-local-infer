@@ -28,6 +28,7 @@ import type {
 import { DEFAULT_LOG_PATH_TEMPLATE, SUDO_CLI_NOTE, providerIdFor, resolveLogPath } from 'dsh-plugin-local-infer/core'
 import { LocalInfer } from 'dsh-plugin-local-infer/service'
 import type {
+  DownloadModelOptions,
   DownloadResult,
   EngineDeathEvent,
   LaunchResult,
@@ -149,9 +150,17 @@ function stubService(
     onPlatform?: (config: EnginePlatformConfig) => void
     models?: readonly VramModel[]
     hfCliPath?: string | null
-    onDownload?: (args: { entry: DefaultModel; directory: string }) => void
+    onDownload?: (args: {
+      entry: DefaultModel
+      directory: string
+      useHubCache: boolean
+    }) => void
     downloadResult?: DownloadResult
-    onDownloadChatTemplate?: (args: { repo: string; directory: string }) => void
+    onDownloadChatTemplate?: (args: {
+      repo: string
+      directory: string
+      useHubCache: boolean
+    }) => void
     chatTemplateDownloadResult?: DownloadResult
     modelIsRegisteredResult?: boolean
     modelEntries?: ModelDirectoryEntry[]
@@ -246,12 +255,20 @@ function stubService(
     fetchPreset: async () => ({ preset: undefined, stored: false, degraded: true }),
     defaultModelDirectory: () => MODEL_DIR,
     hfCliAvailable: async () => extras.hfCliPath ?? null,
-    downloadModel: async (entry: DefaultModel, directory: string) => {
-      extras.onDownload?.({ entry, directory })
+    downloadModel: async (entry: DefaultModel, directory: string, options?: DownloadModelOptions) => {
+      extras.onDownload?.({ entry, directory, useHubCache: options?.useHubCache === true })
       return extras.downloadResult ?? { ok: true }
     },
-    downloadChatTemplate: async (repo: string, directory: string) => {
-      extras.onDownloadChatTemplate?.({ repo, directory })
+    downloadChatTemplate: async (
+      repo: string,
+      directory: string,
+      options?: DownloadModelOptions,
+    ) => {
+      extras.onDownloadChatTemplate?.({
+        repo,
+        directory,
+        useHubCache: options?.useHubCache === true,
+      })
       return extras.chatTemplateDownloadResult ?? { ok: true }
     },
     modelIsRegistered: async () => extras.modelIsRegisteredResult ?? false,
@@ -2563,7 +2580,7 @@ describe('model defaults, status, and download read model', () => {
   })
 
   it('resolves the download through the service with the request directory', async () => {
-    let seen: { entry: DefaultModel; directory: string } | undefined
+    let seen: { entry: DefaultModel; directory: string; useHubCache: boolean } | undefined
     const service = stubService([], {
       onDownload: (args) => {
         seen = args
@@ -2577,11 +2594,13 @@ describe('model defaults, status, and download read model', () => {
     expect(result).toEqual({ ok: true })
     expect(seen?.entry?.url).toBe('https://huggingface.co/neroued/Qwen3.6-35B-A3B-NInfer')
     expect(seen?.directory).toBe('/custom/models')
+    // A request-named directory keeps the flat --local-dir layout.
+    expect(seen?.useHubCache).toBe(false)
   })
 
   it('falls back to the stored config directory and model when the request names none', async () => {
     writeConfig('ninfer', { model: 'qwen3-27b', modelDirectory: '/stored/models' }, false)
-    let seen: { entry: DefaultModel; directory: string } | undefined
+    let seen: { entry: DefaultModel; directory: string; useHubCache: boolean } | undefined
     const service = stubService([], {
       onDownload: (args) => {
         seen = args
@@ -2590,6 +2609,50 @@ describe('model defaults, status, and download read model', () => {
     await downloadFor(service, {})
     expect(seen?.entry?.modelId).toBe('qwen3-27b')
     expect(seen?.directory).toBe('/stored/models')
+    // A stored-config directory keeps the flat --local-dir layout too.
+    expect(seen?.useHubCache).toBe(false)
+  })
+
+  it('follows the request, stored, and hub-cache precedence with the artifact cached', async () => {
+    // The three levels in one run, with the artifact already cached in the
+    // fake hub cache: a cached artifact never turns the download base into
+    // the resolved snapshot directory (the hf CLI resolves its own snapshot
+    // destination), so the route keeps the hub cache root as the base.
+    const snapshot = join(
+      MODEL_DIR,
+      'models--neroued--Qwen3.8-27B-nvfp4-NInfer',
+      'snapshots',
+      'cafebabe1234567890',
+    )
+    mkdirSync(snapshot, { recursive: true })
+    writeFileSync(join(snapshot, 'qwen3_8_27b_nvfp4.ninfer'), 'cached')
+    writeConfig('ninfer', { model: 'qwen3-27b', modelDirectory: '/stored/models' }, false)
+    const seen: { directory: string; useHubCache: boolean }[] = []
+    const service = stubService([], {
+      onDownload: (args) => {
+        seen.push({ directory: args.directory, useHubCache: args.useHubCache })
+      },
+    })
+    try {
+      // Level 1: the request directory wins over the stored config.
+      await downloadFor(service, { engine: 'ninfer', model: 'qwen3-27b', directory: '/req/models' })
+      // Level 2: the stored config wins over the hub cache root.
+      await downloadFor(service, { engine: 'ninfer', model: 'qwen3-27b' })
+      // Level 3: neither names one, so the hub cache root is the base and the
+      // hub-cache layout applies (no --local-dir; the hf CLI picks the snapshot).
+      writeConfig('ninfer', { model: 'qwen3-27b' }, false)
+      await downloadFor(service, { engine: 'ninfer', model: 'qwen3-27b' })
+      expect(seen).toEqual([
+        { directory: '/req/models', useHubCache: false },
+        { directory: '/stored/models', useHubCache: false },
+        { directory: MODEL_DIR, useHubCache: true },
+      ])
+    } finally {
+      rmSync(join(MODEL_DIR, 'models--neroued--Qwen3.8-27B-nvfp4-NInfer'), {
+        recursive: true,
+        force: true,
+      })
+    }
   })
 
   it('refuses a download for a model no default names with a 404', async () => {
@@ -3754,8 +3817,8 @@ describe('shared Get-steps routine', () => {
       },
       true,
     )
-    const downloads: { entry: DefaultModel; directory: string }[] = []
-    const templates: { repo: string; directory: string }[] = []
+    const downloads: { entry: DefaultModel; directory: string; useHubCache: boolean }[] = []
+    const templates: { repo: string; directory: string; useHubCache: boolean }[] = []
     const service = stubService([], {
       deps: [TEST_DEP],
       onDownload: (args) => downloads.push(args),
@@ -3802,7 +3865,9 @@ describe('shared Get-steps routine', () => {
     // the model directory.
     expect(downloads).toHaveLength(1)
     expect(downloads[0]?.directory).toBe(MODEL_DIR)
-    expect(templates).toEqual([{ repo: 'froggeric/Qwen-Fixed-Chat-Templates', directory: MODEL_DIR }])
+    expect(templates).toEqual([
+      { repo: 'froggeric/Qwen-Fixed-Chat-Templates', directory: MODEL_DIR, useHubCache: false },
+    ])
     expect(logged).toContain('get complete')
   })
 
@@ -3811,7 +3876,7 @@ describe('shared Get-steps routine', () => {
     // download targets the cache root (no --local-dir) and leaves no duplicate
     // flat dir. (Resume is within-invocation only; a killed run re-downloads.)
     writeConfig('ninfer', { model: 'qwen3-27b' }, true)
-    const downloads: { entry: DefaultModel; directory: string }[] = []
+    const downloads: { entry: DefaultModel; directory: string; useHubCache: boolean }[] = []
     const service = stubService([], { onDownload: (args) => downloads.push(args) })
     const { host } = stubGetHost({ exists: false })
     let logged = ''
@@ -3853,7 +3918,7 @@ describe('shared Get-steps routine', () => {
     writeFileSync(join(snapshot, 'qwen3_8_27b_nvfp4.ninfer'), 'cached')
     try {
       writeConfig('ninfer', { model: 'qwen3-27b' }, true)
-      const downloads: { entry: DefaultModel; directory: string }[] = []
+      const downloads: { entry: DefaultModel; directory: string; useHubCache: boolean }[] = []
       const service = stubService([], { onDownload: (args) => downloads.push(args) })
       const { host } = stubGetHost({ exists: false })
       let logged = ''
@@ -3883,7 +3948,7 @@ describe('shared Get-steps routine', () => {
   it('skips the model download when the artifact is already present', async () => {
     writeConfig('ninfer', { model: 'qwen3-27b', modelDirectory: MODEL_DIR }, true)
     writeFileSync(join(MODEL_DIR, 'qwen3_8_27b_nvfp4.ninfer'), 'present')
-    const downloads: { entry: DefaultModel; directory: string }[] = []
+    const downloads: { entry: DefaultModel; directory: string; useHubCache: boolean }[] = []
     const service = stubService([], { onDownload: (args) => downloads.push(args) })
     const { host } = stubGetHost({ exists: false })
     let logged = ''
@@ -3915,7 +3980,7 @@ describe('shared Get-steps routine', () => {
       true,
     )
     writeFileSync(join(MODEL_DIR, 'chat_template.jinja'), 'present')
-    const templates: { repo: string; directory: string }[] = []
+    const templates: { repo: string; directory: string; useHubCache: boolean }[] = []
     const service = stubService([], { onDownloadChatTemplate: (args) => templates.push(args) })
     const { host } = stubGetHost({ exists: false })
     let logged = ''

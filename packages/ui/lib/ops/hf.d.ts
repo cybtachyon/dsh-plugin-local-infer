@@ -2,8 +2,9 @@
  * The hf CLI download operations: downloadFor runs the download for a default
  * model, and chatTemplateDownloadFor pulls a selected chat template into the
  * model directory. Both resolve the directory through resolveDownloadTarget
- * (the request, the stored config, and the plugin's default model directory
- * in that order), so the hub-cache layout rule has one home.
+ * (the request, the stored config, and the hub cache root in that order,
+ * through the shared override rule), so the hub-cache layout rule has one
+ * home across the download routes and the card.
  * @module dsh-plugin-local-infer/ui/ops/hf
  */
 import type { DownloadResult, LocalInferService } from 'dsh-plugin-local-infer/service';
