@@ -459,19 +459,21 @@ function basaltStubHost() {
  * model's content-addressed tree (the blobs store the presence check looks
  * for, plus a snapshot commit holding the .basalt file), so a hub-cache
  * layout deploy reads a deterministic tree, never the real cache. Returns
- * the hub root and a cleanup that restores the env and removes the dir.
+ * the hub root, the seeded snapshot artifact path, and a cleanup that
+ * restores the env and removes the dir.
  */
-function seededHubCache(): { hub: string; cleanup: () => void } {
+function seededHubCache(): { hub: string; snapshot: string; cleanup: () => void } {
   const hub = mkdtempSync(join(tmpdir(), 'basalt-hub-'))
   const saved = process.env.HF_HUB_CACHE
   process.env.HF_HUB_CACHE = hub
   const modelDir = hubCacheModelDirectory(repoIdFromUrl(`https://huggingface.co/${BASALT_MODEL_REPO}`))
   mkdirSync(join(hub, modelDir, 'blobs'), { recursive: true })
-  const snapshot = join(hub, modelDir, 'snapshots', 'c1')
-  mkdirSync(snapshot, { recursive: true })
-  writeFileSync(join(snapshot, BASALT_MODEL_FILE), 'weights')
+  const snapshotDir = join(hub, modelDir, 'snapshots', 'c1')
+  mkdirSync(snapshotDir, { recursive: true })
+  writeFileSync(join(snapshotDir, BASALT_MODEL_FILE), 'weights')
   return {
     hub,
+    snapshot: join(snapshotDir, BASALT_MODEL_FILE),
     cleanup: (): void => {
       if (saved === undefined) delete process.env.HF_HUB_CACHE
       else process.env.HF_HUB_CACHE = saved
@@ -657,9 +659,16 @@ describe('BasaltAdapter.deploy', () => {
       `hf download ${BASALT_MODEL_REPO} ${BASALT_MODEL_FILE} --local-dir models --format human`,
     )
     // The config path is the model download target base directory joined with
-    // the config file name (the flat --local-dir layout), written as-is.
+    // the config file name (the flat --local-dir layout).
     expect(state.writeFile).toHaveLength(1)
     expect(state.writeFile[0]?.path).toBe(join('models', BASALT_CONFIG_FILE))
+    // The written envelope carries the downloaded artifact path resolved
+    // into the models entry (the flat --local-dir join), replacing the
+    // renderLaunch placeholder.
+    const written = JSON.parse(state.writeFile[0]?.content ?? '{}') as {
+      models?: Record<string, unknown>[]
+    }
+    expect(written.models?.[0]?.model).toBe(join('models', 'Qwen3.8-FN-NVFP4-DQ6_K.basalt'))
     // The spawn runs the serve command with the config and engine-bin flags,
     // in the engine directory. The first token is the build-tree path joined
     // against the engine directory (CMake's bin/ output dir), so the spawn
@@ -730,6 +739,9 @@ describe('BasaltAdapter.deploy', () => {
     expect(result.ok).toBe(true)
     expect(state.spawn).toHaveLength(1)
     expect(state.spawn[0]?.argv[0]).toBe(join('/src/basalt', relativeBinary))
+    // The hand-built content is not a v2 envelope, so the artifact swap
+    // leaves it untouched: the config is written verbatim.
+    expect(state.writeFile[0]?.content).toBe('{}')
   })
 
   it('fails the launch when the model download fails', async () => {
@@ -756,7 +768,7 @@ describe('BasaltAdapter.deploy', () => {
   it('skips the download and spawns serve for a seeded hub-cache artifact', async () => {
     const { host, state } = basaltStubHost()
     state.runOutput['rev-list'] = '0'
-    const { hub, cleanup } = seededHubCache()
+    const { hub, snapshot, cleanup } = seededHubCache()
     try {
       const adapter = new BasaltAdapter(host)
       // A bare config (no model directory) targets the hub cache, so the
@@ -783,6 +795,13 @@ describe('BasaltAdapter.deploy', () => {
       ])
       expect(state.writeFile).toHaveLength(1)
       expect(state.writeFile[0]?.path).toBe(join(hub, BASALT_CONFIG_FILE))
+      // The written config carries the hub-cache snapshot path in the models
+      // entry: the artifact delivery the serve CLI resolves (no --model flag
+      // rides the argv to carry it).
+      const written = JSON.parse(state.writeFile[0]?.content ?? '{}') as {
+        models?: Record<string, unknown>[]
+      }
+      expect(written.models?.[0]?.model).toBe(snapshot)
     } finally {
       cleanup()
     }
@@ -811,12 +830,12 @@ describe('BasaltAdapter.deploy', () => {
     }
   })
 
-  it('writes the spawn argv back onto the plan for the launch record', async () => {
+  it('writes the resolved config content and spawn argv back onto the plan', async () => {
     const { host, state } = basaltStubHost()
     state.runOutput['rev-list'] = '0'
     // The seed keeps the bare-config deploy hermetic: the artifact is on
     // disk, so no download runs and the spawn is reached.
-    const { cleanup } = seededHubCache()
+    const { snapshot, cleanup } = seededHubCache()
     try {
       const adapter = new BasaltAdapter(host)
       const plan = adapter.renderLaunch({ port: 8090 }, ADAPTER_HW)
@@ -825,11 +844,17 @@ describe('BasaltAdapter.deploy', () => {
         engineDirectory: '/src/basalt',
       })
       expect(result.ok).toBe(true)
-      // The plan is the launch record's argv source, and the re-link rule
-      // substring-matches every record argv token against the live command
-      // line, so deploy leaves the plan carrying exactly what it spawned:
-      // the first token is the engine-directory-joined binary, not the
-      // rendered build-tree relative path.
+      // The plan mirrors what deploy wrote and spawned: the config content
+      // carries the snapshot artifact path in the models entry, and the argv
+      // is exactly the spawn. The plan is the launch record's argv source,
+      // and the re-link rule substring-matches every record argv token
+      // against the live command line, so the record must name the spawn,
+      // not the rendered build-tree relative path.
+      expect(plan.configFile?.content).toBe(state.writeFile[0]?.content)
+      const written = JSON.parse(plan.configFile?.content ?? '{}') as {
+        models?: Record<string, unknown>[]
+      }
+      expect(written.models?.[0]?.model).toBe(snapshot)
       expect(plan.argv).toEqual(state.spawn[0]?.argv)
       expect(plan.argv?.[0]).toBe(join('/src/basalt', 'bin', 'basalt'))
     } finally {

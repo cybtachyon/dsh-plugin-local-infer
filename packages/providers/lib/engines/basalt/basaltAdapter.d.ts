@@ -9,7 +9,8 @@
  * the CLI-only `--engine-bin` flag, so it stays fixed no matter how many
  * settings the form offers. `deploy` builds the engine in the checkout (the
  * acquisition build steps), downloads the `.basalt` model into the model
- * directory, writes the config file, and spawns the serve command.
+ * directory, stamps the artifact path into the config entry, writes the
+ * config file, and spawns the serve command.
  * `healthCheck` polls the health URL and reports the start phase from the
  * tracked process output. `stop` signals the tracked process.
  * @module dsh-plugin-local-infer/providers/engines/basalt/basaltAdapter
@@ -27,9 +28,10 @@ export declare const BASALT_CONFIG_FILE = "basalt_config.json";
  * `basalt serve --config --engine-bin` process plan (the settings and the
  * served model ride the versioned config file; the argv carries the CLI-only
  * `--engine-bin` flag); `deploy` builds the engine, downloads the model,
- * writes the config file, and spawns the serve command; `healthCheck` polls
- * the health URL and reports the start phase from the tracked process
- * output; `stop` signals the tracked process.
+ * stamps the artifact path into the config entry, writes the config file,
+ * and spawns the serve command; `healthCheck` polls the health URL and
+ * reports the start phase from the tracked process output; `stop` signals
+ * the tracked process.
  */
 export declare class BasaltAdapter extends EngineAdapter {
     readonly id = "basalt";
@@ -59,14 +61,6 @@ export declare class BasaltAdapter extends EngineAdapter {
      * download fails or leaves no snapshot.
      */
     private ensureModelArtifact;
-    /**
-     * withModelArgv swaps the --model flag's value token for the concrete
-     * artifact path. It builds a new array rather than mutating the plan's;
-     * deploy then writes the fully resolved spawn argv back onto the plan, so
-     * the launch record carries what the process actually runs. A plan with no
-     * --model flag (a pre-flag plan) stands as-is.
-     */
-    private withModelArgv;
     /**
      * writeConfigFile writes the config file the plan names, so the engine's
      * --config flag points at a path that exists. The config path is always
