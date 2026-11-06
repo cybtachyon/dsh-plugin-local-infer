@@ -33,7 +33,7 @@ export { checkDeps, detectPackageManager, osLabel, planDeps, renderInstallString
 export { guardSudoCommand, sudoFailureDetail, SUDO_CLI_NOTE, SUDO_PASSWORD_TIMEOUT_MS, SUDO_PROBE_COMMAND, } from './sudo.ts';
 export type { SudoGuard, SudoGuardOptions, SudoTimer } from './sudo.ts';
 export { CHAT_TEMPLATE_FILE, chatTemplateArtifactPath, hfChatTemplateCommand, hfDownloadCommand, hfDownloadFileCommand, hubCacheModelDirectory, hubCacheSnapshotFilePath, isModelDirectoryOverridden, modelArtifactPath, modelCacheEntriesForEngine, modelEntriesForEngine, repoIdFromUrl, repoNameFromUrl, } from './models.ts';
-export type { DefaultModel, ModelCacheEntry, ModelDirectoryEntry, } from './models.ts';
+export type { DefaultModel, ModelCacheEntry, ModelDirectoryEntry, ModelDownloadSource, } from './models.ts';
 export { hfDatasetsCacheDirectory, hfHubCacheDirectory, modelDownloadTarget, } from './hf-cache.ts';
 export type { ModelDownloadTarget } from './hf-cache.ts';
 export { foldHfProgressChunk, parseHfProgressLine } from './progress.ts';

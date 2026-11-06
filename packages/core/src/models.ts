@@ -19,6 +19,15 @@ export interface DefaultModel {
 }
 
 /**
+ * ModelDownloadSource is the half of a DefaultModel the presence check, the
+ * hf CLI command, and the hub-cache lookup read: the Hugging Face repo URL
+ * and the optional artifact file. A full list entry satisfies it, and an
+ * adapter that only resolves the download pair composes just these fields
+ * instead of restating the entry's inert registry data.
+ */
+export type ModelDownloadSource = Pick<DefaultModel, 'url' | 'file'>
+
+/**
  * repoIdFromUrl turns a Hugging Face repo URL into the `owner/name` repo id
  * the hf CLI takes. A URL with no owner/name pair reads as an empty id, which
  * the command builder degrades to a repo-less download the caller rejects.
@@ -72,7 +81,7 @@ export function isModelDirectoryOverridden(modelDirectory: unknown): boolean {
  * the `directory` is then the hub cache root, not the per-model folder.
  */
 export function modelArtifactPath(
-  entry: DefaultModel,
+  entry: ModelDownloadSource,
   directory: string,
   useHubCache = false,
 ): string {
@@ -109,16 +118,16 @@ export function hfDownloadFileCommand(
 }
 
 /**
- * hfDownloadCommand renders the hf CLI download for one default model: the
- * repo, the artifact file when the entry names one, and the `--local-dir`
- * target. With the hub-cache layout (`useHubCache`), the `--local-dir` is
+ * hfDownloadCommand renders the hf CLI download for one model download
+ * source: the repo, the artifact file when the entry names one, and the
+ * `--local-dir` target. With the hub-cache layout (`useHubCache`), the `--local-dir` is
  * dropped so the hf CLI writes into the hub cache's `models--{ns}--{name}`
  * directory (the content-addressed `blobs/` plus the `snapshots/`). The
  * string is the single source the download route runs and the card shows
  * beside its Download button, rendered through hfDownloadFileCommand.
  */
 export function hfDownloadCommand(
-  entry: DefaultModel,
+  entry: ModelDownloadSource,
   directory: string,
   useHubCache = false,
 ): string {

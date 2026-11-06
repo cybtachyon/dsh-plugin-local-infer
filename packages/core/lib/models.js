@@ -79,9 +79,9 @@ export function hfDownloadFileCommand(repo, file, directory, useHubCache = false
     return `hf download ${repo}${filePart}${localDir} --format human`;
 }
 /**
- * hfDownloadCommand renders the hf CLI download for one default model: the
- * repo, the artifact file when the entry names one, and the `--local-dir`
- * target. With the hub-cache layout (`useHubCache`), the `--local-dir` is
+ * hfDownloadCommand renders the hf CLI download for one model download
+ * source: the repo, the artifact file when the entry names one, and the
+ * `--local-dir` target. With the hub-cache layout (`useHubCache`), the `--local-dir` is
  * dropped so the hf CLI writes into the hub cache's `models--{ns}--{name}`
  * directory (the content-addressed `blobs/` plus the `snapshots/`). The
  * string is the single source the download route runs and the card shows
