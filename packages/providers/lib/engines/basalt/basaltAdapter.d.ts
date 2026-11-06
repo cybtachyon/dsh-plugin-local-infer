@@ -1,17 +1,17 @@
 /**
  * The Basalt engine adapter. BasaltAdapter is the Basalt engine (the C++/CUDA
  * serve/ server for the Qwen3.8-Flash-Next MoE model, Blackwell-only).
- * `renderLaunch` renders a `basalt serve --config --model --engine-bin`
- * process plan: the binary name comes from the host OS profile, every
- * setting lands in the `basalt_config.json` the plan's `configFile` carries
- * (rendered from the spec surface with `configFileFromSpecs`), and the argv
- * carries the `--model` and `--engine-bin` flags the serve CLI requires, so
- * it stays fixed no matter how many settings the form offers. `deploy` builds
- * the engine in the checkout (the acquisition build steps), downloads the
- * `.basalt` model into the model directory, writes the config file, and
- * spawns the serve command. `healthCheck` polls the health URL and reports
- * the start phase from the tracked process output. `stop` signals the
- * tracked process.
+ * `renderLaunch` renders a `basalt serve --config --engine-bin` process
+ * plan: the binary name comes from the host OS profile, every setting and
+ * the served model land in the `basalt_config.json` the plan's `configFile`
+ * carries (the spec surface rendered with `configFileFromSpecs` into the
+ * versioned v2 envelope the 0.3.0 serve CLI accepts), and the argv carries
+ * the CLI-only `--engine-bin` flag, so it stays fixed no matter how many
+ * settings the form offers. `deploy` builds the engine in the checkout (the
+ * acquisition build steps), downloads the `.basalt` model into the model
+ * directory, writes the config file, and spawns the serve command.
+ * `healthCheck` polls the health URL and reports the start phase from the
+ * tracked process output. `stop` signals the tracked process.
  * @module dsh-plugin-local-infer/providers/engines/basalt/basaltAdapter
  */
 import { EngineAdapter } from '../../../../core/lib/index.js';
@@ -24,12 +24,12 @@ export { BASALT_MODEL_FILE, BASALT_MODEL_REPO } from './basalt.ts';
 export declare const BASALT_CONFIG_FILE = "basalt_config.json";
 /**
  * BasaltAdapter is the Basalt engine. `renderLaunch` renders a
- * `basalt serve --config --model --engine-bin` process plan (the settings
- * ride the config file; the argv carries the `--model` and `--engine-bin`
- * flags the serve CLI requires); `deploy` builds the engine, downloads the
- * model, writes the config file, and spawns the serve command;
- * `healthCheck` polls the health URL and reports the start phase from the
- * tracked process output; `stop` signals the tracked process.
+ * `basalt serve --config --engine-bin` process plan (the settings and the
+ * served model ride the versioned config file; the argv carries the CLI-only
+ * `--engine-bin` flag); `deploy` builds the engine, downloads the model,
+ * writes the config file, and spawns the serve command; `healthCheck` polls
+ * the health URL and reports the start phase from the tracked process
+ * output; `stop` signals the tracked process.
  */
 export declare class BasaltAdapter extends EngineAdapter {
     readonly id = "basalt";
