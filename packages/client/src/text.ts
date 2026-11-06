@@ -113,7 +113,7 @@ const en = {
       'How the engine is deployed. local builds it from source on the host; docker pulls a prebuilt image. The dependency plan and hardware guidelines price the selected mode.',
     modelDirHelp: 'Where model files are downloaded and served from.',
     engineDirHelp:
-      'Local directory of the engine source. Get clones or updates the git repo and builds the engine here; with no override it lands in the model directory under the engine name.',
+      'Local directory of the engine source. Get clones or updates the git repo and builds the engine here; with no override it lands in ~/.cache/dsh/infer/<engine>.',
     engineForkHelp: 'Git repo that overrides the engine default upstream for the clone step.',
     buildCommandsHelp:
       'Local build command that overrides the engine default for the checkout build. Shown only in local build mode.',
@@ -270,7 +270,7 @@ const zh: TextTable = {
     buildHelp:
       '引擎的部署方式。local 在主机上从源码构建；docker 拉取预构建镜像。依赖计划和硬件准则按所选模式计价。',
     modelDirHelp: '模型文件的下载和服务目录。',
-    engineDirHelp: '引擎源码的本地目录。“获取”会在此克隆或更新 git 仓库并构建引擎；未覆盖时，仓库落在模型目录下以引擎命名的子目录中。',
+    engineDirHelp: '引擎源码的本地目录。“获取”会在此克隆或更新 git 仓库并构建引擎；未覆盖时，仓库落在 ~/.cache/dsh/infer/<引擎> 目录中。',
     engineForkHelp: '用于克隆步骤、覆盖引擎默认上游的 git 仓库。',
     buildCommandsHelp: '本地构建命令，覆盖引擎默认的检查构建。仅在本地构建模式下显示。',
     dockerTagHelp: 'docker 部署拉取的镜像标签。仅在 docker 构建模式下显示。',

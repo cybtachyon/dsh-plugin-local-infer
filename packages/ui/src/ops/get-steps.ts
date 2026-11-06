@@ -18,11 +18,11 @@
  */
 
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
 import type { Config, HardwareProfile, LifecycleHost } from 'dsh-plugin-local-infer/core'
 import {
   checkDeps,
   chatTemplateArtifactPath,
+  dshEngineCacheDirectory,
   hfChatTemplateCommand,
   hfDownloadCommand,
   hfHubCacheDirectory,
@@ -94,13 +94,12 @@ export interface GetStepsResult {
 
 /**
  * resolveEngineDirectory picks the checkout the Get step syncs: the Engine
- * Directory override when it names a path, else a per-engine folder inside
- * the model directory (the default model directory, or the config's
- * override), so a Get with no override still has a real place to live.
+ * Directory override when it names a path, else the engine's default
+ * checkout home `~/.cache/dsh/infer/{engineId}` (one checkout per engine,
+ * never a subfolder of a model directory), so a Get with no override still
+ * has a real place to live.
  */
 export function resolveEngineDirectory(
-  localInfer: LocalInferService,
-  config: Config,
   engineId: string,
   platform: StoredPlatformConfig | undefined,
 ): string {
@@ -108,12 +107,7 @@ export function resolveEngineDirectory(
   if (override !== undefined && override.trim() !== '') {
     return override
   }
-  const rawModelDir = config.modelDirectory
-  const modelDir =
-    typeof rawModelDir === 'string' && rawModelDir.trim() !== ''
-      ? rawModelDir
-      : localInfer.defaultModelDirectory()
-  return join(modelDir, engineId)
+  return dshEngineCacheDirectory(engineId)
 }
 
 /**
@@ -424,12 +418,7 @@ export async function runGetSteps(
     localInfer,
     request,
     engine,
-    directory: resolveEngineDirectory(
-      localInfer,
-      request.config,
-      request.engineId,
-      request.platform,
-    ),
+    directory: resolveEngineDirectory(request.engineId, request.platform),
     modelDir: resolveModelDirectory(request.config, modelEntry),
     hubCacheRoot: hfHubCacheDirectory(),
     useHubCache,

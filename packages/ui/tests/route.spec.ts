@@ -25,7 +25,7 @@ import type {
   VramModel,
   VramVerdict,
 } from 'dsh-plugin-local-infer/core'
-import { DEFAULT_LOG_PATH_TEMPLATE, SUDO_CLI_NOTE, providerIdFor, resolveLogPath } from 'dsh-plugin-local-infer/core'
+import { DEFAULT_LOG_PATH_TEMPLATE, SUDO_CLI_NOTE, dshEngineCacheDirectory, providerIdFor, resolveLogPath } from 'dsh-plugin-local-infer/core'
 import { LocalInfer } from 'dsh-plugin-local-infer/service'
 import type {
   DownloadModelOptions,
@@ -731,7 +731,7 @@ describe('launch and stop route helpers', () => {
     // launch always sets: the launch continues with the checkout's current
     // version.
     writeConfig('ninfer', { modelDirectory: MODEL_DIR }, true)
-    mkdirSync(join(MODEL_DIR, 'ninfer'), { recursive: true })
+    mkdirSync(dshEngineCacheDirectory('ninfer'), { recursive: true })
     let seenOptions: { autoRebuild?: boolean } | undefined
     const service = stubService([], {
       launchResult: {
@@ -778,7 +778,7 @@ describe('launch and stop route helpers', () => {
       .sort()
     expect(logNames.length).toBeGreaterThan(0)
     expect(readFileSync(join(dir, logNames[logNames.length - 1]!), 'utf8')).toContain('!! git rebase')
-    rmSync(join(MODEL_DIR, 'ninfer'), { recursive: true, force: true })
+    rmSync(dshEngineCacheDirectory('ninfer'), { recursive: true, force: true })
   })
 
   it('keeps the request auto-rebuild flag when the Get sync passes', async () => {
@@ -1433,9 +1433,10 @@ describe('platform config (§3.10) round trip and launch pass-through', () => {
         seen = config
       },
     })
-    // A launch with no Engine Directory override falls back to the per-engine
-    // folder inside the model directory, so the deploy step resolves a
-    // relative launch path against a real checkout.
+    // A launch with no Engine Directory override falls back to the engine's
+    // default checkout home (~/.cache/dsh/infer/<engine-id>), so the deploy
+    // step resolves a relative launch path against a real checkout; the
+    // fallback rides the in-memory registry only, never the stored map.
     await launchEngine(
       service,
       { engine: 'ninfer', config: { port: 18020 } },
@@ -1444,8 +1445,11 @@ describe('platform config (§3.10) round trip and launch pass-through', () => {
     )
     expect(seen).toEqual({
       engineId: 'ninfer',
-      engineDirectory: join(MODEL_DIR, 'ninfer'),
+      engineDirectory: dshEngineCacheDirectory('ninfer'),
     })
+    // The resolved default never leaks into storage: the stored platform
+    // map stays the clean entry the test wrote.
+    expect(readConfig().platform).toEqual({})
   })
 })
 
@@ -3326,7 +3330,7 @@ describe('get route (git sync, deps, build)', () => {
     }
   }
 
-  it('clones the upstream repo under the model directory when no override is set', async () => {
+  it('clones the upstream repo into the engine cache home when no override is set', async () => {
     writeConfig('ninfer', {}, true)
     const { host } = stubGetHost({ exists: false })
     let logged = ''
@@ -3339,9 +3343,11 @@ describe('get route (git sync, deps, build)', () => {
       host,
     )
     expect(result.ok).toBe(true)
-    expect(logged).toContain(`$ git clone https://github.com/Neroued/ninfer ${join(MODEL_DIR, 'ninfer')}`)
+    // The default checkout home is ~/.cache/dsh/infer/<engine-id>, never a
+    // subfolder of the model directory.
+    expect(logged).toContain(`$ git clone https://github.com/Neroued/ninfer ${dshEngineCacheDirectory('ninfer')}`)
     // The build steps run after the sync, with the checkout path substituted.
-    expect(logged).toContain(`cmake -S ${join(MODEL_DIR, 'ninfer')}`)
+    expect(logged).toContain(`cmake -S ${dshEngineCacheDirectory('ninfer')}`)
     expect(logged).toContain('get complete')
   })
 
@@ -3849,9 +3855,9 @@ describe('shared Get-steps routine', () => {
       'system dependencies (local)',
       '  cmake: satisfied',
       'engine clone: ninfer',
-      `$ git clone https://github.com/Neroued/ninfer ${join(MODEL_DIR, 'ninfer')}`,
+      `$ git clone https://github.com/Neroued/ninfer ${dshEngineCacheDirectory('ninfer')}`,
       'engine build: ninfer',
-      `cmake -S ${join(MODEL_DIR, 'ninfer')}`,
+      `cmake -S ${dshEngineCacheDirectory('ninfer')}`,
       `hf download neroued/Qwen3.8-27B-nvfp4-NInfer qwen3_8_27b_nvfp4.ninfer --local-dir ${MODEL_DIR}`,
       `hf download froggeric/Qwen-Fixed-Chat-Templates chat_template.jinja --local-dir ${MODEL_DIR}`,
     ]
@@ -4073,7 +4079,7 @@ describe('shared Get-steps routine', () => {
     // rebase is non-fatal under the override: the run reports syncFailed and
     // skips the build, keeping the checkout at its current version.
     writeConfig('ninfer', { modelDirectory: MODEL_DIR }, true)
-    mkdirSync(join(MODEL_DIR, 'ninfer'), { recursive: true })
+    mkdirSync(dshEngineCacheDirectory('ninfer'), { recursive: true })
     const service = stubService([])
     const { host, state } = stubGetHost({ exists: true, fail: ['rebase'] })
     let logged = ''
@@ -4099,14 +4105,14 @@ describe('shared Get-steps routine', () => {
     expect(logged).toContain('get complete')
     // The rebase failed, so the build step is skipped: no cmake command runs.
     expect(state.streamed.some((command) => command.includes('cmake'))).toBe(false)
-    rmSync(join(MODEL_DIR, 'ninfer'), { recursive: true, force: true })
+    rmSync(dshEngineCacheDirectory('ninfer'), { recursive: true, force: true })
   })
 
   it('still fails the run when a rebase fails without the override', async () => {
     // The override off (a standalone Get): a failed rebase of an existing
     // checkout stops the run, the existing behavior.
     writeConfig('ninfer', { modelDirectory: MODEL_DIR }, true)
-    mkdirSync(join(MODEL_DIR, 'ninfer'), { recursive: true })
+    mkdirSync(dshEngineCacheDirectory('ninfer'), { recursive: true })
     const service = stubService([])
     const { host } = stubGetHost({ exists: true, fail: ['rebase'] })
     let logged = ''
@@ -4126,14 +4132,14 @@ describe('shared Get-steps routine', () => {
     expect(result.syncFailed).toBeUndefined()
     expect(result.detail).toContain('git rebase')
     expect(logged).toContain('!! git rebase')
-    rmSync(join(MODEL_DIR, 'ninfer'), { recursive: true, force: true })
+    rmSync(dshEngineCacheDirectory('ninfer'), { recursive: true, force: true })
   })
 
   it('keeps a clone failure fatal under the override when no checkout exists', async () => {
     // No checkout directory (a clone failure, no current version to launch):
     // the override does not apply, so the run stays fatal.
     writeConfig('ninfer', { modelDirectory: MODEL_DIR }, true)
-    rmSync(join(MODEL_DIR, 'ninfer'), { recursive: true, force: true })
+    rmSync(dshEngineCacheDirectory('ninfer'), { recursive: true, force: true })
     const service = stubService([])
     const { host } = stubGetHost({ exists: false, fail: ['git clone'] })
     let logged = ''
