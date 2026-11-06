@@ -18,7 +18,7 @@
  */
 import { existsSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { EngineAdapter, hfDownloadCommand, hubCacheSnapshotFilePath, modelArtifactPath, modelDownloadTarget, repoIdFromUrl, } from '../../../../core/lib/index.js';
+import { EngineAdapter, dshConfigCacheDirectory, hfDownloadCommand, hubCacheSnapshotFilePath, modelArtifactPath, modelDownloadTarget, repoIdFromUrl, } from '../../../../core/lib/index.js';
 import { configFileFromSpecs, nodeLifecycleHost, pollHealth, resolveLaunchArgv, stopProcessPlan, trackChild, } from "../../adapters.js";
 import { engineBuildDir, syncEngineForDeploy } from "../../acquire.js";
 import { defaultModelFor, defaultModelsForEngine } from "../../model-defaults.js";
@@ -44,8 +44,10 @@ const BASALT_BINARY = {
 // `basaltAdapter` import path keeps working.
 export { BASALT_MODEL_FILE, BASALT_MODEL_REPO } from "./basalt.js";
 /**
- * The config file name the deploy step writes into the model directory, so
- * the engine's `--config` flag and the model artifact share one home.
+ * The config file name the deploy step writes. It lands in the plugin's
+ * config cache home in the per-engine subdirectory (Basalt takes the path
+ * via `--config`, so it carries no placement requirement of its own), never
+ * the model directory, the hub cache, or the engine checkout.
  */
 export const BASALT_CONFIG_FILE = 'basalt_config.json';
 /**
@@ -196,12 +198,15 @@ export class BasaltAdapter extends EngineAdapter {
     renderLaunch(config, _hw) {
         const port = this.port(config);
         const modelDirectory = typeof config.modelDirectory === 'string' ? config.modelDirectory : '';
-        // The config file lands in the model download target directory (the
-        // hub-cache root for the default layout, the user model directory for an
-        // override), so the engine's --config flag and the model artifact share one
-        // home and the config never dirties the engine's git checkout.
+        // The config file lands in the plugin's config cache home in the
+        // per-engine subdirectory, never the model directory, the hub cache, or
+        // the engine's git checkout: Basalt takes the path via --config, so it
+        // carries no placement requirement of its own.
+        const configPath = join(dshConfigCacheDirectory(), this.id, BASALT_CONFIG_FILE);
+        // The model artifact placeholder still rides the download target base
+        // directory (the hub-cache root for the default layout, the user model
+        // directory for an override).
         const { baseDir } = modelDownloadTarget(modelDirectory);
-        const configPath = join(baseDir, BASALT_CONFIG_FILE);
         // The engine binary is OS-specific (the .exe on Windows), so the name
         // comes from the host OS's binary function. CMake writes it into the
         // profile's buildDir (the repo's bin/ folder), so the launch spells it as
@@ -371,12 +376,11 @@ export class BasaltAdapter extends EngineAdapter {
     }
     /**
      * writeConfigFile writes the config file the plan names, so the engine's
-     * --config flag points at a path that exists. The config path is always
-     * absolute (renderLaunch joins the model download target base directory),
-     * so the file lands in the model download target directory, never the
-     * engine's git checkout. Returns a failure detail (a host that cannot write
-     * files, a test stub) or null when the write succeeded or the plan names no
-     * config file.
+     * --config flag points at a path that exists. renderLaunch renders the
+     * path absolute under the plugin's config cache home, and the host's
+     * writeFile mkdirs the parent before writing. Returns a failure detail (a
+     * host that cannot write files, a test stub) or null when the write
+     * succeeded or the plan names no config file.
      */
     async writeConfigFile(plan) {
         if (plan.configFile === undefined)

@@ -55,8 +55,11 @@ export interface LaunchPlan {
   os?: 'linux' | 'windows' | 'macos'
   // The rendered config file the deploy step writes before spawn: the path it
   // lands at and the content the writeFile step writes. The engine's config
-  // flag points at the path. Absent for engines that carry every setting in
-  // argv or env.
+  // flag points at the path. The default home for the path is the plugin
+  // config directory (dshConfigCacheDirectory(), composed with a per-engine
+  // subdirectory); an adapter may stamp a different path only when the engine
+  // requires a specific placement. Absent for engines that carry every
+  // setting in argv or env.
   configFile?: { path: string; content: string }
   // The engine process pid the stop step signals when the adapter tracks no
   // child handle for it: an engine a DSH restart re-adopted from a stored
