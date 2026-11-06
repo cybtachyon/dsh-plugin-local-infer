@@ -37,6 +37,19 @@ resolveModelDirectory`, `get-steps.ts resolveEngineDirectory` inline
 non-blank-string checks) collapse onto the predicate or the shared
 `ModelDownloadTarget` value.
 
+Carried from TASK-006 (stale rationale after the config move):
+`packages/providers/tests/basalt.spec.ts` `modelEntryPath` docstring and
+`packages/providers/src/engines/basalt/basaltAdapter.ts`
+`basaltConfigContent` docstring still say the engine "resolves [the model
+value] against the config file's home"; the config file no longer shares a
+home with the model and deploy restamps an absolute artifact path, so
+reword to "the entry must carry an absolute artifact path". Also refresh
+the synthetic `/home/u/.cache/hf/basalt_config.json` command-line fixture
+in `packages/service/tests/local-infer.spec.ts` (~1339-1345) to the new
+config home. From TASK-005: `resolveEngineDirectory` is now a 3-line
+override-or-builder; its dedup note is likely already satisfied - resolve
+or dismiss explicitly.
+
 Definition of Done: each risk listed above is either resolved or explicitly
 dismissed with a one-line note in the commit message; suites, build, and
 lint stay green; committed.
