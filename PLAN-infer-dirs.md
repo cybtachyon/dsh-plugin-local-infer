@@ -72,7 +72,7 @@ invariants specific to this plan:
 ### Phase 1 - Core foundation
 
  - [x] [TASK-001-core-infer-cache-paths](docs/PLAN-infer-dirs-TASK-001-core-infer-cache-paths.md)
- - [ ] [TASK-010-deterministic-snapshot-selection](docs/PLAN-infer-dirs-TASK-010-deterministic-snapshot-selection.md)
+ - [x] [TASK-010-deterministic-snapshot-selection](docs/PLAN-infer-dirs-TASK-010-deterministic-snapshot-selection.md)
 
 ### Phase 2 - Model directory from the hf download result
 
