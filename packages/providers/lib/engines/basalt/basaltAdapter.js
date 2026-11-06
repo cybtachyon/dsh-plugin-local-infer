@@ -16,9 +16,8 @@
  * tracked process output. `stop` signals the tracked process.
  * @module dsh-plugin-local-infer/providers/engines/basalt/basaltAdapter
  */
-import { existsSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { EngineAdapter, dshConfigCacheDirectory, hfDownloadCommand, hubCacheSnapshotFilePath, modelArtifactPath, modelDownloadTarget, repoIdFromUrl, } from '../../../../core/lib/index.js';
+import { EngineAdapter, dshConfigCacheDirectory, hfDownloadCommand, hubCacheSnapshotFilePath, modelArtifactPresent, modelDownloadTarget, repoIdFromUrl, } from '../../../../core/lib/index.js';
 import { configFileFromSpecs, nodeLifecycleHost, pollHealth, resolveLaunchArgv, stopProcessPlan, trackChild, } from "../../adapters.js";
 import { engineBuildDir, syncEngineForDeploy } from "../../acquire.js";
 import { defaultModelFor, defaultModelsForEngine } from "../../model-defaults.js";
@@ -345,14 +344,18 @@ export class BasaltAdapter extends EngineAdapter {
      * resolved download source (its repo URL plus artifact file) into the
      * model directory and resolves the concrete path the engine serves. A
      * model the Get-steps routine already downloaded is on disk, so the
-     * re-fetch is skipped. With the hub-cache layout the concrete path is the
-     * content-addressed snapshot path (only known after the download); with
-     * the flat layout it is the flat join. Returns the path, or a detail when
-     * the download fails or leaves no snapshot.
+     * re-fetch is skipped; presence is the deterministic snapshot check
+     * (modelArtifactPresent), so a blob-only cache left by an interrupted
+     * download re-runs the cheap hf download (the CLI reuses the blobs and
+     * writes the snapshot links) instead of dead-ending on the later lookup.
+     * With the hub-cache layout the concrete path is the content-addressed
+     * snapshot path (only known after the download); with the flat layout it
+     * is the flat join. Returns the path, or a detail when the download fails
+     * or leaves no snapshot.
      */
     async ensureModelArtifact(entry, baseDir, useHubCache, onProgress) {
         const modelFile = entry.file;
-        if (!existsSync(modelArtifactPath(entry, baseDir, useHubCache))) {
+        if (!modelArtifactPresent(entry, baseDir, useHubCache)) {
             onProgress?.('download');
             const download = await this.host.run(hfDownloadCommand(entry, baseDir, useHubCache));
             if (!download.ok) {
