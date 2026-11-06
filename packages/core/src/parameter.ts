@@ -67,7 +67,10 @@ export type ParameterForm =
  * on the command line, in the process environment, or in a config file the
  * deploy step writes. A `config` target names the file format and the
  * nesting path: `block` is the top-level key, `key` the leaf. The config-file
- * renderer nests `toConfig(value)` (or the raw value) under that path. A spec
+ * renderer nests `toConfig(value)` (or the raw value) under that path. A
+ * `block` ending in `[]` (e.g. `models[]`) is the array-entry convention: the
+ * key lands inside the single object of a one-element array named by the
+ * prefix, and specs sharing that block merge into that one entry. A spec
  * declares one target, or a list of targets when the value lands in more than
  * one place (a Strata shared spec lands on the CLI in the binary mode and in
  * the env in the docker mode).

@@ -141,6 +141,11 @@ export function envFromSpecs(specs, config) {
  * key defaults to the spec key), then the result renders in the requested
  * format. A spec with no `deploy`, or no `config` target, contributes nothing.
  *
+ * A `block` ending in `[]` (e.g. `models[]`) follows the array-entry
+ * convention: the key lands inside the single object of a one-element array
+ * named by the prefix, and every spec sharing that block merges into that one
+ * entry. A plain block name nests as before, into one top-level object.
+ *
  * A spec that carries both a `config` and a `cli` target contributes nothing
  * here: the launch spells the CLI flag and leaves the on-disk config file (and
  * any hand edits in it) untouched. Only a spec whose sole deploy path is the
@@ -172,12 +177,7 @@ export function configFileFromSpecs(specs, config, format) {
             object[key] = resolved;
             continue;
         }
-        const existing = object[block];
-        const target = existing !== null && typeof existing === 'object'
-            ? existing
-            : {};
-        target[key] = resolved;
-        object[block] = target;
+        configBlockEntry(object, block)[key] = resolved;
     }
     switch (format) {
         case 'json':
@@ -187,6 +187,35 @@ export function configFileFromSpecs(specs, config, format) {
         case 'yaml':
             return renderYaml(object);
     }
+}
+/**
+ * ARRAY_BLOCK_PATTERN matches the array-entry block convention: the name in
+ * front of `[]` is the array's key, the `[]` marks the block's keys as entry
+ * keys. A plain block name never matches.
+ */
+const ARRAY_BLOCK_PATTERN = /^(?<name>.+)\[\]$/;
+/**
+ * configBlockEntry returns the object one config block merges its keys into,
+ * creating it on first use. A plain block names a top-level object. A `name[]`
+ * block names the single object of a one-element array under `name`, so every
+ * spec sharing the block writes into the same entry.
+ */
+function configBlockEntry(object, block) {
+    const arrayBlock = ARRAY_BLOCK_PATTERN.exec(block);
+    const name = arrayBlock?.groups?.name ?? block;
+    const existing = object[name];
+    // The array form reads back the entry it created and re-stamps the
+    // one-element array, so the rendered shape stays `{"name": [{...}]}`.
+    const held = arrayBlock === null
+        ? existing
+        : Array.isArray(existing)
+            ? existing[0]
+            : undefined;
+    const entry = held !== null && typeof held === 'object'
+        ? held
+        : {};
+    object[name] = arrayBlock === null ? entry : [entry];
+    return entry;
 }
 /**
  * renderEnv flattens a nested config object into flat `KEY=VALUE` lines: a

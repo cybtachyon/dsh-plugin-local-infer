@@ -1607,6 +1607,29 @@ describe('configFileFromSpecs', () => {
     },
   ]
 
+  // Two specs sharing the `models[]` block: the convention collects their
+  // keys into the single object of a one-element `models` array. The gpu
+  // spec omits the deploy key, so it also covers key defaulting inside an
+  // entry.
+  const arrayBlockSpecs: ParameterSpec[] = [
+    {
+      key: 'model',
+      label: 'Model',
+      description: 'The model artifact the entry loads.',
+      form: { kind: 'text' },
+      defaultValue: '/models/a.basalt',
+      deploy: { target: 'config', format: 'json', block: 'models[]', key: 'model' },
+    },
+    {
+      key: 'gpu',
+      label: 'GPU',
+      description: 'Places the model entry on one GPU.',
+      form: { kind: 'number' },
+      defaultValue: 0,
+      deploy: { target: 'config', format: 'json', block: 'models[]' },
+    },
+  ]
+
   it('renders the nested JSON config from the server and engine blocks', () => {
     const content = configFileFromSpecs(specs, {}, 'json')
     expect(JSON.parse(content)).toEqual({
@@ -1671,6 +1694,51 @@ describe('configFileFromSpecs', () => {
     }
     expect(JSON.parse(configFileFromSpecs([configOnly], {}, 'json'))).toEqual({
       engine: { threads: 4 },
+    })
+  })
+
+  it('merges specs sharing a name[] block into the one array entry', () => {
+    expect(JSON.parse(configFileFromSpecs(arrayBlockSpecs, {}, 'json'))).toEqual({
+      models: [{ model: '/models/a.basalt', gpu: 0 }],
+    })
+  })
+
+  it('keeps an array-entry block and a plain block side by side', () => {
+    const mixed: ParameterSpec[] = [
+      ...arrayBlockSpecs,
+      {
+        key: 'host',
+        label: 'Host',
+        description: 'The host the server binds to.',
+        form: { kind: 'text' },
+        defaultValue: '127.0.0.1',
+        deploy: { target: 'config', format: 'json', block: 'server', key: 'host' },
+      },
+    ]
+    // A config value overrides the entry default like it does in a plain block.
+    expect(JSON.parse(configFileFromSpecs(mixed, { gpu: 1 }, 'json'))).toEqual({
+      models: [{ model: '/models/a.basalt', gpu: 1 }],
+      server: { host: '127.0.0.1' },
+    })
+  })
+
+  it('applies the toConfig spelling and the default fallback inside an entry', () => {
+    const parallelSpec: ParameterSpec = {
+      key: 'parallel',
+      label: 'Parallel',
+      description: 'Runs that many parallel model slots.',
+      form: { kind: 'number' },
+      defaultValue: 2,
+      toConfig: (value) => `auto:${String(value)}`,
+      deploy: { target: 'config', format: 'json', block: 'models[]', key: 'parallel' },
+    }
+    // The spec default flows through toConfig like any other value.
+    expect(JSON.parse(configFileFromSpecs([parallelSpec], {}, 'json'))).toEqual({
+      models: [{ parallel: 'auto:2' }],
+    })
+    // A config value goes through the same spelling.
+    expect(JSON.parse(configFileFromSpecs([parallelSpec], { parallel: 4 }, 'json'))).toEqual({
+      models: [{ parallel: 'auto:4' }],
     })
   })
 })
