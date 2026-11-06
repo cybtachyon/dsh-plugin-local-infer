@@ -878,7 +878,15 @@ export function card(
                       ? enginePlatform.engineDirectory
                       : ''
                   }
-                  placeholder={t.dirPlaceholder}
+                  // An empty field means the plugin's default checkout home
+                  // (~/.cache/dsh/infer/<engine>): the placeholder names the
+                  // real path so the effective location shows without being
+                  // stored into the platform config.
+                  placeholder={
+                    engineEntry?.defaultEngineDirectory !== undefined
+                      ? engineEntry.defaultEngineDirectory
+                      : t.dirPlaceholder
+                  }
                   onChange={(event: { target: { value: string } }) =>
                     onPlatform(
                       'engineDirectory',

@@ -8,7 +8,7 @@
  * are the single source the red banner and the inline warnings agree on.
  * @module dsh-plugin-local-infer/ui/viewmodels/summary
  */
-import { buildModelEntry, chatTemplatePresent, hfChatTemplateCommand, hfDownloadCommand, modelArtifactPresent, modelCacheEntriesForEngine, modelEntriesForEngine, resolveModelDirectory, } from '../../../core/lib/index.js';
+import { buildModelEntry, chatTemplatePresent, dshEngineCacheDirectory, hfChatTemplateCommand, hfDownloadCommand, modelArtifactPresent, modelCacheEntriesForEngine, modelEntriesForEngine, resolveModelDirectory, } from '../../../core/lib/index.js';
 import { defaultModelFor, defaultModelsForEngine, ENGINES, enginePlatformDefaults, } from '../../../providers/lib/index.js';
 import { readConfig } from "../config.js";
 import { renderForm } from "../form.js";
@@ -205,6 +205,7 @@ export async function buildSummary(localInfer, request) {
                 ...(defaults.defaultDockerTag !== undefined
                     ? { defaultDockerTag: defaults.defaultDockerTag }
                     : {}),
+                defaultEngineDirectory: dshEngineCacheDirectory(entry.id),
             };
         }),
         models: localInfer.registeredVramModels().map((model) => ({ id: model.id, source: model.source })),

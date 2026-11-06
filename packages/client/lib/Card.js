@@ -576,7 +576,14 @@ export function card(_react, localeRef, _primitives) {
                         react.createElement("label", { style: LABEL_STYLE }, t.engineDirectory),
                         react.createElement("input", { style: INPUT_STYLE, type: "text", value: typeof enginePlatform.engineDirectory === 'string'
                                 ? enginePlatform.engineDirectory
-                                : '', placeholder: t.dirPlaceholder, onChange: (event) => onPlatform('engineDirectory', event.target.value === '' ? undefined : event.target.value) })),
+                                : '',
+                            // An empty field means the plugin's default checkout home
+                            // (~/.cache/dsh/infer/<engine>): the placeholder names the
+                            // real path so the effective location shows without being
+                            // stored into the platform config.
+                            placeholder: engineEntry?.defaultEngineDirectory !== undefined
+                                ? engineEntry.defaultEngineDirectory
+                                : t.dirPlaceholder, onChange: (event) => onPlatform('engineDirectory', event.target.value === '' ? undefined : event.target.value) })),
                     state.ui.help ? renderHelpRow(t.engineDirHelp) : null,
                     react.createElement("div", { style: ROW_STYLE },
                         react.createElement("label", { style: LABEL_STYLE }, t.engineFork),

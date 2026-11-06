@@ -19,6 +19,7 @@ import type {
 import {
   buildModelEntry,
   chatTemplatePresent,
+  dshEngineCacheDirectory,
   hfChatTemplateCommand,
   hfDownloadCommand,
   modelArtifactPresent,
@@ -64,6 +65,10 @@ export interface LocalInferSummary {
     // the engine supports no such mode.
     defaultBuildCommand?: string
     defaultDockerTag?: string
+    // Where the engine checkout lands when the Engine Directory field is
+    // blank: ~/.cache/dsh/infer/<engine-id>, derived at read time and never
+    // stored. The card shows it as the Engine Directory field's placeholder.
+    defaultEngineDirectory: string
   }[]
   models: { id: string; source: string }[]
   hardware: HardwareProfile
@@ -401,6 +406,7 @@ export async function buildSummary(
         ...(defaults.defaultDockerTag !== undefined
           ? { defaultDockerTag: defaults.defaultDockerTag }
           : {}),
+        defaultEngineDirectory: dshEngineCacheDirectory(entry.id),
       }
     }),
     models: localInfer.registeredVramModels().map((model) => ({ id: model.id, source: model.source })),

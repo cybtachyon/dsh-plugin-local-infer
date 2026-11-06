@@ -3747,7 +3747,7 @@ function card(_react, localeRef, _primitives) {
         style: INPUT_STYLE,
         type: "text",
         value: typeof enginePlatform.engineDirectory === "string" ? enginePlatform.engineDirectory : "",
-        placeholder: t.dirPlaceholder,
+        placeholder: engineEntry?.defaultEngineDirectory !== void 0 ? engineEntry.defaultEngineDirectory : t.dirPlaceholder,
         onChange: (event) => onPlatform(
           "engineDirectory",
           event.target.value === "" ? void 0 : event.target.value
