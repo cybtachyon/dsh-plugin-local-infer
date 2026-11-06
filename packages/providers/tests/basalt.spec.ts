@@ -5,6 +5,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import LocalInfer from 'dsh-plugin-local-infer/service'
 import {
+  dshConfigCacheDirectory,
   hfHubCacheDirectory,
   hubCacheModelDirectory,
   repoIdFromUrl,
@@ -399,6 +400,15 @@ const ADAPTER_HW: HardwareProfile = {
 }
 
 /**
+ * basaltConfigPath is the config file path every renderLaunch expects: the
+ * plugin config cache home in the per-engine subdirectory, composed with the
+ * shared builder the adapter itself consumes (never a restated literal).
+ */
+function basaltConfigPath(): string {
+  return join(dshConfigCacheDirectory(), 'basalt', BASALT_CONFIG_FILE)
+}
+
+/**
  * modelEntryPath reads the `model` value out of the single entry of a plan's
  * rendered config envelope, so the specs assert on the placeholder path the
  * serve CLI resolves against the config file's home.
@@ -539,14 +549,16 @@ describe('BasaltAdapter.renderLaunch', () => {
       join('bin', 'basalt'),
       'serve',
       '--config',
-      join('models', BASALT_CONFIG_FILE),
+      basaltConfigPath(),
       '--engine-bin',
       join('bin', 'basalt'),
     ])
     // The plan stamps the resolved model value, so the deploy step downloads
     // exactly the file the config entry names without re-parsing the file.
     expect(plan.modelFile).toBe('models/Qwen3.8-FN-NVFP4-DQ6_K.basalt')
-    expect(plan.configFile?.path).toBe(join('models', BASALT_CONFIG_FILE))
+    // The config file lands in the plugin config cache home, not the model
+    // directory the config was rendered with.
+    expect(plan.configFile?.path).toBe(basaltConfigPath())
     expect(plan.modelDirectory).toBe('models')
     // The config file is the v2 envelope: the version stamp plus the blocks
     // the surface renders, in the upstream key order, with the models entry
@@ -580,14 +592,14 @@ describe('BasaltAdapter.renderLaunch', () => {
     })
   })
 
-  it('writes the config file into the hub cache root for a bare config', () => {
+  it('lands the config file in the plugin config cache for a bare config', () => {
     const { host } = basaltStubHost()
     const adapter = new BasaltAdapter(host)
     const plan = adapter.renderLaunch({}, ADAPTER_HW)
-    // A bare config (no model directory) targets the hub cache, so the config
-    // file lands in the hub cache root, and the launch runs on the CLI default
-    // port.
-    expect(plan.configFile?.path).toBe(join(hfHubCacheDirectory(), BASALT_CONFIG_FILE))
+    // A bare config (no model directory) targets the hub cache for the model
+    // artifact, but the config file always lands in the plugin config cache
+    // home, and the launch runs on the CLI default port.
+    expect(plan.configFile?.path).toBe(basaltConfigPath())
     expect(plan.modelDirectory).toBeUndefined()
     expect(plan.port).toBe(8080)
     // A bare config names no model, so the plan stamps the engine default
@@ -702,14 +714,14 @@ describe('BasaltAdapter.deploy', () => {
     expect(writeIndex).toBeGreaterThan(downloadIndex)
     expect(spawnIndex).toBeGreaterThan(writeIndex)
     // The download targets the model directory, and the config write carries
-    // the rendered content at the model-directory path.
+    // the rendered content.
     expect(state.run).toContain(
       `hf download ${BASALT_MODEL_REPO} ${BASALT_MODEL_FILE} --local-dir models --format human`,
     )
-    // The config path is the model download target base directory joined with
-    // the config file name (the flat --local-dir layout).
+    // The config path is the plugin config cache home in the per-engine
+    // subdirectory, never the model directory the plan carries.
     expect(state.writeFile).toHaveLength(1)
-    expect(state.writeFile[0]?.path).toBe(join('models', BASALT_CONFIG_FILE))
+    expect(state.writeFile[0]?.path).toBe(basaltConfigPath())
     // The written envelope carries the downloaded artifact path resolved
     // into the models entry (the flat --local-dir join), replacing the
     // renderLaunch placeholder.
@@ -728,7 +740,7 @@ describe('BasaltAdapter.deploy', () => {
       join('/src/basalt', 'bin', 'basalt'),
       'serve',
       '--config',
-      join('models', BASALT_CONFIG_FILE),
+      basaltConfigPath(),
       '--engine-bin',
       join('bin', 'basalt'),
     ])
@@ -844,7 +856,7 @@ describe('BasaltAdapter.deploy', () => {
   it('skips the download and spawns serve for a seeded hub-cache artifact', async () => {
     const { host, state } = basaltStubHost()
     state.runOutput['rev-list'] = '0'
-    const { hub, snapshot, cleanup } = seededHubCache()
+    const { snapshot, cleanup } = seededHubCache()
     try {
       const adapter = new BasaltAdapter(host)
       // A bare config (no model directory) targets the hub cache, so the
@@ -859,18 +871,18 @@ describe('BasaltAdapter.deploy', () => {
       expect(state.run.some((command) => command.includes('hf download'))).toBe(false)
       // The spawn runs the config-carried serve command with the
       // engine-directory-joined binary (the model rides the config entry,
-      // not the argv), and the config write lands in the hub cache root.
+      // not the argv), and the config write lands in the plugin config cache.
       expect(state.spawn).toHaveLength(1)
       expect(state.spawn[0]?.argv).toEqual([
         join('/src/basalt', 'bin', 'basalt'),
         'serve',
         '--config',
-        join(hub, BASALT_CONFIG_FILE),
+        basaltConfigPath(),
         '--engine-bin',
         join('bin', 'basalt'),
       ])
       expect(state.writeFile).toHaveLength(1)
-      expect(state.writeFile[0]?.path).toBe(join(hub, BASALT_CONFIG_FILE))
+      expect(state.writeFile[0]?.path).toBe(basaltConfigPath())
       // The written config carries the hub-cache snapshot path in the models
       // entry: the artifact delivery the serve CLI resolves (no --model flag
       // rides the argv to carry it).
@@ -883,7 +895,7 @@ describe('BasaltAdapter.deploy', () => {
     }
   })
 
-  it('writes the config file into the hub cache root, never the engine directory', async () => {
+  it('writes the config file into the plugin config cache, never the model or engine dirs', async () => {
     const { host, state } = basaltStubHost()
     state.runOutput['rev-list'] = '0'
     const { hub, cleanup } = seededHubCache()
@@ -896,12 +908,52 @@ describe('BasaltAdapter.deploy', () => {
       })
       expect(result.ok).toBe(true)
       // The Get step's dirty-check scenario: the config write lands in the
-      // model download target directory (the hub cache root for the default
-      // layout), so the engine's git checkout carries no basalt_config.json.
+      // plugin config cache home (the per-engine subdirectory), so neither
+      // the engine's git checkout nor the hub cache carries a
+      // basalt_config.json.
       expect(state.writeFile).toHaveLength(1)
-      expect(state.writeFile[0]?.path).toBe(join(hub, BASALT_CONFIG_FILE))
+      expect(state.writeFile[0]?.path).toBe(basaltConfigPath())
       expect(state.writeFile[0]?.path.startsWith('/src/basalt')).toBe(false)
+      expect(state.writeFile[0]?.path.startsWith(hub)).toBe(false)
     } finally {
+      cleanup()
+    }
+  })
+
+  it('writes the default-launch config under ~/.cache/dsh/infer/config, not the model dir', async () => {
+    const { host, state } = basaltStubHost()
+    state.runOutput['rev-list'] = '0'
+    // The path builders key on homedir(), which reads HOME on POSIX and
+    // USERPROFILE on Windows, so a default (bare-config) launch prices the
+    // config home against a stub, never the real one. The seeded hub cache
+    // pins HF_HUB_CACHE explicitly, so the model layout stays unaffected.
+    const home = join(tmpdir(), 'basalt-stub-home')
+    const savedHome = process.env.HOME
+    const savedUserProfile = process.env.USERPROFILE
+    process.env.HOME = home
+    process.env.USERPROFILE = home
+    const { cleanup } = seededHubCache()
+    try {
+      const adapter = new BasaltAdapter(host)
+      const plan = adapter.renderLaunch({ port: 8090 }, ADAPTER_HW)
+      const result = await adapter.deploy(plan, {
+        engineId: 'basalt',
+        engineDirectory: '/src/basalt',
+      })
+      expect(result.ok).toBe(true)
+      expect(state.writeFile).toHaveLength(1)
+      const writtenPath = state.writeFile[0]?.path ?? ''
+      expect(writtenPath).toBe(
+        join(home, '.cache', 'dsh', 'infer', 'config', 'basalt', BASALT_CONFIG_FILE),
+      )
+      // The model directory (the hub cache for the default layout) carries
+      // no config file.
+      expect(writtenPath.startsWith(process.env.HF_HUB_CACHE ?? '')).toBe(false)
+    } finally {
+      if (savedHome === undefined) delete process.env.HOME
+      else process.env.HOME = savedHome
+      if (savedUserProfile === undefined) delete process.env.USERPROFILE
+      else process.env.USERPROFILE = savedUserProfile
       cleanup()
     }
   })

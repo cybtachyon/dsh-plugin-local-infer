@@ -20,8 +20,10 @@ import { EngineAdapter } from '../../../../core/lib/index.js';
 import type { Config, DeployOptions, DeployResult, EngineLaunchSignature, EnginePlatformConfig, HealthCheckOptions, HealthResult, HardwareProfile, LaunchPlan, LaunchProgress, LifecycleHost, ParameterSpec } from '../../../../core/lib/index.js';
 export { BASALT_MODEL_FILE, BASALT_MODEL_REPO } from './basalt.ts';
 /**
- * The config file name the deploy step writes into the model directory, so
- * the engine's `--config` flag and the model artifact share one home.
+ * The config file name the deploy step writes. It lands in the plugin's
+ * config cache home in the per-engine subdirectory (Basalt takes the path
+ * via `--config`, so it carries no placement requirement of its own), never
+ * the model directory, the hub cache, or the engine checkout.
  */
 export declare const BASALT_CONFIG_FILE = "basalt_config.json";
 /**
@@ -65,12 +67,11 @@ export declare class BasaltAdapter extends EngineAdapter {
     private ensureModelArtifact;
     /**
      * writeConfigFile writes the config file the plan names, so the engine's
-     * --config flag points at a path that exists. The config path is always
-     * absolute (renderLaunch joins the model download target base directory),
-     * so the file lands in the model download target directory, never the
-     * engine's git checkout. Returns a failure detail (a host that cannot write
-     * files, a test stub) or null when the write succeeded or the plan names no
-     * config file.
+     * --config flag points at a path that exists. renderLaunch renders the
+     * path absolute under the plugin's config cache home, and the host's
+     * writeFile mkdirs the parent before writing. Returns a failure detail (a
+     * host that cannot write files, a test stub) or null when the write
+     * succeeded or the plan names no config file.
      */
     private writeConfigFile;
     healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;
