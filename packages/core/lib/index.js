@@ -21,5 +21,6 @@ export { checkDeps, detectPackageManager, osLabel, planDeps, renderInstallString
 export { guardSudoCommand, sudoFailureDetail, SUDO_CLI_NOTE, SUDO_PASSWORD_TIMEOUT_MS, SUDO_PROBE_COMMAND, } from "./sudo.js";
 export { CHAT_TEMPLATE_FILE, chatTemplateArtifactPath, hfChatTemplateCommand, hfDownloadCommand, hfDownloadFileCommand, hubCacheModelDirectory, hubCacheSnapshotFilePath, isModelDirectoryOverridden, modelArtifactPath, modelCacheEntriesForEngine, modelEntriesForEngine, repoIdFromUrl, repoNameFromUrl, } from "./models.js";
 export { hfDatasetsCacheDirectory, hfHubCacheDirectory, modelDownloadTarget, } from "./hf-cache.js";
+export { dshConfigCacheDirectory, dshEngineCacheDirectory, dshInferCacheDirectory, hfDownloadResultDirectory, } from "./infer-cache.js";
 export { foldHfProgressChunk, parseHfProgressLine } from "./progress.js";
 //# sourceMappingURL=index.js.map

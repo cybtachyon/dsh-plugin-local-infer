@@ -198,6 +198,12 @@ export {
   modelDownloadTarget,
 } from './hf-cache.ts'
 export type { ModelDownloadTarget } from './hf-cache.ts'
+export {
+  dshConfigCacheDirectory,
+  dshEngineCacheDirectory,
+  dshInferCacheDirectory,
+  hfDownloadResultDirectory,
+} from './infer-cache.ts'
 export { foldHfProgressChunk, parseHfProgressLine } from './progress.ts'
 export type { HfProgress } from './progress.ts'
 export type {
