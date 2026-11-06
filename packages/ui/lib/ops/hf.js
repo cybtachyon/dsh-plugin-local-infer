@@ -7,7 +7,7 @@
  * home across the download routes and the card.
  * @module dsh-plugin-local-infer/ui/ops/hf
  */
-import { isModelDirectoryOverridden } from '../../../core/lib/index.js';
+import { isModelDirectoryOverridden, modelDownloadTarget } from '../../../core/lib/index.js';
 import { defaultModelFor } from '../../../providers/lib/index.js';
 import { readConfig } from "../config.js";
 import { RouteError } from "../route.js";
@@ -15,22 +15,20 @@ import { isHfRepoReference } from "../viewmodels/summaryHelpers.js";
 /**
  * resolveDownloadTarget resolves the directory a download route targets: the
  * request's directory, the stored config's model directory, and the hub
- * cache root, in that order. The layout follows the shared override rule
- * (isModelDirectoryOverridden, the same rule the card's summary reads): a
- * named directory (the request or the stored config) keeps the flat
- * --local-dir target; only when neither names one does the hub-cache layout
- * apply, based on the hub cache root (the hf CLI's own download home, which
- * resolves its own snapshot destination), so a download never materializes
- * a snapshot-directory or hub-root override into the config.
+ * cache root, in that order. The first named directory wins (the shared
+ * override predicate), then the shared modelDownloadTarget rule decides the
+ * layout: a named directory keeps the flat --local-dir target; only when
+ * neither names one does the hub-cache layout apply, based on the hub cache
+ * root (the service seam: the hf CLI's own download home, which resolves its
+ * own snapshot destination and creates the directory when absent), so a
+ * download never materializes a snapshot-directory or hub-root override into
+ * the config.
  */
 function resolveDownloadTarget(localInfer, requestDirectory, stored) {
-    if (isModelDirectoryOverridden(requestDirectory)) {
-        return { directory: requestDirectory, useHubCache: false };
-    }
-    if (isModelDirectoryOverridden(stored.config.modelDirectory)) {
-        return { directory: stored.config.modelDirectory, useHubCache: false };
-    }
-    return { directory: localInfer.defaultModelDirectory(), useHubCache: true };
+    const named = isModelDirectoryOverridden(requestDirectory)
+        ? requestDirectory
+        : stored.config.modelDirectory;
+    return modelDownloadTarget(named, localInfer.defaultModelDirectory());
 }
 /**
  * downloadFor runs the hf CLI download for the request's default model: it
@@ -46,8 +44,8 @@ export async function downloadFor(localInfer, request) {
     if (entry === undefined) {
         throw new RouteError(404, `no default model is registered for "${engineId}/${modelId}"`);
     }
-    const { directory, useHubCache } = resolveDownloadTarget(localInfer, request.directory, stored);
-    return localInfer.downloadModel(entry, directory, { useHubCache });
+    const { baseDir, useHubCache } = resolveDownloadTarget(localInfer, request.directory, stored);
+    return localInfer.downloadModel(entry, baseDir, { useHubCache });
 }
 /**
  * chatTemplateDownloadFor runs the hf CLI download for the request's chat
@@ -65,7 +63,7 @@ export async function chatTemplateDownloadFor(localInfer, request) {
     if (!isHfRepoReference(template)) {
         throw new RouteError(400, `the chat template must be an HF repo reference, got "${template || '(none)'}"`);
     }
-    const { directory, useHubCache } = resolveDownloadTarget(localInfer, request.directory, stored);
-    return localInfer.downloadChatTemplate(template, directory, { useHubCache });
+    const { baseDir, useHubCache } = resolveDownloadTarget(localInfer, request.directory, stored);
+    return localInfer.downloadChatTemplate(template, baseDir, { useHubCache });
 }
 //# sourceMappingURL=hf.js.map

@@ -8,13 +8,12 @@
  * @module dsh-plugin-local-infer/ui/viewmodels/deps
  */
 
-import { existsSync } from 'node:fs'
 import type { Config } from 'dsh-plugin-local-infer/core'
 import {
-  chatTemplateArtifactPath,
+  chatTemplatePresent,
   checkDeps,
   hfChatTemplateCommand,
-  isModelDirectoryOverridden,
+  modelDownloadTarget,
   renderInstallString,
 } from '../../../core/lib/index.js'
 import type { BuildMode } from '../../../core/lib/index.js'
@@ -76,28 +75,21 @@ export async function buildDeps(
   // and its file is not in the model directory, the System dependencies box
   // shows the download command (the auto-download's fallback when the CLI is
   // missing or the fetch failed). A present template, a local path, or no
-  // template leaves the row off.
-  const rawModelDir = config.modelDirectory
-  const overridden = isModelDirectoryOverridden(rawModelDir)
-  // The hub-cache layout applies only when the raw config names no model
-  // directory; a user override keeps the flat layout. The flag reads the raw
-  // field only, never a derived copy.
-  const useHubCache = !overridden
-  // The presence join base: the hub cache root under the cache layout (where
-  // the models--{ns}--{name} dirs live), the override under the flat layout.
-  const modelDir =
-    overridden && typeof rawModelDir === 'string' ? rawModelDir : localInfer.defaultModelDirectory()
+  // template leaves the row off. The shared download-target rule reads the
+  // raw config field (the hub cache root comes from the service seam), so the
+  // panel and the summary never disagree about the layout.
+  const target = modelDownloadTarget(config.modelDirectory, localInfer.defaultModelDirectory())
   const chatTemplateValue = typeof config.chatTemplate === 'string' ? config.chatTemplate : ''
   let chatTemplate: ChatTemplateDepModel | undefined
   if (
     isHfRepoReference(chatTemplateValue) &&
-    !existsSync(chatTemplateArtifactPath(chatTemplateValue, modelDir, useHubCache))
+    !chatTemplatePresent(chatTemplateValue, target.baseDir, target.useHubCache)
   ) {
     chatTemplate = {
       repo: chatTemplateValue,
       present: false,
       hfCli: (await localInfer.hfCliAvailable()) !== null,
-      downloadCommand: hfChatTemplateCommand(chatTemplateValue, modelDir, useHubCache),
+      downloadCommand: hfChatTemplateCommand(chatTemplateValue, target.baseDir, target.useHubCache),
     }
   }
   // exactOptionalPropertyTypes: the chat-template row only lands while a

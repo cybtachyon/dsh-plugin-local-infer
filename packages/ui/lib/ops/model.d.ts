@@ -4,11 +4,10 @@
  * the registration wrote, and syncRegisteredModel re-runs the registration on
  * a save so the registered model's input types stay in step with the config.
  * resolveModelRow and resolveContextWindow resolve the row and context window
- * the registrar publishes; resolveModelDirectory picks the model directory a
- * Get run names for the model.
+ * the registrar publishes.
  * @module dsh-plugin-local-infer/ui/ops/model
  */
-import type { Config, DefaultModel, ModelRow, RegisterResult, VramModel } from 'dsh-plugin-local-infer/core';
+import type { Config, ModelRow, RegisterResult, VramModel } from 'dsh-plugin-local-infer/core';
 import type { LocalInferService } from 'dsh-plugin-local-infer/service';
 import type { RegisterRequest } from '../request.ts';
 /**
@@ -69,17 +68,4 @@ export declare function syncRegisteredModel(localInfer: LocalInferService, engin
 export declare function unregisterFor(localInfer: LocalInferService, request?: RegisterRequest): Promise<{
     removed: boolean;
 }>;
-/**
- * resolveModelDirectory picks the model directory a read names for the
- * model: the config's modelDirectory override when it names a path; else,
- * when the run's selected entry resolves and its artifact is already in the
- * hub cache, the hf download result, the snapshot directory holding it; else
- * the hub cache root, the base the hf CLI downloads into. The result is
- * derived on every read and never written back into the config, so a default
- * install never materializes a fake `modelDirectory` override. `hubCache` is
- * the hub cache root to resolve over; the service seam names it when it owns
- * the value (it also creates the directory when absent), and the default
- * reads the core resolution.
- */
-export declare function resolveModelDirectory(config: Config, entry?: DefaultModel, hubCache?: string): string;
 //# sourceMappingURL=model.d.ts.map

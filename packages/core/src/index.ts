@@ -174,6 +174,7 @@ export type { SudoGuard, SudoGuardOptions, SudoTimer } from './sudo.ts'
 export {
   CHAT_TEMPLATE_FILE,
   chatTemplateArtifactPath,
+  chatTemplatePresent,
   hfChatTemplateCommand,
   hfDownloadCommand,
   hfDownloadFileCommand,
@@ -181,6 +182,7 @@ export {
   hubCacheSnapshotFilePath,
   isModelDirectoryOverridden,
   modelArtifactPath,
+  modelArtifactPresent,
   modelCacheEntriesForEngine,
   modelEntriesForEngine,
   repoIdFromUrl,
@@ -196,8 +198,9 @@ export {
   hfDatasetsCacheDirectory,
   hfHubCacheDirectory,
   modelDownloadTarget,
+  resolveModelDirectory,
 } from './hf-cache.ts'
-export type { ModelDownloadTarget } from './hf-cache.ts'
+export type { ModelDirectoryResolution, ModelDownloadTarget } from './hf-cache.ts'
 export {
   dshConfigCacheDirectory,
   dshEngineCacheDirectory,

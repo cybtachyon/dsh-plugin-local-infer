@@ -9,7 +9,6 @@
  * @module dsh-plugin-local-infer/ui/viewmodels/summary
  */
 
-import { existsSync } from 'node:fs'
 import type {
   Config,
   DefaultProvenance,
@@ -19,13 +18,13 @@ import type {
 } from 'dsh-plugin-local-infer/core'
 import {
   buildModelEntry,
-  chatTemplateArtifactPath,
+  chatTemplatePresent,
   hfChatTemplateCommand,
   hfDownloadCommand,
-  isModelDirectoryOverridden,
-  modelArtifactPath,
+  modelArtifactPresent,
   modelCacheEntriesForEngine,
   modelEntriesForEngine,
+  resolveModelDirectory,
 } from '../../../core/lib/index.js'
 import type { LocalInferService } from 'dsh-plugin-local-infer/service'
 import {
@@ -43,7 +42,7 @@ import { renderMeter } from '../meter.ts'
 import type { WarningsModel } from '../warnings.ts'
 import { renderWarnings } from '../warnings.ts'
 import { relinkStoredProviders, resolveAdapter } from '../ops/engine.ts'
-import { resolveModelDirectory, resolveModelRow } from '../ops/model.ts'
+import { resolveModelRow } from '../ops/model.ts'
 import { chatTemplateLabel, isHfRepoReference, resolveModelRegistryId } from './summaryHelpers.ts'
 
 /**
@@ -223,10 +222,6 @@ export async function buildSummary(
   // default install writes no `modelDirectory` override and the card's field
   // stays blank (blank means the derived default).
   const config = request?.config ?? stored.config
-  // The hub-cache layout (the models--{ns}--{name} dirs) applies only when
-  // the raw config names no model directory; a user override keeps the flat
-  // layout. The flag reads the raw field only, never a backfilled copy.
-  const useHubCache = !isModelDirectoryOverridden(config.modelDirectory)
   // The hub cache root: the plugin's model download home (created when
   // absent), the base the cache-layout presence checks join onto and the
   // fallback directory when nothing is cached yet.
@@ -256,22 +251,20 @@ export async function buildSummary(
   // the download commands all read it; undefined when no default names the
   // model.
   const entry = defaultModelFor(engine.id, modelId)
-  // The Model Directory display value the card shows: the config override
-  // when it names a path, else the hf download result (the hub-cache
-  // snapshot holding the selected artifact), else the hub cache root. It is
-  // derived on every read and never persisted back into the stored config.
-  const modelDirectory = resolveModelDirectory(config, entry, hubCacheRoot)
-  // The cache-layout presence joins base onto the hub cache root (where the
-  // models--{ns}--{name} dirs live); the flat layout joins onto the resolved
-  // override. modelDirectory itself may name a snapshot, which is not a join
-  // base.
-  const presenceBase = useHubCache ? hubCacheRoot : modelDirectory
+  // The shared model-directory resolution reads the raw config field (never
+  // a backfilled copy): the override keeps the flat layout, and the hub-cache
+  // layout names the hf download result (the snapshot holding the selected
+  // artifact) or the hub cache root as the display directory, with the base
+  // the presence checks join onto. The display directory is never persisted
+  // back into the stored config.
+  const resolution = resolveModelDirectory(config.modelDirectory, entry, hubCacheRoot)
+  const modelDirectory = resolution.directory
   // The model scan lists the models the selected engine can serve: the hub
   // cache's `models--*` directories (the repo ids, filtered by the engine's
   // artifact types) when the model directory is the plugin default, else the
   // flat directory's top-level entries. A missing directory reads as an empty
   // list.
-  const modelFiles = useHubCache
+  const modelFiles = resolution.useHubCache
     ? modelCacheEntriesForEngine(localInfer.listModelCache(), engine.id)
     : modelEntriesForEngine(localInfer.listModelDirectory(modelDirectory), engine.id)
   // The model status checks the selected model against the model directory
@@ -279,7 +272,7 @@ export async function buildSummary(
   // row) only while the model is absent.
   let modelStatus: ModelStatusModel | null = null
   if (entry !== undefined) {
-    const present = existsSync(modelArtifactPath(entry, presenceBase, useHubCache))
+    const present = modelArtifactPresent(entry, resolution.baseDir, resolution.useHubCache)
     const hfCli = (await localInfer.hfCliAvailable()) !== null
     modelStatus = {
       modelId: entry.modelId,
@@ -287,7 +280,7 @@ export async function buildSummary(
       url: entry.url,
       present,
       hfCli,
-      downloadCommand: hfDownloadCommand(entry, modelDirectory, useHubCache),
+      downloadCommand: hfDownloadCommand(entry, modelDirectory, resolution.useHubCache),
     }
   }
   // The chat-template status checks the selected template against the model
@@ -298,14 +291,22 @@ export async function buildSummary(
   const chatTemplateValue = typeof config.chatTemplate === 'string' ? config.chatTemplate : ''
   let chatTemplateStatus: ChatTemplateStatusModel | null = null
   if (isHfRepoReference(chatTemplateValue)) {
-    const present = existsSync(chatTemplateArtifactPath(chatTemplateValue, presenceBase, useHubCache))
+    const present = chatTemplatePresent(
+      chatTemplateValue,
+      resolution.baseDir,
+      resolution.useHubCache,
+    )
     const hfCli = (await localInfer.hfCliAvailable()) !== null
     chatTemplateStatus = {
       repo: chatTemplateValue,
       label: chatTemplateLabel(chatTemplateValue),
       present,
       hfCli,
-      downloadCommand: hfChatTemplateCommand(chatTemplateValue, modelDirectory, useHubCache),
+      downloadCommand: hfChatTemplateCommand(
+        chatTemplateValue,
+        modelDirectory,
+        resolution.useHubCache,
+      ),
     }
   }
   // The restart re-link: a provider entry whose launch record names a still-

@@ -47,12 +47,15 @@ export function isModelDirectoryOverridden(modelDirectory) {
     return typeof modelDirectory === 'string' && modelDirectory.trim() !== '';
 }
 /**
- * modelArtifactPath is the path the presence check looks for in the model
- * directory: the entry's artifact file when it names one, else the repo-name
- * directory a whole-repo download leaves behind. With the hub-cache layout
- * (`useHubCache`), it resolves into the per-model cache directory's `blobs`
- * folder, the content-addressed store the hf CLI writes without `--local-dir`;
- * the `directory` is then the hub cache root, not the per-model folder.
+ * modelArtifactPath is the path a model download's artifact lands at in the
+ * model directory: the entry's artifact file when it names one, else the
+ * repo-name directory a whole-repo download leaves behind. With the hub-cache
+ * layout (`useHubCache`), it resolves into the per-model cache directory's
+ * `blobs` folder, the content-addressed store the hf CLI writes without
+ * `--local-dir`; the `directory` is then the hub cache root, not the per-model
+ * folder. Card-facing presence checks resolve the deterministic snapshot
+ * instead (modelArtifactPresent); this coarse form stays the engines' deploy
+ * re-fetch gate.
  */
 export function modelArtifactPath(entry, directory, useHubCache = false) {
     if (useHubCache) {
@@ -115,19 +118,41 @@ export function hfChatTemplateCommand(repo, directory, useHubCache = false) {
     return hfDownloadFileCommand(repo, CHAT_TEMPLATE_FILE, directory, useHubCache);
 }
 /**
- * chatTemplateArtifactPath is the path the chat-template presence check looks
- * for: the template file in the model directory, or with the hub-cache layout
- * (`useHubCache`) the per-model cache directory's `snapshots` folder, where
- * the hf CLI writes the template without `--local-dir`. The `directory` is the
- * hub cache root in the cache layout, not the per-model folder.
+ * chatTemplateArtifactPath is the path the flat-layout chat-template presence
+ * check looks for: the template file joined onto the model directory. The
+ * hub-cache layout resolves through chatTemplatePresent instead (the
+ * deterministic snapshot pick), not through this join.
  */
-export function chatTemplateArtifactPath(repo, directory, useHubCache = false) {
-    if (useHubCache) {
-        const modelDir = hubCacheModelDirectory(repo);
-        if (modelDir !== '')
-            return join(directory, modelDir, 'snapshots');
-    }
+export function chatTemplateArtifactPath(directory) {
     return join(directory, CHAT_TEMPLATE_FILE);
+}
+/**
+ * modelArtifactPresent reports whether a model download source's artifact is
+ * on disk. With the hub-cache layout it resolves the deterministic hub-cache
+ * snapshot holding the file (the same pick the model-directory display uses),
+ * so a `blobs` folder left by any download never reads as present on its
+ * own; a blank `file` (a whole-repo download) reads the repo's snapshot
+ * directories. With the flat layout it checks the artifact path joined onto
+ * the base directory. `baseDir` is the hub cache root under the cache layout,
+ * the flat override otherwise.
+ */
+export function modelArtifactPresent(entry, baseDir, useHubCache = false) {
+    if (useHubCache) {
+        return hubCacheSnapshotFilePath(baseDir, repoIdFromUrl(entry.url), entry.file ?? '') !== null;
+    }
+    return existsSync(modelArtifactPath(entry, baseDir));
+}
+/**
+ * chatTemplatePresent reports whether a chat template repo's template file is
+ * on disk: the deterministic hub-cache snapshot pick under the hub-cache
+ * layout (a per-repo `snapshots` folder alone never reads as present), the
+ * flat file join otherwise. `baseDir` follows the modelArtifactPresent rule.
+ */
+export function chatTemplatePresent(repo, baseDir, useHubCache = false) {
+    if (useHubCache) {
+        return hubCacheSnapshotFilePath(baseDir, repo, CHAT_TEMPLATE_FILE) !== null;
+    }
+    return existsSync(chatTemplateArtifactPath(baseDir));
 }
 /**
  * hubCacheSnapshotFilePath resolves the concrete file path of one file in the
