@@ -92,7 +92,7 @@ known to the plugin for every pack. The adapter stamps the same
 
 ### Phase 1 - shared config renderer
 
- - [ ] [TASK-001-array-entry-block](docs/PLAN-basalt-config-v2-TASK-001-array-entry-block.md)
+ - [x] [TASK-001-array-entry-block](docs/PLAN-basalt-config-v2-TASK-001-array-entry-block.md)
        Extend `configFileFromSpecs` (and the `ParameterDeploy` docs) with the
        `name[]` block convention: specs whose config `block` ends in `[]` merge
        their keys into the single object of a one-element array named by the

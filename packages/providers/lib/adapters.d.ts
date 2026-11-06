@@ -69,6 +69,11 @@ export type ConfigFileFormat = 'json' | 'yaml' | 'env';
  * key defaults to the spec key), then the result renders in the requested
  * format. A spec with no `deploy`, or no `config` target, contributes nothing.
  *
+ * A `block` ending in `[]` (e.g. `models[]`) follows the array-entry
+ * convention: the key lands inside the single object of a one-element array
+ * named by the prefix, and every spec sharing that block merges into that one
+ * entry. A plain block name nests as before, into one top-level object.
+ *
  * A spec that carries both a `config` and a `cli` target contributes nothing
  * here: the launch spells the CLI flag and leaves the on-disk config file (and
  * any hand edits in it) untouched. Only a spec whose sole deploy path is the
