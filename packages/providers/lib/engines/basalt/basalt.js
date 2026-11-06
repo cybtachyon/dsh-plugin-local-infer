@@ -2,28 +2,38 @@
  * Basalt parameter surface. The declarative `ParameterSpec` data for the
  * Basalt engine (https://github.com/jesdga95/basalt), sourced from the
  * repository's `docs/configuration/index.md`. Basalt is a C++/CUDA engine
- * for the Qwen3.8-Flash-Next MoE model, Blackwell-only (sm_120). Every
- * setting lands in a v2 `basalt_config.json` file the deploy step writes,
- * so each spec carries a `config` deploy target naming where the value
- * nests: the shared `server` options, the per-model settings of the single
- * `models[]` entry, or the shared `engine` flags; the `BasaltAdapter`
- * (TASK 011) renders the file with `configFileFromSpecs` and passes it to
- * `basalt serve --config`.
+ * for the Qwen3.8-Flash-Next and DeepSeek-V4.1-Flash MoE models,
+ * Blackwell-only (sm_120). Every setting lands in a v2
+ * `basalt_config.json` file the deploy step writes, so each spec carries a
+ * `config` deploy target naming where the value nests: the shared `server`
+ * options, the per-model settings of the single `models[]` entry, or the
+ * shared `engine` flags; the `BasaltAdapter` (TASK 011) renders the file
+ * with `configFileFromSpecs` and passes it to `basalt serve --config`.
  *
  * The data is the surface; the adapter composes it into a `LaunchPlan`.
  * Adding a setting here is a data edit, never an adapter rewire.
  * @module dsh-plugin-local-infer/providers/engines/basalt/basalt
  */
+import { basename } from 'node:path';
 /**
- * The Hugging Face repo and file the deploy step downloads into the model
- * directory: the single `.basalt` artifact the engine serves (the weights,
- * tokenizer, chat template, drafter, vision projector, and default
- * sampling all come from it). The constants live in this leaf module so
- * both the adapter and the default model list import them without a
- * circular edge.
+ * The Hugging Face repo and file of the bundled Qwen `.basalt` artifact
+ * (the weights, tokenizer, chat template, drafter, vision projector, and
+ * default sampling all come from it), the one a bare config serves. The
+ * constants live in this leaf module so both the adapter and the default
+ * model list import them without a circular edge.
  */
 export const BASALT_MODEL_REPO = 'jesdga/Qwen3.8-Flash-Next-Basalt';
 export const BASALT_MODEL_FILE = 'Qwen3.8-FN-NVFP4-DQ6_K.basalt';
+/**
+ * The Hugging Face repo and file of the second `.basalt` artifact the
+ * engine serves: the DeepSeek-V4.1-Flash UD-IQ1_M pack the v0.3.0 release
+ * notes name. The registry key and the served API id ride beside them, so
+ * the default model list, the VRAM and preset rows, the adapter's per-
+ * artifact download resolution, and the entry's alias stamp all name the
+ * same pack from one place.
+ */
+export const BASALT_DEEPSEEK_MODEL_REPO = 'jesdga/DeepSeek-V4.1-Flash-1017-Basalt';
+export const BASALT_DEEPSEEK_MODEL_FILE = 'DeepSeek-V4.1-Flash-1017-UD-IQ1_M.basalt';
 /**
  * The `basalt_config.json` format version the adapter's render envelope
  * stamps under the top-level `version` key. v0.3.0 refuses a file without
@@ -38,20 +48,31 @@ export const BASALT_CONFIG_VERSION = 2;
  */
 export const BASALT_DEFAULT_PORT = 8080;
 /**
- * The model id of the single default registry entry: the Qwen3.8-Flash-Next
- * `.basalt` artifact the engine serves. The default model list, the built-in
- * preset key, the Basalt VramModel id, and the adapter's plan modelId stamp
- * all share this one constant, so every model-id keyed read of the engine
- * names the same model the card's Model dropdown offers.
+ * The model id of the default registry entry a bare config names: the
+ * Qwen3.8-Flash-Next `.basalt` artifact the engine serves. The default
+ * model list, the built-in preset key, the Basalt VramModel id, and the
+ * adapter's plan modelId stamp all share this one constant, so every
+ * model-id keyed read of the engine names the same model the card's Model
+ * dropdown offers first.
  */
 export const BASALT_DEFAULT_MODEL_ID = 'qwen38-flash-next';
 /**
- * The model id the serve server actually runs the bundled artifact under:
- * the `meta.name` stored inside the `.basalt` artifact file. The serve
- * engine reads it as the served model name, advertises it on `/v1/models`,
- * and accepts a request only when its model is that name or the artifact's
- * own file name, so the registrar must publish this id for the bundled
- * artifact; the registry key and the file path are never advertised.
+ * The registry key and served API id of the second default entry, the
+ * DeepSeek-V4.1-Flash UD-IQ1_M pack: `BASALT_DEEPSEEK_MODEL_ID` keys the
+ * default model list, the VRAM row, and the preset row, while
+ * `BASALT_DEEPSEEK_SERVED_MODEL_ID` is the name the adapter stamps as the
+ * config entry's `alias` and the registrar publishes (basaltServedName).
+ * The alias pins the name on `/v1/models` because the pack's stored
+ * `meta.name` is not known to the plugin.
+ */
+export const BASALT_DEEPSEEK_MODEL_ID = 'deepseek-v41-flash';
+export const BASALT_DEEPSEEK_SERVED_MODEL_ID = 'DeepSeek-V4.1-Flash';
+/**
+ * The model id the serve server reports the bundled Qwen artifact under:
+ * the `meta.name` stored inside the `.basalt` artifact file. The adapter
+ * stamps it as the config entry's `alias` and the registrar publishes it
+ * (basaltServedName), so `/v1/models` always lists this name and the
+ * registry key and the file path are never advertised.
  */
 export const BASALT_SERVED_MODEL_ID = 'Qwen3.8-Flash-Next NVIDIA-NVFP4';
 /**
@@ -258,5 +279,26 @@ export const BASALT_PARAMETERS = [
  */
 export function basaltModelKey(config) {
     return typeof config.model === 'string' ? config.model : '';
+}
+/**
+ * basaltServedName returns the model name a `.basalt` artifact answers to
+ * at the API: the name the serve server reports and `/v1/models` lists
+ * (the config entry's `alias`, stamped from here), and a request may
+ * equally name the artifact's own file name. The two artifacts the default
+ * list carries map to their published served ids, because each pack's
+ * stored `meta.name` is not knowable to the plugin for arbitrary files;
+ * any other artifact file answers to its basename, the engine's own
+ * file-name rule. Takes the resolved artifact file (the name or path
+ * `basaltModelFileName` produces); the adapter's `modelRef` and
+ * `renderLaunch` alias stamp both call it, so the published id and the
+ * served alias cannot drift apart.
+ */
+export function basaltServedName(modelValue) {
+    const file = basename(modelValue);
+    if (file === BASALT_MODEL_FILE)
+        return BASALT_SERVED_MODEL_ID;
+    if (file === BASALT_DEEPSEEK_MODEL_FILE)
+        return BASALT_DEEPSEEK_SERVED_MODEL_ID;
+    return file;
 }
 //# sourceMappingURL=basalt.js.map

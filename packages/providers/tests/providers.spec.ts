@@ -28,14 +28,15 @@ describe('local-infer-providers scaffold', () => {
     ])
     // Phase 7 registers the built-in presets: the two NInfer measured presets,
     // the three Hyper-Qwen tiers (distinct by label, one isDefault), and the
-    // Basalt Blackwell long-context preset (wildcard class).
-    expect(ctx.localInfer.registeredPresets()).toHaveLength(6)
+    // Basalt Blackwell long-context preset per model (wildcard class).
+    expect(ctx.localInfer.registeredPresets()).toHaveLength(7)
     expect(
       ctx.localInfer
         .registeredPresets()
         .map((preset) => `${preset.engineId}/${preset.modelId}/${preset.hardwareClass}`)
         .sort(),
     ).toEqual([
+      'basalt/deepseek-v41-flash/*',
       'basalt/qwen38-flash-next/*',
       'hyperqwen/qwen3-27b/24g-sm86',
       'hyperqwen/qwen3-27b/24g-sm86',
@@ -55,6 +56,7 @@ describe('local-infer-providers scaffold', () => {
       'qwen3-27b-swift15',
       'qwen3-35b',
       'qwen38-flash-next',
+      'deepseek-v41-flash',
     ])
   })
 })

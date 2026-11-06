@@ -60,9 +60,9 @@ describe('local-infer bundle', () => {
       'basalt',
     ])
     // The providers row registers the built-in presets (two NInfer, three
-    // Hyper-Qwen tiers, one Basalt Blackwell) alongside the hardware
-    // guidelines.
-    expect(ctx.localInfer.registeredPresets()).toHaveLength(6)
+    // Hyper-Qwen tiers, one Basalt Blackwell per model) alongside the
+    // hardware guidelines.
+    expect(ctx.localInfer.registeredPresets()).toHaveLength(7)
     // The providers row registers the built-in hardware guidelines.
     expect(ctx.localInfer.registeredGuidelines().map((guideline) => guideline.id)).toEqual([
       'docker-not-installed',

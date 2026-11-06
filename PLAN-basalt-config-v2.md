@@ -118,7 +118,7 @@ known to the plugin for every pack. The adapter stamps the same
 
 ### Phase 4 - the second model
 
- - [ ] [TASK-005-deepseek-model](docs/PLAN-basalt-config-v2-TASK-005-deepseek-model.md)
+ - [x] [TASK-005-deepseek-model](docs/PLAN-basalt-config-v2-TASK-005-deepseek-model.md)
        Register DeepSeek-V4.1-Flash: default model entry, constants, alias
        stamping through a single `basaltServedName` source shared by the entry
        and `modelRef`, per-artifact repo resolution in `ensureModelArtifact`,

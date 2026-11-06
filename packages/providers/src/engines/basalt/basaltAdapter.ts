@@ -1,6 +1,7 @@
 /**
- * The Basalt engine adapter. BasaltAdapter is the Basalt engine (the C++/CUDA
- * serve/ server for the Qwen3.8-Flash-Next MoE model, Blackwell-only).
+ * The Basalt engine adapter. BasaltAdapter is the Basalt engine (the
+ * C++/CUDA serve/ server for the Qwen3.8-Flash-Next and DeepSeek-V4.1-Flash
+ * MoE models, Blackwell-only).
  * `renderLaunch` renders a `basalt serve --config --engine-bin` process
  * plan: the binary name comes from the host OS profile, every setting and
  * the served model land in the `basalt_config.json` the plan's `configFile`
@@ -52,7 +53,7 @@ import {
   trackChild,
 } from '../../adapters.ts'
 import { engineBuildDir, syncEngineForDeploy } from '../../acquire.ts'
-import { defaultModelFor } from '../../model-defaults.ts'
+import { defaultModelFor, defaultModelsForEngine } from '../../model-defaults.ts'
 import {
   BASALT_CONFIG_VERSION,
   BASALT_DEFAULT_MODEL_ID,
@@ -60,8 +61,8 @@ import {
   BASALT_MODEL_FILE,
   BASALT_MODEL_REPO,
   BASALT_PARAMETERS,
-  BASALT_SERVED_MODEL_ID,
   basaltModelKey,
+  basaltServedName,
 } from './basalt.ts'
 import { basaltLinuxBinary } from './basaltLinux.ts'
 import { basaltMacOSBinary } from './basaltMacOS.ts'
@@ -121,6 +122,30 @@ function basaltModelFileName(modelValue: string): string {
 }
 
 /**
+ * basaltDownloadEntry resolves the default model entry whose Hugging Face
+ * repo a `.basalt` artifact downloads from: the entry the plan's modelId
+ * names (a registry-key selection), else the entry whose artifact file
+ * matches modelFile (a directory-scan pick of a listed artifact), else the
+ * bundled Qwen pair (today's fallback for a custom `.basalt` file no list
+ * entry names). The artifact being downloaded is stamped as `file`, so the
+ * presence check, the hf command, and the hub-cache lookup all read the
+ * resolved pair: the DeepSeek pack downloads from its own repo, not the
+ * hardcoded Qwen one.
+ */
+function basaltDownloadEntry(modelId: string, modelFile: string): DefaultModel {
+  const byKey = modelId === '' ? undefined : defaultModelFor('basalt', modelId)
+  const entry =
+    byKey ?? defaultModelsForEngine('basalt').find((item) => item.file === modelFile)
+  const fallback: DefaultModel = {
+    engineId: 'basalt',
+    modelId: BASALT_DEFAULT_MODEL_ID,
+    label: 'Basalt',
+    url: `https://huggingface.co/${BASALT_MODEL_REPO}`,
+  }
+  return { ...(entry ?? fallback), file: modelFile }
+}
+
+/**
  * configContentWithModelPath returns config file content with the v2
  * envelope's single models entry stamped with the concrete artifact path,
  * replacing the renderLaunch placeholder. Content that is not a JSON object
@@ -177,20 +202,17 @@ export class BasaltAdapter extends EngineAdapter {
   }
 
   override modelRef(config: Config): { id: string; name: string } {
-    // The serve server accepts a request only when its model names the
-    // artifact's `meta.name` or the artifact's own file name, and `/v1/models`
-    // advertises only the `meta.name`. The config's model value resolves to
-    // the artifact file the launch serves (basaltModelFileName: registry key,
-    // .basalt path, or the engine default), so a bare config, the registry
-    // key, and the bundled file name all publish the served `meta.name`, and
-    // any other `.basalt` pick publishes its file name, which the engine also
-    // accepts. The registrar writes this id, so the chat turn routes to a
-    // name the engine lists.
-    const file = basename(basaltModelFileName(basaltModelKey(config)))
-    if (file === BASALT_MODEL_FILE) {
-      return { id: BASALT_SERVED_MODEL_ID, name: BASALT_SERVED_MODEL_ID }
-    }
-    return { id: file, name: file }
+    // The serve server answers to the config entry's `alias` (and to the
+    // artifact's own file name), so the registrar publishes exactly the
+    // name renderLaunch stamps into the entry: basaltServedName resolves it
+    // from the artifact file the config names (basaltModelFileName: registry
+    // key, .basalt path, or the engine default). A bare config, the Qwen
+    // registry key, and the bundled file name all publish the Qwen served
+    // id; the DeepSeek key and file publish `DeepSeek-V4.1-Flash`; any
+    // other `.basalt` pick publishes its file name, which the engine also
+    // accepts. The chat turn then routes to a name the engine lists.
+    const served = basaltServedName(basaltModelFileName(basaltModelKey(config)))
+    return { id: served, name: served }
   }
 
   override modelInput(config: Config): string[] {
@@ -254,14 +276,18 @@ export class BasaltAdapter extends EngineAdapter {
     // order upstream documents. The surface's raw `model` value is a registry
     // key or file name, never the download-target path the engine resolves
     // against the config file's home, so the entry is restamped with the
-    // placeholder path before the envelope is sealed.
+    // placeholder path before the envelope is sealed. The entry also carries
+    // the deterministic API name as `alias`: without one the server reports
+    // the artifact's stored `meta.name`, which the plugin cannot know for
+    // arbitrary packs, so the entry stamps the same basaltServedName string
+    // modelRef publishes and `/v1/models` always lists what DSH routes to.
     const blocks = JSON.parse(
       configFileFromSpecs(BASALT_PARAMETERS, config, 'json'),
     ) as BasaltConfigBlocks
     const configContent = JSON.stringify(
       {
         version: BASALT_CONFIG_VERSION,
-        models: [{ ...blocks.models?.[0], model: modelPath }],
+        models: [{ ...blocks.models?.[0], model: modelPath, alias: basaltServedName(modelFile) }],
         engine: blocks.engine ?? {},
         server: blocks.server ?? {},
       },
@@ -345,7 +371,15 @@ export class BasaltAdapter extends EngineAdapter {
     // launch after a Get does no duplicate download.
     const { baseDir, useHubCache } = modelDownloadTarget(plan.modelDirectory)
     const modelFile = basename(plan.modelFile ?? BASALT_MODEL_FILE)
-    const artifact = await this.ensureModelArtifact(modelFile, baseDir, useHubCache, onProgress)
+    // The repo rides the default model list entry the plan resolves to (the
+    // modelId key or the artifact file), so each artifact downloads from its
+    // own repo.
+    const artifact = await this.ensureModelArtifact(
+      basaltDownloadEntry(plan.modelId ?? '', modelFile),
+      baseDir,
+      useHubCache,
+      onProgress,
+    )
     if (!artifact.ok) {
       return withLogs({ ok: false, detail: artifact.detail })
     }
@@ -380,27 +414,22 @@ export class BasaltAdapter extends EngineAdapter {
   }
 
   /**
-   * ensureModelArtifact downloads the .basalt model file into the model
-   * directory and resolves the concrete path the engine serves. A model the
-   * Get-steps routine already downloaded is on disk, so the re-fetch is
-   * skipped. With the hub-cache layout the concrete path is the
-   * content-addressed snapshot path (only known after the download); with the
-   * flat layout it is the flat join. Returns the path, or a detail when the
-   * download fails or leaves no snapshot.
+   * ensureModelArtifact downloads the `.basalt` model file named by the
+   * resolved default-model entry (its repo plus artifact file) into the
+   * model directory and resolves the concrete path the engine serves. A
+   * model the Get-steps routine already downloaded is on disk, so the
+   * re-fetch is skipped. With the hub-cache layout the concrete path is the
+   * content-addressed snapshot path (only known after the download); with
+   * the flat layout it is the flat join. Returns the path, or a detail when
+   * the download fails or leaves no snapshot.
    */
   private async ensureModelArtifact(
-    modelFile: string,
+    entry: DefaultModel,
     baseDir: string,
     useHubCache: boolean,
     onProgress?: LaunchProgress,
   ): Promise<{ ok: true; path: string } | { ok: false; detail: string }> {
-    const entry: DefaultModel = {
-      engineId: this.id,
-      modelId: 'basalt',
-      label: 'Basalt',
-      url: `https://huggingface.co/${BASALT_MODEL_REPO}`,
-      file: modelFile,
-    }
+    const modelFile = entry.file ?? ''
     if (!existsSync(modelArtifactPath(entry, baseDir, useHubCache))) {
       onProgress?.('download')
       const download = await this.host.run(hfDownloadCommand(entry, baseDir, useHubCache))

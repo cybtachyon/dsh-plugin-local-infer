@@ -6,8 +6,8 @@
  * capacity report, not estimated from parameter counts. The provenance note on
  * each model names the exact weight artifact the figures apply to, because the
  * runtime also recognizes other weight profiles with different resident sizes.
- * The Basalt model is the estimated set for the Qwen3.8-Flash-Next NVFP4
- * artifact: the measured figures are not yet available, so its terms are
+ * The Basalt models are the estimated sets for the engine's `.basalt`
+ * artifacts: the measured figures are not yet available, so their terms are
  * estimated from the model size and flagged `source: 'estimated'`.
  * @module dsh-plugin-local-infer/providers/vram
  */
@@ -25,7 +25,10 @@ export declare const NINFER_VRAM_MODELS: readonly VramModel[];
  */
 export declare function ninferVramModel(modelId: string): VramModel | undefined;
 /**
- * The Basalt estimated VramModel for the Qwen3.8-Flash-Next NVFP4 artifact
+ * The Basalt estimated VramModels, one per `.basalt` artifact the engine
+ * serves.
+ *
+ * The first is the Qwen3.8-Flash-Next NVFP4 artifact
  * (`Qwen3.8-FN-NVFP4-DQ6_K.basalt`). The measured figures are not yet
  * available, so every term is estimated from the model size, not measured
  * against the engine: the weights price a ~48B-total-parameter MoE in NVFP4
@@ -35,12 +38,13 @@ export declare function ninferVramModel(modelId: string): VramModel | undefined;
  * what keeps the meter from reading these as authoritative.
  *
  * Basalt's `spec` setting is a token-window count (a number), not a named
- * speculation backend, so the model carries no `speculation` table and no
- * `specKey`: the estimator prices it from the base terms.
+ * speculation backend, so neither model carries a `speculation` table or a
+ * `specKey`: the estimator prices them from the base terms.
  */
 export declare const BASALT_VRAM_MODELS: readonly VramModel[];
 /**
- * Resolves the Basalt VramModel by its registry id, `qwen38-flash-next`.
+ * Resolves a Basalt VramModel by its registry id, `qwen38-flash-next` or
+ * `deepseek-v41-flash`.
  */
 export declare function basaltVramModel(modelId: string): VramModel | undefined;
 //# sourceMappingURL=vram.d.ts.map

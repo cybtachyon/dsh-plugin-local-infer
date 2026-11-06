@@ -27,9 +27,9 @@ describe('BUILTIN_PRESETS', () => {
     expect(huge?.values.kv).toBe('kvarn')
   })
 
-  it('ships the Basalt Blackwell long-context preset on the wildcard class', () => {
+  it('ships the Basalt Blackwell long-context preset per model on the wildcard class', () => {
     const basalt = BUILTIN_PRESETS.filter(preset => preset.engineId === 'basalt')
-    expect(basalt).toHaveLength(1)
+    expect(basalt).toHaveLength(2)
     const preset = basalt[0]
     // Basalt runs on any Blackwell card, so the preset is keyed to the
     // wildcard class, not a specific card.
@@ -40,6 +40,14 @@ describe('BUILTIN_PRESETS', () => {
       kv: 'int8',
       maxContext: 32768,
     })
+    // The DeepSeek row is that model's own default (the resolver keys
+    // presets by the engine/model/class triple) and carries no kv: the
+    // pack has no KV-format choice.
+    const deepseek = basalt[1]
+    expect(deepseek?.modelId).toBe('deepseek-v41-flash')
+    expect(deepseek?.hardwareClass).toBe('*')
+    expect(deepseek?.isDefault).toBe(true)
+    expect(deepseek?.values).toEqual({ maxContext: 32768 })
   })
 
   it('keys every preset by its exact triple and a source tag', () => {
@@ -47,8 +55,8 @@ describe('BUILTIN_PRESETS', () => {
       expect(preset.engineId).not.toBe('')
       expect(preset.modelId).not.toBe('')
       // Every preset names a hardware class: the sm86 card for the NInfer and
-      // Hyper-Qwen presets, the wildcard for the Basalt Blackwell preset (it
-      // runs on any detected Blackwell card).
+      // Hyper-Qwen presets, the wildcard for the Basalt Blackwell presets
+      // (they run on any detected Blackwell card).
       expect(preset.hardwareClass).not.toBe('')
       expect(preset.source).not.toBe('')
     }
