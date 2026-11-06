@@ -5,10 +5,10 @@
  * a save so the registered model's input types stay in step with the config.
  * resolveModelRow and resolveContextWindow resolve the row and context window
  * the registrar publishes; resolveModelDirectory picks the model directory a
- * Get run downloads into.
+ * Get run names for the model.
  * @module dsh-plugin-local-infer/ui/ops/model
  */
-import { buildModelEntry, providerIdFor } from '../../../core/lib/index.js';
+import { buildModelEntry, hfDownloadResultDirectory, hfHubCacheDirectory, providerIdFor, repoIdFromUrl, } from '../../../core/lib/index.js';
 /**
  * DEFAULT_CONTEXT_WINDOW is the context window the registrar publishes when
  * neither the config nor the resolved VramModel names one: the 32K spec
@@ -122,15 +122,25 @@ export async function unregisterFor(localInfer, request) {
     return { removed: true };
 }
 /**
- * resolveModelDirectory picks the model directory a Get run downloads into:
- * the config's modelDirectory override when it names a path, else the
- * plugin's default model directory. The same rule the summary and deps routes
- * apply, so a Get and the card's Model Directory field agree on the target.
+ * resolveModelDirectory picks the model directory a Get run names for the
+ * model: the config's modelDirectory override when it names a path; else,
+ * when the run's selected entry resolves and its artifact is already in the
+ * hub cache, the hf download result, the snapshot directory holding it; else
+ * the hub cache root, the base the hf CLI downloads into. The result is
+ * derived on every read and never written back into the config, so a default
+ * install never materializes a fake `modelDirectory` override.
  */
-export function resolveModelDirectory(localInfer, config) {
+export function resolveModelDirectory(config, entry) {
     const rawModelDir = config.modelDirectory;
-    return typeof rawModelDir === 'string' && rawModelDir.trim() !== ''
-        ? rawModelDir
-        : localInfer.defaultModelDirectory();
+    if (typeof rawModelDir === 'string' && rawModelDir.trim() !== '') {
+        return rawModelDir;
+    }
+    const hubCache = hfHubCacheDirectory();
+    if (entry !== undefined) {
+        const snapshot = hfDownloadResultDirectory(hubCache, repoIdFromUrl(entry.url), entry.file ?? '');
+        if (snapshot !== null)
+            return snapshot;
+    }
+    return hubCache;
 }
 //# sourceMappingURL=model.js.map
