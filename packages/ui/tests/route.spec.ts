@@ -1381,6 +1381,10 @@ describe('platform config (§3.10) round trip and launch pass-through', () => {
     const infernix = summary.engines.find((entry) => entry.id === 'infernix')
     expect(infernix?.defaultBuildCommand).toBe('cd {dir} && cmake --preset release && cmake --build build -j')
     expect(infernix?.defaultDockerTag).toBeUndefined()
+    // Every engine entry carries its default checkout home, so the card's
+    // Engine Directory placeholder shows the real path for the selected engine.
+    expect(ninfer?.defaultEngineDirectory).toBe(dshEngineCacheDirectory('ninfer'))
+    expect(infernix?.defaultEngineDirectory).toBe(dshEngineCacheDirectory('infernix'))
   })
 
   it('round-trips the build commands and docker tag platform overrides', async () => {

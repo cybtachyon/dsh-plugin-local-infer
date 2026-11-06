@@ -33,6 +33,7 @@ export interface LocalInferSummary {
         };
         defaultBuildCommand?: string;
         defaultDockerTag?: string;
+        defaultEngineDirectory: string;
     }[];
     models: {
         id: string;
