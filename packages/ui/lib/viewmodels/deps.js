@@ -57,12 +57,15 @@ export async function buildDeps(localInfer, request) {
     // shows the download command (the auto-download's fallback when the CLI is
     // missing or the fetch failed). A present template, a local path, or no
     // template leaves the row off.
-    const modelDirectory = localInfer.defaultModelDirectory();
     const rawModelDir = config.modelDirectory;
-    const modelDir = typeof rawModelDir === 'string' && rawModelDir.trim() !== '' ? rawModelDir : modelDirectory;
-    // The hub-cache layout applies only when the model directory is the plugin
-    // default; a user override keeps the flat layout.
-    const useHubCache = !isModelDirectoryOverridden(config.modelDirectory);
+    const overridden = isModelDirectoryOverridden(rawModelDir);
+    // The hub-cache layout applies only when the raw config names no model
+    // directory; a user override keeps the flat layout. The flag reads the raw
+    // field only, never a derived copy.
+    const useHubCache = !overridden;
+    // The presence join base: the hub cache root under the cache layout (where
+    // the models--{ns}--{name} dirs live), the override under the flat layout.
+    const modelDir = overridden && typeof rawModelDir === 'string' ? rawModelDir : localInfer.defaultModelDirectory();
     const chatTemplateValue = typeof config.chatTemplate === 'string' ? config.chatTemplate : '';
     let chatTemplate;
     if (isHfRepoReference(chatTemplateValue) &&

@@ -122,20 +122,22 @@ export async function unregisterFor(localInfer, request) {
     return { removed: true };
 }
 /**
- * resolveModelDirectory picks the model directory a Get run names for the
+ * resolveModelDirectory picks the model directory a read names for the
  * model: the config's modelDirectory override when it names a path; else,
  * when the run's selected entry resolves and its artifact is already in the
  * hub cache, the hf download result, the snapshot directory holding it; else
  * the hub cache root, the base the hf CLI downloads into. The result is
  * derived on every read and never written back into the config, so a default
- * install never materializes a fake `modelDirectory` override.
+ * install never materializes a fake `modelDirectory` override. `hubCache` is
+ * the hub cache root to resolve over; the service seam names it when it owns
+ * the value (it also creates the directory when absent), and the default
+ * reads the core resolution.
  */
-export function resolveModelDirectory(config, entry) {
+export function resolveModelDirectory(config, entry, hubCache = hfHubCacheDirectory()) {
     const rawModelDir = config.modelDirectory;
     if (typeof rawModelDir === 'string' && rawModelDir.trim() !== '') {
         return rawModelDir;
     }
-    const hubCache = hfHubCacheDirectory();
     if (entry !== undefined) {
         const snapshot = hfDownloadResultDirectory(hubCache, repoIdFromUrl(entry.url), entry.file ?? '');
         if (snapshot !== null)

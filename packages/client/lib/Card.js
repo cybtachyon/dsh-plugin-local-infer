@@ -524,7 +524,15 @@ export function card(_react, localeRef, _primitives) {
                         react.createElement("label", { style: LABEL_STYLE }, t.modelDirectory),
                         react.createElement("input", { style: INPUT_STYLE, type: "text", value: typeof currentDraft.config.modelDirectory === 'string'
                                 ? currentDraft.config.modelDirectory
-                                : '', placeholder: t.dirPlaceholder, onChange: (event) => onModelDirectory(event.target.value) })),
+                                : '',
+                            // An empty field means the derived default: the placeholder
+                            // shows the resolved directory (the override, the hf
+                            // download snapshot, or the hub cache root) the summary
+                            // derives per read, so the effective path stays visible
+                            // without being stored as an override.
+                            placeholder: typeof summary.modelDirectory === 'string' && summary.modelDirectory !== ''
+                                ? summary.modelDirectory
+                                : t.dirPlaceholder, onChange: (event) => onModelDirectory(event.target.value) })),
                     state.ui.help ? renderHelpRow(t.modelDirHelp) : null),
                 summary.modelStatus !== null && summary.modelStatus !== undefined && !summary.modelStatus.present
                     ? summary.modelStatus.hfCli ? (react.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 } },

@@ -70,13 +70,16 @@ export declare function unregisterFor(localInfer: LocalInferService, request?: R
     removed: boolean;
 }>;
 /**
- * resolveModelDirectory picks the model directory a Get run names for the
+ * resolveModelDirectory picks the model directory a read names for the
  * model: the config's modelDirectory override when it names a path; else,
  * when the run's selected entry resolves and its artifact is already in the
  * hub cache, the hf download result, the snapshot directory holding it; else
  * the hub cache root, the base the hf CLI downloads into. The result is
  * derived on every read and never written back into the config, so a default
- * install never materializes a fake `modelDirectory` override.
+ * install never materializes a fake `modelDirectory` override. `hubCache` is
+ * the hub cache root to resolve over; the service seam names it when it owns
+ * the value (it also creates the directory when absent), and the default
+ * reads the core resolution.
  */
-export declare function resolveModelDirectory(config: Config, entry?: DefaultModel): string;
+export declare function resolveModelDirectory(config: Config, entry?: DefaultModel, hubCache?: string): string;
 //# sourceMappingURL=model.d.ts.map

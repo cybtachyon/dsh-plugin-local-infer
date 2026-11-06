@@ -16,7 +16,7 @@ import { renderForm } from "../form.js";
 import { renderMeter } from "../meter.js";
 import { renderWarnings } from "../warnings.js";
 import { relinkStoredProviders, resolveAdapter } from "../ops/engine.js";
-import { resolveModelRow } from "../ops/model.js";
+import { resolveModelDirectory, resolveModelRow } from "../ops/model.js";
 import { chatTemplateLabel, isHfRepoReference, resolveModelRegistryId } from "./summaryHelpers.js";
 /**
  * buildSummary assembles the card's read model for one engine and config: the
@@ -32,20 +32,19 @@ export async function buildSummary(localInfer, request) {
     const engineId = request?.engine ?? stored.engine;
     // ENGINES is a known non-empty constant, so the fallback is always defined.
     const engine = ENGINES.find((entry) => entry.id === engineId) ?? ENGINES[0];
-    // The Model Directory field defaults to the plugin's model download
-    // directory (the Hugging Face hub cache, created when absent), so the card
-    // always seeds a real path the deploy step can target. A stored or
-    // requested directory that is a non-blank string wins over the default.
-    const modelDirectory = localInfer.defaultModelDirectory();
-    const rawConfig = request?.config ?? stored.config;
-    const config = typeof rawConfig.modelDirectory === 'string' && rawConfig.modelDirectory.trim() !== ''
-        ? rawConfig
-        : { ...rawConfig, modelDirectory };
-    const modelDir = typeof config.modelDirectory === 'string' ? config.modelDirectory : modelDirectory;
-    // The hub-cache layout (the models--{ns}--{name} dirs) applies only when the
-    // model directory is the plugin default; a user override keeps the flat
-    // layout. modelDir is the hub cache root in the default case.
+    // The config the card edits is exactly what is stored or requested: the
+    // summary never backfills a default modelDirectory into it, so a Save of a
+    // default install writes no `modelDirectory` override and the card's field
+    // stays blank (blank means the derived default).
+    const config = request?.config ?? stored.config;
+    // The hub-cache layout (the models--{ns}--{name} dirs) applies only when
+    // the raw config names no model directory; a user override keeps the flat
+    // layout. The flag reads the raw field only, never a backfilled copy.
     const useHubCache = !isModelDirectoryOverridden(config.modelDirectory);
+    // The hub cache root: the plugin's model download home (created when
+    // absent), the base the cache-layout presence checks join onto and the
+    // fallback directory when nothing is cached yet.
+    const hubCacheRoot = localInfer.defaultModelDirectory();
     const hardware = await localInfer.detectHardware();
     // The model value the card carries maps onto the VramModel registry key the
     // estimator prices: a default-model selection is already a registry key, a
@@ -67,6 +66,20 @@ export async function buildSummary(localInfer, request) {
     const defaults = await localInfer.resolveDefaults(engine.id, modelId, hardware, pricedConfig);
     const estimate = await localInfer.estimate(defaults.config, hardware, engine.id);
     const guidelineResults = await localInfer.guidelines(defaults.config, hardware, engine.id);
+    // The selected default entry: the resolved directory, the model status, and
+    // the download commands all read it; undefined when no default names the
+    // model.
+    const entry = defaultModelFor(engine.id, modelId);
+    // The Model Directory display value the card shows: the config override
+    // when it names a path, else the hf download result (the hub-cache
+    // snapshot holding the selected artifact), else the hub cache root. It is
+    // derived on every read and never persisted back into the stored config.
+    const modelDirectory = resolveModelDirectory(config, entry, hubCacheRoot);
+    // The cache-layout presence joins base onto the hub cache root (where the
+    // models--{ns}--{name} dirs live); the flat layout joins onto the resolved
+    // override. modelDirectory itself may name a snapshot, which is not a join
+    // base.
+    const presenceBase = useHubCache ? hubCacheRoot : modelDirectory;
     // The model scan lists the models the selected engine can serve: the hub
     // cache's `models--*` directories (the repo ids, filtered by the engine's
     // artifact types) when the model directory is the plugin default, else the
@@ -74,14 +87,13 @@ export async function buildSummary(localInfer, request) {
     // list.
     const modelFiles = useHubCache
         ? modelCacheEntriesForEngine(localInfer.listModelCache(), engine.id)
-        : modelEntriesForEngine(localInfer.listModelDirectory(modelDir), engine.id);
+        : modelEntriesForEngine(localInfer.listModelDirectory(modelDirectory), engine.id);
     // The model status checks the selected model against the model directory
     // and probes the hf CLI, so the card shows its Download row (or the URL
     // row) only while the model is absent.
-    const entry = defaultModelFor(engine.id, modelId);
     let modelStatus = null;
     if (entry !== undefined) {
-        const present = existsSync(modelArtifactPath(entry, modelDir, useHubCache));
+        const present = existsSync(modelArtifactPath(entry, presenceBase, useHubCache));
         const hfCli = (await localInfer.hfCliAvailable()) !== null;
         modelStatus = {
             modelId: entry.modelId,
@@ -89,7 +101,7 @@ export async function buildSummary(localInfer, request) {
             url: entry.url,
             present,
             hfCli,
-            downloadCommand: hfDownloadCommand(entry, modelDir, useHubCache),
+            downloadCommand: hfDownloadCommand(entry, modelDirectory, useHubCache),
         };
     }
     // The chat-template status checks the selected template against the model
@@ -100,14 +112,14 @@ export async function buildSummary(localInfer, request) {
     const chatTemplateValue = typeof config.chatTemplate === 'string' ? config.chatTemplate : '';
     let chatTemplateStatus = null;
     if (isHfRepoReference(chatTemplateValue)) {
-        const present = existsSync(chatTemplateArtifactPath(chatTemplateValue, modelDir, useHubCache));
+        const present = existsSync(chatTemplateArtifactPath(chatTemplateValue, presenceBase, useHubCache));
         const hfCli = (await localInfer.hfCliAvailable()) !== null;
         chatTemplateStatus = {
             repo: chatTemplateValue,
             label: chatTemplateLabel(chatTemplateValue),
             present,
             hfCli,
-            downloadCommand: hfChatTemplateCommand(chatTemplateValue, modelDir, useHubCache),
+            downloadCommand: hfChatTemplateCommand(chatTemplateValue, modelDirectory, useHubCache),
         };
     }
     // The restart re-link: a provider entry whose launch record names a still-
