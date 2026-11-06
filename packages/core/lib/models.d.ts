@@ -15,6 +15,14 @@ export interface DefaultModel {
     file?: string;
 }
 /**
+ * ModelDownloadSource is the half of a DefaultModel the presence check, the
+ * hf CLI command, and the hub-cache lookup read: the Hugging Face repo URL
+ * and the optional artifact file. A full list entry satisfies it, and an
+ * adapter that only resolves the download pair composes just these fields
+ * instead of restating the entry's inert registry data.
+ */
+export type ModelDownloadSource = Pick<DefaultModel, 'url' | 'file'>;
+/**
  * repoIdFromUrl turns a Hugging Face repo URL into the `owner/name` repo id
  * the hf CLI takes. A URL with no owner/name pair reads as an empty id, which
  * the command builder degrades to a repo-less download the caller rejects.
@@ -49,7 +57,7 @@ export declare function isModelDirectoryOverridden(modelDirectory: unknown): boo
  * folder, the content-addressed store the hf CLI writes without `--local-dir`;
  * the `directory` is then the hub cache root, not the per-model folder.
  */
-export declare function modelArtifactPath(entry: DefaultModel, directory: string, useHubCache?: boolean): string;
+export declare function modelArtifactPath(entry: ModelDownloadSource, directory: string, useHubCache?: boolean): string;
 /**
  * hfDownloadFileCommand renders the hf CLI download for one repo and file
  * pair: the repo, the file (omitted when blank, a whole-repo download), the
@@ -63,15 +71,15 @@ export declare function modelArtifactPath(entry: DefaultModel, directory: string
  */
 export declare function hfDownloadFileCommand(repo: string, file: string, directory: string, useHubCache?: boolean): string;
 /**
- * hfDownloadCommand renders the hf CLI download for one default model: the
- * repo, the artifact file when the entry names one, and the `--local-dir`
- * target. With the hub-cache layout (`useHubCache`), the `--local-dir` is
+ * hfDownloadCommand renders the hf CLI download for one model download
+ * source: the repo, the artifact file when the entry names one, and the
+ * `--local-dir` target. With the hub-cache layout (`useHubCache`), the `--local-dir` is
  * dropped so the hf CLI writes into the hub cache's `models--{ns}--{name}`
  * directory (the content-addressed `blobs/` plus the `snapshots/`). The
  * string is the single source the download route runs and the card shows
  * beside its Download button, rendered through hfDownloadFileCommand.
  */
-export declare function hfDownloadCommand(entry: DefaultModel, directory: string, useHubCache?: boolean): string;
+export declare function hfDownloadCommand(entry: ModelDownloadSource, directory: string, useHubCache?: boolean): string;
 /**
  * The chat template file the hf CLI pulls into the model directory. The
  * NInfer deploy step and the template download route both target this name, so

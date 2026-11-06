@@ -190,6 +190,7 @@ export type {
   DefaultModel,
   ModelCacheEntry,
   ModelDirectoryEntry,
+  ModelDownloadSource,
 } from './models.ts'
 export {
   hfDatasetsCacheDirectory,

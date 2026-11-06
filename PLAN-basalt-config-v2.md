@@ -126,7 +126,7 @@ known to the plugin for every pack. The adapter stamps the same
 
 ### Phase 5 - review and gates
 
- - [ ] [TASK-006-refactor-review](docs/PLAN-basalt-config-v2-TASK-006-refactor-review.md)
+ - [x] [TASK-006-refactor-review](docs/PLAN-basalt-config-v2-TASK-006-refactor-review.md)
        Refactor review of the Phase 1-4 commits.
  - [ ] [TASK-007-full-gate](docs/PLAN-basalt-config-v2-TASK-007-full-gate.md)
        Full repo gate: build, tests, coverage thresholds, lint, prek.

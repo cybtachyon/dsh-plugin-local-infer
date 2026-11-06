@@ -7,8 +7,8 @@
  * `basalt_config.json` file the deploy step writes, so each spec carries a
  * `config` deploy target naming where the value nests: the shared `server`
  * options, the per-model settings of the single `models[]` entry, or the
- * shared `engine` flags; the `BasaltAdapter` (TASK 011) renders the file
- * with `configFileFromSpecs` and passes it to `basalt serve --config`.
+ * shared `engine` flags; the `BasaltAdapter` renders the file with
+ * `configFileFromSpecs` and passes it to `basalt serve --config`.
  *
  * The data is the surface; the adapter composes it into a `LaunchPlan`.
  * Adding a setting here is a data edit, never an adapter rewire.
@@ -37,8 +37,8 @@ export const BASALT_DEEPSEEK_MODEL_FILE = 'DeepSeek-V4.1-Flash-1017-UD-IQ1_M.bas
 /**
  * The `basalt_config.json` format version the adapter's render envelope
  * stamps under the top-level `version` key. v0.3.0 refuses a file without
- * the stamp as a v1 config; the adapter's envelope (TASK-003) reads this
- * constant, so the version lives beside the surface that re-blocked for it.
+ * the stamp as a v1 config; the adapter's envelope reads this constant, so
+ * the version lives beside the surface that re-blocked for it.
  */
 export const BASALT_CONFIG_VERSION = 2;
 /**

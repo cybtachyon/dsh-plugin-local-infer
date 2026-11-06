@@ -29,7 +29,6 @@ import {
 } from '../../../../core/lib/index.js'
 import type {
   Config,
-  DefaultModel,
   DeployOptions,
   DeployResult,
   EngineLaunchSignature,
@@ -41,6 +40,7 @@ import type {
   LaunchPlan,
   LaunchProgress,
   LifecycleHost,
+  ModelDownloadSource,
   ParameterSpec,
   ProcessHandle,
 } from '../../../../core/lib/index.js'
@@ -96,14 +96,43 @@ export const BASALT_CONFIG_FILE = 'basalt_config.json'
 /**
  * BasaltConfigBlocks is the parsed block map `configFileFromSpecs` renders
  * from `BASALT_PARAMETERS`: the `server`, `models[]`, and `engine` blocks
- * `renderLaunch` wraps into the versioned v2 envelope. Every block's specs
- * declare defaults, so all three always render; the optionals keep the
- * envelope build total against a future surface edit.
+ * the envelope render wraps into the versioned v2 shape. Every block's
+ * specs declare defaults, so all three always render; the optionals keep
+ * the envelope build total against a future surface edit.
  */
 type BasaltConfigBlocks = {
   server?: Record<string, unknown>
   models?: Record<string, unknown>[]
   engine?: Record<string, unknown>
+}
+
+/**
+ * basaltConfigContent renders the spec surface and seals it into the v2
+ * envelope the 0.3.0 serve CLI accepts: the version stamp plus the three
+ * blocks, in the key order upstream documents. The surface's raw `model`
+ * value is a registry key or file name, never the download-target path the
+ * engine resolves against the config file's home, so the single models
+ * entry is restamped with the placeholder path before the envelope is
+ * sealed. The entry also carries the deterministic API name as `alias`:
+ * without one the server reports the artifact's stored `meta.name`, which
+ * the plugin cannot know for arbitrary packs, so the entry stamps the same
+ * basaltServedName string modelRef publishes and `/v1/models` always lists
+ * what DSH routes to.
+ */
+function basaltConfigContent(config: Config, modelPath: string, modelFile: string): string {
+  const blocks = JSON.parse(
+    configFileFromSpecs(BASALT_PARAMETERS, config, 'json'),
+  ) as BasaltConfigBlocks
+  return JSON.stringify(
+    {
+      version: BASALT_CONFIG_VERSION,
+      models: [{ ...blocks.models?.[0], model: modelPath, alias: basaltServedName(modelFile) }],
+      engine: blocks.engine ?? {},
+      server: blocks.server ?? {},
+    },
+    null,
+    2,
+  )
 }
 
 /**
@@ -122,27 +151,31 @@ function basaltModelFileName(modelValue: string): string {
 }
 
 /**
- * basaltDownloadEntry resolves the default model entry whose Hugging Face
+ * basaltDownloadEntry resolves the model download source whose Hugging Face
  * repo a `.basalt` artifact downloads from: the entry the plan's modelId
  * names (a registry-key selection), else the entry whose artifact file
  * matches modelFile (a directory-scan pick of a listed artifact), else the
- * bundled Qwen pair (today's fallback for a custom `.basalt` file no list
- * entry names). The artifact being downloaded is stamped as `file`, so the
- * presence check, the hf command, and the hub-cache lookup all read the
- * resolved pair: the DeepSeek pack downloads from its own repo, not the
+ * default list entry (today's fallback for a custom `.basalt` file no list
+ * entry names). The resolved entry supplies only the repo URL (the
+ * download read), and the artifact being downloaded is stamped as `file`,
+ * so the presence check, the hf command, and the hub-cache lookup all read
+ * the resolved pair: the DeepSeek pack downloads from its own repo, not the
  * hardcoded Qwen one.
  */
-function basaltDownloadEntry(modelId: string, modelFile: string): DefaultModel {
+function basaltDownloadEntry(
+  modelId: string,
+  modelFile: string,
+): Required<ModelDownloadSource> {
   const byKey = modelId === '' ? undefined : defaultModelFor('basalt', modelId)
   const entry =
-    byKey ?? defaultModelsForEngine('basalt').find((item) => item.file === modelFile)
-  const fallback: DefaultModel = {
-    engineId: 'basalt',
-    modelId: BASALT_DEFAULT_MODEL_ID,
-    label: 'Basalt',
-    url: `https://huggingface.co/${BASALT_MODEL_REPO}`,
-  }
-  return { ...(entry ?? fallback), file: modelFile }
+    byKey ??
+    defaultModelsForEngine('basalt').find((item) => item.file === modelFile) ??
+    defaultModelFor('basalt', BASALT_DEFAULT_MODEL_ID)
+  // The bundled Qwen repo is the download home of a custom `.basalt` file
+  // no list entry names; the literal only remains reachable if the list
+  // lost its own default row.
+  const source = entry ?? { url: `https://huggingface.co/${BASALT_MODEL_REPO}` }
+  return { url: source.url, file: modelFile }
 }
 
 /**
@@ -268,32 +301,12 @@ export class BasaltAdapter extends EngineAdapter {
     // the hub-cache snapshot path for the default layout). Upstream refuses
     // a model entry without a `model`, so the stamp below never leaves the
     // entry empty.
-    const modelValue = typeof config.model === 'string' ? config.model : ''
+    const modelValue = basaltModelKey(config)
     const modelFile = basaltModelFileName(modelValue)
     const modelPath = join(baseDir, modelFile)
-    // The config file is the v2 envelope the 0.3.0 serve CLI accepts: the
-    // version stamp plus the three blocks the surface renders, in the key
-    // order upstream documents. The surface's raw `model` value is a registry
-    // key or file name, never the download-target path the engine resolves
-    // against the config file's home, so the entry is restamped with the
-    // placeholder path before the envelope is sealed. The entry also carries
-    // the deterministic API name as `alias`: without one the server reports
-    // the artifact's stored `meta.name`, which the plugin cannot know for
-    // arbitrary packs, so the entry stamps the same basaltServedName string
-    // modelRef publishes and `/v1/models` always lists what DSH routes to.
-    const blocks = JSON.parse(
-      configFileFromSpecs(BASALT_PARAMETERS, config, 'json'),
-    ) as BasaltConfigBlocks
-    const configContent = JSON.stringify(
-      {
-        version: BASALT_CONFIG_VERSION,
-        models: [{ ...blocks.models?.[0], model: modelPath, alias: basaltServedName(modelFile) }],
-        engine: blocks.engine ?? {},
-        server: blocks.server ?? {},
-      },
-      null,
-      2,
-    )
+    // The config file is the sealed v2 envelope (the entry's `model` carries
+    // this placeholder path, restamped by deploy after the download).
+    const configContent = basaltConfigContent(config, modelPath, modelFile)
     return {
       engineId: this.id,
       kind: 'process',
@@ -415,7 +428,7 @@ export class BasaltAdapter extends EngineAdapter {
 
   /**
    * ensureModelArtifact downloads the `.basalt` model file named by the
-   * resolved default-model entry (its repo plus artifact file) into the
+   * resolved download source (its repo URL plus artifact file) into the
    * model directory and resolves the concrete path the engine serves. A
    * model the Get-steps routine already downloaded is on disk, so the
    * re-fetch is skipped. With the hub-cache layout the concrete path is the
@@ -424,12 +437,12 @@ export class BasaltAdapter extends EngineAdapter {
    * the download fails or leaves no snapshot.
    */
   private async ensureModelArtifact(
-    entry: DefaultModel,
+    entry: Required<ModelDownloadSource>,
     baseDir: string,
     useHubCache: boolean,
     onProgress?: LaunchProgress,
   ): Promise<{ ok: true; path: string } | { ok: false; detail: string }> {
-    const modelFile = entry.file ?? ''
+    const modelFile = entry.file
     if (!existsSync(modelArtifactPath(entry, baseDir, useHubCache))) {
       onProgress?.('download')
       const download = await this.host.run(hfDownloadCommand(entry, baseDir, useHubCache))
