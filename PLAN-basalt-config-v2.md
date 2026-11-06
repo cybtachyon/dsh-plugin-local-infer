@@ -100,7 +100,7 @@ known to the plugin for every pack. The adapter stamps the same
 
 ### Phase 2 - Basalt data surface
 
- - [ ] [TASK-002-reblock-parameters](docs/PLAN-basalt-config-v2-TASK-002-reblock-parameters.md)
+ - [x] [TASK-002-reblock-parameters](docs/PLAN-basalt-config-v2-TASK-002-reblock-parameters.md)
        Re-block `BASALT_PARAMETERS` per the table above, add the
        `BASALT_CONFIG_VERSION = 2` constant, refresh the surface doc comments,
        and update the parameter-surface specs in `basalt.spec.ts`.

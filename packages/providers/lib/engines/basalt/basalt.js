@@ -3,10 +3,11 @@
  * Basalt engine (https://github.com/jesdga95/basalt), sourced from the
  * repository's `docs/configuration/index.md`. Basalt is a C++/CUDA engine
  * for the Qwen3.8-Flash-Next MoE model, Blackwell-only (sm_120). Every
- * setting lands in a `basalt_config.json` file the deploy step writes, so
- * each spec carries a `config` deploy target naming the `server` or
- * `engine` block the value nests under; the `BasaltAdapter` (TASK 011)
- * renders the file with `configFileFromSpecs` and passes it to
+ * setting lands in a v2 `basalt_config.json` file the deploy step writes,
+ * so each spec carries a `config` deploy target naming where the value
+ * nests: the shared `server` options, the per-model settings of the single
+ * `models[]` entry, or the shared `engine` flags; the `BasaltAdapter`
+ * (TASK 011) renders the file with `configFileFromSpecs` and passes it to
  * `basalt serve --config`.
  *
  * The data is the surface; the adapter composes it into a `LaunchPlan`.
@@ -23,6 +24,13 @@
  */
 export const BASALT_MODEL_REPO = 'jesdga/Qwen3.8-Flash-Next-Basalt';
 export const BASALT_MODEL_FILE = 'Qwen3.8-FN-NVFP4-DQ6_K.basalt';
+/**
+ * The `basalt_config.json` format version the adapter's render envelope
+ * stamps under the top-level `version` key. v0.3.0 refuses a file without
+ * the stamp as a v1 config; the adapter's envelope (TASK-003) reads this
+ * constant, so the version lives beside the surface that re-blocked for it.
+ */
+export const BASALT_CONFIG_VERSION = 2;
 /**
  * The loopback port the basalt serve CLI binds by default, so a config that
  * names no port launches on it. The port spec's defaultValue and the adapter's
@@ -103,11 +111,12 @@ export const BASALT_EXPERT_CACHE_OPTIONS = [
 ];
 /**
  * The Basalt `ParameterSpec` surface, in form order. Every spec carries a
- * `config` deploy target: the value nests under the `server` or `engine`
- * block of the `basalt_config.json` the deploy step writes. The multi-word
- * engine keys name their flag spelling in `deploy.key`; the config parser
- * lowercases the key and turns `_` into `-`, so the dash form is the one it
- * matches.
+ * `config` deploy target naming its v2 `basalt_config.json` placement:
+ * shared server options under `server`, per-model settings merged into the
+ * single `models[]` entry, and shared engine flags under `engine`. The
+ * multi-word keys name their flag spelling in `deploy.key`; the config
+ * parser lowercases the key and turns `_` into `-`, so the dash form is the
+ * one it matches.
  */
 export const BASALT_PARAMETERS = [
     {
@@ -153,7 +162,7 @@ export const BASALT_PARAMETERS = [
             }
             return { ok: true };
         },
-        deploy: { target: 'config', format: 'json', block: 'server' },
+        deploy: { target: 'config', format: 'json', block: 'models[]' },
     },
     {
         key: 'parallel',
@@ -162,7 +171,7 @@ export const BASALT_PARAMETERS = [
         form: { kind: 'number', min: 1, max: 8, step: 1, unit: 'lanes' },
         defaultValue: 1,
         group: 'Concurrency',
-        deploy: { target: 'config', format: 'json', block: 'server' },
+        deploy: { target: 'config', format: 'json', block: 'models[]' },
     },
     {
         key: 'vision',
@@ -171,7 +180,7 @@ export const BASALT_PARAMETERS = [
         form: { kind: 'combo', options: [...BASALT_VISION_OPTIONS] },
         defaultValue: 'off',
         group: 'Engine',
-        deploy: { target: 'config', format: 'json', block: 'server' },
+        deploy: { target: 'config', format: 'json', block: 'models[]' },
     },
     {
         key: 'model',
@@ -179,7 +188,7 @@ export const BASALT_PARAMETERS = [
         description: 'The .basalt model file: the weights, tokenizer, chat template, drafter, vision projector and default sampling all come from it.',
         form: { kind: 'path' },
         group: 'Artifacts',
-        deploy: { target: 'config', format: 'json', block: 'server' },
+        deploy: { target: 'config', format: 'json', block: 'models[]' },
     },
     {
         key: 'kv',
@@ -188,6 +197,11 @@ export const BASALT_PARAMETERS = [
         form: { kind: 'enum', options: [...BASALT_KV_OPTIONS] },
         defaultValue: 'fp16',
         group: 'Memory',
+        // kv stays in the top-level engine block, unlike the upstream v1-to-v2
+        // migration's default. A flag the model lacks stops the start in a
+        // model entry but is left out for that model in the engine block
+        // (upstream docs/configuration/models.md), so one surface serves both
+        // Flash-Next (takes kv) and DeepSeek-V4.1-Flash (no KV format choice).
         deploy: { target: 'config', format: 'json', block: 'engine' },
     },
     {
@@ -197,7 +211,7 @@ export const BASALT_PARAMETERS = [
         form: { kind: 'number', min: 256, max: 262144, step: 256, unit: 'tokens' },
         defaultValue: 4096,
         group: 'Memory',
-        deploy: { target: 'config', format: 'json', block: 'engine', key: 'max-context' },
+        deploy: { target: 'config', format: 'json', block: 'models[]', key: 'max-context' },
     },
     {
         key: 'expertCache',
