@@ -111,7 +111,7 @@ known to the plugin for every pack. The adapter stamps the same
        `renderLaunch` renders the `{version, models, engine, server}` envelope
        (entry `model` carries the pre-download placeholder path) and drops the
        `--model` flag from the serve argv.
- - [ ] [TASK-004-deploy-model-in-config](docs/PLAN-basalt-config-v2-TASK-004-deploy-model-in-config.md)
+ - [x] [TASK-004-deploy-model-in-config](docs/PLAN-basalt-config-v2-TASK-004-deploy-model-in-config.md)
        `deploy` resolves the downloaded artifact path into the config file's
        `models[0].model` (replacing the placeholder) instead of into the argv,
        replacing `withModelArgv`.

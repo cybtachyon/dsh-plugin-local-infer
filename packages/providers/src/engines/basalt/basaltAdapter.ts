@@ -9,7 +9,8 @@
  * the CLI-only `--engine-bin` flag, so it stays fixed no matter how many
  * settings the form offers. `deploy` builds the engine in the checkout (the
  * acquisition build steps), downloads the `.basalt` model into the model
- * directory, writes the config file, and spawns the serve command.
+ * directory, stamps the artifact path into the config entry, writes the
+ * config file, and spawns the serve command.
  * `healthCheck` polls the health URL and reports the start phase from the
  * tracked process output. `stop` signals the tracked process.
  * @module dsh-plugin-local-infer/providers/engines/basalt/basaltAdapter
@@ -120,13 +121,45 @@ function basaltModelFileName(modelValue: string): string {
 }
 
 /**
+ * configContentWithModelPath returns config file content with the v2
+ * envelope's single models entry stamped with the concrete artifact path,
+ * replacing the renderLaunch placeholder. Content that is not a JSON object
+ * carrying a models array with at least one object entry (a hand-built plan,
+ * a plan carrying an unrelated payload) returns as-is: deploy still writes
+ * what the plan carries and never crashes.
+ */
+function configContentWithModelPath(content: string, modelPath: string): string {
+  let envelope: unknown
+  try {
+    envelope = JSON.parse(content)
+  } catch {
+    return content
+  }
+  const models =
+    envelope !== null && typeof envelope === 'object'
+      ? (envelope as { models?: unknown }).models
+      : undefined
+  if (
+    !Array.isArray(models) ||
+    models.length === 0 ||
+    models[0] === null ||
+    typeof models[0] !== 'object'
+  ) {
+    return content
+  }
+  models[0] = { ...(models[0] as Record<string, unknown>), model: modelPath }
+  return JSON.stringify(envelope, null, 2)
+}
+
+/**
  * BasaltAdapter is the Basalt engine. `renderLaunch` renders a
  * `basalt serve --config --engine-bin` process plan (the settings and the
  * served model ride the versioned config file; the argv carries the CLI-only
  * `--engine-bin` flag); `deploy` builds the engine, downloads the model,
- * writes the config file, and spawns the serve command; `healthCheck` polls
- * the health URL and reports the start phase from the tracked process
- * output; `stop` signals the tracked process.
+ * stamps the artifact path into the config entry, writes the config file,
+ * and spawns the serve command; `healthCheck` polls the health URL and
+ * reports the start phase from the tracked process output; `stop` signals
+ * the tracked process.
  */
 export class BasaltAdapter extends EngineAdapter {
   readonly id = 'basalt'
@@ -316,11 +349,15 @@ export class BasaltAdapter extends EngineAdapter {
     if (!artifact.ok) {
       return withLogs({ ok: false, detail: artifact.detail })
     }
-    // Resolve the downloaded artifact into an argv --model flag when one
-    // rides it. A v2 renderLaunch plan names the model in the config file's
-    // entry instead, so the swap is a no-op there; TASK-004 moves artifact
-    // resolution into that entry.
-    const spawnArgv = this.withModelArgv(plan.argv ?? [], artifact.path)
+    // Upstream rejects --model beside --config, so the concrete artifact
+    // path lands in the config file's models entry (replacing the
+    // renderLaunch placeholder) instead of the argv. Stamping the plan keeps
+    // writeConfigFile and the launch record reading the one content the
+    // engine will see; a plan with no config file writes nothing, and content
+    // that is not a v2 envelope is written as-is.
+    if (plan.configFile !== undefined) {
+      plan.configFile.content = configContentWithModelPath(plan.configFile.content, artifact.path)
+    }
     // Write the config file the plan names, so the engine's --config flag
     // points at a path that exists.
     const configFailure = await this.writeConfigFile(plan)
@@ -331,11 +368,11 @@ export class BasaltAdapter extends EngineAdapter {
     // engine directory the spawn runs in, so the spawn resolves an absolute
     // path. A bare name (the basalt binary, on the path after the rebuild's
     // symlink step) is left as-is.
-    const resolvedArgv = resolveLaunchArgv(engineDir, spawnArgv)
+    const resolvedArgv = resolveLaunchArgv(engineDir, plan.argv ?? [])
     // The plan is the launch record's argv source (launchRecordFromPlan reads
     // it), and the re-link rule substring-matches every record argv token
     // against the live command line, so the record must name the spawn, not
-    // the pre-swap placeholder or the build-tree relative binary.
+    // the build-tree relative binary.
     plan.argv = resolvedArgv
     const handle = this.host.spawn(resolvedArgv, plan.env ?? {}, engineDir)
     trackChild(this.children, this.planKey(plan), handle)
@@ -386,19 +423,6 @@ export class BasaltAdapter extends EngineAdapter {
       return { ok: true, path: snapshotPath }
     }
     return { ok: true, path: join(baseDir, modelFile) }
-  }
-
-  /**
-   * withModelArgv swaps the --model flag's value token for the concrete
-   * artifact path. It builds a new array rather than mutating the plan's;
-   * deploy then writes the fully resolved spawn argv back onto the plan, so
-   * the launch record carries what the process actually runs. A plan with no
-   * --model flag (a pre-flag plan) stands as-is.
-   */
-  private withModelArgv(argv: string[], modelPath: string): string[] {
-    const modelFlag = argv.indexOf('--model')
-    if (modelFlag < 0) return argv
-    return argv.map((token, index) => (index === modelFlag + 1 ? modelPath : token))
   }
 
   /**
