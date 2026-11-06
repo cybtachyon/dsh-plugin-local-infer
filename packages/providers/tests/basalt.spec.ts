@@ -63,21 +63,26 @@ describe('Basalt parameter surface', () => {
     ])
   })
 
-  it('gives every spec a config deploy target with the server or engine block', () => {
+  it('gives every spec a config deploy target in the server, models, or engine block', () => {
     const byKey = Object.fromEntries(BASALT_PARAMETERS.map((spec) => [spec.key, spec]))
-    // The server-block settings nest under `server` in basalt_config.json.
-    for (const key of ['port', 'host', 'gpu', 'parallel', 'vision', 'model']) {
+    // The shared server options nest under `server` in basalt_config.json.
+    for (const key of ['port', 'host']) {
       expect(byKey[key]?.deploy).toEqual({ target: 'config', format: 'json', block: 'server' })
     }
-    // The engine-block settings nest under `engine`; the multi-word keys name
-    // their dash flag spelling in `deploy.key`.
-    expect(byKey['kv']?.deploy).toEqual({ target: 'config', format: 'json', block: 'engine' })
+    // The per-model settings merge into the single `models` array entry; the
+    // maxContext key names its dash flag spelling in `deploy.key`.
+    for (const key of ['gpu', 'parallel', 'vision', 'model']) {
+      expect(byKey[key]?.deploy).toEqual({ target: 'config', format: 'json', block: 'models[]' })
+    }
     expect(byKey['maxContext']?.deploy).toEqual({
       target: 'config',
       format: 'json',
-      block: 'engine',
+      block: 'models[]',
       key: 'max-context',
     })
+    // The shared engine flags nest under `engine`; the multi-word keys name
+    // their dash flag spelling in `deploy.key`.
+    expect(byKey['kv']?.deploy).toEqual({ target: 'config', format: 'json', block: 'engine' })
     expect(byKey['expertCache']?.deploy).toEqual({
       target: 'config',
       format: 'json',
@@ -108,7 +113,7 @@ describe('Basalt parameter surface', () => {
     expect(basaltModelKey({ model: 42 })).toBe('')
   })
 
-  it('renders a representative config into a { server, engine } JSON object', () => {
+  it('renders a representative config into a { server, models, engine } JSON object', () => {
     const config = {
       port: 8090,
       host: '127.0.0.1',
@@ -124,19 +129,27 @@ describe('Basalt parameter surface', () => {
       spec: 8,
     }
     const content = configFileFromSpecs(BASALT_PARAMETERS, config, 'json')
-    const object = JSON.parse(content) as { server: Record<string, unknown>; engine: Record<string, unknown> }
-    expect(object.server).toEqual({
-      port: 8090,
-      host: '127.0.0.1',
+    const object = JSON.parse(content) as {
+      server: Record<string, unknown>
+      models: Record<string, unknown>[]
+      engine: Record<string, unknown>
+    }
+    // The shared server options nest under `server`.
+    expect(object.server).toEqual({ port: 8090, host: '127.0.0.1' })
+    // The per-model settings merge into the one `models` entry, the
+    // multi-word key under its dash flag spelling.
+    expect(object.models).toHaveLength(1)
+    expect(object.models[0]).toEqual({
       gpu: '0,1',
       parallel: 2,
       vision: 'dynamic',
       model: 'models/Qwen3.8-FN-NVFP4-DQ6_K.basalt',
+      'max-context': 32768,
     })
-    // The multi-word engine keys render under their dash flag spelling.
+    // The shared engine flags nest under `engine`, the multi-word keys under
+    // their dash flag spellings.
     expect(object.engine).toEqual({
       kv: 'int8',
-      'max-context': 32768,
       'expert-cache': 'auto',
       prefill: 'auto',
       'resident-experts': true,
@@ -147,19 +160,23 @@ describe('Basalt parameter surface', () => {
   it('renders the spec defaults for unset settings and omits the defaultless gpu', () => {
     // Only the model and the kv format are set. Every spec that declares a
     // defaultValue renders that default; gpu has no default and is unset, so
-    // it stays out of the file and the engine picks the card itself.
+    // it stays out of the models entry and the engine picks the card itself.
     const content = configFileFromSpecs(BASALT_PARAMETERS, { model: 'm.basalt', kv: 'int8' }, 'json')
-    const object = JSON.parse(content) as { server: Record<string, unknown>; engine: Record<string, unknown> }
-    expect(object.server).toEqual({
-      port: 8080,
-      host: '127.0.0.1',
+    const object = JSON.parse(content) as {
+      server: Record<string, unknown>
+      models: Record<string, unknown>[]
+      engine: Record<string, unknown>
+    }
+    expect(object.server).toEqual({ port: 8080, host: '127.0.0.1' })
+    expect(object.models).toHaveLength(1)
+    expect(object.models[0]).toEqual({
       parallel: 1,
       vision: 'off',
       model: 'm.basalt',
+      'max-context': 4096,
     })
     expect(object.engine).toEqual({
       kv: 'int8',
-      'max-context': 4096,
       'expert-cache': 'auto',
       prefill: 'auto',
       'resident-experts': true,
@@ -497,10 +514,12 @@ describe('BasaltAdapter.renderLaunch', () => {
     expect(plan.configFile?.content).toBe(configFileFromSpecs(BASALT_PARAMETERS, config, 'json'))
     const object = JSON.parse(plan.configFile?.content ?? '{}') as {
       server: Record<string, unknown>
+      models: Record<string, unknown>[]
       engine: Record<string, unknown>
     }
     expect(object.server.port).toBe(8090)
-    expect(object.engine['max-context']).toBe(32768)
+    // The per-model settings render into the one `models` entry.
+    expect(object.models[0]?.['max-context']).toBe(32768)
     expect(plan.configFile?.path).toBe(join('models', BASALT_CONFIG_FILE))
     expect(plan.modelDirectory).toBe('models')
   })
