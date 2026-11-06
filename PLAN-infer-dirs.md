@@ -72,6 +72,7 @@ invariants specific to this plan:
 ### Phase 1 - Core foundation
 
  - [x] [TASK-001-core-infer-cache-paths](docs/PLAN-infer-dirs-TASK-001-core-infer-cache-paths.md)
+ - [ ] [TASK-010-deterministic-snapshot-selection](docs/PLAN-infer-dirs-TASK-010-deterministic-snapshot-selection.md)
 
 ### Phase 2 - Model directory from the hf download result
 
@@ -98,7 +99,9 @@ invariants specific to this plan:
 
 ## Task dependencies
 
-- TASK-001 blocks TASK-002, TASK-005, TASK-006.
+- TASK-001 blocks TASK-010, TASK-005, TASK-006.
+- TASK-010 (inserted from the TASK-001 review; deterministic snapshot pick)
+  blocks TASK-002 and runs immediately after TASK-001.
 - TASK-002 blocks TASK-003, TASK-004.
 - TASK-003 blocks TASK-004 (shared route.spec expectations).
 - TASK-004, TASK-005, TASK-006 block TASK-007.
