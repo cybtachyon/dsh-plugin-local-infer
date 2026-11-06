@@ -92,7 +92,7 @@ invariants specific to this plan:
 
  - [x] [TASK-007-refactor-directory-resolution](docs/PLAN-infer-dirs-TASK-007-refactor-directory-resolution.md)
  - [x] [TASK-011-adapter-present-gates](docs/PLAN-infer-dirs-TASK-011-adapter-present-gates.md)
- - [ ] [TASK-008-full-verification-gate](docs/PLAN-infer-dirs-TASK-008-full-verification-gate.md)
+ - [x] [TASK-008-full-verification-gate](docs/PLAN-infer-dirs-TASK-008-full-verification-gate.md)
 
 ### Phase 6 - Migration deliverable
 
