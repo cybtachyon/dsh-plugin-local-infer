@@ -77,7 +77,7 @@ invariants specific to this plan:
 ### Phase 2 - Model directory from the hf download result
 
  - [x] [TASK-002-model-dir-hf-result](docs/PLAN-infer-dirs-TASK-002-model-dir-hf-result.md)
- - [ ] [TASK-003-summary-deps-no-backfill](docs/PLAN-infer-dirs-TASK-003-summary-deps-no-backfill.md)
+ - [x] [TASK-003-summary-deps-no-backfill](docs/PLAN-infer-dirs-TASK-003-summary-deps-no-backfill.md)
  - [ ] [TASK-004-hf-download-target](docs/PLAN-infer-dirs-TASK-004-hf-download-target.md)
 
 ### Phase 3 - Engine directory default
