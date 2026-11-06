@@ -82,7 +82,7 @@ invariants specific to this plan:
 
 ### Phase 3 - Engine directory default
 
- - [ ] [TASK-005-engine-dir-default](docs/PLAN-infer-dirs-TASK-005-engine-dir-default.md)
+ - [x] [TASK-005-engine-dir-default](docs/PLAN-infer-dirs-TASK-005-engine-dir-default.md)
 
 ### Phase 4 - Config file placement
 
