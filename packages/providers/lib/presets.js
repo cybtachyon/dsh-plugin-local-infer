@@ -16,7 +16,7 @@
  * @module dsh-plugin-local-infer/providers/presets
  */
 import { WILDCARD_HARDWARE_CLASS } from '../../core/lib/index.js';
-import { BASALT_DEFAULT_MODEL_ID } from "./engines/basalt/basalt.js";
+import { BASALT_DEEPSEEK_MODEL_ID, BASALT_DEFAULT_MODEL_ID, } from "./engines/basalt/basalt.js";
 /**
  * The hardware class every built-in preset is sourced for: a 24 GiB Ampere
  * (sm86) card, the card the NInfer constants were measured on and the card the
@@ -123,12 +123,16 @@ const HYPERQWEN_PRESETS = [
     },
 ];
 /**
- * The Basalt built-in preset, keyed to the wildcard hardware class. Basalt is
- * Blackwell-only, so the preset is the sane long-context starting config the
- * resolver offers for the Qwen3.8-Flash-Next NVFP4 artifact on any detected
- * Blackwell card: int8 KV (half the bytes of the fp16 default) and a 32k
- * context. The engine's own spec defaults (the drafter window, the expert
- * cache, the resident experts) stay at their surface defaults.
+ * The Basalt built-in presets, keyed to the wildcard hardware class. Basalt
+ * is Blackwell-only, so each row is the sane long-context starting config
+ * the resolver offers for one artifact on any detected Blackwell card, and
+ * each model's own row is its default (the resolver keys presets by the
+ * exact engine/model/class triple). The Qwen3.8-Flash-Next NVFP4 row sets
+ * int8 KV (half the bytes of the fp16 default) and a 32k context; the
+ * DeepSeek-V4.1-Flash UD-IQ1_M row sets only the 32k context, because the
+ * pack has no KV-format choice. The engine's own spec defaults (the
+ * drafter window, the expert cache, the resident experts) stay at their
+ * surface defaults.
  */
 const BASALT_PRESETS = [
     {
@@ -137,6 +141,20 @@ const BASALT_PRESETS = [
         hardwareClass: WILDCARD_HARDWARE_CLASS,
         values: {
             kv: 'int8',
+            maxContext: 32768,
+        },
+        source: 'Basalt built-in (Blackwell long-context starting config)',
+        label: 'long-context',
+        isDefault: true,
+    },
+    {
+        engineId: 'basalt',
+        modelId: BASALT_DEEPSEEK_MODEL_ID,
+        hardwareClass: WILDCARD_HARDWARE_CLASS,
+        // No kv: the DeepSeek pack has no KV-format choice, and a flag the
+        // model lacks stops the start from a model entry (the surface keeps kv
+        // in the shared engine block, where it is skipped for this model).
+        values: {
             maxContext: 32768,
         },
         source: 'Basalt built-in (Blackwell long-context starting config)',

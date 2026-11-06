@@ -205,15 +205,19 @@ describe('NInfer VramModel data', () => {
 })
 
 describe('Basalt VramModel data', () => {
-  it('registers the Qwen3.8-Flash-Next NVFP4 artifact as an estimated model', () => {
-    expect(BASALT_VRAM_MODELS.map((model) => model.id)).toEqual(['qwen38-flash-next'])
+  it('registers both .basalt artifacts as estimated models', () => {
+    expect(BASALT_VRAM_MODELS.map((model) => model.id)).toEqual([
+      'qwen38-flash-next',
+      'deepseek-v41-flash',
+    ])
     for (const model of BASALT_VRAM_MODELS) {
       // The measured figures are not yet available, so the model is flagged
       // estimated and the meter never reads it as authoritative.
       expect(model.source).toBe('estimated')
-      expect(model.nativeMaxContext).toBe(262144)
     }
-    expect(basaltVramModel('qwen38-flash-next')?.id).toBe('qwen38-flash-next')
+    expect(basaltVramModel('qwen38-flash-next')?.nativeMaxContext).toBe(262144)
+    // The DeepSeek pack's context cap from the v0.3.0 release notes.
+    expect(basaltVramModel('deepseek-v41-flash')?.nativeMaxContext).toBe(1048576)
     expect(basaltVramModel('qwen3-27b')).toBeUndefined()
   })
 
@@ -229,6 +233,9 @@ describe('Basalt VramModel data', () => {
     })
     expect(model.kvBytesPerToken.fp16).toBeGreaterThan(model.kvBytesPerToken.int8)
     expect(model.kvBytesPerToken.int8).toBeGreaterThan(model.kvBytesPerToken.q4_0)
+    // The DeepSeek pack has no KV-format choice, so its row carries the
+    // single format under the fp16 key the kv surface defaults to.
+    expect(basaltVramModel('deepseek-v41-flash')?.kvBytesPerToken).toEqual({ fp16: 46080 })
   })
 
   it('labels every estimate estimated, so the meter never reads it as a measurement', () => {

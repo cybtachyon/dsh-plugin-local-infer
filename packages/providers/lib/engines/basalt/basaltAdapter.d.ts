@@ -1,6 +1,7 @@
 /**
- * The Basalt engine adapter. BasaltAdapter is the Basalt engine (the C++/CUDA
- * serve/ server for the Qwen3.8-Flash-Next MoE model, Blackwell-only).
+ * The Basalt engine adapter. BasaltAdapter is the Basalt engine (the
+ * C++/CUDA serve/ server for the Qwen3.8-Flash-Next and DeepSeek-V4.1-Flash
+ * MoE models, Blackwell-only).
  * `renderLaunch` renders a `basalt serve --config --engine-bin` process
  * plan: the binary name comes from the host OS profile, every setting and
  * the served model land in the `basalt_config.json` the plan's `configFile`
@@ -52,13 +53,14 @@ export declare class BasaltAdapter extends EngineAdapter {
     renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan;
     deploy(plan: LaunchPlan, platform?: EnginePlatformConfig, onProgress?: LaunchProgress, options?: DeployOptions): Promise<DeployResult>;
     /**
-     * ensureModelArtifact downloads the .basalt model file into the model
-     * directory and resolves the concrete path the engine serves. A model the
-     * Get-steps routine already downloaded is on disk, so the re-fetch is
-     * skipped. With the hub-cache layout the concrete path is the
-     * content-addressed snapshot path (only known after the download); with the
-     * flat layout it is the flat join. Returns the path, or a detail when the
-     * download fails or leaves no snapshot.
+     * ensureModelArtifact downloads the `.basalt` model file named by the
+     * resolved default-model entry (its repo plus artifact file) into the
+     * model directory and resolves the concrete path the engine serves. A
+     * model the Get-steps routine already downloaded is on disk, so the
+     * re-fetch is skipped. With the hub-cache layout the concrete path is the
+     * content-addressed snapshot path (only known after the download); with
+     * the flat layout it is the flat join. Returns the path, or a detail when
+     * the download fails or leaves no snapshot.
      */
     private ensureModelArtifact;
     /**

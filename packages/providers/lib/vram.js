@@ -6,12 +6,12 @@
  * capacity report, not estimated from parameter counts. The provenance note on
  * each model names the exact weight artifact the figures apply to, because the
  * runtime also recognizes other weight profiles with different resident sizes.
- * The Basalt model is the estimated set for the Qwen3.8-Flash-Next NVFP4
- * artifact: the measured figures are not yet available, so its terms are
+ * The Basalt models are the estimated sets for the engine's `.basalt`
+ * artifacts: the measured figures are not yet available, so their terms are
  * estimated from the model size and flagged `source: 'estimated'`.
  * @module dsh-plugin-local-infer/providers/vram
  */
-import { BASALT_DEFAULT_MODEL_ID } from "./engines/basalt/basalt.js";
+import { BASALT_DEEPSEEK_MODEL_ID, BASALT_DEFAULT_MODEL_ID, } from "./engines/basalt/basalt.js";
 /**
  * DFlash2's CUDA-graph allowance is a step in context, measured at 8,192 /
  * 16,384 / 32,768: 288 MiB up to 8,192 tokens and 384 MiB beyond. Only three
@@ -252,7 +252,10 @@ export function ninferVramModel(modelId) {
     return NINFER_VRAM_MODELS.find(model => model.id === modelId);
 }
 /**
- * The Basalt estimated VramModel for the Qwen3.8-Flash-Next NVFP4 artifact
+ * The Basalt estimated VramModels, one per `.basalt` artifact the engine
+ * serves.
+ *
+ * The first is the Qwen3.8-Flash-Next NVFP4 artifact
  * (`Qwen3.8-FN-NVFP4-DQ6_K.basalt`). The measured figures are not yet
  * available, so every term is estimated from the model size, not measured
  * against the engine: the weights price a ~48B-total-parameter MoE in NVFP4
@@ -262,8 +265,8 @@ export function ninferVramModel(modelId) {
  * what keeps the meter from reading these as authoritative.
  *
  * Basalt's `spec` setting is a token-window count (a number), not a named
- * speculation backend, so the model carries no `speculation` table and no
- * `specKey`: the estimator prices it from the base terms.
+ * speculation backend, so neither model carries a `speculation` table or a
+ * `specKey`: the estimator prices them from the base terms.
  */
 export const BASALT_VRAM_MODELS = [
     {
@@ -281,9 +284,38 @@ export const BASALT_VRAM_MODELS = [
             k8v4: 73728,
         },
     },
+    // The DeepSeek-V4.1-Flash UD-IQ1_M pack
+    // (`DeepSeek-V4.1-Flash-1017-UD-IQ1_M.basalt`). Every term is estimated
+    // from the public pack facts, like the Qwen row. The weights: the native
+    // checkpoint is ~510 GB of BF16 dense plus MXFP4 expert weights, a
+    // ~6.8 bits-per-weight average, which prices ~600B weights; the pack
+    // requantizes them to UD-IQ1_M's ~1.7 bits per weight, ~1.3e11 bytes
+    // (~121 GiB) resident. The checkpoint's other ~393 GB of engram lookup
+    // tables stream from RAM and file, so they add no resident weights and no
+    // term prices them. The KV: the pack has no KV-format choice, so the
+    // engine's single format is priced under the `fp16` key the kv surface
+    // defaults to; a DeepSeek latent-KV (MLA-family) layout carries ~576
+    // fp16 elements per layer (~1152 bytes), and ~46080 bytes per token is
+    // that order at ~40 attention layers, the compact pool that makes the
+    // pack's 1,048,576-token cap a ~48 GB KV pool at all. The workspace,
+    // fixed-session, and per-token activation terms ride at the Blackwell
+    // order for a model this size, a few times the Qwen estimates.
+    {
+        id: BASALT_DEEPSEEK_MODEL_ID,
+        source: 'estimated',
+        weightsBytes: 130000000000,
+        workspaceBytes: 1073741824,
+        nativeMaxContext: 1048576,
+        seqFixedBytes: 33554432,
+        seqPerToken: 0.125,
+        kvBytesPerToken: {
+            fp16: 46080,
+        },
+    },
 ];
 /**
- * Resolves the Basalt VramModel by its registry id, `qwen38-flash-next`.
+ * Resolves a Basalt VramModel by its registry id, `qwen38-flash-next` or
+ * `deepseek-v41-flash`.
  */
 export function basaltVramModel(modelId) {
     return BASALT_VRAM_MODELS.find(model => model.id === modelId);

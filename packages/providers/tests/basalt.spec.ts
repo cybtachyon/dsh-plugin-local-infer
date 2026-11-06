@@ -34,6 +34,10 @@ import {
 import {
   BASALT_CONFIG_VERSION,
   BASALT_DEFAULT_MODEL_ID,
+  BASALT_DEEPSEEK_MODEL_FILE,
+  BASALT_DEEPSEEK_MODEL_ID,
+  BASALT_DEEPSEEK_MODEL_REPO,
+  BASALT_DEEPSEEK_SERVED_MODEL_ID,
   BASALT_EXPERT_CACHE_OPTIONS,
   BASALT_KV_OPTIONS,
   BASALT_PARAMETERS,
@@ -298,12 +302,18 @@ describe('Basalt registration', () => {
     expect(engineOsProfile('basalt', 'windows')).toBe(BASALT_WINDOWS)
   })
 
-  it('carries the single default model the adapter constants name', () => {
+  it('carries the two default models the adapter constants name', () => {
     const models = defaultModelsForEngine('basalt')
-    expect(models).toHaveLength(1)
-    expect(models[0]?.modelId).toBe(BASALT_DEFAULT_MODEL_ID)
+    expect(models).toHaveLength(2)
+    expect(models.map((model) => model.modelId)).toEqual([
+      BASALT_DEFAULT_MODEL_ID,
+      BASALT_DEEPSEEK_MODEL_ID,
+    ])
+    // Each artifact downloads from its own repo, named by the constants.
     expect(models[0]?.url).toBe(`https://huggingface.co/${BASALT_MODEL_REPO}`)
     expect(models[0]?.file).toBe(BASALT_MODEL_FILE)
+    expect(models[1]?.url).toBe(`https://huggingface.co/${BASALT_DEEPSEEK_MODEL_REPO}`)
+    expect(models[1]?.file).toBe(BASALT_DEEPSEEK_MODEL_FILE)
   })
 
   it('registers the basalt adapter with the provider seam', async () => {
@@ -318,14 +328,18 @@ describe('Basalt registration', () => {
 })
 
 describe('Basalt VRAM, guideline, and preset data', () => {
-  it('registers the Qwen3.8-Flash-Next artifact as an estimated VRAM model', () => {
-    expect(BASALT_VRAM_MODELS.map((model) => model.id)).toEqual(['qwen38-flash-next'])
+  it('registers both .basalt artifacts as estimated VRAM models', () => {
+    expect(BASALT_VRAM_MODELS.map((model) => model.id)).toEqual([
+      'qwen38-flash-next',
+      'deepseek-v41-flash',
+    ])
     for (const model of BASALT_VRAM_MODELS) {
       // The measured figures are not yet available, so the model is flagged
       // estimated and the meter never reads it as authoritative.
       expect(model.source).toBe('estimated')
     }
     expect(basaltVramModel('qwen38-flash-next')?.id).toBe('qwen38-flash-next')
+    expect(basaltVramModel('deepseek-v41-flash')?.id).toBe('deepseek-v41-flash')
     expect(basaltVramModel('qwen3-27b')).toBeUndefined()
   })
 
@@ -356,16 +370,24 @@ describe('Basalt VRAM, guideline, and preset data', () => {
     expect(rule?.when({ engine: 'ninfer' }, sm86)).toBe(false)
   })
 
-  it('ships the Basalt Blackwell long-context preset on the wildcard class', () => {
+  it('ships a Basalt Blackwell long-context preset per model on the wildcard class', () => {
     const basalt = BUILTIN_PRESETS.filter((preset) => preset.engineId === 'basalt')
-    expect(basalt).toHaveLength(1)
-    const preset = basalt[0]
+    expect(basalt).toHaveLength(2)
+    const qwen = basalt[0]
     // Basalt runs on any Blackwell card, so the preset is keyed to the
     // wildcard class, not a specific card.
-    expect(preset?.modelId).toBe('qwen38-flash-next')
-    expect(preset?.hardwareClass).toBe('*')
-    expect(preset?.isDefault).toBe(true)
-    expect(preset?.values).toMatchObject({ kv: 'int8', maxContext: 32768 })
+    expect(qwen?.modelId).toBe('qwen38-flash-next')
+    expect(qwen?.hardwareClass).toBe('*')
+    expect(qwen?.isDefault).toBe(true)
+    expect(qwen?.values).toMatchObject({ kv: 'int8', maxContext: 32768 })
+    // The DeepSeek row is its model's default too (rows are keyed by the
+    // engine/model/class triple), and it carries no kv: the pack has no
+    // KV-format choice.
+    const deepseek = basalt[1]
+    expect(deepseek?.modelId).toBe('deepseek-v41-flash')
+    expect(deepseek?.hardwareClass).toBe('*')
+    expect(deepseek?.isDefault).toBe(true)
+    expect(deepseek?.values).toEqual({ maxContext: 32768 })
   })
 })
 
@@ -528,7 +550,8 @@ describe('BasaltAdapter.renderLaunch', () => {
     expect(plan.modelDirectory).toBe('models')
     // The config file is the v2 envelope: the version stamp plus the blocks
     // the surface renders, in the upstream key order, with the models entry
-    // carrying the placeholder path the deploy step later resolves.
+    // carrying the placeholder path the deploy step later resolves and the
+    // deterministic served alias for the bundled artifact.
     const envelope = JSON.parse(plan.configFile?.content ?? '{}') as {
       version: number
       server: Record<string, unknown>
@@ -545,6 +568,7 @@ describe('BasaltAdapter.renderLaunch', () => {
         vision: 'dynamic',
         model: join('models', 'models/Qwen3.8-FN-NVFP4-DQ6_K.basalt'),
         'max-context': 32768,
+        alias: BASALT_SERVED_MODEL_ID,
       },
     ])
     expect(envelope.engine).toEqual({
@@ -595,6 +619,30 @@ describe('BasaltAdapter.renderLaunch', () => {
     // back to the engine default artifact.
     const unknown = adapter.renderLaunch({ model: 'not-a-key' }, ADAPTER_HW)
     expect(unknown.modelFile).toBe(BASALT_MODEL_FILE)
+  })
+
+  it('stamps the DeepSeek artifact placeholder and served alias for the DeepSeek key', () => {
+    const { host } = basaltStubHost()
+    const adapter = new BasaltAdapter(host)
+    // The second model's registry key maps to the DeepSeek pack: the entry's
+    // model placeholder names its artifact file at the download target, and
+    // the alias is the name the API reports (the pack's stored meta.name is
+    // not knowable to the plugin, so the alias pins it).
+    const plan = adapter.renderLaunch({ model: BASALT_DEEPSEEK_MODEL_ID }, ADAPTER_HW)
+    expect(plan.modelFile).toBe(BASALT_DEEPSEEK_MODEL_FILE)
+    expect(plan.modelId).toBe(BASALT_DEEPSEEK_MODEL_ID)
+    expect(modelEntryPath(plan)).toBe(join(hfHubCacheDirectory(), BASALT_DEEPSEEK_MODEL_FILE))
+    const envelope = JSON.parse(plan.configFile?.content ?? '{}') as {
+      models?: Record<string, unknown>[]
+    }
+    expect(envelope.models?.[0]?.alias).toBe(BASALT_DEEPSEEK_SERVED_MODEL_ID)
+    // The bundled Qwen key keeps today's served alias, so nothing
+    // user-visible moves for the existing artifact.
+    const qwen = adapter.renderLaunch({ model: BASALT_DEFAULT_MODEL_ID }, ADAPTER_HW)
+    const qwenEnvelope = JSON.parse(qwen.configFile?.content ?? '{}') as {
+      models?: Record<string, unknown>[]
+    }
+    expect(qwenEnvelope.models?.[0]?.alias).toBe(BASALT_SERVED_MODEL_ID)
   })
 
   it('stamps the plan modelId from the raw config model for the status tie', () => {
@@ -688,6 +736,34 @@ describe('BasaltAdapter.deploy', () => {
     // The rebuild decision and output ride the result logs.
     expect(result.logs).toContain('is behind origin/main')
     expect(result.logs).toContain('cmake -S /src/basalt')
+  })
+
+  it('downloads the DeepSeek artifact from its own repo', async () => {
+    const { host, state } = basaltStubHost()
+    state.runOutput['rev-list'] = '0'
+    const adapter = new BasaltAdapter(host)
+    // The DeepSeek pack lives on its own repo: the deploy resolves the
+    // download entry through the default model list, so the hf command names
+    // the DeepSeek repo and file, not the bundled Qwen repo.
+    const plan = adapter.renderLaunch(
+      { port: 8090, model: BASALT_DEEPSEEK_MODEL_ID, modelDirectory: 'models' },
+      ADAPTER_HW,
+    )
+    const result = await adapter.deploy(plan, {
+      engineId: 'basalt',
+      engineDirectory: '/src/basalt',
+    })
+    expect(result.ok).toBe(true)
+    expect(state.run).toContain(
+      `hf download ${BASALT_DEEPSEEK_MODEL_REPO} ${BASALT_DEEPSEEK_MODEL_FILE} --local-dir models --format human`,
+    )
+    // The written entry carries the DeepSeek artifact's flat join and keeps
+    // the deterministic alias through the deploy restamp.
+    const written = JSON.parse(state.writeFile[0]?.content ?? '{}') as {
+      models?: Record<string, unknown>[]
+    }
+    expect(written.models?.[0]?.model).toBe(join('models', BASALT_DEEPSEEK_MODEL_FILE))
+    expect(written.models?.[0]?.alias).toBe(BASALT_DEEPSEEK_SERVED_MODEL_ID)
   })
 
   it('skips the git sync when autoRebuild is off', async () => {
@@ -963,19 +1039,25 @@ describe('BasaltAdapter.stop', () => {
 })
 
 describe('BasaltAdapter model data', () => {
-  it('publishes the served model id for the bundled artifact and the file name otherwise', () => {
+  it('publishes the served model id for the bundled artifacts and the file name otherwise', () => {
     const { host } = basaltStubHost()
     const adapter = new BasaltAdapter(host)
-    // The serve server advertises the artifact's meta.name on /v1/models and
-    // matches requests against it beside the artifact file name. The bare
-    // config, the registry key, and the bundled artifact file name all pick
-    // the bundled artifact, so each publishes the served meta.name.
+    // The serve server answers to the config entry's alias (renderLaunch
+    // stamps it from the same basaltServedName) beside the artifact file
+    // name. The bare config, the registry key, and the bundled artifact
+    // file name all pick the bundled artifact, so each publishes its served
+    // id.
     const served = { id: BASALT_SERVED_MODEL_ID, name: BASALT_SERVED_MODEL_ID }
     expect(adapter.modelRef({})).toEqual(served)
     expect(adapter.modelRef({ model: BASALT_DEFAULT_MODEL_ID })).toEqual(served)
     expect(adapter.modelRef({ model: BASALT_MODEL_FILE })).toEqual(served)
+    // The DeepSeek pack publishes its deterministic served id, not the
+    // unknown meta.name stored in the pack.
+    const deepseek = { id: BASALT_DEEPSEEK_SERVED_MODEL_ID, name: BASALT_DEEPSEEK_SERVED_MODEL_ID }
+    expect(adapter.modelRef({ model: BASALT_DEEPSEEK_MODEL_ID })).toEqual(deepseek)
+    expect(adapter.modelRef({ model: BASALT_DEEPSEEK_MODEL_FILE })).toEqual(deepseek)
     // A custom .basalt pick publishes its basename: the engine accepts the
-    // artifact's own file name beside its meta.name.
+    // artifact's own file name beside the served name.
     expect(adapter.modelRef({ model: 'models/m.basalt' })).toEqual({
       id: 'm.basalt',
       name: 'm.basalt',

@@ -7,9 +7,10 @@
  * n-gram volume the `--ngram-volume` flag reads). Strata carries the two
  * models the README's Models section links (Gyro and DeepSeek V4.1-Flash),
  * each named by the model the engine accepts and the repo it downloads.
- * Basalt carries the single `.basalt` artifact the engine serves (the
- * Qwen3.8-Flash-Next NVFP4 conversion, named by the repo and file the
- * adapter's deploy step downloads).
+ * Basalt carries the two `.basalt` artifacts the engine serves (the
+ * Qwen3.8-Flash-Next NVFP4 conversion and the DeepSeek-V4.1-Flash UD-IQ1_M
+ * pack, each named by the repo and file the adapter's deploy step
+ * downloads).
  *
  * The list is the single source the card's Model dropdown, the model
  * presence check, and the hf CLI download route read. Adding a model is a
