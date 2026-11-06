@@ -5,12 +5,24 @@
  * a save so the registered model's input types stay in step with the config.
  * resolveModelRow and resolveContextWindow resolve the row and context window
  * the registrar publishes; resolveModelDirectory picks the model directory a
- * Get run downloads into.
+ * Get run names for the model.
  * @module dsh-plugin-local-infer/ui/ops/model
  */
 
-import type { Config, ModelRow, RegisterResult, VramModel } from 'dsh-plugin-local-infer/core'
-import { buildModelEntry, providerIdFor } from '../../../core/lib/index.js'
+import type {
+  Config,
+  DefaultModel,
+  ModelRow,
+  RegisterResult,
+  VramModel,
+} from 'dsh-plugin-local-infer/core'
+import {
+  buildModelEntry,
+  hfDownloadResultDirectory,
+  hfHubCacheDirectory,
+  providerIdFor,
+  repoIdFromUrl,
+} from '../../../core/lib/index.js'
 
 /**
  * DEFAULT_CONTEXT_WINDOW is the context window the registrar publishes when
@@ -151,14 +163,23 @@ export async function unregisterFor(
 }
 
 /**
- * resolveModelDirectory picks the model directory a Get run downloads into:
- * the config's modelDirectory override when it names a path, else the
- * plugin's default model directory. The same rule the summary and deps routes
- * apply, so a Get and the card's Model Directory field agree on the target.
+ * resolveModelDirectory picks the model directory a Get run names for the
+ * model: the config's modelDirectory override when it names a path; else,
+ * when the run's selected entry resolves and its artifact is already in the
+ * hub cache, the hf download result, the snapshot directory holding it; else
+ * the hub cache root, the base the hf CLI downloads into. The result is
+ * derived on every read and never written back into the config, so a default
+ * install never materializes a fake `modelDirectory` override.
  */
-export function resolveModelDirectory(localInfer: LocalInferService, config: Config): string {
+export function resolveModelDirectory(config: Config, entry?: DefaultModel): string {
   const rawModelDir = config.modelDirectory
-  return typeof rawModelDir === 'string' && rawModelDir.trim() !== ''
-    ? rawModelDir
-    : localInfer.defaultModelDirectory()
+  if (typeof rawModelDir === 'string' && rawModelDir.trim() !== '') {
+    return rawModelDir
+  }
+  const hubCache = hfHubCacheDirectory()
+  if (entry !== undefined) {
+    const snapshot = hfDownloadResultDirectory(hubCache, repoIdFromUrl(entry.url), entry.file ?? '')
+    if (snapshot !== null) return snapshot
+  }
+  return hubCache
 }

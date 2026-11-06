@@ -18,7 +18,7 @@
  */
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { checkDeps, chatTemplateArtifactPath, hfChatTemplateCommand, hfDownloadCommand, isModelDirectoryOverridden, modelArtifactPath, } from '../../../core/lib/index.js';
+import { checkDeps, chatTemplateArtifactPath, hfChatTemplateCommand, hfDownloadCommand, hfHubCacheDirectory, isModelDirectoryOverridden, modelArtifactPath, } from '../../../core/lib/index.js';
 import { buildEngineRepo, defaultModelFor, ENGINES, infernixGetDownloads, syncEngineRepo, } from '../../../providers/lib/index.js';
 import { isHfRepoReference } from "../viewmodels/summaryHelpers.js";
 import { resolveBuildMode } from "../viewmodels/deps.js";
@@ -170,14 +170,14 @@ async function runSyncBuildStep(ctx) {
 /**
  * runModelDownloadStep is the Get step's hf download of the selected model,
  * skipped when the artifact is already present in the model directory (the
- * single presence check the card's Model dropdown and the download route
- * share), plus the Infernix extras a Get leaves ready to launch (the
- * selected DFlash2 drafter and the PLE n-gram volume, pulled through the
- * hf CLI into the model directory). A download failure aborts the run, so
- * a launch never reads a missing model.
+ * hub cache under the cache layout; the single presence check the card's
+ * Model dropdown and the download route share), plus the Infernix extras a
+ * Get leaves ready to launch (the selected DFlash2 drafter and the PLE n-gram
+ * volume, pulled through the hf CLI into the model directory). A download
+ * failure aborts the run, so a launch never reads a missing model.
  */
 async function runModelDownloadStep(ctx) {
-    const { localInfer, request, modelDir, useHubCache, emit } = ctx;
+    const { localInfer, request, modelDir, hubCacheRoot, useHubCache, emit } = ctx;
     const modelId = typeof request.config.model === 'string' ? request.config.model : undefined;
     if (modelId !== undefined) {
         const entry = defaultModelFor(request.engineId, modelId);
@@ -185,7 +185,10 @@ async function runModelDownloadStep(ctx) {
             emit(`model download: ${modelId} has no registered default, skipped\n`);
         }
         else {
-            const artifact = modelArtifactPath(entry, modelDir, useHubCache);
+            // The cache-layout presence join uses the hub cache root (where the
+            // models--{ns}--{name} dirs live); modelDir may name the resolved
+            // snapshot directory, which is not a join base.
+            const artifact = modelArtifactPath(entry, useHubCache ? hubCacheRoot : modelDir, useHubCache);
             if (existsSync(artifact)) {
                 emit(`model download: ${modelId} is already present, skipped\n`);
             }
@@ -232,10 +235,12 @@ async function runModelDownloadStep(ctx) {
  * when the template file is already present in the model directory.
  */
 async function runChatTemplateStep(ctx) {
-    const { localInfer, request, modelDir, useHubCache, emit } = ctx;
+    const { localInfer, request, modelDir, hubCacheRoot, useHubCache, emit } = ctx;
     const template = typeof request.config.chatTemplate === 'string' ? request.config.chatTemplate : '';
     if (template !== '' && isHfRepoReference(template)) {
-        const localPath = chatTemplateArtifactPath(template, modelDir, useHubCache);
+        // Same join-base rule as the model step: the cache layout resolves under
+        // the hub cache root, not the resolved model directory.
+        const localPath = chatTemplateArtifactPath(template, useHubCache ? hubCacheRoot : modelDir, useHubCache);
         if (existsSync(localPath)) {
             emit(`chat template: ${template} is already present, skipped\n`);
         }
@@ -271,15 +276,21 @@ export async function runGetSteps(localInfer, request, log) {
     const engine = ENGINES.find((entry) => entry.id === request.engineId) ?? ENGINES[0];
     // The hub-cache layout (no --local-dir, the models--{ns}--{name} dirs)
     // applies only when the model directory is the plugin default; a user
-    // override keeps the flat --local-dir target. modelDir is the hub cache root
-    // in the default case, the base the cache-layout paths join onto.
+    // override keeps the flat --local-dir target. modelDir names the resolved
+    // directory for the model: the override, the hub-cache snapshot holding a
+    // cached artifact (the hf download result), or the hub cache root when
+    // nothing is cached yet. hubCacheRoot stays the base the cache-layout
+    // presence checks join onto, whatever modelDir resolves to.
     const useHubCache = !isModelDirectoryOverridden(request.config.modelDirectory);
+    const selectedModelId = typeof request.config.model === 'string' ? request.config.model : undefined;
+    const modelEntry = selectedModelId === undefined ? undefined : defaultModelFor(request.engineId, selectedModelId);
     const ctx = {
         localInfer,
         request,
         engine,
         directory: resolveEngineDirectory(localInfer, request.config, request.engineId, request.platform),
-        modelDir: resolveModelDirectory(localInfer, request.config),
+        modelDir: resolveModelDirectory(request.config, modelEntry),
+        hubCacheRoot: hfHubCacheDirectory(),
         useHubCache,
         hardware: await localInfer.detectHardware(),
         emit,
