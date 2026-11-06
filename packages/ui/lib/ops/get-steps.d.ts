@@ -68,11 +68,12 @@ export interface GetStepsResult {
 }
 /**
  * resolveEngineDirectory picks the checkout the Get step syncs: the Engine
- * Directory override when it names a path, else a per-engine folder inside
- * the model directory (the default model directory, or the config's
- * override), so a Get with no override still has a real place to live.
+ * Directory override when it names a path, else the engine's default
+ * checkout home `~/.cache/dsh/infer/{engineId}` (one checkout per engine,
+ * never a subfolder of a model directory), so a Get with no override still
+ * has a real place to live.
  */
-export declare function resolveEngineDirectory(localInfer: LocalInferService, config: Config, engineId: string, platform: StoredPlatformConfig | undefined): string;
+export declare function resolveEngineDirectory(engineId: string, platform: StoredPlatformConfig | undefined): string;
 /**
  * runGetSteps is the shared Get-steps routine. It runs the five steps in
  * order, streaming each through log and collecting the same text as the

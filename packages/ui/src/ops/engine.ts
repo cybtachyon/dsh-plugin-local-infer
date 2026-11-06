@@ -143,26 +143,26 @@ function resolveStoredRequest(
  * card's unsaved Engine Directory / Engine Fork edits) with the service
  * registry, and returns the effective platform entry the Get steps and the
  * deploy step read. A request with no Engine Directory override falls back
- * to the per-engine folder inside the model directory, so the deploy step
- * resolves a relative launch path (the NInfer Windows build tree) against a
- * real checkout; the fallback is registered so the service's launch reads
- * it, and a stored entry that already names a directory is left as-is. An
- * absent request platform keeps the stored entry, which the save route and
- * route registration already synced.
+ * to the engine's default checkout home (`~/.cache/dsh/infer/{engineId}`),
+ * so the deploy step resolves a relative launch path (the NInfer Windows
+ * build tree) against a real checkout; the fallback is registered in the
+ * service registry only (memory, never the stored platform map), and a
+ * stored entry that already names a directory is left as-is. An absent
+ * request platform keeps the stored entry, which the save route and route
+ * registration already synced.
  */
 function registerLaunchPlatform(
   localInfer: LocalInferService,
   request: { platform?: StoredPlatformConfig },
   stored: StoredConfig,
   engineId: string,
-  config: Config,
 ): StoredPlatformConfig | undefined {
   if (request.platform !== undefined) {
     setPlatformConfig(localInfer, engineId, request.platform)
   }
   const platform = request.platform ?? stored.platform[engineId]
   if (platform?.engineDirectory === undefined || platform.engineDirectory.trim() === '') {
-    const engineDirectory = resolveEngineDirectory(localInfer, config, engineId, platform)
+    const engineDirectory = resolveEngineDirectory(engineId, platform)
     setPlatformConfig(localInfer, engineId, { ...platform, engineDirectory })
   }
   return platform
@@ -271,7 +271,7 @@ export async function launchEngine(
   const { stored, engineId, config } = resolveStoredRequest(request)
   const adapter = resolveAdapter(localInfer, engineId)
   const hardware = await localInfer.detectHardware()
-  const platform = registerLaunchPlatform(localInfer, request, stored, engineId, config)
+  const platform = registerLaunchPlatform(localInfer, request, stored, engineId)
   // The prereqs phase: the system-dependency install the Get-steps routine
   // runs. It runs only while the Play/Run trust gate is on, the same rule the
   // Get step applies. The card's button reads "Prereqs..." for this phase, so
@@ -738,7 +738,7 @@ export async function getEngine(
   const { stored, engineId, config } = resolveStoredRequest(request)
   // Register the request's platform override the same way launchEngine does,
   // so the next launch reads the Engine Directory / Engine Fork the Get used.
-  const platform = registerLaunchPlatform(localInfer, request, stored, engineId, config)
+  const platform = registerLaunchPlatform(localInfer, request, stored, engineId)
   // The Get run owns the sudo observer for the run's duration (see
   // registerSudoObserver); the finally leaves none behind a failed run.
   const clearSudoObserver = registerSudoObserver(

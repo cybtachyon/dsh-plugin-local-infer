@@ -17,28 +17,24 @@
  * @module dsh-plugin-local-infer/ui/ops/get-steps
  */
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
-import { checkDeps, chatTemplateArtifactPath, hfChatTemplateCommand, hfDownloadCommand, hfHubCacheDirectory, isModelDirectoryOverridden, modelArtifactPath, } from '../../../core/lib/index.js';
+import { checkDeps, chatTemplateArtifactPath, dshEngineCacheDirectory, hfChatTemplateCommand, hfDownloadCommand, hfHubCacheDirectory, isModelDirectoryOverridden, modelArtifactPath, } from '../../../core/lib/index.js';
 import { buildEngineRepo, defaultModelFor, ENGINES, infernixGetDownloads, syncEngineRepo, } from '../../../providers/lib/index.js';
 import { isHfRepoReference } from "../viewmodels/summaryHelpers.js";
 import { resolveBuildMode } from "../viewmodels/deps.js";
 import { resolveModelDirectory } from "./model.js";
 /**
  * resolveEngineDirectory picks the checkout the Get step syncs: the Engine
- * Directory override when it names a path, else a per-engine folder inside
- * the model directory (the default model directory, or the config's
- * override), so a Get with no override still has a real place to live.
+ * Directory override when it names a path, else the engine's default
+ * checkout home `~/.cache/dsh/infer/{engineId}` (one checkout per engine,
+ * never a subfolder of a model directory), so a Get with no override still
+ * has a real place to live.
  */
-export function resolveEngineDirectory(localInfer, config, engineId, platform) {
+export function resolveEngineDirectory(engineId, platform) {
     const override = platform?.engineDirectory;
     if (override !== undefined && override.trim() !== '') {
         return override;
     }
-    const rawModelDir = config.modelDirectory;
-    const modelDir = typeof rawModelDir === 'string' && rawModelDir.trim() !== ''
-        ? rawModelDir
-        : localInfer.defaultModelDirectory();
-    return join(modelDir, engineId);
+    return dshEngineCacheDirectory(engineId);
 }
 /**
  * The marker a Get step reports when it fails non-fatally: the git sync of
@@ -288,7 +284,7 @@ export async function runGetSteps(localInfer, request, log) {
         localInfer,
         request,
         engine,
-        directory: resolveEngineDirectory(localInfer, request.config, request.engineId, request.platform),
+        directory: resolveEngineDirectory(request.engineId, request.platform),
         modelDir: resolveModelDirectory(request.config, modelEntry),
         hubCacheRoot: hfHubCacheDirectory(),
         useHubCache,
