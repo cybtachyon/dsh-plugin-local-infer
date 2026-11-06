@@ -107,10 +107,13 @@ export declare function hfChatTemplateCommand(repo: string, directory: string, u
 export declare function chatTemplateArtifactPath(repo: string, directory: string, useHubCache?: boolean): string;
 /**
  * hubCacheSnapshotFilePath resolves the concrete file path of one file in the
- * hub cache's snapshots: the first commit directory under
- * `models--{ns}--{name}/snapshots/` that holds the file. Returns null when no
- * snapshot holds it (the file is not downloaded), which the caller reads as
- * absent. The `hubCache` is the hub cache root.
+ * hub cache's snapshots, matching what the hf CLI treats as the active
+ * revision: the commit recorded in `refs/main` wins when its directory under
+ * `models--{ns}--{name}/snapshots/` holds the file; otherwise the snapshot
+ * with the newest mtime wins, covering a repo with no ref and a ref naming a
+ * commit that lacks the file. Ties break on readdir order. Returns null when
+ * no snapshot holds the file (the file is not downloaded), which the caller
+ * reads as absent. The `hubCache` is the hub cache root.
  */
 export declare function hubCacheSnapshotFilePath(hubCache: string, repoId: string, file: string): string | null;
 /**

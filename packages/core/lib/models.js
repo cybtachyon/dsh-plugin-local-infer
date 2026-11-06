@@ -1,4 +1,4 @@
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 /**
  * repoIdFromUrl turns a Hugging Face repo URL into the `owner/name` repo id
@@ -128,16 +128,28 @@ export function chatTemplateArtifactPath(repo, directory, useHubCache = false) {
 }
 /**
  * hubCacheSnapshotFilePath resolves the concrete file path of one file in the
- * hub cache's snapshots: the first commit directory under
- * `models--{ns}--{name}/snapshots/` that holds the file. Returns null when no
- * snapshot holds it (the file is not downloaded), which the caller reads as
- * absent. The `hubCache` is the hub cache root.
+ * hub cache's snapshots, matching what the hf CLI treats as the active
+ * revision: the commit recorded in `refs/main` wins when its directory under
+ * `models--{ns}--{name}/snapshots/` holds the file; otherwise the snapshot
+ * with the newest mtime wins, covering a repo with no ref and a ref naming a
+ * commit that lacks the file. Ties break on readdir order. Returns null when
+ * no snapshot holds the file (the file is not downloaded), which the caller
+ * reads as absent. The `hubCache` is the hub cache root.
  */
 export function hubCacheSnapshotFilePath(hubCache, repoId, file) {
     const modelDir = hubCacheModelDirectory(repoId);
     if (modelDir === '')
         return null;
-    const snapshots = join(hubCache, modelDir, 'snapshots');
+    const modelRoot = join(hubCache, modelDir);
+    const snapshots = join(modelRoot, 'snapshots');
+    // The hf CLI writes the revision it last downloaded into refs/main; that
+    // commit is the cache's active one, so it outranks mtime.
+    const active = readHubCacheRef(join(modelRoot, 'refs', 'main'));
+    if (active !== '') {
+        const activePath = join(snapshots, active, file);
+        if (existsSync(activePath))
+            return activePath;
+    }
     let commits;
     try {
         commits = readdirSync(snapshots);
@@ -145,12 +157,37 @@ export function hubCacheSnapshotFilePath(hubCache, repoId, file) {
     catch {
         return null;
     }
+    let newestPath = null;
+    let newestMtime = -Infinity;
     for (const commit of commits) {
         const path = join(snapshots, commit, file);
-        if (existsSync(path))
-            return path;
+        if (!existsSync(path))
+            continue;
+        const snapshotDir = join(snapshots, commit);
+        let mtime;
+        try {
+            mtime = statSync(snapshotDir).mtimeMs;
+        }
+        catch {
+            // A directory that cannot be stat'ed mid-scan cannot win the pick.
+            continue;
+        }
+        if (mtime > newestMtime) {
+            newestMtime = mtime;
+            newestPath = path;
+        }
     }
-    return null;
+    return newestPath;
+}
+// readHubCacheRef returns the commit the hf CLI ref file names, or '' when
+// the ref is absent or unreadable (a cache written by an older CLI).
+function readHubCacheRef(refPath) {
+    try {
+        return readFileSync(refPath, 'utf8').trim();
+    }
+    catch {
+        return '';
+    }
 }
 /**
  * modelEntriesForEngine filters a model directory listing down to the model
