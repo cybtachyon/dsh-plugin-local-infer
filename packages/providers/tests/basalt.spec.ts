@@ -439,6 +439,10 @@ function basaltStubHost() {
     // Command substrings that read as failures, so a test prices one failing
     // step (the model download) without failing the git sync.
     runFail: [] as string[],
+    // An optional effect the host runs per command, so a test lets the stub
+    // hf download complete the fetch on disk (write the snapshot links an
+    // interrupted download never left) inside the deploy's own timeline.
+    runEffect: undefined as ((command: string) => void) | undefined,
     fetchStatus: 200,
     // A test-driven spawn handle (e.g. one whose hasExited reports the child
     // settled); undefined keeps the default live handle.
@@ -449,7 +453,9 @@ function basaltStubHost() {
     async run(command: string): Promise<CommandOutcome> {
       state.run.push(command)
       state.sequence.push(`run: ${command}`)
-      return fails(command) ? { ok: false, detail: 'run failed' } : { ok: true }
+      if (fails(command)) return { ok: false, detail: 'run failed' }
+      state.runEffect?.(command)
+      return { ok: true }
     },
     async runStream(
       command: string,
@@ -460,7 +466,9 @@ function basaltStubHost() {
       const output =
         Object.entries(state.runOutput).find(([key]) => command.includes(key))?.[1] ?? ''
       if (output !== '') onOutput(output)
-      return fails(command) ? { ok: false, detail: 'run failed' } : { ok: true }
+      if (fails(command)) return { ok: false, detail: 'run failed' }
+      state.runEffect?.(command)
+      return { ok: true }
     },
     spawn(argv: readonly string[], env: Record<string, string>, cwd?: string): ProcessHandle {
       state.spawn.push({ argv: [...argv], env: { ...env }, cwd })
@@ -489,21 +497,28 @@ function basaltStubHost() {
 
 /**
  * seededHubCache points HF_HUB_CACHE at a temp dir seeded with the basalt
- * model's content-addressed tree (the blobs store the presence check looks
- * for, plus a snapshot commit holding the .basalt file), so a hub-cache
- * layout deploy reads a deterministic tree, never the real cache. Returns
- * the hub root, the seeded snapshot artifact path, and a cleanup that
- * restores the env and removes the dir.
+ * model's content-addressed tree (the blobs store plus, unless `snapshot`
+ * is false, a snapshot commit holding the .basalt file), so a hub-cache
+ * layout deploy reads a deterministic tree, never the real cache. The
+ * snapshot-less form stands in for a download interrupted before the
+ * snapshot links were written. Returns the hub root, the snapshot artifact
+ * path (whether or not it was seeded), and a cleanup that restores the env
+ * and removes the dir.
  */
-function seededHubCache(): { hub: string; snapshot: string; cleanup: () => void } {
+function seededHubCache(options?: {
+  snapshot?: boolean
+}): { hub: string; snapshot: string; cleanup: () => void } {
+  const withSnapshot = options?.snapshot ?? true
   const hub = mkdtempSync(join(tmpdir(), 'basalt-hub-'))
   const saved = process.env.HF_HUB_CACHE
   process.env.HF_HUB_CACHE = hub
   const modelDir = hubCacheModelDirectory(repoIdFromUrl(`https://huggingface.co/${BASALT_MODEL_REPO}`))
   mkdirSync(join(hub, modelDir, 'blobs'), { recursive: true })
   const snapshotDir = join(hub, modelDir, 'snapshots', 'c1')
-  mkdirSync(snapshotDir, { recursive: true })
-  writeFileSync(join(snapshotDir, BASALT_MODEL_FILE), 'weights')
+  if (withSnapshot) {
+    mkdirSync(snapshotDir, { recursive: true })
+    writeFileSync(join(snapshotDir, BASALT_MODEL_FILE), 'weights')
+  }
   return {
     hub,
     snapshot: join(snapshotDir, BASALT_MODEL_FILE),
@@ -891,6 +906,48 @@ describe('BasaltAdapter.deploy', () => {
         models?: Record<string, unknown>[]
       }
       expect(written.models?.[0]?.model).toBe(snapshot)
+    } finally {
+      cleanup()
+    }
+  })
+
+  it('re-fetches into the hub cache when blobs survive without a snapshot', async () => {
+    const { host, state } = basaltStubHost()
+    state.runOutput['rev-list'] = '0'
+    // A first download interrupted before the snapshot links were written
+    // leaves only the blobs store, so the presence gate reads the artifact
+    // as absent. The stub's runEffect stands in for the hf CLI completing
+    // the fetch: it reuses the blobs and writes the snapshot links inside
+    // the deploy's own timeline, so the later lookup resolves.
+    const { snapshot, cleanup } = seededHubCache({ snapshot: false })
+    state.runEffect = (command): void => {
+      if (!command.includes('hf download')) return
+      mkdirSync(snapshot.slice(0, snapshot.lastIndexOf('/')), { recursive: true })
+      writeFileSync(snapshot, 'weights')
+    }
+    try {
+      const adapter = new BasaltAdapter(host)
+      // A bare config (no model directory) targets the hub cache, so the
+      // deploy gates on the seeded tree.
+      const plan = adapter.renderLaunch({ port: 8090 }, ADAPTER_HW)
+      const result = await adapter.deploy(plan, {
+        engineId: 'basalt',
+        engineDirectory: '/src/basalt',
+      })
+      expect(result.ok).toBe(true)
+      // The blob-only cache fails the gate, so the hub-cache download runs
+      // (no --local-dir), reusing the blobs to write the missing links.
+      expect(state.run).toContain(
+        `hf download ${BASALT_MODEL_REPO} ${BASALT_MODEL_FILE} --format human`,
+      )
+      // The completed fetch resolves: the config's models entry carries the
+      // snapshot path the fetch wrote, not a dead-end failure.
+      expect(state.writeFile).toHaveLength(1)
+      const written = JSON.parse(state.writeFile[0]?.content ?? '{}') as {
+        models?: Record<string, unknown>[]
+      }
+      expect(written.models?.[0]?.model).toBe(snapshot)
+      expect(result.detail ?? '').not.toContain('no hub-cache snapshot')
     } finally {
       cleanup()
     }

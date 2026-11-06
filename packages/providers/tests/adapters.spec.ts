@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
@@ -42,6 +42,7 @@ import type {
   ProcessHandle,
   RunOptions,
 } from '../../core/lib/index.js'
+import { hubCacheModelDirectory } from '../../core/lib/index.js'
 
 const HW: HardwareProfile = { dockerAvailable: true, wsl2: false, os: 'linux', cpuThreads: 8 }
 
@@ -756,6 +757,44 @@ describe('NInferAdapter.deploy', () => {
     // Only the model download runs; no clone or build without an engine dir.
     expect(state.run).toHaveLength(1)
     expect(state.run[0]).toContain('hf download')
+  })
+
+  it('re-runs the hub-cache download when blobs survive without a snapshot', async () => {
+    const { host, state } = stubHost()
+    // An interrupted first download left only the blobs store in the hub
+    // cache, so the deterministic presence gate reads the artifact as
+    // absent and the deploy re-runs the cheap hf download (the CLI reuses
+    // the blobs and writes the snapshot links). HF_HUB_CACHE points at the
+    // seeded cache so the gate never reads the real one.
+    const hub = await mkdtemp(join(tmpdir(), 'ninfer-blobs-'))
+    const artifact = NINFER_MODEL_ARTIFACTS['qwen3-27b']!
+    await mkdir(join(hub, hubCacheModelDirectory(artifact.repo), 'blobs'), { recursive: true })
+    const savedHub = process.env.HF_HUB_CACHE
+    process.env.HF_HUB_CACHE = hub
+    try {
+      const adapter = new NInferAdapter(host)
+      // A plan with no model directory takes the hub-cache layout.
+      const plan: LaunchPlan = {
+        engineId: 'ninfer',
+        kind: 'process',
+        argv: ['ninfer-serve', 'x.ninfer'],
+        env: {},
+        modelId: 'qwen3-27b',
+        port: 18020,
+        healthUrl: 'http://127.0.0.1:18020/health',
+      }
+      const result = await adapter.deploy(plan)
+      expect(result.ok).toBe(true)
+      // The gate fails, so the hub-cache download runs (no --local-dir).
+      expect(state.run).toContain(
+        `hf download ${artifact.repo} ${artifact.file} --format human`,
+      )
+      expect(state.spawn).toHaveLength(1)
+    } finally {
+      if (savedHub === undefined) delete process.env.HF_HUB_CACHE
+      else process.env.HF_HUB_CACHE = savedHub
+      await rm(hub, { recursive: true, force: true })
+    }
   })
 
   it('rewrites an HF chat-template reference to the local file the engine reads', async () => {

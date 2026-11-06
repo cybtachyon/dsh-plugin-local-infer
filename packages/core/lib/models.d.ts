@@ -59,9 +59,9 @@ export declare function isModelDirectoryOverridden(modelDirectory: unknown): mod
  * layout (`useHubCache`), it resolves into the per-model cache directory's
  * `blobs` folder, the content-addressed store the hf CLI writes without
  * `--local-dir`; the `directory` is then the hub cache root, not the per-model
- * folder. Card-facing presence checks resolve the deterministic snapshot
- * instead (modelArtifactPresent); this coarse form stays the engines' deploy
- * re-fetch gate.
+ * folder. Every presence decision (the card-facing checks and the engines'
+ * deploy re-fetch gates) resolves the deterministic snapshot instead
+ * (modelArtifactPresent); the hub-cache form here stays the blobs-store path.
  */
 export declare function modelArtifactPath(entry: ModelDownloadSource, directory: string, useHubCache?: boolean): string;
 /**

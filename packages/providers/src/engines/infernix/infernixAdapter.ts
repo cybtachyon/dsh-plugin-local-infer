@@ -13,14 +13,13 @@
  * @module dsh-plugin-local-infer/providers/engines/infernix/infernixAdapter
  */
 
-import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import {
   EngineAdapter,
   hfDownloadCommand,
   hfHubCacheDirectory,
   hubCacheSnapshotFilePath,
-  modelArtifactPath,
+  modelArtifactPresent,
   modelDownloadTarget,
 } from '../../../../core/lib/index.js'
 import type {
@@ -274,13 +273,12 @@ export class InfernixAdapter extends EngineAdapter {
     }
     // A model the shared Get-steps routine already downloaded is on disk, so
     // the deploy step skips the re-fetch and a launch after a Get does no
-    // duplicate download. Presence is the per-model cache dir's blobs folder
-    // in the hub-cache layout, else every shard in the flat directory.
-    if (useHubCache) {
-      if (existsSync(modelArtifactPath(entry, baseDir, true))) return { ok: true }
-    } else if (files.every((file) => existsSync(join(baseDir, file)))) {
-      return { ok: true }
-    }
+    // duplicate download. Presence is the snapshot the hub-cache layout
+    // resolves or the flat artifact path (modelArtifactPresent), never a
+    // bare blobs folder: a cache whose snapshot links are missing (the
+    // interrupted first download) re-runs the cheap hf download, which
+    // reuses the blobs and writes the links.
+    if (modelArtifactPresent(entry, baseDir, useHubCache)) return { ok: true }
     const download = await this.host.run(hfDownloadCommand(entry, baseDir, useHubCache))
     if (!download.ok) {
       return { ok: false, detail: `model download failed: ${download.detail ?? 'unknown'}` }

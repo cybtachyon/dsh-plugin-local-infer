@@ -12,16 +12,17 @@
  * @module dsh-plugin-local-infer/providers/engines/ninfer/ninferAdapter
  */
 
-import { existsSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import {
   CHAT_TEMPLATE_FILE,
   EngineAdapter,
+  chatTemplateArtifactPath,
+  chatTemplatePresent,
   hfChatTemplateCommand,
   hfDownloadCommand,
   hfHubCacheDirectory,
   hubCacheSnapshotFilePath,
-  modelArtifactPath,
+  modelArtifactPresent,
   modelDownloadTarget,
 } from '../../../../core/lib/index.js'
 import type {
@@ -383,8 +384,11 @@ export class NInferAdapter extends EngineAdapter {
     }
     // A model the shared Get-steps routine already downloaded is on disk, so
     // the deploy step skips the re-fetch and a launch after a Get does no
-    // duplicate download.
-    if (existsSync(modelArtifactPath(entry, baseDir, useHubCache))) return { ok: true }
+    // duplicate download. Presence is the deterministic snapshot the resolved
+    // layout holds (modelArtifactPresent), never a bare blobs folder: a cache
+    // whose snapshot links are missing re-runs the cheap hf download, which
+    // reuses the blobs and writes the links.
+    if (modelArtifactPresent(entry, baseDir, useHubCache)) return { ok: true }
     const download = await this.host.run(hfDownloadCommand(entry, baseDir, useHubCache))
     if (!download.ok) {
       return { ok: false, detail: `model download failed: ${download.detail ?? 'unknown'}` }
@@ -418,11 +422,13 @@ export class NInferAdapter extends EngineAdapter {
     // built with join (the host's path module normalizes the separators), so
     // the flag the engine reads resolves on Windows, Linux, and macOS alike.
     const { baseDir, useHubCache } = modelDownloadTarget(plan.modelDirectory)
+    // The hub-cache branch resolves the deterministic snapshot file; the flat
+    // branch asks the shared presence predicate for the template join.
     const resolvePath = (): string | null =>
       useHubCache
         ? hubCacheSnapshotFilePath(baseDir, value, CHAT_TEMPLATE_FILE)
-        : existsSync(join(baseDir, CHAT_TEMPLATE_FILE))
-          ? join(baseDir, CHAT_TEMPLATE_FILE)
+        : chatTemplatePresent(value, baseDir)
+          ? chatTemplateArtifactPath(baseDir)
           : null
     let localPath = resolvePath()
     // A template already on disk skips the re-fetch; the hf CLI is optional,
