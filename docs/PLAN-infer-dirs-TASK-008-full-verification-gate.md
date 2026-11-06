@@ -13,6 +13,13 @@ Fix whatever fails (test expectations, coverage of new branches, lint). If
 `git clean` clobbered tracked `lib/` outputs during diagnosis, delete stale
 `packages/*/tsconfig.tsbuildinfo` and rebuild before committing.
 
+From the TASK-011 review, also harden the two hub-cache-layout deploy tests
+that read the developer's REAL hub cache and assume the artifact repo is
+absent (`packages/providers/tests/adapters.spec.ts`: ninfer "skips the
+clone and build when no platform config is stored", llamacpp "skips the git
+sync entirely when autoRebuild is off"): seed `HF_HUB_CACHE` at a temp dir
+so they are hermetic.
+
 Definition of Done: all five commands exit 0; any fixups committed; tree
 clean (`git status --short` empty apart from plan files).
 
