@@ -2,7 +2,7 @@
 
 Refactor:
 
-Review the files touched by the previous 6 commits and identify the following code risks:
+Review the files touched by the previous 7 commits and identify the following code risks:
  - **Multiple Sources of Truth**: Same calculations done in multiple places.
  - **Duplicate Code**: Nearly-identical code in multiple methods.
  - **Bloaters**: Too many things done in a single method or class.
@@ -29,6 +29,13 @@ directory-existsSync checks with the deterministic snapshot resolution as
 the hub-cache presence check (call sites: summary view model, get-steps
 model + chat-template steps). Also dedup `hf.ts resolveDownloadTarget`
 against the shared resolver once TASK-004 lands.
+
+Carried from TASK-004: redundant narrowing guards that restate the
+`isModelDirectoryOverridden` predicate (`deps.ts` inline
+`overridden && typeof ... === 'string'`, `ops/model.ts
+resolveModelDirectory`, `get-steps.ts resolveEngineDirectory` inline
+non-blank-string checks) collapse onto the predicate or the shared
+`ModelDownloadTarget` value.
 
 Definition of Done: each risk listed above is either resolved or explicitly
 dismissed with a one-line note in the commit message; suites, build, and
