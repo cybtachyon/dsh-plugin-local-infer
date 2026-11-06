@@ -26,16 +26,25 @@ trust this list blindly):
 
 Requirements for the delivered commands: idempotent (safe to re-run),
 guarded (test -e before each move), back up `config.json` with a timestamp
-before editing it, and use `mkdir -p` for the new homes. Deliver the command
-list in the final user-facing response (and in a short `docs/` note if
-useful).
+before editing it, and use `mkdir -p` for the new homes. The user runs the
+commands; do NOT execute the moves or the config.json edit yourself.
+Verify only by read-only inspection of the live filesystem (and `bash -n`
+syntax check of the drafted script). Deliver the command list in the final
+user-facing response, and also include the steps that make the new code
+live on this install: inspect how the plugin bundle is installed in the
+active DSH profile (`ls ~/.dsh/profiles/*/node_modules` and the installed
+bundle's package.json), then give the exact rebuild + reinstall +
+host-restart commands for that install shape.
 
-Definition of Done: commands verified by running the guarded idempotent
-migration on this machine; final on-disk state: engine checkout at
-`~/.cache/dsh/infer/basalt`, config at
-`~/.cache/dsh/infer/config/basalt/basalt_config.json`, no `basalt*` entries under
-`~/.cache/huggingface/hub/` besides the `models--*` tree, snapshot dir holds
-only `Qwen3.8-FN-NVFP4-DQ6_K.basalt` (+ repo files), config.json modelDirectory
-per the questionnaire answer.
+Definition of Done: commands drafted, `bash -n`-checked, and cross-checked
+against the live filesystem state (every source path confirmed present or
+explicitly guarded); expected state after the user runs them: engine
+checkout at `~/.cache/dsh/infer/basalt`, config at
+`~/.cache/dsh/infer/config/basalt/basalt_config.json`, no `basalt*` entries
+under `~/.cache/huggingface/hub/` besides the `models--*` tree, snapshot dir
+holds only `Qwen3.8-FN-NVFP4-DQ6_K.basalt` (+ repo files), config.json
+`modelDirectory` blank per the questionnaire answer. Report the drafted
+script and the reinstall steps in the task result (do not commit them as
+files).
 
 Depends on: TASK-008.
