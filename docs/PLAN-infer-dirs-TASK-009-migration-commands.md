@@ -48,3 +48,29 @@ script and the reinstall steps in the task result (do not commit them as
 files).
 
 Depends on: TASK-008.
+
+## Result (2026-11-05)
+
+Drafted, `bash -n`- and shellcheck-clean script delivered in the task result
+(not committed, per the Definition of Done). Cross-checked against the live
+filesystem:
+
+- Both basalt checkouts sit at the same commit (`cb02eb7`); the snapshot-dir
+  clone holds the fresher build (bin at 15:55 vs 15:42), so it moves to
+  `~/.cache/dsh/infer/basalt` and the hub copy is deleted as the superseded
+  duplicate. Its `build/` is dropped (CMake cached the old absolute path);
+  `bin/` relocates intact.
+- The newest config is the hub copy (v2 models format, 16:20, 494 B); it
+  moves to `~/.cache/dsh/infer/config/basalt/basalt_config.json`; the older
+  snapshot copy (301 B) is removed.
+- `config.json` edit (jq, guarded + timestamped backup, fixed-point
+  idempotent, dry-run verified on a copy): blanks only the two
+  `modelDirectory` values pinned into the hub cache (top-level `config` and
+  the basalt provider). The explicit overrides stay: strata and hyperqwen
+  `~/.dsh/models`, infernix and ninfer `~/src/hf-models`.
+- Live basalt serve processes reference the old paths, so the script refuses
+  to run while they live; the user stops the engine from the UI first.
+- Activation: the profile install is a symlink
+  (`~/.dsh/profiles/web/node_modules/dsh-plugin-local-infer` ->
+  `/home/derek/src/dsh-plugin-local-infer`), so `pnpm build` plus a dsh host
+  restart makes the new code live; no bundle reinstall step.
