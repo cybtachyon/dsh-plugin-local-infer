@@ -96,7 +96,7 @@ invariants specific to this plan:
 
 ### Phase 6 - Migration deliverable
 
- - [ ] [TASK-009-migration-commands](docs/PLAN-infer-dirs-TASK-009-migration-commands.md)
+ - [x] [TASK-009-migration-commands](docs/PLAN-infer-dirs-TASK-009-migration-commands.md)
 
 ## Task dependencies
 
