@@ -86,7 +86,7 @@ invariants specific to this plan:
 
 ### Phase 4 - Config file placement
 
- - [ ] [TASK-006-config-file-placement](docs/PLAN-infer-dirs-TASK-006-config-file-placement.md)
+ - [x] [TASK-006-config-file-placement](docs/PLAN-infer-dirs-TASK-006-config-file-placement.md)
 
 ### Phase 5 - Quality gates
 
