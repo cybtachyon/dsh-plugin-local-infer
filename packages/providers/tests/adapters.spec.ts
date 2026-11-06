@@ -742,21 +742,33 @@ describe('NInferAdapter.deploy', () => {
 
   it('skips the clone and build when no platform config is stored', async () => {
     const { host, state } = stubHost()
-    const adapter = new NInferAdapter(host)
-    const plan: LaunchPlan = {
-      engineId: 'ninfer',
-      kind: 'process',
-      argv: ['ninfer-serve', 'x.ninfer'],
-      env: {},
-      modelId: 'qwen3-27b',
-      port: 18020,
-      healthUrl: 'http://127.0.0.1:18020/health',
+    // HF_HUB_CACHE points at an empty temp dir so the hub-cache presence
+    // gate never reads the developer's real cache: the artifact reads as
+    // absent and the model download runs.
+    const hub = await mkdtemp(join(tmpdir(), 'ninfer-no-config-'))
+    const savedHub = process.env.HF_HUB_CACHE
+    process.env.HF_HUB_CACHE = hub
+    try {
+      const adapter = new NInferAdapter(host)
+      const plan: LaunchPlan = {
+        engineId: 'ninfer',
+        kind: 'process',
+        argv: ['ninfer-serve', 'x.ninfer'],
+        env: {},
+        modelId: 'qwen3-27b',
+        port: 18020,
+        healthUrl: 'http://127.0.0.1:18020/health',
+      }
+      const result = await adapter.deploy(plan)
+      expect(result.ok).toBe(true)
+      // Only the model download runs; no clone or build without an engine dir.
+      expect(state.run).toHaveLength(1)
+      expect(state.run[0]).toContain('hf download')
+    } finally {
+      if (savedHub === undefined) delete process.env.HF_HUB_CACHE
+      else process.env.HF_HUB_CACHE = savedHub
+      await rm(hub, { recursive: true, force: true })
     }
-    const result = await adapter.deploy(plan)
-    expect(result.ok).toBe(true)
-    // Only the model download runs; no clone or build without an engine dir.
-    expect(state.run).toHaveLength(1)
-    expect(state.run[0]).toContain('hf download')
   })
 
   it('re-runs the hub-cache download when blobs survive without a snapshot', async () => {
@@ -2048,27 +2060,39 @@ describe('LlamaCppAdapter', () => {
     // Rebuild checkbox is off, so the git sync (fetch, rebase, rebuild) is
     // skipped and the checkout launches as-is.
     state.runOutput['rev-list'] = '3'
-    const adapter = new LlamaCppAdapter(host)
-    const plan: LaunchPlan = {
-      engineId: 'llamacpp', kind: 'process', argv: ['llama-server', 'x.gguf'], env: {},
-      modelId: 'qwen3-27b', port: 8080, healthUrl: 'http://127.0.0.1:8080/health',
+    // HF_HUB_CACHE points at an empty temp dir so the hub-cache presence
+    // gate never reads the developer's real cache: the artifact reads as
+    // absent and the model download runs.
+    const hub = await mkdtemp(join(tmpdir(), 'llamacpp-no-autorebuild-'))
+    const savedHub = process.env.HF_HUB_CACHE
+    process.env.HF_HUB_CACHE = hub
+    try {
+      const adapter = new LlamaCppAdapter(host)
+      const plan: LaunchPlan = {
+        engineId: 'llamacpp', kind: 'process', argv: ['llama-server', 'x.gguf'], env: {},
+        modelId: 'qwen3-27b', port: 8080, healthUrl: 'http://127.0.0.1:8080/health',
+      }
+      const result = await adapter.deploy(
+        plan,
+        { engineId: 'llamacpp', engineDirectory: '/src/llama.cpp' },
+        undefined,
+        { autoRebuild: false },
+      )
+      expect(result.ok).toBe(true)
+      // No git sync commands ran: no checkout probe, no fetch, no rebase, no
+      // clean, and no build.
+      expect(state.run.some((c) => c.includes('git -C /src/llama.cpp rev-parse --is-inside-work-tree'))).toBe(false)
+      expect(state.run.some((c) => c.includes('git -C /src/llama.cpp'))).toBe(false)
+      expect(state.run.some((c) => c.includes('cmake -S /src/llama.cpp'))).toBe(false)
+      // The model download still runs, and the engine spawns from the checkout.
+      expect(state.run.some((c) => c.includes('hf download'))).toBe(true)
+      expect(state.spawn).toHaveLength(1)
+      expect(state.spawn[0]?.cwd).toBe('/src/llama.cpp')
+    } finally {
+      if (savedHub === undefined) delete process.env.HF_HUB_CACHE
+      else process.env.HF_HUB_CACHE = savedHub
+      await rm(hub, { recursive: true, force: true })
     }
-    const result = await adapter.deploy(
-      plan,
-      { engineId: 'llamacpp', engineDirectory: '/src/llama.cpp' },
-      undefined,
-      { autoRebuild: false },
-    )
-    expect(result.ok).toBe(true)
-    // No git sync commands ran: no checkout probe, no fetch, no rebase, no
-    // clean, and no build.
-    expect(state.run.some((c) => c.includes('git -C /src/llama.cpp rev-parse --is-inside-work-tree'))).toBe(false)
-    expect(state.run.some((c) => c.includes('git -C /src/llama.cpp'))).toBe(false)
-    expect(state.run.some((c) => c.includes('cmake -S /src/llama.cpp'))).toBe(false)
-    // The model download still runs, and the engine spawns from the checkout.
-    expect(state.run.some((c) => c.includes('hf download'))).toBe(true)
-    expect(state.spawn).toHaveLength(1)
-    expect(state.spawn[0]?.cwd).toBe('/src/llama.cpp')
   })
 
   it('reports a failed docker pull as not-ok and treats a compose plan as a no-op', async () => {
