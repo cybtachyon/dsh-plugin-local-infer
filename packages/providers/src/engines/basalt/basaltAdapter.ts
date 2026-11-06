@@ -1,17 +1,17 @@
 /**
  * The Basalt engine adapter. BasaltAdapter is the Basalt engine (the C++/CUDA
  * serve/ server for the Qwen3.8-Flash-Next MoE model, Blackwell-only).
- * `renderLaunch` renders a `basalt serve --config --model --engine-bin`
- * process plan: the binary name comes from the host OS profile, every
- * setting lands in the `basalt_config.json` the plan's `configFile` carries
- * (rendered from the spec surface with `configFileFromSpecs`), and the argv
- * carries the `--model` and `--engine-bin` flags the serve CLI requires, so
- * it stays fixed no matter how many settings the form offers. `deploy` builds
- * the engine in the checkout (the acquisition build steps), downloads the
- * `.basalt` model into the model directory, writes the config file, and
- * spawns the serve command. `healthCheck` polls the health URL and reports
- * the start phase from the tracked process output. `stop` signals the
- * tracked process.
+ * `renderLaunch` renders a `basalt serve --config --engine-bin` process
+ * plan: the binary name comes from the host OS profile, every setting and
+ * the served model land in the `basalt_config.json` the plan's `configFile`
+ * carries (the spec surface rendered with `configFileFromSpecs` into the
+ * versioned v2 envelope the 0.3.0 serve CLI accepts), and the argv carries
+ * the CLI-only `--engine-bin` flag, so it stays fixed no matter how many
+ * settings the form offers. `deploy` builds the engine in the checkout (the
+ * acquisition build steps), downloads the `.basalt` model into the model
+ * directory, writes the config file, and spawns the serve command.
+ * `healthCheck` polls the health URL and reports the start phase from the
+ * tracked process output. `stop` signals the tracked process.
  * @module dsh-plugin-local-infer/providers/engines/basalt/basaltAdapter
  */
 
@@ -53,6 +53,7 @@ import {
 import { engineBuildDir, syncEngineForDeploy } from '../../acquire.ts'
 import { defaultModelFor } from '../../model-defaults.ts'
 import {
+  BASALT_CONFIG_VERSION,
   BASALT_DEFAULT_MODEL_ID,
   BASALT_DEFAULT_PORT,
   BASALT_MODEL_FILE,
@@ -91,6 +92,19 @@ export { BASALT_MODEL_FILE, BASALT_MODEL_REPO } from './basalt.ts'
 export const BASALT_CONFIG_FILE = 'basalt_config.json'
 
 /**
+ * BasaltConfigBlocks is the parsed block map `configFileFromSpecs` renders
+ * from `BASALT_PARAMETERS`: the `server`, `models[]`, and `engine` blocks
+ * `renderLaunch` wraps into the versioned v2 envelope. Every block's specs
+ * declare defaults, so all three always render; the optionals keep the
+ * envelope build total against a future surface edit.
+ */
+type BasaltConfigBlocks = {
+  server?: Record<string, unknown>
+  models?: Record<string, unknown>[]
+  engine?: Record<string, unknown>
+}
+
+/**
  * basaltModelFileName resolves the `.basalt` artifact file name a config's
  * model field names: a value that is already a `.basalt` file name (a
  * directory-scan selection) passes through; a registry key (a default-model
@@ -107,12 +121,12 @@ function basaltModelFileName(modelValue: string): string {
 
 /**
  * BasaltAdapter is the Basalt engine. `renderLaunch` renders a
- * `basalt serve --config --model --engine-bin` process plan (the settings
- * ride the config file; the argv carries the `--model` and `--engine-bin`
- * flags the serve CLI requires); `deploy` builds the engine, downloads the
- * model, writes the config file, and spawns the serve command;
- * `healthCheck` polls the health URL and reports the start phase from the
- * tracked process output; `stop` signals the tracked process.
+ * `basalt serve --config --engine-bin` process plan (the settings and the
+ * served model ride the versioned config file; the argv carries the CLI-only
+ * `--engine-bin` flag); `deploy` builds the engine, downloads the model,
+ * writes the config file, and spawns the serve command; `healthCheck` polls
+ * the health URL and reports the start phase from the tracked process
+ * output; `stop` signals the tracked process.
  */
 export class BasaltAdapter extends EngineAdapter {
   readonly id = 'basalt'
@@ -191,30 +205,44 @@ export class BasaltAdapter extends EngineAdapter {
     const binaryPath = buildDir === '' ? binary : join(buildDir, binary)
     // The .basalt artifact the engine serves, resolved from config.model (a
     // registry key, a .basalt file name, or the engine default). It stamps
-    // both the --model placeholder and the plan's modelFile field, so the
-    // deploy step downloads exactly the file the flag points at without
-    // re-parsing the rendered argv. The --model value is a placeholder the
-    // deploy step resolves to the concrete artifact path after the model
-    // download (the flat join for a user model directory, the hub-cache
-    // snapshot path for the default layout). The --engine-bin flag names the
-    // same build-tree binary the argv's first token carries, so the serve CLI
-    // spawns the engine binary it already names.
+    // both the config entry's `model` placeholder and the plan's modelFile
+    // field, so the deploy step downloads exactly the file the entry names
+    // without re-parsing the rendered config. The entry value is a
+    // placeholder the deploy step resolves to the concrete artifact path
+    // after the model download (the flat join for a user model directory,
+    // the hub-cache snapshot path for the default layout). Upstream refuses
+    // a model entry without a `model`, so the stamp below never leaves the
+    // entry empty.
     const modelValue = typeof config.model === 'string' ? config.model : ''
     const modelFile = basaltModelFileName(modelValue)
     const modelPath = join(baseDir, modelFile)
+    // The config file is the v2 envelope the 0.3.0 serve CLI accepts: the
+    // version stamp plus the three blocks the surface renders, in the key
+    // order upstream documents. The surface's raw `model` value is a registry
+    // key or file name, never the download-target path the engine resolves
+    // against the config file's home, so the entry is restamped with the
+    // placeholder path before the envelope is sealed.
+    const blocks = JSON.parse(
+      configFileFromSpecs(BASALT_PARAMETERS, config, 'json'),
+    ) as BasaltConfigBlocks
+    const configContent = JSON.stringify(
+      {
+        version: BASALT_CONFIG_VERSION,
+        models: [{ ...blocks.models?.[0], model: modelPath }],
+        engine: blocks.engine ?? {},
+        server: blocks.server ?? {},
+      },
+      null,
+      2,
+    )
     return {
       engineId: this.id,
       kind: 'process',
-      argv: [
-        binaryPath,
-        'serve',
-        '--config',
-        configPath,
-        '--model',
-        modelPath,
-        '--engine-bin',
-        binaryPath,
-      ],
+      // The serve CLI takes every setting and the model from the config
+      // file, so the argv stays fixed. --engine-bin is CLI-only (refused in
+      // the config file): it pins the build-tree binary the first token
+      // already names.
+      argv: [binaryPath, 'serve', '--config', configPath, '--engine-bin', binaryPath],
       env: {},
       ...(modelDirectory === '' ? {} : { modelDirectory }),
       // The raw config.model value stamps the plan's modelId (a bare config
@@ -226,11 +254,11 @@ export class BasaltAdapter extends EngineAdapter {
       port,
       healthUrl: `http://127.0.0.1:${port}/health`,
       os: _hw.os,
-      // Every setting rides the config file the deploy step writes; the
-      // --model and --engine-bin flags are the only argv additions.
+      // Every setting and the served model ride the v2 config file the
+      // deploy step writes; --engine-bin is the only argv addition.
       configFile: {
         path: configPath,
-        content: configFileFromSpecs(BASALT_PARAMETERS, config, 'json'),
+        content: configContent,
       },
     }
   }
@@ -276,7 +304,7 @@ export class BasaltAdapter extends EngineAdapter {
     // The .basalt model artifact the engine serves, downloaded into the model
     // directory. The file name is the basename of the plan's modelFile
     // (renderLaunch stamps it from config.model), so the download fetches
-    // exactly the file the --model flag points at. A bare config (no model
+    // exactly the file the config entry names. A bare config (no model
     // directory) downloads into the hub cache (the hub-cache layout, no
     // --local-dir); a user-overridden model directory keeps the flat
     // --local-dir target. A model the shared Get-steps routine already
@@ -288,9 +316,10 @@ export class BasaltAdapter extends EngineAdapter {
     if (!artifact.ok) {
       return withLogs({ ok: false, detail: artifact.detail })
     }
-    // Swap the --model placeholder for the concrete artifact path. The flat
-    // layout placeholder is already concrete, so the swap is a no-op there;
-    // the hub-cache layout swaps to the snapshot path.
+    // Resolve the downloaded artifact into an argv --model flag when one
+    // rides it. A v2 renderLaunch plan names the model in the config file's
+    // entry instead, so the swap is a no-op there; TASK-004 moves artifact
+    // resolution into that entry.
     const spawnArgv = this.withModelArgv(plan.argv ?? [], artifact.path)
     // Write the config file the plan names, so the engine's --config flag
     // points at a path that exists.

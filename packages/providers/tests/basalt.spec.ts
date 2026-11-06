@@ -32,6 +32,7 @@ import {
   BasaltAdapter,
 } from '../src/engines/basalt/basaltAdapter.ts'
 import {
+  BASALT_CONFIG_VERSION,
   BASALT_DEFAULT_MODEL_ID,
   BASALT_EXPERT_CACHE_OPTIONS,
   BASALT_KV_OPTIONS,
@@ -376,6 +377,18 @@ const ADAPTER_HW: HardwareProfile = {
 }
 
 /**
+ * modelEntryPath reads the `model` value out of the single entry of a plan's
+ * rendered config envelope, so the specs assert on the placeholder path the
+ * serve CLI resolves against the config file's home.
+ */
+function modelEntryPath(plan: LaunchPlan): unknown {
+  const envelope = JSON.parse(plan.configFile?.content ?? '{}') as {
+    models?: Record<string, unknown>[]
+  }
+  return envelope.models?.[0]?.model
+}
+
+/**
  * basaltStubHost is a stub LifecycleHost that records every run, writeFile,
  * and spawn call in a single ordered sequence, so the adapter's deploy step
  * can be asserted on without a real build, model download, or spawn.
@@ -468,7 +481,7 @@ function seededHubCache(): { hub: string; cleanup: () => void } {
 }
 
 describe('BasaltAdapter.renderLaunch', () => {
-  it('renders a serve process plan with the config file the surface renders', () => {
+  it('renders a serve process plan with the v2 config envelope the surface renders', () => {
     const { host } = basaltStubHost()
     const adapter = new BasaltAdapter(host)
     const config = {
@@ -494,34 +507,51 @@ describe('BasaltAdapter.renderLaunch', () => {
     const argv = plan.argv ?? []
     // The binary is spelled as a build-tree relative path (CMake's bin/
     // output dir), so the deploy step joins it against the engine directory.
-    expect(argv[0]).toBe(join('bin', 'basalt'))
-    expect(argv).toContain('serve')
-    expect(argv).toContain('--config')
-    // The serve CLI requires --model and --engine-bin. The --model value is a
-    // placeholder the deploy step resolves (TASK-004); the --engine-bin value
-    // is the build-tree binary the first token names.
-    expect(argv).toContain('--model')
-    expect(argv).toContain('--engine-bin')
-    expect(argv[argv.indexOf('--model') + 1]).toBe(
-      join('models', 'models/Qwen3.8-FN-NVFP4-DQ6_K.basalt'),
-    )
-    expect(argv[argv.indexOf('--engine-bin') + 1]).toBe(join('bin', 'basalt'))
+    // The serve CLI takes every setting and the model from the config file;
+    // the CLI-only --engine-bin flag pins the build-tree binary the first
+    // token names, and no --model flag rides the argv (upstream rejects the
+    // pair beside --config).
+    expect(argv).toEqual([
+      join('bin', 'basalt'),
+      'serve',
+      '--config',
+      join('models', BASALT_CONFIG_FILE),
+      '--engine-bin',
+      join('bin', 'basalt'),
+    ])
     // The plan stamps the resolved model value, so the deploy step downloads
-    // exactly the file the --model flag points at without re-parsing the argv.
+    // exactly the file the config entry names without re-parsing the file.
     expect(plan.modelFile).toBe('models/Qwen3.8-FN-NVFP4-DQ6_K.basalt')
-    // The config file content is exactly what the surface renders, and the
-    // path lands in the model directory.
-    expect(plan.configFile?.content).toBe(configFileFromSpecs(BASALT_PARAMETERS, config, 'json'))
-    const object = JSON.parse(plan.configFile?.content ?? '{}') as {
+    expect(plan.configFile?.path).toBe(join('models', BASALT_CONFIG_FILE))
+    expect(plan.modelDirectory).toBe('models')
+    // The config file is the v2 envelope: the version stamp plus the blocks
+    // the surface renders, in the upstream key order, with the models entry
+    // carrying the placeholder path the deploy step later resolves.
+    const envelope = JSON.parse(plan.configFile?.content ?? '{}') as {
+      version: number
       server: Record<string, unknown>
       models: Record<string, unknown>[]
       engine: Record<string, unknown>
     }
-    expect(object.server.port).toBe(8090)
-    // The per-model settings render into the one `models` entry.
-    expect(object.models[0]?.['max-context']).toBe(32768)
-    expect(plan.configFile?.path).toBe(join('models', BASALT_CONFIG_FILE))
-    expect(plan.modelDirectory).toBe('models')
+    expect(Object.keys(envelope)).toEqual(['version', 'models', 'engine', 'server'])
+    expect(envelope.version).toBe(BASALT_CONFIG_VERSION)
+    expect(envelope.server).toEqual({ port: 8090, host: '127.0.0.1' })
+    expect(envelope.models).toEqual([
+      {
+        gpu: '0,1',
+        parallel: 2,
+        vision: 'dynamic',
+        model: join('models', 'models/Qwen3.8-FN-NVFP4-DQ6_K.basalt'),
+        'max-context': 32768,
+      },
+    ])
+    expect(envelope.engine).toEqual({
+      kv: 'int8',
+      'expert-cache': 'auto',
+      prefill: 'auto',
+      'resident-experts': true,
+      spec: 8,
+    })
   })
 
   it('writes the config file into the hub cache root for a bare config', () => {
@@ -535,22 +565,30 @@ describe('BasaltAdapter.renderLaunch', () => {
     expect(plan.modelDirectory).toBeUndefined()
     expect(plan.port).toBe(8080)
     // A bare config names no model, so the plan stamps the engine default
-    // artifact for the deploy step to download.
+    // artifact for the deploy step to download. Upstream refuses a models
+    // entry without a `model`, so the envelope's entry carries the
+    // placeholder path into the hub cache root even here.
     expect(plan.modelFile).toBe(BASALT_MODEL_FILE)
+    expect(modelEntryPath(plan)).toBe(join(hfHubCacheDirectory(), BASALT_MODEL_FILE))
   })
 
   it('maps a registry-key model value to its artifact file name', () => {
     const { host } = basaltStubHost()
     const adapter = new BasaltAdapter(host)
     // A registry key (the Model dropdown's default-model selection) maps to
-    // the default model entry's artifact file through the default list.
+    // the default model entry's artifact file through the default list, and
+    // the config entry names it at the download target, never the raw key.
     const keyed = adapter.renderLaunch({ model: 'qwen38-flash-next' }, ADAPTER_HW)
     expect(keyed.modelFile).toBe(BASALT_MODEL_FILE)
+    expect(modelEntryPath(keyed)).toBe(join(hfHubCacheDirectory(), BASALT_MODEL_FILE))
     // A .basalt file name (a directory-scan selection) passes through, and
-    // the --model flag points at it in the model directory.
-    const file = adapter.renderLaunch({ model: 'models/m.basalt', modelDirectory: 'models' }, ADAPTER_HW)
+    // the config entry points at it in the model directory.
+    const file = adapter.renderLaunch(
+      { model: 'models/m.basalt', modelDirectory: 'models' },
+      ADAPTER_HW,
+    )
     expect(file.modelFile).toBe('models/m.basalt')
-    expect(file.argv?.[file.argv?.indexOf('--model') + 1]).toBe(join('models', 'models/m.basalt'))
+    expect(modelEntryPath(file)).toBe(join('models', 'models/m.basalt'))
     // A value that is neither a .basalt name nor a known registry key falls
     // back to the engine default artifact.
     const unknown = adapter.renderLaunch({ model: 'not-a-key' }, ADAPTER_HW)
@@ -622,21 +660,18 @@ describe('BasaltAdapter.deploy', () => {
     // the config file name (the flat --local-dir layout), written as-is.
     expect(state.writeFile).toHaveLength(1)
     expect(state.writeFile[0]?.path).toBe(join('models', BASALT_CONFIG_FILE))
-    // The spawn runs the serve command with the config, model, and engine-bin
-    // flags, in the engine directory. The first token is the build-tree path
-    // joined against the engine directory (CMake's bin/ output dir), so the
-    // spawn resolves the real binary without the PATH. The --model value is
-    // the concrete artifact path the deploy step resolves (the flat join, where
-    // the download lands); the --engine-bin value is the build-tree binary the
-    // first token names.
+    // The spawn runs the serve command with the config and engine-bin flags,
+    // in the engine directory. The first token is the build-tree path joined
+    // against the engine directory (CMake's bin/ output dir), so the spawn
+    // resolves the real binary without the PATH. The --engine-bin value is
+    // the build-tree binary the first token names; the model rides the config
+    // file's entry, so no --model flag rides the spawn.
     expect(state.spawn).toHaveLength(1)
     expect(state.spawn[0]?.argv).toEqual([
       join('/src/basalt', 'bin', 'basalt'),
       'serve',
       '--config',
       join('models', BASALT_CONFIG_FILE),
-      '--model',
-      join('models', 'Qwen3.8-FN-NVFP4-DQ6_K.basalt'),
       '--engine-bin',
       join('bin', 'basalt'),
     ])
@@ -718,15 +753,14 @@ describe('BasaltAdapter.deploy', () => {
     expect(state.spawn).toHaveLength(0)
   })
 
-  it('resolves the hub-cache layout --model flag to the seeded snapshot path', async () => {
+  it('skips the download and spawns serve for a seeded hub-cache artifact', async () => {
     const { host, state } = basaltStubHost()
     state.runOutput['rev-list'] = '0'
     const { hub, cleanup } = seededHubCache()
     try {
       const adapter = new BasaltAdapter(host)
       // A bare config (no model directory) targets the hub cache, so the
-      // deploy resolves the --model placeholder to the snapshot path the
-      // seeded tree holds.
+      // deploy reads the seeded artifact as present and skips the download.
       const plan = adapter.renderLaunch({ port: 8090 }, ADAPTER_HW)
       const result = await adapter.deploy(plan, {
         engineId: 'basalt',
@@ -735,16 +769,15 @@ describe('BasaltAdapter.deploy', () => {
       expect(result.ok).toBe(true)
       // The seeded artifact is on disk, so the deploy skips the download.
       expect(state.run.some((command) => command.includes('hf download'))).toBe(false)
-      // The --model flag resolves to the snapshot path, and the config write
-      // lands in the hub cache root.
+      // The spawn runs the config-carried serve command with the
+      // engine-directory-joined binary (the model rides the config entry,
+      // not the argv), and the config write lands in the hub cache root.
       expect(state.spawn).toHaveLength(1)
       expect(state.spawn[0]?.argv).toEqual([
         join('/src/basalt', 'bin', 'basalt'),
         'serve',
         '--config',
         join(hub, BASALT_CONFIG_FILE),
-        '--model',
-        join(hub, 'models--jesdga--Qwen3.8-Flash-Next-Basalt', 'snapshots', 'c1', BASALT_MODEL_FILE),
         '--engine-bin',
         join('bin', 'basalt'),
       ])
@@ -781,7 +814,9 @@ describe('BasaltAdapter.deploy', () => {
   it('writes the spawn argv back onto the plan for the launch record', async () => {
     const { host, state } = basaltStubHost()
     state.runOutput['rev-list'] = '0'
-    const { hub, cleanup } = seededHubCache()
+    // The seed keeps the bare-config deploy hermetic: the artifact is on
+    // disk, so no download runs and the spawn is reached.
+    const { cleanup } = seededHubCache()
     try {
       const adapter = new BasaltAdapter(host)
       const plan = adapter.renderLaunch({ port: 8090 }, ADAPTER_HW)
@@ -793,13 +828,10 @@ describe('BasaltAdapter.deploy', () => {
       // The plan is the launch record's argv source, and the re-link rule
       // substring-matches every record argv token against the live command
       // line, so deploy leaves the plan carrying exactly what it spawned:
-      // the engine-directory-joined binary and the hub-cache snapshot
-      // --model path, not the rendered placeholder.
+      // the first token is the engine-directory-joined binary, not the
+      // rendered build-tree relative path.
       expect(plan.argv).toEqual(state.spawn[0]?.argv)
-      const modelFlag = plan.argv?.indexOf('--model') ?? -1
-      expect(plan.argv?.[modelFlag + 1]).toBe(
-        join(hub, 'models--jesdga--Qwen3.8-Flash-Next-Basalt', 'snapshots', 'c1', BASALT_MODEL_FILE),
-      )
+      expect(plan.argv?.[0]).toBe(join('/src/basalt', 'bin', 'basalt'))
     } finally {
       cleanup()
     }

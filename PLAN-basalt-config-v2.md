@@ -107,7 +107,7 @@ known to the plugin for every pack. The adapter stamps the same
 
 ### Phase 3 - adapter launch and deploy
 
- - [ ] [TASK-003-render-v2-plan](docs/PLAN-basalt-config-v2-TASK-003-render-v2-plan.md)
+ - [x] [TASK-003-render-v2-plan](docs/PLAN-basalt-config-v2-TASK-003-render-v2-plan.md)
        `renderLaunch` renders the `{version, models, engine, server}` envelope
        (entry `model` carries the pre-download placeholder path) and drops the
        `--model` flag from the serve argv.
