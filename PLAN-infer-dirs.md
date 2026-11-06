@@ -91,6 +91,7 @@ invariants specific to this plan:
 ### Phase 5 - Quality gates
 
  - [x] [TASK-007-refactor-directory-resolution](docs/PLAN-infer-dirs-TASK-007-refactor-directory-resolution.md)
+ - [ ] [TASK-011-adapter-present-gates](docs/PLAN-infer-dirs-TASK-011-adapter-present-gates.md)
  - [ ] [TASK-008-full-verification-gate](docs/PLAN-infer-dirs-TASK-008-full-verification-gate.md)
 
 ### Phase 6 - Migration deliverable
@@ -105,6 +106,8 @@ invariants specific to this plan:
 - TASK-002 blocks TASK-003, TASK-004.
 - TASK-003 blocks TASK-004 (shared route.spec expectations).
 - TASK-004, TASK-005, TASK-006 block TASK-007.
+- TASK-011 (inserted from the TASK-007 dismissed item; deterministic
+  presence gates in adapter deploys) runs after TASK-007, blocks TASK-008.
 - TASK-007 blocks TASK-008; TASK-008 blocks TASK-009.
 - Questionnaire answers are recorded here and in the affected task files
   before those tasks run.
