@@ -19,12 +19,16 @@ shared resolver); leftover `${HOME}/.cache` literals; the
 for the `ModelDownloadTarget` value already in core); stale doc comments
 describing the old `join(modelDir, engineId)` and config-in-model-dir rules.
 
-Carried over from the TASK-002 review (resolve or explicitly dismiss): the
-coarse hub-cache presence check. `modelArtifactPath` with `useHubCache`
-only checks that `models--{ns}--{name}/blobs` exists (any blob, not the
-selected file), which is strictly weaker than
-`hfDownloadResultDirectory(...) !== null`. Replace the blobs-dir existsSync
-with the deterministic snapshot resolution as the hub-cache presence check.
+Carried over from the TASK-002/TASK-003 reviews (resolve or explicitly
+dismiss): the coarse hub-cache presence checks. `modelArtifactPath` with
+`useHubCache` only checks that `models--{ns}--{name}/blobs` exists (any
+blob, not the selected file) and `chatTemplateArtifactPath` with
+`useHubCache` only checks the per-repo `snapshots` directory, both weaker
+than `hfDownloadResultDirectory(...) !== null`. Replace the
+directory-existsSync checks with the deterministic snapshot resolution as
+the hub-cache presence check (call sites: summary view model, get-steps
+model + chat-template steps). Also dedup `hf.ts resolveDownloadTarget`
+against the shared resolver once TASK-004 lands.
 
 Definition of Done: each risk listed above is either resolved or explicitly
 dismissed with a one-line note in the commit message; suites, build, and
