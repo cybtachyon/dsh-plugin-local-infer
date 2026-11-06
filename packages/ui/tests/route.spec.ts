@@ -555,6 +555,30 @@ describe('deps panel read model', () => {
     expect(model.runAllowed).toBe(true)
   })
 
+  it('renders the chat-template row from the raw config model directory', async () => {
+    // A directory override keeps the flat --local-dir target for the missing
+    // template's download command.
+    const overridden = await buildDeps(stubService([], { hfCliPath: '/usr/bin/hf' }), {
+      engine: 'ninfer',
+      config: { modelDirectory: MODEL_DIR, chatTemplate: 'froggeric/Qwen-Fixed-Chat-Templates' },
+    })
+    expect(overridden.chatTemplate).toEqual({
+      repo: 'froggeric/Qwen-Fixed-Chat-Templates',
+      present: false,
+      hfCli: true,
+      downloadCommand: `hf download froggeric/Qwen-Fixed-Chat-Templates chat_template.jinja --local-dir ${MODEL_DIR} --format human`,
+    })
+    // No override means the hub-cache layout: the command carries no
+    // --local-dir and the presence check joins onto the hub cache root.
+    const defaulted = await buildDeps(stubService([], { hfCliPath: '/usr/bin/hf' }), {
+      engine: 'ninfer',
+      config: { chatTemplate: 'froggeric/Qwen-Fixed-Chat-Templates' },
+    })
+    expect(defaulted.chatTemplate?.downloadCommand).toBe(
+      'hf download froggeric/Qwen-Fixed-Chat-Templates chat_template.jinja --format human',
+    )
+  })
+
   it('refuses the Play/Run path with a 409 while the trust gate is off', async () => {
     writeConfig('ninfer', {}, false)
     await expect(runInstallFor(stubService([]), { engine: 'ninfer' })).rejects.toThrow(
@@ -2408,9 +2432,43 @@ describe('model defaults, status, and download read model', () => {
     expect(strata.modelStatus?.modelId).toBe('gyro-s')
   })
 
-  it('applies the default directory to the config when the user named none', async () => {
+  it('leaves the config model directory unset when the user named none', async () => {
+    // No backfill: the config the card edits carries no modelDirectory key,
+    // so a Save of a default install never stores a fake override. The
+    // display value still names the hub cache root (nothing is cached).
     const summary = await buildSummary(stubService([]), { engine: 'ninfer', config: {} })
-    expect(summary.config.modelDirectory).toBe(MODEL_DIR)
+    expect(summary.config.modelDirectory).toBeUndefined()
+    expect(summary.modelDirectory).toBe(MODEL_DIR)
+  })
+
+  it('shows the hub-cache snapshot directory when the artifact is cached', async () => {
+    // No override and the artifact present in the fake hub cache under the
+    // stub's default directory: the displayed model directory is the
+    // snapshot holding it (the hf download result), never the hub root and
+    // never persisted back into the config.
+    const snapshot = join(
+      MODEL_DIR,
+      'models--neroued--Qwen3.8-27B-nvfp4-NInfer',
+      'snapshots',
+      'cafebabe1234567890',
+    )
+    mkdirSync(snapshot, { recursive: true })
+    writeFileSync(join(snapshot, 'qwen3_8_27b_nvfp4.ninfer'), 'cached')
+    try {
+      const summary = await buildSummary(stubService([]), {
+        engine: 'ninfer',
+        config: { model: 'qwen3-27b' },
+      })
+      expect(summary.modelDirectory).toBe(snapshot)
+      expect(summary.config.modelDirectory).toBeUndefined()
+      // The layout stays the hub cache (the command carries no --local-dir).
+      expect(summary.modelStatus?.downloadCommand).not.toContain('--local-dir')
+    } finally {
+      rmSync(join(MODEL_DIR, 'models--neroued--Qwen3.8-27B-nvfp4-NInfer'), {
+        recursive: true,
+        force: true,
+      })
+    }
   })
 
   it('keeps a user-named directory over the default', async () => {
@@ -2419,10 +2477,14 @@ describe('model defaults, status, and download read model', () => {
       config: { modelDirectory: '/custom/models' },
     })
     expect(summary.config.modelDirectory).toBe('/custom/models')
+    expect(summary.modelDirectory).toBe('/custom/models')
     expect(summary.modelStatus?.downloadCommand).toContain('--local-dir /custom/models')
   })
 
   it('reads an absent model as the no-CLI row with the download command', async () => {
+    // No modelDirectory override means the hub-cache layout: the command
+    // carries no --local-dir, so the hf CLI writes into the hub cache (the
+    // raw config decides the layout, never a backfilled default).
     const summary = await buildSummary(stubService([], { hfCliPath: null }), {
       engine: 'ninfer',
       config: {},
@@ -2433,7 +2495,7 @@ describe('model defaults, status, and download read model', () => {
       url: 'https://huggingface.co/neroued/Qwen3.8-27B-nvfp4-NInfer',
       present: false,
       hfCli: false,
-      downloadCommand: `hf download neroued/Qwen3.8-27B-nvfp4-NInfer qwen3_8_27b_nvfp4.ninfer --local-dir ${MODEL_DIR} --format human`,
+      downloadCommand: `hf download neroued/Qwen3.8-27B-nvfp4-NInfer qwen3_8_27b_nvfp4.ninfer --format human`,
     })
   })
 
@@ -2442,12 +2504,14 @@ describe('model defaults, status, and download read model', () => {
       engine: 'ninfer',
       config: { chatTemplate: 'froggeric/Qwen-Fixed-Chat-Templates' },
     })
+    // No modelDirectory override means the hub-cache layout: the command
+    // carries no --local-dir (the raw config decides the layout).
     expect(withTemplate.chatTemplateStatus).toEqual({
       repo: 'froggeric/Qwen-Fixed-Chat-Templates',
       label: 'Froggeric22 (Qwen fixed chat templates)',
       present: false,
       hfCli: true,
-      downloadCommand: `hf download froggeric/Qwen-Fixed-Chat-Templates chat_template.jinja --local-dir ${MODEL_DIR} --format human`,
+      downloadCommand: `hf download froggeric/Qwen-Fixed-Chat-Templates chat_template.jinja --format human`,
     })
 
     // A local path is not an HF repo reference, so the status reads as null.
@@ -2471,10 +2535,31 @@ describe('model defaults, status, and download read model', () => {
   })
 
   it('reads the model as present when its artifact file is in the directory', async () => {
+    // An explicit directory override keeps the flat layout: the presence
+    // check looks for the artifact file in it directly.
     writeFileSync(join(MODEL_DIR, 'qwen3_8_27b_nvfp4.ninfer'), 'weights')
-    const summary = await buildSummary(stubService([]), { engine: 'ninfer', config: {} })
+    const summary = await buildSummary(stubService([]), {
+      engine: 'ninfer',
+      config: { modelDirectory: MODEL_DIR },
+    })
     expect(summary.modelStatus?.present).toBe(true)
     rmSync(join(MODEL_DIR, 'qwen3_8_27b_nvfp4.ninfer'))
+  })
+
+  it('reads the model as present through the hub-cache blobs when no override names one', async () => {
+    // The default (no override) joins the presence check onto the hub cache
+    // root: the per-model cache directory's blobs folder is the marker.
+    const blobs = join(MODEL_DIR, 'models--neroued--Qwen3.8-27B-nvfp4-NInfer', 'blobs')
+    mkdirSync(blobs, { recursive: true })
+    try {
+      const summary = await buildSummary(stubService([]), { engine: 'ninfer', config: {} })
+      expect(summary.modelStatus?.present).toBe(true)
+    } finally {
+      rmSync(join(MODEL_DIR, 'models--neroued--Qwen3.8-27B-nvfp4-NInfer'), {
+        recursive: true,
+        force: true,
+      })
+    }
   })
 
   it('resolves the download through the service with the request directory', async () => {
@@ -2571,6 +2656,9 @@ describe('model defaults, status, and download read model', () => {
   })
 
   it('seeds the summary with the directory-scanned model files for the engine', async () => {
+    // A modelDirectory override keeps the flat layout, so the scan lists the
+    // directory entries through listModelDirectory (the hub-cache scan is the
+    // default case, served by listModelCache).
     const service = stubService([], {
       modelEntries: [
         { name: 'qwen3_8_27b_swift15abl_nvfp4full-dflash2.ninfer', isDirectory: false },
@@ -2579,16 +2667,28 @@ describe('model defaults, status, and download read model', () => {
         { name: 'froggeric_Qwen-Fixed-Chat-Templates', isDirectory: true, hasSafetensors: false },
       ],
     })
-    const ninfer = await buildSummary(service, { engine: 'ninfer', config: {} })
+    const ninfer = await buildSummary(service, {
+      engine: 'ninfer',
+      config: { modelDirectory: MODEL_DIR },
+    })
     expect(ninfer.modelFiles).toEqual([
       'qwen3_8_27b_swift15abl_nvfp4full-dflash2.ninfer',
     ])
-    const llamacpp = await buildSummary(service, { engine: 'llamacpp', config: {} })
+    const llamacpp = await buildSummary(service, {
+      engine: 'llamacpp',
+      config: { modelDirectory: MODEL_DIR },
+    })
     expect(llamacpp.modelFiles).toEqual(['Qwen3.8-27B-Q4_K_M.gguf'])
-    const hyperqwen = await buildSummary(service, { engine: 'hyperqwen', config: {} })
+    const hyperqwen = await buildSummary(service, {
+      engine: 'hyperqwen',
+      config: { modelDirectory: MODEL_DIR },
+    })
     expect(hyperqwen.modelFiles).toEqual(['Qwen3.8-27B-W4A16-AutoRound-fast'])
     // Strata offers no dense-Qwen model, so the scan reads as empty.
-    const strata = await buildSummary(service, { engine: 'strata', config: {} })
+    const strata = await buildSummary(service, {
+      engine: 'strata',
+      config: { modelDirectory: MODEL_DIR },
+    })
     expect(strata.modelFiles).toEqual([])
   })
 })

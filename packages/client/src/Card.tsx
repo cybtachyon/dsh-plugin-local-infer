@@ -784,7 +784,16 @@ export function card(
                       ? currentDraft.config.modelDirectory
                       : ''
                   }
-                  placeholder={t.dirPlaceholder}
+                  // An empty field means the derived default: the placeholder
+                  // shows the resolved directory (the override, the hf
+                  // download snapshot, or the hub cache root) the summary
+                  // derives per read, so the effective path stays visible
+                  // without being stored as an override.
+                  placeholder={
+                    typeof summary.modelDirectory === 'string' && summary.modelDirectory !== ''
+                      ? summary.modelDirectory
+                      : t.dirPlaceholder
+                  }
                   onChange={(event: { target: { value: string } }) =>
                     onModelDirectory(event.target.value)
                   }

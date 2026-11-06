@@ -3689,7 +3689,7 @@ function card(_react, localeRef, _primitives) {
         style: INPUT_STYLE,
         type: "text",
         value: typeof currentDraft.config.modelDirectory === "string" ? currentDraft.config.modelDirectory : "",
-        placeholder: t.dirPlaceholder,
+        placeholder: typeof summary.modelDirectory === "string" && summary.modelDirectory !== "" ? summary.modelDirectory : t.dirPlaceholder,
         onChange: (event) => onModelDirectory(event.target.value)
       }
     )), state.ui.help ? renderHelpRow(t.modelDirHelp) : null), summary.modelStatus !== null && summary.modelStatus !== void 0 && !summary.modelStatus.present ? summary.modelStatus.hfCli ? /* @__PURE__ */ react.createElement(
