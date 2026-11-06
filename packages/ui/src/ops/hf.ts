@@ -2,12 +2,14 @@
  * The hf CLI download operations: downloadFor runs the download for a default
  * model, and chatTemplateDownloadFor pulls a selected chat template into the
  * model directory. Both resolve the directory through resolveDownloadTarget
- * (the request, the stored config, and the plugin's default model directory
- * in that order), so the hub-cache layout rule has one home.
+ * (the request, the stored config, and the hub cache root in that order,
+ * through the shared override rule), so the hub-cache layout rule has one
+ * home across the download routes and the card.
  * @module dsh-plugin-local-infer/ui/ops/hf
  */
 
 import type { DownloadResult, LocalInferService } from 'dsh-plugin-local-infer/service'
+import { isModelDirectoryOverridden } from '../../../core/lib/index.js'
 import { defaultModelFor } from '../../../providers/lib/index.js'
 import { readConfig } from '../config.ts'
 import type { StoredConfig } from '../config.ts'
@@ -17,29 +19,27 @@ import { isHfRepoReference } from '../viewmodels/summaryHelpers.ts'
 
 /**
  * resolveDownloadTarget resolves the directory a download route targets: the
- * request's directory, the stored config's model directory, and the plugin's
- * default model directory, in that order. The hub-cache layout applies only
- * when the directory fell back to the plugin default (neither the request nor
- * the stored config names one); a named directory keeps the flat --local-dir
- * target.
+ * request's directory, the stored config's model directory, and the hub
+ * cache root, in that order. The layout follows the shared override rule
+ * (isModelDirectoryOverridden, the same rule the card's summary reads): a
+ * named directory (the request or the stored config) keeps the flat
+ * --local-dir target; only when neither names one does the hub-cache layout
+ * apply, based on the hub cache root (the hf CLI's own download home, which
+ * resolves its own snapshot destination), so a download never materializes
+ * a snapshot-directory or hub-root override into the config.
  */
 function resolveDownloadTarget(
   localInfer: LocalInferService,
   requestDirectory: string | undefined,
   stored: StoredConfig,
 ): { directory: string; useHubCache: boolean } {
-  const requestDir =
-    typeof requestDirectory === 'string' && requestDirectory.trim() !== ''
-      ? requestDirectory
-      : undefined
-  const storedDir = stored.config.modelDirectory
-  const storedDirValue =
-    typeof storedDir === 'string' && storedDir.trim() !== '' ? storedDir : undefined
-  const directory = requestDir ?? storedDirValue ?? localInfer.defaultModelDirectory()
-  // A named directory (the request or the stored config) keeps the flat
-  // --local-dir target; only the plugin default downloads into the hub cache.
-  const useHubCache = requestDir === undefined && storedDirValue === undefined
-  return { directory, useHubCache }
+  if (isModelDirectoryOverridden(requestDirectory)) {
+    return { directory: requestDirectory, useHubCache: false }
+  }
+  if (isModelDirectoryOverridden(stored.config.modelDirectory)) {
+    return { directory: stored.config.modelDirectory, useHubCache: false }
+  }
+  return { directory: localInfer.defaultModelDirectory(), useHubCache: true }
 }
 
 /**

@@ -42,13 +42,16 @@ export declare function repoNameFromUrl(url: string): string;
  */
 export declare function hubCacheModelDirectory(repoId: string): string;
 /**
- * isModelDirectoryOverridden reports whether a config's model directory field
- * names a path (a non-blank string), the rule that decides whether the hf
- * download targets that directory flat (`--local-dir`) or the hub-cache
- * layout (no `--local-dir`, the `models--{ns}--{name}` directories the hf CLI
- * writes into the hub cache).
+ * isModelDirectoryOverridden reports whether a model directory field (the
+ * config's or a download request's) names a path (a non-blank string), the
+ * one rule every download route and view model shares to decide the layout:
+ * a named directory targets that directory flat (`--local-dir`), an unnamed
+ * one takes the hub-cache layout (no `--local-dir`, the
+ * `models--{ns}--{name}` directories the hf CLI writes into the hub cache).
+ * The predicate form lets callers narrow the field to a string without
+ * restating the blank check.
  */
-export declare function isModelDirectoryOverridden(modelDirectory: unknown): boolean;
+export declare function isModelDirectoryOverridden(modelDirectory: unknown): modelDirectory is string;
 /**
  * modelArtifactPath is the path the presence check looks for in the model
  * directory: the entry's artifact file when it names one, else the repo-name
