@@ -1,11 +1,14 @@
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import {
   CHAT_TEMPLATE_FILE,
   chatTemplateArtifactPath,
   hfChatTemplateCommand,
   hfDownloadCommand,
   hubCacheModelDirectory,
+  hubCacheSnapshotFilePath,
   isModelDirectoryOverridden,
   modelArtifactPath,
   modelCacheEntriesForEngine,
@@ -269,5 +272,106 @@ describe('modelCacheEntriesForEngine', () => {
 
   it('lists none for an engine with no matching cached model', () => {
     expect(modelCacheEntriesForEngine([], 'basalt')).toEqual([])
+  })
+})
+
+describe('hubCacheSnapshotFilePath', () => {
+  const REPO = 'catthehacker/Mixtral-v1'
+  const MODEL_DIR = 'models--catthehacker--Mixtral-v1'
+  const FILE = 'mixtral-Q4_K_M.gguf'
+  const COMMIT_A = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+  const COMMIT_B = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+  const COMMIT_C = 'cccccccccccccccccccccccccccccccccccccccc'
+
+  // Each case gets a fresh scratch hub cache rooted under its own temp dir,
+  // laid out as the hf CLI's per-model cache: snapshots/{commit}/{file} plus
+  // the optional refs/main branch ref, so no ref leaks between cases.
+  const scratch: string[] = []
+
+  afterEach(() => {
+    for (const dir of scratch.splice(0)) rmSync(dir, { recursive: true, force: true })
+  })
+
+  // seedHubCache builds a per-model cache holding `commits` (ordered oldest
+  // to newest by mtime), writing the artifact file into the names in
+  // `holders` and writing the refs/main branch ref when `ref` is non-blank.
+  // Returns the hub cache root to pass to hubCacheSnapshotFilePath.
+  function seedHubCache(commits: string[], holders: string[], ref = ''): string {
+    const hubCache = mkdtempSync(join(tmpdir(), 'models-snap-'))
+    scratch.push(hubCache)
+    const root = join(hubCache, MODEL_DIR)
+    commits.forEach((commit, i) => {
+      const dir = join(root, 'snapshots', commit)
+      mkdirSync(dir, { recursive: true })
+      if (holders.includes(commit)) writeFileSync(join(dir, FILE), 'gguf')
+      // Stagger mtimes ~1s apart along the ordered commits list.
+      const when = new Date(1700000000000 + i * 1000)
+      utimesSync(dir, when, when)
+    })
+    if (ref !== '') {
+      mkdirSync(join(root, 'refs'), { recursive: true })
+      writeFileSync(join(root, 'refs', 'main'), `${ref}\n`)
+    }
+    return hubCache
+  }
+
+  it('returns null when the per-model dir name is empty', () => {
+    const hubCache = seedHubCache([COMMIT_A], [COMMIT_A])
+    expect(hubCacheSnapshotFilePath(hubCache, 'no-slash', FILE)).toBeNull()
+  })
+
+  it('returns null when the snapshots dir does not exist', () => {
+    const hubCache = seedHubCache([], [])
+    expect(hubCacheSnapshotFilePath(hubCache, REPO, FILE)).toBeNull()
+  })
+
+  it('picks the sole snapshot that holds the file', () => {
+    const hubCache = seedHubCache([COMMIT_A], [COMMIT_A])
+    expect(hubCacheSnapshotFilePath(hubCache, REPO, FILE)).toBe(
+      join(hubCache, MODEL_DIR, 'snapshots', COMMIT_A, FILE),
+    )
+  })
+
+  it('prefers the ref/main commit snapshot over a newer one by mtime', () => {
+    // commits ordered oldest-to-newest: COMMIT_A oldest, COMMIT_B newest.
+    // The ref names COMMIT_A (older), so it wins over the newer COMMIT_B.
+    const hubCache = seedHubCache([COMMIT_A, COMMIT_B], [COMMIT_A, COMMIT_B], COMMIT_A)
+    expect(hubCacheSnapshotFilePath(hubCache, REPO, FILE)).toBe(
+      join(hubCache, MODEL_DIR, 'snapshots', COMMIT_A, FILE),
+    )
+  })
+
+  it('falls back to newest mtime when there is no ref', () => {
+    const hubCache = seedHubCache([COMMIT_A, COMMIT_B], [COMMIT_A, COMMIT_B])
+    expect(hubCacheSnapshotFilePath(hubCache, REPO, FILE)).toBe(
+      join(hubCache, MODEL_DIR, 'snapshots', COMMIT_B, FILE),
+    )
+  })
+
+  it('falls back to newest mtime when the ref names an absent commit', () => {
+    // Snapshots COMMIT_A (older) and COMMIT_B (newer) hold the file; the ref
+    // names COMMIT_C, which has no snapshot dir, so mtime decides on COMMIT_B.
+    const hubCache = seedHubCache([COMMIT_A, COMMIT_B], [COMMIT_A, COMMIT_B], COMMIT_C)
+    expect(hubCacheSnapshotFilePath(hubCache, REPO, FILE)).toBe(
+      join(hubCache, MODEL_DIR, 'snapshots', COMMIT_B, FILE),
+    )
+  })
+
+  it('falls back to newest mtime when the ref snapshot lacks the file', () => {
+    // COMMIT_C's snapshot exists but holds no file; the ref names it, so
+    // mtime decides among the file-holding snapshots and COMMIT_B wins.
+    const hubCache = seedHubCache(
+      [COMMIT_A, COMMIT_B, COMMIT_C],
+      [COMMIT_A, COMMIT_B],
+      COMMIT_C,
+    )
+    expect(hubCacheSnapshotFilePath(hubCache, REPO, FILE)).toBe(
+      join(hubCache, MODEL_DIR, 'snapshots', COMMIT_B, FILE),
+    )
+  })
+
+  it('returns null when no snapshot holds the file', () => {
+    const hubCache = seedHubCache([COMMIT_A, COMMIT_B], [])
+    expect(hubCacheSnapshotFilePath(hubCache, REPO, FILE)).toBeNull()
   })
 })
