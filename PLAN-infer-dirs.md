@@ -71,7 +71,7 @@ invariants specific to this plan:
 
 ### Phase 1 - Core foundation
 
- - [ ] [TASK-001-core-infer-cache-paths](docs/PLAN-infer-dirs-TASK-001-core-infer-cache-paths.md)
+ - [x] [TASK-001-core-infer-cache-paths](docs/PLAN-infer-dirs-TASK-001-core-infer-cache-paths.md)
 
 ### Phase 2 - Model directory from the hf download result
 
