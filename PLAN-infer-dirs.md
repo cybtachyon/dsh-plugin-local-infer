@@ -90,7 +90,7 @@ invariants specific to this plan:
 
 ### Phase 5 - Quality gates
 
- - [ ] [TASK-007-refactor-directory-resolution](docs/PLAN-infer-dirs-TASK-007-refactor-directory-resolution.md)
+ - [x] [TASK-007-refactor-directory-resolution](docs/PLAN-infer-dirs-TASK-007-refactor-directory-resolution.md)
  - [ ] [TASK-008-full-verification-gate](docs/PLAN-infer-dirs-TASK-008-full-verification-gate.md)
 
 ### Phase 6 - Migration deliverable
