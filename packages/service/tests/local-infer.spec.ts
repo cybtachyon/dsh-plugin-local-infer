@@ -1339,8 +1339,8 @@ describe('ctx.localInfer basalt config-carried port linking', () => {
   const BASALT_LINE: ProcessLine = {
     pid: 24680,
     command:
-      'python3 -m serve.server --engine-bin /home/u/.cache/hf/basalt/bin/basalt' +
-      ' --config /home/u/.cache/hf/basalt_config.json' +
+      'python3 -m serve.server --engine-bin /home/u/.cache/dsh/infer/basalt/bin/basalt' +
+      ' --config /home/u/.cache/dsh/infer/config/basalt/basalt_config.json' +
       ' --model /home/u/.cache/hf/blobs/37/37daf5ca --engine-bin bin/basalt',
   }
   const GPU_IDLE: GpuUsageProbe = { usedMiB: 2048, totalMiB: 24576 }

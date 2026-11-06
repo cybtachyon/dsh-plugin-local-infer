@@ -54,10 +54,11 @@ export const BASALT_CONFIG_FILE = 'basalt_config.json';
  * basaltConfigContent renders the spec surface and seals it into the v2
  * envelope the 0.3.0 serve CLI accepts: the version stamp plus the three
  * blocks, in the key order upstream documents. The surface's raw `model`
- * value is a registry key or file name, never the download-target path the
- * engine resolves against the config file's home, so the single models
- * entry is restamped with the placeholder path before the envelope is
- * sealed. The entry also carries the deterministic API name as `alias`:
+ * value is a registry key or file name, but the entry must carry an absolute
+ * artifact path, so the single models entry is restamped with the
+ * download-target placeholder before the envelope is sealed (the deploy step
+ * replaces it with the concrete artifact path after the model download). The
+ * entry also carries the deterministic API name as `alias`:
  * without one the server reports the artifact's stored `meta.name`, which
  * the plugin cannot know for arbitrary packs, so the entry stamps the same
  * basaltServedName string modelRef publishes and `/v1/models` always lists

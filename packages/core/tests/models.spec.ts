@@ -1,16 +1,18 @@
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, afterAll, describe, expect, it } from 'vitest'
 import {
   CHAT_TEMPLATE_FILE,
   chatTemplateArtifactPath,
+  chatTemplatePresent,
   hfChatTemplateCommand,
   hfDownloadCommand,
   hubCacheModelDirectory,
   hubCacheSnapshotFilePath,
   isModelDirectoryOverridden,
   modelArtifactPath,
+  modelArtifactPresent,
   modelCacheEntriesForEngine,
   modelEntriesForEngine,
   repoIdFromUrl,
@@ -196,15 +198,83 @@ describe('isModelDirectoryOverridden', () => {
 
 describe('chatTemplateArtifactPath', () => {
   it('joins the template file into the directory for the flat layout', () => {
-    expect(chatTemplateArtifactPath('acme/my-templates', '/models')).toBe(
-      join('/models', CHAT_TEMPLATE_FILE),
-    )
+    expect(chatTemplateArtifactPath('/models')).toBe(join('/models', CHAT_TEMPLATE_FILE))
+  })
+})
+
+describe('modelArtifactPresent', () => {
+  // A scratch hub cache laid out like the hf CLI's per-model store, plus a
+  // flat model directory, so both presence layouts resolve against real
+  // paths.
+  const root = mkdtempSync(join(tmpdir(), 'models-present-'))
+  const flat = join(root, 'models')
+  const hub = join(root, 'hub')
+  const modelRoot = join(hub, 'models--neroued--Qwen3.8-27B-nvfp4-NInfer')
+  const repoRoot = join(hub, 'models--born2bewild--Qwen3.8-27B-W4A16-AutoRound-fast')
+  afterAll(() => {
+    rmSync(root, { recursive: true, force: true })
   })
 
-  it('resolves into the per-model cache dir snapshots folder with the hub-cache layout', () => {
-    expect(chatTemplateArtifactPath('froggeric/Qwen-Fixed-Chat-Templates', '/hub', true)).toBe(
-      join('/hub', 'models--froggeric--Qwen-Fixed-Chat-Templates', 'snapshots'),
-    )
+  it('checks the flat join under the flat layout', () => {
+    mkdirSync(flat, { recursive: true })
+    expect(modelArtifactPresent(ENTRY, flat)).toBe(false)
+    writeFileSync(join(flat, 'qwen3_8_27b_nvfp4.ninfer'), 'w')
+    expect(modelArtifactPresent(ENTRY, flat)).toBe(true)
+  })
+
+  it('checks the repo-name directory for a whole-repo entry under the flat layout', () => {
+    mkdirSync(flat, { recursive: true })
+    expect(modelArtifactPresent(NO_FILE, flat)).toBe(false)
+    mkdirSync(join(flat, 'Qwen3.8-27B-W4A16-AutoRound-fast'), { recursive: true })
+    expect(modelArtifactPresent(NO_FILE, flat)).toBe(true)
+  })
+
+  it('reads a bare blobs folder as absent under the hub-cache layout', () => {
+    // The coarse blobs marker is gone: blobs from another file's download do
+    // not carry the selected artifact, so the model reads absent.
+    mkdirSync(join(modelRoot, 'blobs'), { recursive: true })
+    expect(modelArtifactPresent(ENTRY, hub, true)).toBe(false)
+  })
+
+  it('resolves the deterministic snapshot for the selected file under the hub-cache layout', () => {
+    const snapshot = join(modelRoot, 'snapshots', 'cafebabe')
+    mkdirSync(snapshot, { recursive: true })
+    writeFileSync(join(snapshot, 'qwen3_8_27b_nvfp4.ninfer'), 'cached')
+    expect(modelArtifactPresent(ENTRY, hub, true)).toBe(true)
+  })
+
+  it('reads a snapshot directory for a whole-repo entry under the hub-cache layout', () => {
+    expect(modelArtifactPresent(NO_FILE, hub, true)).toBe(false)
+    mkdirSync(join(repoRoot, 'snapshots', 'deadbeef'), { recursive: true })
+    expect(modelArtifactPresent(NO_FILE, hub, true)).toBe(true)
+  })
+})
+
+describe('chatTemplatePresent', () => {
+  const REPO = 'froggeric/Qwen-Fixed-Chat-Templates'
+  const root = mkdtempSync(join(tmpdir(), 'template-present-'))
+  const flat = join(root, 'models')
+  const hub = join(root, 'hub')
+  const snapshots = join(hub, 'models--froggeric--Qwen-Fixed-Chat-Templates', 'snapshots')
+  afterAll(() => {
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  it('checks the flat file join under the flat layout', () => {
+    mkdirSync(flat, { recursive: true })
+    expect(chatTemplatePresent(REPO, flat)).toBe(false)
+    writeFileSync(join(flat, CHAT_TEMPLATE_FILE), 'tpl')
+    expect(chatTemplatePresent(REPO, flat)).toBe(true)
+  })
+
+  it('reads a bare snapshots folder as absent under the hub-cache layout', () => {
+    mkdirSync(join(snapshots, 'cafebabe'), { recursive: true })
+    expect(chatTemplatePresent(REPO, hub, true)).toBe(false)
+  })
+
+  it('resolves the deterministic snapshot for the template file under the hub-cache layout', () => {
+    writeFileSync(join(snapshots, 'cafebabe', CHAT_TEMPLATE_FILE), 'tpl')
+    expect(chatTemplatePresent(REPO, hub, true)).toBe(true)
   })
 })
 

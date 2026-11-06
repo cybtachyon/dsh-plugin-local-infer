@@ -2567,19 +2567,22 @@ describe('model defaults, status, and download read model', () => {
     rmSync(join(MODEL_DIR, 'qwen3_8_27b_nvfp4.ninfer'))
   })
 
-  it('reads the model as present through the hub-cache blobs when no override names one', async () => {
-    // The default (no override) joins the presence check onto the hub cache
-    // root: the per-model cache directory's blobs folder is the marker.
-    const blobs = join(MODEL_DIR, 'models--neroued--Qwen3.8-27B-nvfp4-NInfer', 'blobs')
-    mkdirSync(blobs, { recursive: true })
+  it('reads the model as present through the hub-cache snapshot when no override names one', async () => {
+    // The default (no override) resolves presence through the deterministic
+    // hub-cache snapshot pick: a bare blobs folder left by any download no
+    // longer reads as present on its own.
+    const modelRoot = join(MODEL_DIR, 'models--neroued--Qwen3.8-27B-nvfp4-NInfer')
+    mkdirSync(join(modelRoot, 'blobs'), { recursive: true })
     try {
-      const summary = await buildSummary(stubService([]), { engine: 'ninfer', config: {} })
-      expect(summary.modelStatus?.present).toBe(true)
+      const bare = await buildSummary(stubService([]), { engine: 'ninfer', config: {} })
+      expect(bare.modelStatus?.present).toBe(false)
+      const snapshot = join(modelRoot, 'snapshots', 'cafebabe1234567890')
+      mkdirSync(snapshot, { recursive: true })
+      writeFileSync(join(snapshot, 'qwen3_8_27b_nvfp4.ninfer'), 'cached')
+      const cached = await buildSummary(stubService([]), { engine: 'ninfer', config: {} })
+      expect(cached.modelStatus?.present).toBe(true)
     } finally {
-      rmSync(join(MODEL_DIR, 'models--neroued--Qwen3.8-27B-nvfp4-NInfer'), {
-        recursive: true,
-        force: true,
-      })
+      rmSync(modelRoot, { recursive: true, force: true })
     }
   })
 
@@ -3896,24 +3899,25 @@ describe('shared Get-steps routine', () => {
     )
     expect(result.ok).toBe(true)
     // The hub-cache command drops --local-dir, and with nothing cached yet
-    // the model directory falls back to the hub cache root (the base the hf
-    // CLI downloads into), not a flat subdir.
+    // the model directory falls back to the hub cache root read through the
+    // service seam (the plugin's model download home), not a flat subdir.
     expect(logged).toContain(
       '$ hf download neroued/Qwen3.8-27B-nvfp4-NInfer qwen3_8_27b_nvfp4.ninfer --format human\n',
     )
     expect(logged).not.toContain('--local-dir')
     expect(downloads).toHaveLength(1)
-    expect(downloads[0]?.directory).toBe(join(home, '.cache', 'huggingface', 'hub'))
+    expect(downloads[0]?.directory).toBe(MODEL_DIR)
     expect(logged).toContain('get complete')
   })
 
-  it('names the hub-cache snapshot directory as the model directory when the artifact is cached', async () => {
+  it('skips the model download when the hub-cache artifact is already cached', async () => {
     // No modelDirectory override and the artifact present in the fake hub
-    // cache under the scratch home: the resolved model directory the steps
-    // name is the snapshot directory holding the artifact (the hf download
-    // result), not the hub root. The directory is derived on every read and
+    // cache under the service's model directory: the deterministic snapshot
+    // presence check skips the re-fetch, and the layout stays hub-cache (no
+    // --local-dir). The directory the steps would name (the hf download
+    // result, the snapshot holding the artifact) is displayed by the summary,
     // never persisted into the config.
-    const hubRoot = join(home, '.cache', 'huggingface', 'hub')
+    const hubRoot = MODEL_DIR
     const snapshot = join(
       hubRoot,
       'models--neroued--Qwen3.8-27B-nvfp4-NInfer',
@@ -3937,12 +3941,9 @@ describe('shared Get-steps routine', () => {
         host,
       )
       expect(result.ok).toBe(true)
-      // The layout is unchanged (no --local-dir); only the named directory
-      // moves from the hub root to the snapshot holding the artifact.
       expect(logged).not.toContain('--local-dir')
-      expect(downloads).toHaveLength(1)
-      expect(downloads[0]?.directory).toBe(snapshot)
-      expect(downloads[0]?.directory).not.toBe(hubRoot)
+      expect(logged).toContain('model download: qwen3-27b is already present, skipped')
+      expect(downloads).toHaveLength(0)
     } finally {
       rmSync(join(hubRoot, 'models--neroued--Qwen3.8-27B-nvfp4-NInfer'), {
         recursive: true,

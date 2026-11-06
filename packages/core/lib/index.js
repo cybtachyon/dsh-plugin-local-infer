@@ -19,8 +19,8 @@ export { hardwareClass, presetFromFetch, resolveDefaults, WILDCARD_HARDWARE_CLAS
 export { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, apiKeyEnvFor, buildModelEntry, defaultApiKeyFor, LLM_PI_AI_NAMESPACE, modelRowsFrom, modelSlug, providerIdFor, providerRegistrationOps, providerRemovalOps, removeModelRow, upsertModelRow, } from "./registrar.js";
 export { checkDeps, detectPackageManager, osLabel, planDeps, renderInstallString, runInstall, } from "./deps.js";
 export { guardSudoCommand, sudoFailureDetail, SUDO_CLI_NOTE, SUDO_PASSWORD_TIMEOUT_MS, SUDO_PROBE_COMMAND, } from "./sudo.js";
-export { CHAT_TEMPLATE_FILE, chatTemplateArtifactPath, hfChatTemplateCommand, hfDownloadCommand, hfDownloadFileCommand, hubCacheModelDirectory, hubCacheSnapshotFilePath, isModelDirectoryOverridden, modelArtifactPath, modelCacheEntriesForEngine, modelEntriesForEngine, repoIdFromUrl, repoNameFromUrl, } from "./models.js";
-export { hfDatasetsCacheDirectory, hfHubCacheDirectory, modelDownloadTarget, } from "./hf-cache.js";
+export { CHAT_TEMPLATE_FILE, chatTemplateArtifactPath, chatTemplatePresent, hfChatTemplateCommand, hfDownloadCommand, hfDownloadFileCommand, hubCacheModelDirectory, hubCacheSnapshotFilePath, isModelDirectoryOverridden, modelArtifactPath, modelArtifactPresent, modelCacheEntriesForEngine, modelEntriesForEngine, repoIdFromUrl, repoNameFromUrl, } from "./models.js";
+export { hfDatasetsCacheDirectory, hfHubCacheDirectory, modelDownloadTarget, resolveModelDirectory, } from "./hf-cache.js";
 export { dshConfigCacheDirectory, dshEngineCacheDirectory, dshInferCacheDirectory, hfDownloadResultDirectory, } from "./infer-cache.js";
 export { foldHfProgressChunk, parseHfProgressLine } from "./progress.js";
 //# sourceMappingURL=index.js.map

@@ -4,11 +4,10 @@
  * the registration wrote, and syncRegisteredModel re-runs the registration on
  * a save so the registered model's input types stay in step with the config.
  * resolveModelRow and resolveContextWindow resolve the row and context window
- * the registrar publishes; resolveModelDirectory picks the model directory a
- * Get run names for the model.
+ * the registrar publishes.
  * @module dsh-plugin-local-infer/ui/ops/model
  */
-import { buildModelEntry, hfDownloadResultDirectory, hfHubCacheDirectory, providerIdFor, repoIdFromUrl, } from '../../../core/lib/index.js';
+import { buildModelEntry, providerIdFor } from '../../../core/lib/index.js';
 /**
  * DEFAULT_CONTEXT_WINDOW is the context window the registrar publishes when
  * neither the config nor the resolved VramModel names one: the 32K spec
@@ -120,29 +119,5 @@ export async function unregisterFor(localInfer, request) {
     const entry = buildModelEntry(plan, row);
     await localInfer.removeModel(entry.providerId, row.id);
     return { removed: true };
-}
-/**
- * resolveModelDirectory picks the model directory a read names for the
- * model: the config's modelDirectory override when it names a path; else,
- * when the run's selected entry resolves and its artifact is already in the
- * hub cache, the hf download result, the snapshot directory holding it; else
- * the hub cache root, the base the hf CLI downloads into. The result is
- * derived on every read and never written back into the config, so a default
- * install never materializes a fake `modelDirectory` override. `hubCache` is
- * the hub cache root to resolve over; the service seam names it when it owns
- * the value (it also creates the directory when absent), and the default
- * reads the core resolution.
- */
-export function resolveModelDirectory(config, entry, hubCache = hfHubCacheDirectory()) {
-    const rawModelDir = config.modelDirectory;
-    if (typeof rawModelDir === 'string' && rawModelDir.trim() !== '') {
-        return rawModelDir;
-    }
-    if (entry !== undefined) {
-        const snapshot = hfDownloadResultDirectory(hubCache, repoIdFromUrl(entry.url), entry.file ?? '');
-        if (snapshot !== null)
-            return snapshot;
-    }
-    return hubCache;
 }
 //# sourceMappingURL=model.js.map

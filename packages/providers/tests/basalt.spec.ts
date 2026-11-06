@@ -410,8 +410,9 @@ function basaltConfigPath(): string {
 
 /**
  * modelEntryPath reads the `model` value out of the single entry of a plan's
- * rendered config envelope, so the specs assert on the placeholder path the
- * serve CLI resolves against the config file's home.
+ * rendered config envelope, so the specs assert on the absolute artifact
+ * path the entry carries (the renderLaunch placeholder, restamped to the
+ * concrete path by the deploy step).
  */
 function modelEntryPath(plan: LaunchPlan): unknown {
   const envelope = JSON.parse(plan.configFile?.content ?? '{}') as {

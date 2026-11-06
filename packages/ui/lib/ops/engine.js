@@ -118,8 +118,12 @@ function registerLaunchPlatform(localInfer, request, stored, engineId) {
         setPlatformConfig(localInfer, engineId, request.platform);
     }
     const platform = request.platform ?? stored.platform[engineId];
-    if (platform?.engineDirectory === undefined || platform.engineDirectory.trim() === '') {
-        const engineDirectory = resolveEngineDirectory(engineId, platform);
+    // resolveEngineDirectory is the one home of the override-or-default rule,
+    // so the registration decision compares against its answer instead of
+    // restating the blank check: a platform that already names the effective
+    // directory needs no registration.
+    const engineDirectory = resolveEngineDirectory(engineId, platform);
+    if (platform?.engineDirectory !== engineDirectory) {
         setPlatformConfig(localInfer, engineId, { ...platform, engineDirectory });
     }
     return platform;

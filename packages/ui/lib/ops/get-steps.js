@@ -16,12 +16,10 @@
  * sync failure.
  * @module dsh-plugin-local-infer/ui/ops/get-steps
  */
-import { existsSync } from 'node:fs';
-import { checkDeps, chatTemplateArtifactPath, dshEngineCacheDirectory, hfChatTemplateCommand, hfDownloadCommand, hfHubCacheDirectory, isModelDirectoryOverridden, modelArtifactPath, } from '../../../core/lib/index.js';
+import { chatTemplatePresent, checkDeps, dshEngineCacheDirectory, hfChatTemplateCommand, hfDownloadCommand, modelArtifactPresent, resolveModelDirectory, } from '../../../core/lib/index.js';
 import { buildEngineRepo, defaultModelFor, ENGINES, infernixGetDownloads, syncEngineRepo, } from '../../../providers/lib/index.js';
 import { isHfRepoReference } from "../viewmodels/summaryHelpers.js";
 import { resolveBuildMode } from "../viewmodels/deps.js";
-import { resolveModelDirectory } from "./model.js";
 /**
  * resolveEngineDirectory picks the checkout the Get step syncs: the Engine
  * Directory override when it names a path, else the engine's default
@@ -53,7 +51,7 @@ const SYNC_FAILED = { kind: 'syncFailed' };
  */
 function downloadOptions(ctx) {
     return {
-        useHubCache: ctx.useHubCache,
+        useHubCache: ctx.target.useHubCache,
         ...(ctx.request.signal !== undefined ? { signal: ctx.request.signal } : {}),
         ...(ctx.onChunk !== undefined ? { onChunk: ctx.onChunk } : {}),
     };
@@ -173,24 +171,23 @@ async function runSyncBuildStep(ctx) {
  * failure aborts the run, so a launch never reads a missing model.
  */
 async function runModelDownloadStep(ctx) {
-    const { localInfer, request, modelDir, hubCacheRoot, useHubCache, emit } = ctx;
+    const { localInfer, request, target, emit } = ctx;
     const modelId = typeof request.config.model === 'string' ? request.config.model : undefined;
     if (modelId !== undefined) {
-        const entry = defaultModelFor(request.engineId, modelId);
+        const entry = ctx.modelEntry;
         if (entry === undefined) {
             emit(`model download: ${modelId} has no registered default, skipped\n`);
         }
         else {
-            // The cache-layout presence join uses the hub cache root (where the
-            // models--{ns}--{name} dirs live); modelDir may name the resolved
-            // snapshot directory, which is not a join base.
-            const artifact = modelArtifactPath(entry, useHubCache ? hubCacheRoot : modelDir, useHubCache);
-            if (existsSync(artifact)) {
+            // The shared presence check resolves the deterministic hub-cache
+            // snapshot under the cache layout and joins the artifact onto the
+            // override under the flat layout (the target's base).
+            if (modelArtifactPresent(entry, target.baseDir, target.useHubCache)) {
                 emit(`model download: ${modelId} is already present, skipped\n`);
             }
             else {
-                emit(`$ ${hfDownloadCommand(entry, modelDir, useHubCache)}\n`);
-                const download = await localInfer.downloadModel(entry, modelDir, downloadOptions(ctx));
+                emit(`$ ${hfDownloadCommand(entry, target.directory, target.useHubCache)}\n`);
+                const download = await localInfer.downloadModel(entry, target.directory, downloadOptions(ctx));
                 if (!download.ok) {
                     emit(`!! ${download.detail ?? 'model download failed'}\n`);
                     return { ok: false, detail: download.detail ?? 'a model download failed' };
@@ -202,7 +199,7 @@ async function runModelDownloadStep(ctx) {
         emit('model download: no model selected, skipped\n');
     }
     if (request.engineId === 'infernix') {
-        for (const command of infernixGetDownloads(request.config, modelDir, useHubCache)) {
+        for (const command of infernixGetDownloads(request.config, target.directory, target.useHubCache)) {
             emit(`$ ${command}\n`);
             // The Infernix extra downloads stream through the host, so their tqdm
             // lines reach the log sink and the onChunk progress sink together, the
@@ -231,18 +228,18 @@ async function runModelDownloadStep(ctx) {
  * when the template file is already present in the model directory.
  */
 async function runChatTemplateStep(ctx) {
-    const { localInfer, request, modelDir, hubCacheRoot, useHubCache, emit } = ctx;
+    const { localInfer, request, target, emit } = ctx;
     const template = typeof request.config.chatTemplate === 'string' ? request.config.chatTemplate : '';
     if (template !== '' && isHfRepoReference(template)) {
-        // Same join-base rule as the model step: the cache layout resolves under
-        // the hub cache root, not the resolved model directory.
-        const localPath = chatTemplateArtifactPath(template, useHubCache ? hubCacheRoot : modelDir, useHubCache);
-        if (existsSync(localPath)) {
+        // Same shared presence check as the summary's template row: the cache
+        // layout resolves the deterministic snapshot, the flat layout joins onto
+        // the override.
+        if (chatTemplatePresent(template, target.baseDir, target.useHubCache)) {
             emit(`chat template: ${template} is already present, skipped\n`);
         }
         else {
-            emit(`$ ${hfChatTemplateCommand(template, modelDir, useHubCache)}\n`);
-            const download = await localInfer.downloadChatTemplate(template, modelDir, downloadOptions(ctx));
+            emit(`$ ${hfChatTemplateCommand(template, target.directory, target.useHubCache)}\n`);
+            const download = await localInfer.downloadChatTemplate(template, target.directory, downloadOptions(ctx));
             if (!download.ok) {
                 emit(`!! ${download.detail ?? 'chat template download failed'}\n`);
                 return { ok: false, detail: download.detail ?? 'a chat template download failed' };
@@ -270,14 +267,15 @@ export async function runGetSteps(localInfer, request, log) {
     };
     // ENGINES is a known non-empty constant, so the fallback is always defined.
     const engine = ENGINES.find((entry) => entry.id === request.engineId) ?? ENGINES[0];
-    // The hub-cache layout (no --local-dir, the models--{ns}--{name} dirs)
-    // applies only when the model directory is the plugin default; a user
-    // override keeps the flat --local-dir target. modelDir names the resolved
-    // directory for the model: the override, the hub-cache snapshot holding a
-    // cached artifact (the hf download result), or the hub cache root when
-    // nothing is cached yet. hubCacheRoot stays the base the cache-layout
-    // presence checks join onto, whatever modelDir resolves to.
-    const useHubCache = !isModelDirectoryOverridden(request.config.modelDirectory);
+    // The shared resolution owns the layout rule: the hub-cache layout (no
+    // --local-dir, the models--{ns}--{name} dirs) applies only when the raw
+    // config names no model directory; a user override keeps the flat
+    // --local-dir target. The target's base is what the presence checks join
+    // onto, and its directory names the model directory the steps run: the
+    // override, the hub-cache snapshot holding a cached artifact (the hf
+    // download result), or the hub cache root when nothing is cached yet. The
+    // hub cache root comes from the service seam (created when absent), the
+    // same source the summary and the download routes read.
     const selectedModelId = typeof request.config.model === 'string' ? request.config.model : undefined;
     const modelEntry = selectedModelId === undefined ? undefined : defaultModelFor(request.engineId, selectedModelId);
     const ctx = {
@@ -285,9 +283,8 @@ export async function runGetSteps(localInfer, request, log) {
         request,
         engine,
         directory: resolveEngineDirectory(request.engineId, request.platform),
-        modelDir: resolveModelDirectory(request.config, modelEntry),
-        hubCacheRoot: hfHubCacheDirectory(),
-        useHubCache,
+        target: resolveModelDirectory(request.config.modelDirectory, modelEntry, localInfer.defaultModelDirectory()),
+        ...(modelEntry !== undefined ? { modelEntry } : {}),
         hardware: await localInfer.detectHardware(),
         emit,
         ...(request.onChunk !== undefined ? { onChunk: request.onChunk } : {}),

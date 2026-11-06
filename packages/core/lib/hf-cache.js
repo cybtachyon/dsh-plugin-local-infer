@@ -8,6 +8,8 @@
  */
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { hfDownloadResultDirectory } from "./infer-cache.js";
+import { isModelDirectoryOverridden, repoIdFromUrl } from "./models.js";
 // The platform default HF home: ~/.cache/huggingface on Linux and macOS,
 // C:\Users\<user>\.cache\huggingface on Windows. homedir() names the right
 // base on every host.
@@ -33,14 +35,38 @@ export function hfHubCacheDirectory() {
     return join(home ?? defaultHfHome(), 'hub');
 }
 /**
- * modelDownloadTarget resolves the download target for a model directory
+ * modelDownloadTarget resolves the download target for a raw model-directory
  * field: a named directory is the flat --local-dir base, and an absent or
  * blank directory is the hub-cache layout (the hf CLI writes its
- * models--{ns}--{name} directories into the hub cache root).
+ * models--{ns}--{name} directories into the hub cache root). `hubCache` is
+ * the hub cache root to fall back onto; the default reads the core
+ * resolution, and a caller that owns the value (the service seam, which also
+ * creates the directory when absent) passes it.
  */
-export function modelDownloadTarget(modelDirectory) {
-    const useHubCache = modelDirectory === undefined || modelDirectory === '';
-    return { baseDir: useHubCache ? hfHubCacheDirectory() : modelDirectory, useHubCache };
+export function modelDownloadTarget(modelDirectory, hubCache = hfHubCacheDirectory()) {
+    const useHubCache = !isModelDirectoryOverridden(modelDirectory);
+    return { baseDir: useHubCache ? hubCache : modelDirectory, useHubCache };
+}
+/**
+ * resolveModelDirectory resolves the model directory a read names for a
+ * model: the raw field's override when it names a path; else, when the
+ * selected entry resolves and its artifact is already in the hub cache, the
+ * hf download result (the snapshot directory holding it); else the hub cache
+ * root, the base the hf CLI downloads into. The result is derived on every
+ * read and never written back into the config, so a default install never
+ * materializes a fake `modelDirectory` override. `hubCache` is the hub cache
+ * root to resolve over; the service seam names it when it owns the value (it
+ * also creates the directory when absent), and the default reads the core
+ * resolution.
+ */
+export function resolveModelDirectory(modelDirectory, source, hubCache = hfHubCacheDirectory()) {
+    const target = modelDownloadTarget(modelDirectory, hubCache);
+    if (!target.useHubCache)
+        return { ...target, directory: target.baseDir };
+    const snapshot = source === undefined
+        ? null
+        : hfDownloadResultDirectory(hubCache, repoIdFromUrl(source.url), source.file ?? '');
+    return { ...target, directory: snapshot ?? hubCache };
 }
 /**
  * hfDatasetsCacheDirectory resolves the Hugging Face datasets cache
