@@ -97,7 +97,7 @@ Depends: 011 -> 004; 005 -> 004, 011.
   unchecked; `draftLaunchBody` sends the draft value; `performEntryLaunch` sends
   `provider.autoRebuild ?? false`; `performSave` sends the draft value. DoD:
   store tests for load/save/launch bodies and defaults.
-- [ ] [TASK-007-card-checkbox](docs/PLAN-AUTOREBUILD-PERSIST-TASK-007-card-checkbox.md) -
+- [x] [TASK-007-card-checkbox](docs/PLAN-AUTOREBUILD-PERSIST-TASK-007-card-checkbox.md) -
   the card's checkbox renders from the draft and dispatches `draft/edit`;
   `SaveRequest` gains `autoRebuild`. DoD: card render test toggles per-draft
   value, source pins updated.

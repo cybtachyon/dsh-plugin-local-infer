@@ -13,3 +13,16 @@ Wire the visible control to the per-provider value.
   dirty; switching between two providers shows each one's own value. Commit with
   the re-emitted `lib/` output (the `dsh/client.js` artifact lands in TASK-009's
   build if not here).
+
+## Scope note (achieved 2026-11-07)
+
+The scope narrowed after TASK-006 (commit 3d29f81): the `SaveRequest
+autoRebuild?: boolean` field (`packages/client/src/api/routes.ts`) and the
+draft-rendered checkbox with its `draft/edit` dispatch (`packages/client/src/
+Card.tsx`, `checked: currentDraft.autoRebuild ?? false`) landed together with
+the store move, including the re-emitted `lib/` output. What this task added is
+the card render tests in `packages/client/tests/card.spec.ts`: toggling writes
+`autoRebuild: next` through `draft/edit` and marks the form dirty; opening two
+providers (one stored `true`, one stored without the key) shows each one's own
+box; a fresh new-provider draft (key absent) draws unchecked. Located through
+the Auto Rebuild label's own text, not a checkbox index.
