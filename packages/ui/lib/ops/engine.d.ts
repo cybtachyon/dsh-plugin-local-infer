@@ -40,6 +40,20 @@ export declare const GET_EVENT_PREFIX = "!! ";
  */
 export declare function resolveAdapter(localInfer: LocalInferService, engineId: string): import("dsh-plugin-local-infer/core").EngineAdapter;
 /**
+ * resolveStoredRequest resolves a route request's engine and config against
+ * the stored config: the request's fields win, and an absent field falls back
+ * to the stored value, the same rule every route applies. The Get route
+ * reads it for its run-log key before delegating to getEngine.
+ */
+export declare function resolveStoredRequest(request: {
+    engine?: string;
+    config?: Config;
+}): {
+    stored: StoredConfig;
+    engineId: string;
+    config: Config;
+};
+/**
  * launchEngine runs the shared Get-steps routine (idempotent: deps, git sync,
  * build, model download, chat-template download, each skipped when already
  * satisfied) and then renders the plan the registered adapter produces for
@@ -70,9 +84,18 @@ export declare function resolveAdapter(localInfer: LocalInferService, engineId: 
  * service's sudo observer answers a guarded command waiting for a password on
  * the launching CLI by landing the core CLI note in the run logs and the log
  * file and calling onSudo; the observer is unregistered when the run settles,
- * failed or not, so a failing run leaves none behind.
+ * failed or not, so a failing run leaves none behind. The whole run brackets
+ * one live hub run under the runLogKey rule (the "--- Launching..." seed,
+ * the Get-steps sink, the command note, the deploy and engine output at
+ * settle, end in a finally), so the streaming logs route reads the launch.
  */
 export declare function launchEngine(localInfer: LocalInferService, request: LaunchRequest, onProgress?: (step: LaunchStep) => void, host?: LifecycleHost, signal?: AbortSignal, onChunk?: (chunk: string) => void, onSudo?: () => void): Promise<LaunchResult>;
+/**
+ * RunLogWriter is the hub slice handleEngineDeath needs: the catch-up read,
+ * the append, and the settle. The LocalInfer service satisfies it, so the
+ * route's observer closure can hand the service itself to the note path.
+ */
+export type RunLogWriter = Pick<LocalInferService, 'readRunLog' | 'appendRunLog' | 'endRun'>;
 /**
  * handleEngineDeath persists a provider entry's state when its engine process
  * dies outside the plugin's stop path: a crash, a pkill of a plugin-launched
@@ -83,9 +106,13 @@ export declare function launchEngine(localInfer: LocalInferService, request: Lau
  * line lands in the card's last-run logs beside the engine's own output. An
  * event that matches no entry carrying a record (a stop the route already
  * cleared, an engine the plugin never tracked) is a no-op, which keeps an
- * expected stop quiet.
+ * expected stop quiet. With a run-log hub (the route's observer closure
+ * captures the service), the same note line also lands in the dead entry's
+ * live buffer: the snapshot is read first, and if the run was NOT already
+ * running, the append's lazy reopen is settled with endRun right after, so a
+ * late note streams without stranding the key as running.
  */
-export declare function handleEngineDeath(event: EngineDeathEvent): void;
+export declare function handleEngineDeath(event: EngineDeathEvent, runLogs?: RunLogWriter): void;
 /**
  * persistLaunchLogs stores a launch's captured output as the last run and
  * writes it to the configured log file. The Get-step output the launch ran

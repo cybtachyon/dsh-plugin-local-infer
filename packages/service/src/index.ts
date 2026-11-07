@@ -127,7 +127,7 @@ import type {
 import { RunLogStore, runLogKey } from './run-logs.ts'
 import { findLaunchTarget } from './launch-target.ts'
 
-export { runLogKey, findLaunchTarget }
+export { RunLogStore, runLogKey, findLaunchTarget }
 export type {
   DetectOsReserveOptions,
   DownloadModelOptions,

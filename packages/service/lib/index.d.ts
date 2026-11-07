@@ -20,9 +20,9 @@
 import { Context, Service } from '@deepseek-ai/cordis';
 import type { BuildMode, CommandOutcome, CommandRunner, Config, DefaultModel, ModelCacheEntry, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, GpuUsageProbe, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, ProviderLaunchRecord, ProviderRef, ProviderStatus, ReLinkOutcome, RegisterResult, ReserveResolution, ResolvedDefaults, SudoGuard, SystemDep, VramModel } from 'dsh-plugin-local-infer/core';
 import type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EngineDeathEvent, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, ProviderStatusOptions, RegisterModelOptions, RunLogListener, RunLogSnapshot } from './types.ts';
-import { runLogKey } from './run-logs.ts';
+import { RunLogStore, runLogKey } from './run-logs.ts';
 import { findLaunchTarget } from './launch-target.ts';
-export { runLogKey, findLaunchTarget };
+export { RunLogStore, runLogKey, findLaunchTarget };
 export type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EngineDeathEvent, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LaunchTargetEntry, LocalInferService, ProviderStatusOptions, RegisterModelOptions, RunLogAppendEvent, RunLogEndEvent, RunLogEvent, RunLogListener, RunLogResetEvent, RunLogSnapshot, SettingsDescribeResult, SettingsForms, SettingsNamespaceDescriptor, } from './types.ts';
 declare module '@deepseek-ai/cordis' {
     interface Context {

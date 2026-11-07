@@ -3,12 +3,13 @@
  * request's default model, resolving the entry through the providers'
  * default list (a 404 when no entry names the pair) and the directory
  * against the request, the stored config, and the plugin's default model
- * directory in that order.
+ * directory in that order. The run's live hub bracket (seed, streamed hf
+ * chunks, settle line, end) and its persisted "Downloading..." section both
+ * live in downloadFor (ops/hf.ts), so the text has one home.
  * @module dsh-plugin-local-infer/ui/routes/download
  */
 import { defineRoute } from "../route.js";
 import { downloadFor } from "../ops/hf.js";
-import { persistProcessLog } from "../ops/logs.js";
 /**
  * downloadRoute builds the POST /local-infer/download route definition the
  * register step holds by an effect.
@@ -33,15 +34,7 @@ export function downloadRoute(localInfer) {
             if (typeof body.directory === 'string') {
                 request.directory = body.directory;
             }
-            const result = await downloadFor(localInfer, request);
-            // The "Downloading..." separator leads the persisted run, so the Logs
-            // section and the log file read the download as a fresh process section,
-            // the same line the card writes when the Download button is clicked.
-            const line = result.ok
-                ? 'download complete\n'
-                : `!! download failed${result.detail !== undefined ? `: ${result.detail}` : ''}\n`;
-            persistProcessLog(`--- Downloading...\n${line}`);
-            res.json(200, result);
+            res.json(200, await downloadFor(localInfer, request));
         },
     });
 }

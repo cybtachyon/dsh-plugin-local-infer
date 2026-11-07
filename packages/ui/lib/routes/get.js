@@ -7,9 +7,10 @@
  * way.
  * @module dsh-plugin-local-infer/ui/routes/get
  */
+import { runLogKey } from '../../../service/lib/index.js';
 import { parseStoredPlatformConfig } from "../config.js";
-import { CANCELED_LINE, GET_EVENT_PREFIX, getEngine } from "../ops/engine.js";
-import { captureRunBaseline, finishRunSection } from "../ops/logs.js";
+import { CANCELED_LINE, GET_EVENT_PREFIX, getEngine, resolveStoredRequest } from "../ops/engine.js";
+import { captureRunBaseline, finishRunSection, GET_RUN_SEED } from "../ops/logs.js";
 import { defineRoute } from "../route.js";
 import { abortOnResponseClose, ndjsonLine, throttledProgressSink } from "./stream.js";
 /**
@@ -38,16 +39,24 @@ export function getRoute(localInfer, getHost) {
                 request.platform = platform;
             }
             res.ndjsonStream();
+            // The run key the live hub buffers this Get under, the shared runLogKey
+            // rule (the request names no provider, so the stored entry matching the
+            // engine and model wins, and a draft falls back to the engine id).
+            const { stored, engineId, config } = resolveStoredRequest(request);
+            const runKey = runLogKey(stored.providers, engineId, undefined, config);
+            localInfer.beginRun(runKey, GET_RUN_SEED);
             // The stored last-run logs as they stand before the run persists
             // anything: the sudo observer persists its note while the run hangs on
             // the prompt, and finishRunSection closes the run over the baseline so
             // that provisional line and the collected run text persist once.
             const baseline = captureRunBaseline();
             let collected = '';
-            // The log sink collects the plain-text run (the persisted log) and
-            // streams it as NDJSON log events, one event per chunk.
+            // The log sink collects the plain-text run (the persisted log), appends
+            // the same chunk to the live hub, and streams it as an NDJSON log event,
+            // one event per chunk.
             const log = (text) => {
                 collected += text;
+                localInfer.appendRunLog(runKey, text);
                 ndjsonLine(res, { log: text });
             };
             // The hf download's raw stderr sink: the core chunk folder turns the
@@ -62,25 +71,32 @@ export function getRoute(localInfer, getHost) {
             // not a cancel.
             const { signal, markFinished } = abortOnResponseClose(res);
             try {
-                await getEngine(localInfer, request, log, getHost, signal, onChunk);
+                try {
+                    await getEngine(localInfer, request, log, getHost, signal, onChunk);
+                }
+                catch (error) {
+                    log(`${GET_EVENT_PREFIX}get failed: ${String(error?.message ?? error)}\n`);
+                }
+                // A cancel that closed the stream appends the "Canceled" line, so the
+                // persisted run (and the log file) read the run as canceled, the same
+                // line the card writes to its Logs buffer on the Cancel.
+                if (signal.aborted) {
+                    log(`${CANCELED_LINE}`);
+                }
+                markFinished();
+                // The "Getting engine and model..." separator leads the persisted
+                // run and the live run's seed, so the Logs section, the log file, and
+                // the streamed run read the run as one fresh process section.
+                // finishRunSection closes the run over the baseline captured before
+                // it started, not a second append over its own provisional notes.
+                finishRunSection(baseline, `${GET_RUN_SEED}${collected}`);
+                res.end();
             }
-            catch (error) {
-                log(`${GET_EVENT_PREFIX}get failed: ${String(error?.message ?? error)}\n`);
+            finally {
+                // The bracket closes on every settle path, cancel and failure
+                // included: the key's running flag clears after finishRunSection.
+                localInfer.endRun(runKey);
             }
-            // A cancel that closed the stream appends the "Canceled" line, so the
-            // persisted run (and the log file) read the run as canceled, the same
-            // line the card writes to its Logs buffer on the Cancel.
-            if (signal.aborted) {
-                log(`${CANCELED_LINE}`);
-            }
-            markFinished();
-            // The "Getting engine and model..." separator leads the persisted run,
-            // so the Logs section and the log file read the run as a fresh process
-            // section, the same line the card writes when the Get button is
-            // clicked. finishRunSection closes the run over the baseline captured
-            // before it started, not a second append over its own provisional notes.
-            finishRunSection(baseline, `--- Getting engine and model...\n${collected}`);
-            res.end();
         },
     });
 }

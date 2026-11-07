@@ -8,8 +8,10 @@
  * @module dsh-plugin-local-infer/ui/ops/hf
  */
 import { isModelDirectoryOverridden, modelDownloadTarget } from '../../../core/lib/index.js';
+import { runLogKey } from '../../../service/lib/index.js';
 import { defaultModelFor } from '../../../providers/lib/index.js';
 import { readConfig } from "../config.js";
+import { DOWNLOAD_RUN_SEED, persistProcessLog } from "./logs.js";
 import { RouteError } from "../route.js";
 import { isHfRepoReference } from "../viewmodels/summaryHelpers.js";
 /**
@@ -34,7 +36,12 @@ function resolveDownloadTarget(localInfer, requestDirectory, stored) {
  * downloadFor runs the hf CLI download for the request's default model: it
  * resolves the entry through the providers' default list (a 404 when no
  * entry names the pair), resolves the directory through
- * resolveDownloadTarget, and runs the download through the service.
+ * resolveDownloadTarget, and runs the download through the service. The run
+ * brackets one live hub run under the runLogKey rule keyed on the entry's
+ * engine and model (a draft falls back to the engine id): the seed is the
+ * "Downloading..." separator, the hf CLI's streamed chunks append as they
+ * land, and the settled completion or failure line reaches the hub and the
+ * persisted run from one text before the run ends.
  */
 export async function downloadFor(localInfer, request) {
     const stored = readConfig();
@@ -45,14 +52,43 @@ export async function downloadFor(localInfer, request) {
         throw new RouteError(404, `no default model is registered for "${engineId}/${modelId}"`);
     }
     const { baseDir, useHubCache } = resolveDownloadTarget(localInfer, request.directory, stored);
-    return localInfer.downloadModel(entry, baseDir, { useHubCache });
+    // The key rule prices the model this download fetches, so the run lands on
+    // the stored entry for that engine and model, not the draft's.
+    const runKey = runLogKey(stored.providers, engineId, undefined, {
+        ...stored.config,
+        ...(modelId === '' ? {} : { model: modelId }),
+    });
+    localInfer.beginRun(runKey, DOWNLOAD_RUN_SEED);
+    try {
+        const result = await localInfer.downloadModel(entry, baseDir, {
+            useHubCache,
+            onChunk: (chunk) => {
+                localInfer.appendRunLog(runKey, chunk);
+            },
+        });
+        // The settle line reads the same in the live run and the persisted one:
+        // the "Downloading..." separator leads the stored run so the Logs
+        // section and the log file read the download as a fresh process section.
+        const line = result.ok
+            ? 'download complete\n'
+            : `!! download failed${result.detail !== undefined ? `: ${result.detail}` : ''}\n`;
+        localInfer.appendRunLog(runKey, line);
+        persistProcessLog(`${DOWNLOAD_RUN_SEED}${line}`);
+        return result;
+    }
+    finally {
+        localInfer.endRun(runKey);
+    }
 }
 /**
  * chatTemplateDownloadFor runs the hf CLI download for the request's chat
  * template: it resolves the template repo reference from the request or the
  * stored config's chatTemplate (a 400 when neither names an HF repo
  * reference), resolves the directory through resolveDownloadTarget, and
- * runs the download through the service.
+ * runs the download through the service. The run brackets one live hub run
+ * under the "Downloading..." seed and the runLogKey rule (the stored entry
+ * matching the engine and model, else the engine id): the hf CLI's streamed
+ * chunks append as they land, and the run ends at settle.
  */
 export async function chatTemplateDownloadFor(localInfer, request) {
     const stored = readConfig();
@@ -64,6 +100,18 @@ export async function chatTemplateDownloadFor(localInfer, request) {
         throw new RouteError(400, `the chat template must be an HF repo reference, got "${template || '(none)'}"`);
     }
     const { baseDir, useHubCache } = resolveDownloadTarget(localInfer, request.directory, stored);
-    return localInfer.downloadChatTemplate(template, baseDir, { useHubCache });
+    const runKey = runLogKey(stored.providers, request.engine ?? stored.engine, undefined, stored.config);
+    localInfer.beginRun(runKey, DOWNLOAD_RUN_SEED);
+    try {
+        return await localInfer.downloadChatTemplate(template, baseDir, {
+            useHubCache,
+            onChunk: (chunk) => {
+                localInfer.appendRunLog(runKey, chunk);
+            },
+        });
+    }
+    finally {
+        localInfer.endRun(runKey);
+    }
 }
 //# sourceMappingURL=hf.js.map

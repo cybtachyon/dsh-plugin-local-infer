@@ -14,6 +14,18 @@ import { dirname } from 'node:path';
 import { LOG_TAIL_BYTES, resolveLogPath } from '../../../core/lib/index.js';
 import { readConfig, writeStored } from "../config.js";
 /**
+ * The run seeds are the `--- <process>...` separator lines that lead each
+ * provider process's run: the persisted section and the live run-log buffer
+ * share the constant, so the streamed run reads like the persisted one. The
+ * launch, get, and download steps already wrote these lines; the live hub
+ * reuses them.
+ */
+export const GET_RUN_SEED = '--- Getting engine and model...\n';
+export const LAUNCH_RUN_SEED = '--- Launching...\n';
+export const DOWNLOAD_RUN_SEED = '--- Downloading...\n';
+export const INSTALL_RUN_SEED = '--- Installing deps...\n';
+export const STOP_RUN_SEED = '--- Stopping...\n';
+/**
  * persistProcessLog appends one process run's output to the stored last-run
  * logs (capped to the launch logs' tail, so a long build cannot grow the
  * config without bound) and writes the run to the configured log file. A
