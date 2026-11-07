@@ -887,6 +887,142 @@ describe('provider list round trip', () => {
     expect(stored.providers[0]?.launch?.pid).toBe(12345)
   })
 
+  it('persists the autoRebuild flag on an id-carrying save', async () => {
+    // The card's Auto Rebuild checkbox saves with the provider, so an
+    // explicit body boolean lands on the updated entry.
+    rmSync(localInferConfigPath(), { force: true })
+    writeConfig('ninfer', {}, false, {}, true, [
+      { id: 'p1', engine: 'ninfer', config: {}, platform: {}, autoRebuild: true },
+    ])
+    const service = stubService([])
+    const list = routes(service)
+    const save = find(list, '/local-infer/save')
+    const res = fakeRes()
+    await save.handler(
+      fakeReq(
+        'POST',
+        '/local-infer/save',
+        JSON.stringify({ id: 'p1', engine: 'ninfer', config: {}, autoRebuild: false }),
+      ),
+      res,
+    )
+    expect(res.status).toBe(200)
+    expect(readConfig().providers[0]?.autoRebuild).toBe(false)
+    // A save that omits the key (an old caller) carries the stored value
+    // over, and a non-boolean body value reads as absent the same way.
+    const carry = fakeRes()
+    await save.handler(
+      fakeReq('POST', '/local-infer/save', JSON.stringify({ id: 'p1', engine: 'ninfer', config: {} })),
+      carry,
+    )
+    expect(carry.status).toBe(200)
+    expect(readConfig().providers[0]?.autoRebuild).toBe(false)
+    const nonBoolean = fakeRes()
+    await save.handler(
+      fakeReq(
+        'POST',
+        '/local-infer/save',
+        JSON.stringify({ id: 'p1', engine: 'ninfer', config: {}, autoRebuild: 'yes' }),
+      ),
+      nonBoolean,
+    )
+    expect(nonBoolean.status).toBe(200)
+    expect(readConfig().providers[0]?.autoRebuild).toBe(false)
+  })
+
+  it('carries the stored autoRebuild through a matching id-less save', async () => {
+    // A "New provider" save that matches a stored entry updates it in place,
+    // so the stored checkbox value survives an omitted body key and an
+    // explicit body boolean overwrites it without duplicating the entry.
+    rmSync(localInferConfigPath(), { force: true })
+    writeConfig('ninfer', {}, false, {}, true, [
+      { id: 'p1', engine: 'ninfer', config: { model: 'qwen3-27b' }, platform: {}, autoRebuild: true },
+    ])
+    const service = stubService([])
+    const list = routes(service)
+    const save = find(list, '/local-infer/save')
+    const res = fakeRes()
+    await save.handler(
+      fakeReq('POST', '/local-infer/save', JSON.stringify({ engine: 'ninfer', config: { model: 'qwen3-27b' } })),
+      res,
+    )
+    expect(res.status).toBe(200)
+    const carried = readConfig()
+    expect(carried.providers).toHaveLength(1)
+    expect(carried.providers[0]?.id).toBe('p1')
+    expect(carried.providers[0]?.autoRebuild).toBe(true)
+    const again = fakeRes()
+    await save.handler(
+      fakeReq(
+        'POST',
+        '/local-infer/save',
+        JSON.stringify({ engine: 'ninfer', config: { model: 'qwen3-27b' }, autoRebuild: false }),
+      ),
+      again,
+    )
+    expect(again.status).toBe(200)
+    const written = readConfig()
+    expect(written.providers).toHaveLength(1)
+    expect(written.providers[0]?.id).toBe('p1')
+    expect(written.providers[0]?.autoRebuild).toBe(false)
+  })
+
+  it('writes a new entry autoRebuild from the body and leaves an omitted key absent', async () => {
+    // A brand-new entry with a checked box stores true; one saved without
+    // the key stays without it, so the card draws the box unchecked and no
+    // migration touches the stored file.
+    rmSync(localInferConfigPath(), { force: true })
+    const service = stubService([])
+    const list = routes(service)
+    const save = find(list, '/local-infer/save')
+    const checked = fakeRes()
+    await save.handler(
+      fakeReq(
+        'POST',
+        '/local-infer/save',
+        JSON.stringify({ engine: 'ninfer', config: { model: 'qwen3-27b' }, autoRebuild: true }),
+      ),
+      checked,
+    )
+    expect(checked.status).toBe(200)
+    expect(readConfig().providers[0]?.autoRebuild).toBe(true)
+    rmSync(localInferConfigPath(), { force: true })
+    const plain = fakeRes()
+    await save.handler(
+      fakeReq('POST', '/local-infer/save', JSON.stringify({ engine: 'ninfer', config: { model: 'qwen3-27b' } })),
+      plain,
+    )
+    expect(plain.status).toBe(200)
+    expect('autoRebuild' in readConfig().providers[0]!).toBe(false)
+  })
+
+  it('leaves stored autoRebuild untouched on a settings-only save', async () => {
+    // A settings-only save must not touch the providers list, so a stray
+    // body autoRebuild never rewrites a stored entry's checkbox.
+    rmSync(localInferConfigPath(), { force: true })
+    writeConfig('ninfer', {}, false, {}, true, [
+      { id: 'p1', engine: 'ninfer', config: {}, platform: {}, autoRebuild: true },
+    ])
+    const service = stubService([])
+    const list = routes(service)
+    const save = find(list, '/local-infer/save')
+    const res = fakeRes()
+    await save.handler(
+      fakeReq(
+        'POST',
+        '/local-infer/save',
+        JSON.stringify({ engine: 'ninfer', config: {}, showHelp: false, settingsOnly: true, autoRebuild: false }),
+      ),
+      res,
+    )
+    expect(res.status).toBe(200)
+    const stored = readConfig()
+    expect(stored.showHelp).toBe(false)
+    expect(stored.providers).toHaveLength(1)
+    expect(stored.providers[0]?.id).toBe('p1')
+    expect(stored.providers[0]?.autoRebuild).toBe(true)
+  })
+
   it('removes a provider by id through the delete route', async () => {
     const service = stubService([])
     const list = routes(service)
