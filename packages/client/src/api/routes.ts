@@ -11,9 +11,11 @@
  * the host's own message. The launch route streams NDJSON (a step event as
  * each phase begins, a sudo event when a sudo command waits for the password
  * on the host's CLI, a progress event when the Get-steps hf download's tqdm
- * output folds into a structured state, then a final result event), and the
+ * output folds into a structured state, then a final result event), the
  * get route streams NDJSON too (a log event per log line, a progress event
- * per folded download state), so the two readers live here. readNdjsonLines buffers
+ * per folded download state), and the logs route streams NDJSON per run key
+ * (a catch-up snapshot, then log, runBegin, or runEnd events), which
+ * subscribeRunLogs holds open. readNdjsonLines buffers
  * chunks into whole lines: a line split across chunks completes on the
  * next chunk, a partial final line (a stream that ends without a trailing
  * newline) is still parsed, and a line that is not JSON is skipped, so one
@@ -168,6 +170,51 @@ export type GetStreamEvent =
   | { log: string; progress?: undefined }
   | { log?: undefined; progress: HfProgressShape }
 
+// RunLogsEvent is one NDJSON line the logs route streams for a run key: the
+// catch-up snapshot (the bounded buffer text, the seq it reached, and the
+// running flag), one appended log chunk, a run begin (the new run's seed
+// line, so the pane replaces its display), or the run end. The union mirrors
+// the route's LogsStreamEvent in packages/ui/src/routes/logs.ts (the client
+// bundle cannot import the node-side ui package, so the shape is mirrored
+// here; the two copies change together by hand). Every line carries the seq
+// the next append continues; the route already dedups against the snapshot
+// it sent on this connection, so the reader applies no seq rule of its own.
+// The explicit undefined keys keep the union discriminable: a line carries a
+// snapshot, a log, a runBegin, or a runEnd, never two at once.
+export type RunLogsEvent =
+  | {
+      snapshot: string
+      running: boolean
+      seq: number
+      log?: undefined
+      runBegin?: undefined
+      runEnd?: undefined
+    }
+  | {
+      snapshot?: undefined
+      running?: undefined
+      seq: number
+      log: string
+      runBegin?: undefined
+      runEnd?: undefined
+    }
+  | {
+      snapshot?: undefined
+      running?: undefined
+      seq: number
+      log?: undefined
+      runBegin: string
+      runEnd?: undefined
+    }
+  | {
+      snapshot?: undefined
+      running?: undefined
+      seq: number
+      log?: undefined
+      runBegin?: undefined
+      runEnd: true
+    }
+
 // The answer a launch settles to: the route's result event. The plan is
 // optional, so a full result (with the launch plan) and a broken-launch
 // fallback (a result that names the failure without a plan) share one shape.
@@ -289,6 +336,40 @@ export async function readGetStream(
       onProgress?.(event.progress)
     }
   })
+}
+
+/**
+ * subscribeRunLogs holds the per-provider run-log NDJSON stream open (the
+ * GET /local-infer/logs?provider=<key> route) and hands each event to
+ * onEvent until the stream ends or the caller's signal aborts (its detach).
+ * The key is the run-log key every run path shares; clientRunLogKey mirrors
+ * the host's runLogKey rule so the card always names the buffer its own
+ * requests write. A non-OK answer throws with the body text, and a body that
+ * broke mid-stream rejects through readNdjsonLines' read; the store module
+ * decides whether that break deserves its one reconnect (the stream may be
+ * held across runs, so a clean end just resolves). The optional signal is the
+ * pane's detach: the abort ends the in-flight body read.
+ */
+export async function subscribeRunLogs(
+  key: string,
+  onEvent: (event: RunLogsEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  const params = new URLSearchParams()
+  params.set('provider', key)
+  const response = await fetch('/local-infer/logs?' + params.toString(), {
+    ...(signal !== undefined ? { signal } : {}),
+  })
+  if (!response.ok) {
+    const text = await response.text()
+    throw new Error(text || 'HTTP ' + response.status)
+  }
+  if (response.body === null || typeof response.body.getReader !== 'function') {
+    // A host that cannot stream has nothing to hand the live pane; the
+    // store's quiet end (and the summary's lastLogs) covers it.
+    return
+  }
+  await readNdjsonLines<RunLogsEvent>(response.body, onEvent)
 }
 
 // withQuery builds the query string a GET route takes: the engine and the

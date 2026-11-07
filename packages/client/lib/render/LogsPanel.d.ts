@@ -13,7 +13,9 @@
  * summary's lastLogs), and the auto-scroll effect pins the view to the bottom
  * while the mode is fresh or scrolling; a manual scroll up parks the mode at
  * manual, so content updates leave the view where the user put it. The
- * chevron drag clamps the height to the 96-480 px readable range.
+ * chevron drag clamps the height to the 96-480 px readable range. The pane's
+ * mount registers the live run-log stream with the store module: mounted, the
+ * pane target's stream attaches for the catch-up read; unmounted, it detaches.
  * @module dsh-plugin-local-infer/client/render/LogsPanel
  */
 import type { ReactNode } from 'react';

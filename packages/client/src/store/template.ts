@@ -14,6 +14,7 @@
  */
 
 import { postChatTemplate } from '../api/routes.ts'
+import { beginRun, clientRunLogKey, endRun } from './logs-stream.ts'
 import { performTemplateAction, TEMPLATE_DOWNLOAD_TIMEOUT, type CardStore } from './sync.ts'
 
 /**
@@ -21,7 +22,10 @@ import { performTemplateAction, TEMPLATE_DOWNLOAD_TIMEOUT, type CardStore } from
  * It no-ops while the draft is absent, the repo is empty, or a download is
  * already in flight. The ack detail stays neutral ('ok'): the component
  * maps the cell to the localized note, the way the action cells map
- * ACTION_TIMEOUT_DETAIL.
+ * ACTION_TIMEOUT_DETAIL. The pull brackets one run-log stream: the host keys
+ * it on the request's engine and the STORED config's model (the route reads
+ * the stored pair, not the draft's), per the mirrored runLogKey rule, and
+ * the stream detaches when the round trip settles.
  */
 export function downloadTemplate(store: CardStore, repo: string): Promise<void> {
   const state = store.getSnapshot()
@@ -32,6 +36,12 @@ export function downloadTemplate(store: CardStore, repo: string): Promise<void> 
     return Promise.resolve()
   }
   const draft = state.draft
+  const runKey = clientRunLogKey(
+    state.summary?.providers ?? [],
+    draft.engine,
+    state.summary?.config ?? {},
+  )
+  beginRun(store, runKey)
   // The directory key is omitted, not undefined: the route reads an absent
   // key as "the host's model directory".
   const directory =
@@ -50,5 +60,7 @@ export function downloadTemplate(store: CardStore, repo: string): Promise<void> 
         },
       ),
     TEMPLATE_DOWNLOAD_TIMEOUT,
-  )
+  ).then(() => {
+    endRun(store, runKey)
+  })
 }

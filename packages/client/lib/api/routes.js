@@ -11,9 +11,11 @@
  * the host's own message. The launch route streams NDJSON (a step event as
  * each phase begins, a sudo event when a sudo command waits for the password
  * on the host's CLI, a progress event when the Get-steps hf download's tqdm
- * output folds into a structured state, then a final result event), and the
+ * output folds into a structured state, then a final result event), the
  * get route streams NDJSON too (a log event per log line, a progress event
- * per folded download state), so the two readers live here. readNdjsonLines buffers
+ * per folded download state), and the logs route streams NDJSON per run key
+ * (a catch-up snapshot, then log, runBegin, or runEnd events), which
+ * subscribeRunLogs holds open. readNdjsonLines buffers
  * chunks into whole lines: a line split across chunks completes on the
  * next chunk, a partial final line (a stream that ends without a trailing
  * newline) is still parsed, and a line that is not JSON is skipped, so one
@@ -121,6 +123,35 @@ export async function readGetStream(response, onChunk, onProgress) {
             onProgress?.(event.progress);
         }
     });
+}
+/**
+ * subscribeRunLogs holds the per-provider run-log NDJSON stream open (the
+ * GET /local-infer/logs?provider=<key> route) and hands each event to
+ * onEvent until the stream ends or the caller's signal aborts (its detach).
+ * The key is the run-log key every run path shares; clientRunLogKey mirrors
+ * the host's runLogKey rule so the card always names the buffer its own
+ * requests write. A non-OK answer throws with the body text, and a body that
+ * broke mid-stream rejects through readNdjsonLines' read; the store module
+ * decides whether that break deserves its one reconnect (the stream may be
+ * held across runs, so a clean end just resolves). The optional signal is the
+ * pane's detach: the abort ends the in-flight body read.
+ */
+export async function subscribeRunLogs(key, onEvent, signal) {
+    const params = new URLSearchParams();
+    params.set('provider', key);
+    const response = await fetch('/local-infer/logs?' + params.toString(), {
+        ...(signal !== undefined ? { signal } : {}),
+    });
+    if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || 'HTTP ' + response.status);
+    }
+    if (response.body === null || typeof response.body.getReader !== 'function') {
+        // A host that cannot stream has nothing to hand the live pane; the
+        // store's quiet end (and the summary's lastLogs) covers it.
+        return;
+    }
+    await readNdjsonLines(response.body, onEvent);
 }
 // withQuery builds the query string a GET route takes: the engine and the
 // JSON-encoded config, each absent when undefined.

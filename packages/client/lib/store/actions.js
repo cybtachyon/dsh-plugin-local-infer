@@ -15,6 +15,7 @@
  */
 import { postDownload, postRegister, postSave, postUnregister, } from "../api/routes.js";
 import { repriceAll } from "./deps.js";
+import { beginRun, clientRunLogKey, endRun } from "./logs-stream.js";
 import { abandonedFormPatch } from "./providers.js";
 import { ACTION_TIMEOUTS, performAction } from "./sync.js";
 /**
@@ -117,7 +118,10 @@ export function performUnregister(store, t) {
  * the download route's hf CLI. On a successful pull it re-fetches both read
  * models (the summary and the deps panel) through repriceAll (the model
  * status row re-checks the directory and hides). A failed pull settles the
- * cell to error with the route's own detail.
+ * cell to error with the route's own detail. The pull brackets one run-log
+ * stream: the host keys it on the download's model (the request's, else the
+ * stored config's) paired with the engine, per the mirrored runLogKey rule,
+ * so the pane reads the hf download live until the round trip settles.
  */
 export function performDownload(store, t) {
     const state = store.getSnapshot();
@@ -127,6 +131,13 @@ export function performDownload(store, t) {
     }
     const model = typeof draft.config.model === 'string' ? draft.config.model : undefined;
     const directory = typeof draft.config.modelDirectory === 'string' ? draft.config.modelDirectory : undefined;
+    // The key rule mirrors the host's download key: the route's model (the
+    // draft's, else the stored config's) pairs with the engine to pick the
+    // stored entry, else the engine id.
+    const storedConfig = state.summary?.config ?? {};
+    const runModel = model ?? (typeof storedConfig.model === 'string' ? storedConfig.model : '');
+    const runKey = clientRunLogKey(state.summary?.providers ?? [], draft.engine, runModel === '' ? {} : { model: runModel });
+    beginRun(store, runKey);
     return performAction(store, 'download', () => postDownload({
         engine: draft.engine,
         ...(model !== undefined ? { model } : {}),
@@ -137,6 +148,8 @@ export function performDownload(store, t) {
             return t.downloaded;
         }
         throw new Error(t.downloadFailed + (result.detail ? ': ' + result.detail : ''));
-    }), ACTION_TIMEOUTS.download);
+    }), ACTION_TIMEOUTS.download).then(() => {
+        endRun(store, runKey);
+    });
 }
 //# sourceMappingURL=actions.js.map

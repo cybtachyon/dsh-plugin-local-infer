@@ -394,7 +394,7 @@ describe('the deps panel control handlers (render/DepsPanel.tsx)', () => {
     }
   })
 
-  it('the Get button streams the build and appends to the Logs buffer', async () => {
+  it('the Get button streams the build; the live buffer belongs to the run-log stream', async () => {
     vi.useFakeTimers()
     try {
       const { store, state } = seedDepsAndDraft()
@@ -412,7 +412,11 @@ describe('the deps panel control handlers (render/DepsPanel.tsx)', () => {
       vi.advanceTimersByTime(0)
       stream.enqueue('{"log":"building...\\n"}\n')
       await flush()
-      expect(state().ui.logs.getLogs).toContain('building...')
+      // The click seeded the buffer, and the get route's own chunks no
+      // longer feed it: the attached run-log stream (Q2) carries the run's
+      // live text, so no line lands twice.
+      expect(state().ui.logs.getLogs).toContain(t.getting)
+      expect(state().ui.logs.getLogs).not.toContain('building...')
       stream.close()
       await flush(50)
       expect(state().actions.get.status).toBe('ok')

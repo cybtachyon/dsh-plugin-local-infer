@@ -73,15 +73,23 @@ export declare function performAllowRun(store: CardStore, checked: boolean): Pro
  * gate from the same re-check the install ran: a passed re-check reads as
  * the satisfied note, a failed one names the unsatisfied deps. A route
  * refusal (the trust gate off) settles the install cell to error with the
- * route's own message, which the panel renders as the deps note.
+ * route's own message, which the panel renders as the deps note. The install
+ * brackets one run-log stream (the host keys it on the request's engine and
+ * config, per the mirrored runLogKey rule), detached when the round trip
+ * settles.
  */
 export declare function performInstall(store: CardStore, t: TextTable): Promise<void>;
 /**
  * performGet runs the git sync, the dependency plan, and the build through
  * the get route's NDJSON stream. The click seeds the Logs section's streamed
  * buffer from the persisted last-run logs with a "Getting engine and
- * model..." separator, so the run reads as a fresh Logs section. Each log
- * event appends to the buffer and re-arms the idle cap: two minutes without a
+ * model..." separator, so the run reads as a fresh Logs section, and
+ * brackets one run-log stream under the key the host's get route writes (no
+ * providerId, the draft's engine and config, per the mirrored runLogKey
+ * rule): the run's live text reaches the Logs buffer through that stream
+ * (Q2), NOT through the get route's own log events, so no line lands twice
+ * (the route's log events drop in TASK-005). Each streamed chunk still
+ * re-arms the idle cap: two minutes without a
  * line settles the get cell (the control re-enables) while the run keeps
  * streaming in the background. The run folds the streamed tqdm state into
  * the ui.getProgress readout through the ProgressThrottle (the 500 ms

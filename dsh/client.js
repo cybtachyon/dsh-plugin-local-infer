@@ -172,7 +172,7 @@ var CUSTOM_ARGS_BUTTONS_STYLE = {
   justifyContent: "flex-end"
 };
 var SUDO_STATE_LABEL_COLOR = "var(--dsw-alias-state-warn-primary, var(--dsw-alias-label-warning, #ff9f0a))";
-function HELP_BUTTON_STYLE(active) {
+function HELP_BUTTON_STYLE(active2) {
   return {
     width: 20,
     height: 20,
@@ -185,9 +185,9 @@ function HELP_BUTTON_STYLE(active) {
     fontSize: 12,
     lineHeight: 1,
     cursor: "pointer",
-    border: "1px solid " + (active ? "var(--dsw-alias-accent, #0a84ff)" : "var(--dsw-alias-border-secondary, rgba(128,128,128,0.24))"),
-    background: active ? "var(--dsw-alias-accent, #0a84ff)" : "transparent",
-    color: active ? "#fff" : "var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))"
+    border: "1px solid " + (active2 ? "var(--dsw-alias-accent, #0a84ff)" : "var(--dsw-alias-border-secondary, rgba(128,128,128,0.24))"),
+    background: active2 ? "var(--dsw-alias-accent, #0a84ff)" : "transparent",
+    color: active2 ? "#fff" : "var(--dsw-alias-label-secondary, rgba(0,0,0,0.55))"
   };
 }
 var PROGRESS_STRIP_TRACK = {
@@ -512,8 +512,8 @@ var zh = {
   orchestratorDefaultNote: "\u6E05\u7A7A\u63D0\u793A\u8BCD\u5E76\u4FDD\u5B58\u5373\u53EF\u6062\u590D\u968F\u5305\u9ED8\u8BA4\u63D0\u793A\u8BCD\u3002"
 };
 var TEXT = { en, zh };
-function labels(active) {
-  const lang = (active || document.documentElement.lang || navigator.language || "en").toLowerCase();
+function labels(active2) {
+  const lang = (active2 || document.documentElement.lang || navigator.language || "en").toLowerCase();
   return lang.startsWith("zh") ? TEXT.zh : TEXT.en;
 }
 
@@ -1348,6 +1348,21 @@ async function readGetStream(response, onChunk, onProgress) {
     }
   });
 }
+async function subscribeRunLogs(key, onEvent, signal) {
+  const params = new URLSearchParams();
+  params.set("provider", key);
+  const response = await fetch("/local-infer/logs?" + params.toString(), {
+    ...signal !== void 0 ? { signal } : {}
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || "HTTP " + response.status);
+  }
+  if (response.body === null || typeof response.body.getReader !== "function") {
+    return;
+  }
+  await readNdjsonLines(response.body, onEvent);
+}
 function withQuery(path, query) {
   const params = new URLSearchParams();
   if (query?.engine) {
@@ -1442,6 +1457,236 @@ function postOrchestratorSave(request) {
   return postJson("/local-infer/orchestrator/save", request);
 }
 
+// packages/client/src/store/logs.ts
+var SEPARATOR_PREFIX = "--- ";
+var SUDO_NOTE_LINE = "Check your CLI for a sudo prompt";
+function joinLine(base, line) {
+  return base + (base === "" ? "" : "\n") + line;
+}
+function separatorLine(label) {
+  return SEPARATOR_PREFIX + label + "\n";
+}
+function seedProcessLog(store, label) {
+  const state = store.getSnapshot();
+  const base = state.ui.logs.getLogs ?? state.summary?.lastLogs ?? "";
+  store.dispatch({
+    type: "ui/patch",
+    patch: {
+      logs: {
+        ...state.ui.logs,
+        getLogs: joinLine(base, separatorLine(label))
+      }
+    }
+  });
+}
+function appendProcessLog(store, line) {
+  const logs = store.getSnapshot().ui.logs;
+  store.dispatch({
+    type: "ui/patch",
+    patch: { logs: { ...logs, getLogs: joinLine(logs.getLogs ?? "", line) } }
+  });
+}
+function appendLogChunk(store, chunk) {
+  const logs = store.getSnapshot().ui.logs;
+  store.dispatch({
+    type: "ui/patch",
+    patch: { logs: { ...logs, getLogs: (logs.getLogs ?? "") + chunk } }
+  });
+}
+function replaceLogBuffer(store, text) {
+  const logs = store.getSnapshot().ui.logs;
+  store.dispatch({
+    type: "ui/patch",
+    patch: { logs: { ...logs, getLogs: text } }
+  });
+}
+function appendCanceledLog(store) {
+  appendProcessLog(store, separatorLine("Canceled"));
+}
+
+// packages/client/src/store/logs-stream.ts
+var RECONNECT_BACKOFF_MS = 1e3;
+function clientRunLogKey(providers, engine, config, providerId) {
+  if (providerId !== void 0 && providerId.trim() !== "") {
+    return providerId;
+  }
+  const model = typeof config.model === "string" ? config.model : void 0;
+  if (model === void 0) {
+    return engine;
+  }
+  const match = providers.find(
+    (entry) => entry.engine === engine && (typeof entry.config.model === "string" ? entry.config.model : void 0) === model
+  );
+  return match !== void 0 ? match.id : engine;
+}
+var active = null;
+var logsPaneMounted = false;
+var lastRunKey = null;
+var catchUpTriedFor = null;
+var runInFlight = /* @__PURE__ */ new Set();
+function attachRunLogStream(store, key) {
+  if (active !== null && active.key === key) {
+    return handleFor(active);
+  }
+  detachActive();
+  const attachment = {
+    key,
+    controller: new AbortController(),
+    detached: false,
+    settled: false,
+    hostRunning: false,
+    reconnected: false
+  };
+  active = attachment;
+  openStream(store, attachment);
+  return handleFor(attachment);
+}
+function beginRun(store, key) {
+  runInFlight.add(key);
+  lastRunKey = key;
+  if (catchUpTriedFor === key) {
+    catchUpTriedFor = null;
+  }
+  if (logsPaneMounted) {
+    attachRunLogStream(store, key);
+  }
+}
+function endRun(store, key) {
+  runInFlight.delete(key);
+  if (lastRunKey === key) {
+    lastRunKey = null;
+  }
+  if (active === null || active.key !== key) {
+    return;
+  }
+  const editing = store.getSnapshot().ui.editingProviderId;
+  if (logsPaneMounted && editing !== null && editing !== key) {
+    attachRunLogStream(store, editing);
+    return;
+  }
+  detachActive();
+}
+function setLogsPaneMounted(store, mounted) {
+  if (logsPaneMounted === mounted) {
+    return;
+  }
+  logsPaneMounted = mounted;
+  if (!mounted) {
+    detachActive();
+    return;
+  }
+  retargetRunLogs(store);
+}
+function retargetRunLogs(store) {
+  if (!logsPaneMounted) {
+    return;
+  }
+  const target = paneTargetKey(store);
+  if (target === null || catchUpTriedFor === target) {
+    detachActive();
+    return;
+  }
+  if (active !== null && active.key === target) {
+    return;
+  }
+  attachRunLogStream(store, target);
+}
+function paneTargetKey(store) {
+  const state = store.getSnapshot();
+  const editing = state.ui.editingProviderId;
+  if (editing !== null) {
+    return editing;
+  }
+  if (lastRunKey !== null && runInFlight.has(lastRunKey)) {
+    return lastRunKey;
+  }
+  const summary = state.summary;
+  if (summary === null) {
+    return null;
+  }
+  const running = (summary.providers ?? []).find((entry) => entry.status === "running");
+  if (running !== void 0) {
+    return running.id;
+  }
+  return typeof summary.engineId === "string" && summary.engineId !== "" ? summary.engineId : null;
+}
+function handleFor(attachment) {
+  return {
+    detach() {
+      detachAttachment(attachment);
+    }
+  };
+}
+function detachAttachment(attachment) {
+  if (attachment.detached) {
+    return;
+  }
+  attachment.detached = true;
+  attachment.controller.abort();
+  if (active === attachment) {
+    active = null;
+  }
+}
+function detachActive() {
+  if (active !== null) {
+    detachAttachment(active);
+  }
+}
+function openStream(store, attachment) {
+  subscribeRunLogs(
+    attachment.key,
+    (event) => streamEvent(store, attachment, event),
+    attachment.controller.signal
+  ).then(() => endPass(store, attachment)).catch(() => endPass(store, attachment));
+}
+function streamEvent(store, attachment, event) {
+  if (attachment.detached || active !== attachment) {
+    return;
+  }
+  if (event.snapshot !== void 0) {
+    attachment.hostRunning = event.running === true;
+    replaceLogBuffer(store, event.snapshot);
+    if (!attachment.hostRunning && !runInFlight.has(attachment.key)) {
+      catchUpTriedFor = attachment.key;
+      attachment.settled = true;
+      detachAttachment(attachment);
+    }
+    return;
+  }
+  if (event.runBegin !== void 0) {
+    attachment.hostRunning = true;
+    replaceLogBuffer(store, event.runBegin);
+    return;
+  }
+  if (event.log !== void 0) {
+    appendLogChunk(store, event.log);
+    return;
+  }
+  if (event.runEnd !== void 0) {
+    attachment.hostRunning = false;
+    attachment.settled = true;
+    runInFlight.delete(attachment.key);
+  }
+}
+function endPass(store, attachment) {
+  if (attachment.detached || active !== attachment) {
+    return;
+  }
+  const runInFlightHere = !attachment.settled && (attachment.hostRunning || runInFlight.has(attachment.key));
+  if (runInFlightHere && !attachment.reconnected) {
+    attachment.reconnected = true;
+    setTimeout(() => {
+      if (attachment.detached || active !== attachment) {
+        return;
+      }
+      openStream(store, attachment);
+    }, RECONNECT_BACKOFF_MS);
+    return;
+  }
+  attachment.settled = true;
+  active = null;
+}
+
 // packages/client/src/store/sync.ts
 var ACTION_TIMEOUTS = {
   save: 3e4,
@@ -1520,6 +1765,12 @@ function downloadTemplate(store, repo) {
     return Promise.resolve();
   }
   const draft = state.draft;
+  const runKey = clientRunLogKey(
+    state.summary?.providers ?? [],
+    draft.engine,
+    state.summary?.config ?? {}
+  );
+  beginRun(store, runKey);
   const directory = typeof draft.config.modelDirectory === "string" ? draft.config.modelDirectory : void 0;
   return performTemplateAction(
     store,
@@ -1534,7 +1785,9 @@ function downloadTemplate(store, repo) {
       }
     ),
     TEMPLATE_DOWNLOAD_TIMEOUT
-  );
+  ).then(() => {
+    endRun(store, runKey);
+  });
 }
 
 // packages/client/src/render/ChatTemplateField.tsx
@@ -1997,46 +2250,6 @@ function stepForLine(line) {
   return null;
 }
 
-// packages/client/src/store/logs.ts
-var SEPARATOR_PREFIX = "--- ";
-var SUDO_NOTE_LINE = "Check your CLI for a sudo prompt";
-function joinLine(base, line) {
-  return base + (base === "" ? "" : "\n") + line;
-}
-function separatorLine(label) {
-  return SEPARATOR_PREFIX + label + "\n";
-}
-function seedProcessLog(store, label) {
-  const state = store.getSnapshot();
-  const base = state.ui.logs.getLogs ?? state.summary?.lastLogs ?? "";
-  store.dispatch({
-    type: "ui/patch",
-    patch: {
-      logs: {
-        ...state.ui.logs,
-        getLogs: joinLine(base, separatorLine(label))
-      }
-    }
-  });
-}
-function appendProcessLog(store, line) {
-  const logs = store.getSnapshot().ui.logs;
-  store.dispatch({
-    type: "ui/patch",
-    patch: { logs: { ...logs, getLogs: joinLine(logs.getLogs ?? "", line) } }
-  });
-}
-function appendLogChunk(store, chunk) {
-  const logs = store.getSnapshot().ui.logs;
-  store.dispatch({
-    type: "ui/patch",
-    patch: { logs: { ...logs, getLogs: (logs.getLogs ?? "") + chunk } }
-  });
-}
-function appendCanceledLog(store) {
-  appendProcessLog(store, separatorLine("Canceled"));
-}
-
 // packages/client/src/store/deps.ts
 var GET_IDLE_MS = 12e4;
 var GET_PROGRESS_THROTTLE_MS = 500;
@@ -2112,6 +2325,8 @@ function performInstall(store, t) {
   if (state.deps === null || draft === null) {
     return Promise.resolve();
   }
+  const runKey = clientRunLogKey(state.summary?.providers ?? [], draft.engine, draft.config);
+  beginRun(store, runKey);
   return performAction(
     store,
     "install",
@@ -2132,7 +2347,9 @@ function performInstall(store, t) {
       return "ok";
     }),
     ACTION_TIMEOUTS.install
-  );
+  ).then(() => {
+    endRun(store, runKey);
+  });
 }
 function performGet(store, t) {
   const state = store.getSnapshot();
@@ -2144,14 +2361,19 @@ function performGet(store, t) {
     return Promise.resolve();
   }
   const platform = (draft.platform ?? {})[draft.engine];
+  const runKey = clientRunLogKey(state.summary?.providers ?? [], draft.engine, draft.config);
   seedProcessLog(store, t.getting);
+  beginRun(store, runKey);
   const throttle = new ProgressThrottle(store, GET_PROGRESS_THROTTLE_MS);
-  const append = (chunk) => {
-    appendLogChunk(store, chunk);
+  const foldProgress = (chunk) => {
     const parsed = parseHfProgress(chunk, throttle.latest);
     if (parsed !== null && parsed !== throttle.latest) {
       throttle.note(parsed, false);
     }
+  };
+  const append = (text) => {
+    appendLogChunk(store, text);
+    foldProgress(text);
   };
   let idleTimer = null;
   let finished = false;
@@ -2188,6 +2410,7 @@ function performGet(store, t) {
   const settleRun = () => {
     forgetGetAbort(controller);
     throttle.settle();
+    endRun(store, runKey);
     finish(true);
   };
   return performAction(
@@ -2202,7 +2425,7 @@ function performGet(store, t) {
           ...platform !== void 0 ? { platform } : {}
         },
         (chunk) => {
-          append(chunk);
+          foldProgress(chunk);
           armIdle();
         },
         controller.signal,
@@ -2572,6 +2795,13 @@ function performEntryLaunch(store, provider, t) {
     return noHandle;
   }
   seedProcessLog(store, t.entryLaunching);
+  const runKey = clientRunLogKey(
+    store.getSnapshot().summary?.providers ?? [],
+    provider.engine,
+    provider.config,
+    provider.id
+  );
+  beginRun(store, runKey);
   move(store, provider.id, { type: "start" });
   let settled = false;
   let deadline = null;
@@ -2592,6 +2822,7 @@ function performEntryLaunch(store, provider, t) {
     settled = true;
     clearDeadline();
     forgetLaunchAbort(provider.id);
+    endRun(store, runKey);
     return true;
   };
   const handle = {
@@ -2667,6 +2898,13 @@ function performEntryStop(store, provider) {
   if (priorStatus === "failed") {
     return noHandle;
   }
+  const runKey = clientRunLogKey(
+    store.getSnapshot().summary?.providers ?? [],
+    provider.engine,
+    provider.config,
+    provider.id
+  );
+  beginRun(store, runKey);
   move(store, provider.id, { type: "stop" });
   let poll = null;
   let deadline = null;
@@ -2683,9 +2921,13 @@ function performEntryStop(store, provider) {
   };
   const handle = {
     cancel() {
-      settled = true;
-      clearTimers();
+      settleStop();
     }
+  };
+  const settleStop = () => {
+    settled = true;
+    clearTimers();
+    endRun(store, runKey);
   };
   const pollFn = () => {
     if (settled) {
@@ -2696,8 +2938,7 @@ function performEntryStop(store, provider) {
     );
     if (entry !== void 0 && entry.status !== "running") {
       move(store, provider.id, { type: "stopped" });
-      settled = true;
-      clearTimers();
+      settleStop();
       return;
     }
     void repriceSummary(store);
@@ -2708,8 +2949,7 @@ function performEntryStop(store, provider) {
     if (settled) {
       return;
     }
-    settled = true;
-    clearTimers();
+    settleStop();
     move(store, provider.id, { type: "stopFailed" });
   }, STOP_HEALTH_DEADLINE_MS);
   void postStop({
@@ -2747,6 +2987,13 @@ function performDraftLaunch(store, t) {
   }
   const draft = state.draft;
   const abortKey = state.ui.editingProviderId ?? "draft";
+  const runKey = clientRunLogKey(
+    state.summary?.providers ?? [],
+    draft.engine,
+    draft.config,
+    state.ui.editingProviderId ?? void 0
+  );
+  beginRun(store, runKey);
   const controller = new AbortController();
   trackLaunchAbort(abortKey, controller);
   return performAction(
@@ -2775,7 +3022,9 @@ function performDraftLaunch(store, t) {
       store.dispatch({ type: "ui/patch", patch: { sudoPending: false } });
     }),
     ACTION_TIMEOUTS.launch
-  );
+  ).then(() => {
+    endRun(store, runKey);
+  });
 }
 function performDraftStop(store, t) {
   const state = store.getSnapshot();
@@ -3014,6 +3263,12 @@ function LogsPanel(props) {
   const displayedLogs = deriveDisplayedLogs(state);
   const textareaRef = react.useRef(null);
   const dragRef = react.useRef(null);
+  react.useEffect(() => {
+    setLogsPaneMounted(store, true);
+    return () => {
+      setLogsPaneMounted(store, false);
+    };
+  }, [store]);
   const getFailed = state.actions.get.status === "error";
   const gettingInFlight = isGettingInFlight(state);
   const chipsVisible = state.ui.logs.getLogs !== null && (gettingInFlight || getFailed);
@@ -3212,6 +3467,14 @@ function performDownload(store, t) {
   }
   const model = typeof draft.config.model === "string" ? draft.config.model : void 0;
   const directory = typeof draft.config.modelDirectory === "string" ? draft.config.modelDirectory : void 0;
+  const storedConfig = state.summary?.config ?? {};
+  const runModel = model ?? (typeof storedConfig.model === "string" ? storedConfig.model : "");
+  const runKey = clientRunLogKey(
+    state.summary?.providers ?? [],
+    draft.engine,
+    runModel === "" ? {} : { model: runModel }
+  );
+  beginRun(store, runKey);
   return performAction(
     store,
     "download",
@@ -3227,7 +3490,9 @@ function performDownload(store, t) {
       throw new Error(t.downloadFailed + (result.detail ? ": " + result.detail : ""));
     }),
     ACTION_TIMEOUTS.download
-  );
+  ).then(() => {
+    endRun(store, runKey);
+  });
 }
 
 // packages/client/src/Card.tsx
@@ -3434,8 +3699,8 @@ function card(_react, localeRef, _primitives) {
   return function Card() {
     const store = useCardStore();
     const state = store.getSnapshot();
-    const active = react.useSyncExternalStore(subscribeLocale, readLocale, readLocale);
-    const t = labels(active);
+    const active2 = react.useSyncExternalStore(subscribeLocale, readLocale, readLocale);
+    const t = labels(active2);
     const draftRef = react.useRef(null);
     const repriceTimerRef = react.useRef(null);
     const draft = state.draft;
@@ -3465,6 +3730,9 @@ function card(_react, localeRef, _primitives) {
         }
       };
     }, []);
+    react.useEffect(() => {
+      retargetRunLogs(store);
+    }, [state.ui.editingProviderId, state.summary]);
     useChatTemplateAutoDownload(store);
     const onValue = (key, value) => {
       const current = store.getSnapshot();
@@ -3903,8 +4171,8 @@ var NOTE_STYLE = {
 function orchestratorCard(_react, localeRef) {
   const { subscribeLocale, readLocale } = localeStores(localeRef);
   return function OrchestratorCard() {
-    const active = react.useSyncExternalStore(subscribeLocale, readLocale, readLocale);
-    const t = labels(active);
+    const active2 = react.useSyncExternalStore(subscribeLocale, readLocale, readLocale);
+    const t = labels(active2);
     const [model, setModel] = react.useState(null);
     const [loadError, setLoadError] = react.useState("");
     const [draft, setDraft] = react.useState(null);

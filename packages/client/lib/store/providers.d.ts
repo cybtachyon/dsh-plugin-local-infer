@@ -112,7 +112,10 @@ export declare function openEntryLogs(store: CardStore, provider: ProviderSummar
  * without a result, or a fetch failure settles to failed (the control becomes
  * a red Logs). A result re-fetches the summary and deps read models, so the
  * provider's status dot repaints from red to green and the deps panel
- * re-prices.
+ * re-prices. The run's live output reaches the Logs buffer through the
+ * attached run-log stream: beginRun names the run key (the host keys this
+ * launch on the provider id, per the mirrored runLogKey rule) and the run's
+ * settle detaches it.
  */
 export declare function performEntryLaunch(store: CardStore, provider: ProviderSummaryEntry, t: TextTable): EntryTimerHandle;
 /**
@@ -127,7 +130,9 @@ export declare function performEntryLaunch(store: CardStore, provider: ProviderS
  * settle each) instead of riding the launch driver's armDeadline slot: the
  * launch deadline serves two owners (health and sudo) of one run, while the
  * stop settles through the machine's cause-aware stopFailed event, so the two
- * paths share no timer state to drift apart.
+ * paths share no timer state to drift apart. The stop brackets one run-log
+ * stream (the host keys the stop on the provider id), detached at whichever
+ * settle path lands first.
  */
 export declare function performEntryStop(store: CardStore, provider: ProviderSummaryEntry): EntryTimerHandle;
 /**

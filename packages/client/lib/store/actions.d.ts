@@ -58,7 +58,10 @@ export declare function performUnregister(store: CardStore, t: TextTable): Promi
  * the download route's hf CLI. On a successful pull it re-fetches both read
  * models (the summary and the deps panel) through repriceAll (the model
  * status row re-checks the directory and hides). A failed pull settles the
- * cell to error with the route's own detail.
+ * cell to error with the route's own detail. The pull brackets one run-log
+ * stream: the host keys it on the download's model (the request's, else the
+ * stored config's) paired with the engine, per the mirrored runLogKey rule,
+ * so the pane reads the hf download live until the round trip settles.
  */
 export declare function performDownload(store: CardStore, t: TextTable): Promise<void>;
 //# sourceMappingURL=actions.d.ts.map

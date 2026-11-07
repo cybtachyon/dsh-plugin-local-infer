@@ -13,9 +13,10 @@
  */
 import { fetchDeps, fetchSummary, postGet, postInstall, postSave, } from "../api/routes.js";
 import { cancelInFlightRuns, forgetGetAbort, hasInFlightGet, trackGetAbort, } from "./abort.js";
+import { appendCanceledLog, appendLogChunk, seedProcessLog } from "./logs.js";
+import { beginRun, clientRunLogKey, endRun } from "./logs-stream.js";
 import { ProgressThrottle } from "./progress-throttle.js";
 import { parseHfProgress } from "./progress.js";
-import { appendCanceledLog, appendLogChunk, seedProcessLog } from "./logs.js";
 import { performAction, ACTION_TIMEOUTS } from "./sync.js";
 /**
  * GET_IDLE_MS is the Get run's output-idle cap in ms. Two minutes without a
@@ -144,7 +145,10 @@ export function performAllowRun(store, checked) {
  * gate from the same re-check the install ran: a passed re-check reads as
  * the satisfied note, a failed one names the unsatisfied deps. A route
  * refusal (the trust gate off) settles the install cell to error with the
- * route's own message, which the panel renders as the deps note.
+ * route's own message, which the panel renders as the deps note. The install
+ * brackets one run-log stream (the host keys it on the request's engine and
+ * config, per the mirrored runLogKey rule), detached when the round trip
+ * settles.
  */
 export function performInstall(store, t) {
     const state = store.getSnapshot();
@@ -152,6 +156,8 @@ export function performInstall(store, t) {
     if (state.deps === null || draft === null) {
         return Promise.resolve();
     }
+    const runKey = clientRunLogKey(state.summary?.providers ?? [], draft.engine, draft.config);
+    beginRun(store, runKey);
     return performAction(store, 'install', () => postInstall({ engine: draft.engine, config: draft.config }).then((body) => {
         // The acked model clears the deps note, so the result note lands
         // after it.
@@ -169,14 +175,21 @@ export function performInstall(store, t) {
                 .join('; '),
         });
         return 'ok';
-    }), ACTION_TIMEOUTS.install);
+    }), ACTION_TIMEOUTS.install).then(() => {
+        endRun(store, runKey);
+    });
 }
 /**
  * performGet runs the git sync, the dependency plan, and the build through
  * the get route's NDJSON stream. The click seeds the Logs section's streamed
  * buffer from the persisted last-run logs with a "Getting engine and
- * model..." separator, so the run reads as a fresh Logs section. Each log
- * event appends to the buffer and re-arms the idle cap: two minutes without a
+ * model..." separator, so the run reads as a fresh Logs section, and
+ * brackets one run-log stream under the key the host's get route writes (no
+ * providerId, the draft's engine and config, per the mirrored runLogKey
+ * rule): the run's live text reaches the Logs buffer through that stream
+ * (Q2), NOT through the get route's own log events, so no line lands twice
+ * (the route's log events drop in TASK-005). Each streamed chunk still
+ * re-arms the idle cap: two minutes without a
  * line settles the get cell (the control re-enables) while the run keeps
  * streaming in the background. The run folds the streamed tqdm state into
  * the ui.getProgress readout through the ProgressThrottle (the 500 ms
@@ -209,21 +222,32 @@ export function performGet(store, t) {
         return Promise.resolve();
     }
     const platform = (draft.platform ?? {})[draft.engine];
+    // The key rule mirrors the host's get-route key (the route names no
+    // providerId, so the draft's engine and model pick the stored entry, else
+    // the engine id), and the run brackets one stream for it.
+    const runKey = clientRunLogKey(state.summary?.providers ?? [], draft.engine, draft.config);
     seedProcessLog(store, t.getting);
+    beginRun(store, runKey);
     // The readout throttle: a { progress } event (the server-parsed state)
     // wins over the text parse of a log chunk, and settle lands the latest
     // state before clearing the field, so the readout never outlives the run.
     const throttle = new ProgressThrottle(store, GET_PROGRESS_THROTTLE_MS);
-    const append = (chunk) => {
-        appendLogChunk(store, chunk);
-        // The text parse is the fallback for hosts that stream log text without
-        // progress events: fold the chunk into the latest state, and note the
-        // state only when the chunk carries a bar update (the fold returns the
-        // prior state unchanged otherwise).
+    // The text parse is the fallback for hosts that stream log text without
+    // progress events: fold the chunk into the latest state, and note the
+    // state only when the chunk carries a bar update (the fold returns the
+    // prior state unchanged otherwise).
+    const foldProgress = (chunk) => {
         const parsed = parseHfProgress(chunk, throttle.latest);
         if (parsed !== null && parsed !== throttle.latest) {
             throttle.note(parsed, false);
         }
+    };
+    // append writes the buffer directly: the client's own notes (the failure
+    // line) take this path, while the run's live text reaches the buffer
+    // through the attached run-log stream (Q2).
+    const append = (text) => {
+        appendLogChunk(store, text);
+        foldProgress(text);
     };
     let idleTimer = null;
     let finished = false;
@@ -266,11 +290,12 @@ export function performGet(store, t) {
     const controller = new AbortController();
     trackGetAbort(controller);
     // settleRun lands the run's side effects (the abort registry entry, the
-    // progress settle, the re-read of both read models) once, whichever settle
-    // path lands first.
+    // progress settle, the run-log stream, the re-read of both read models)
+    // once, whichever settle path lands first.
     const settleRun = () => {
         forgetGetAbort(controller);
         throttle.settle();
+        endRun(store, runKey);
         finish(true);
     };
     return performAction(store, 'get', () => new Promise((resolve, reject) => {
@@ -280,7 +305,12 @@ export function performGet(store, t) {
             config: draft.config,
             ...(platform !== undefined ? { platform } : {}),
         }, (chunk) => {
-            append(chunk);
+            // The chunk's text no longer feeds the buffer here (the attached
+            // run-log stream carries the run's lines; appending them at both
+            // readers would land every Get line twice). The progress fold
+            // and the idle cap keep riding the streamed chunk while the
+            // route still emits log events (they drop in TASK-005).
+            foldProgress(chunk);
             armIdle();
         }, controller.signal, (progress) => {
             // The structured event is the server-parsed state: it wins over
