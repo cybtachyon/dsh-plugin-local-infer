@@ -41,6 +41,7 @@ export interface SaveRequest {
     platform?: Record<string, StoredPlatformConfig>;
     showHelp?: boolean;
     logPath?: string;
+    autoRebuild?: boolean;
     id?: string;
     settingsOnly?: boolean;
 }

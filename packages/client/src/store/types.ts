@@ -38,17 +38,22 @@ export interface LaunchStoreEntry extends LaunchEntry {
 
 /**
  * CardDraft is the card's local edit of one engine's config: the engine id,
- * the form field values, and the unsaved per-engine platform edits (the
- * Engine Directory and Engine Fork fields) a Save persists. The draft is
- * the only source for form field values; a field edit updates it, sets
- * dirty, and schedules the debounced re-price, and a summary ack merges its
- * persisted fields back into it without clobbering the local edits.
+ * the form field values, the unsaved per-engine platform edits (the Engine
+ * Directory and Engine Fork fields) a Save persists, and the per-provider
+ * Auto Rebuild checkbox a Save records with the entry. The draft is the only
+ * source for form field values; a field edit updates it, sets dirty, and
+ * schedules the debounced re-price, and a summary ack merges its persisted
+ * fields back into it without clobbering the local edits (the checkbox
+ * rides the draft through that merge).
  */
 export interface CardDraft {
   engine: string
   config: Config
   // The unsaved platform edits, absent while the draft carries none.
   platform?: Record<string, StoredPlatformConfig>
+  // The Auto Rebuild checkbox edit, absent while the draft carries none (an
+  // absent value reads as unchecked).
+  autoRebuild?: boolean
 }
 
 /**
@@ -129,15 +134,15 @@ export interface LogsPaneState {
 
 /**
  * CardUiState is the UI-local state the card keeps and never syncs: the
- * help, Auto Rebuild, and agent-default toggles, the provider form mode and
- * its editing context, the log-location field, the Logs pane, and the
- * structured Get download progress. None of it crosses a server round
- * trip; the save route persists showHelp and logPath as stored
- * preferences, not as ui state.
+ * help and agent-default toggles, the provider form mode and its editing
+ * context, the log-location field, the Logs pane, and the structured Get
+ * download progress. None of it crosses a server round trip; the save
+ * route persists showHelp and logPath as stored preferences, not as ui
+ * state, and the Auto Rebuild checkbox rides the draft, not ui state, so
+ * it persists with the provider being edited.
  */
 export interface CardUiState {
   help: boolean
-  autoRebuild: boolean
   agentDefault: boolean
   providerFormMode: ProviderFormMode
   editingProviderId: string | null
@@ -218,8 +223,8 @@ function idleActionState(): ActionState {
 /**
  * initialCardState builds the store's starting state: no summary, no draft,
  * idle action cells, and the ui defaults the card's first render reads
- * (help on, Auto Rebuild on, the form collapsed, the Logs pane at its
- * default height in fresh mode).
+ * (help on, the form collapsed, the Logs pane at its default height in
+ * fresh mode).
  */
 export function initialCardState(): CardState {
   return {
@@ -243,7 +248,6 @@ export function initialCardState(): CardState {
     notes: { deps: '', copy: '' },
     ui: {
       help: true,
-      autoRebuild: true,
       agentDefault: false,
       providerFormMode: 'collapsed',
       editingProviderId: null,

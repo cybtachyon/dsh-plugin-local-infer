@@ -140,7 +140,7 @@ describe('the form server-mutation drivers (store/actions.ts)', () => {
     const provider = providerWith()
     seedDraft(store, provider)
     store.dispatch({ type: 'ui/patch', patch: { editingProviderId: 'p1' } })
-    const { fetchMock } = routeFetch({
+    const { calls, fetchMock } = routeFetch({
       '/local-infer/save': () => jsonAnswer(summaryWith([provider])),
       '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
       '/local-infer/deps': () => jsonAnswer({ engineId: 'ninfer' }),
@@ -156,6 +156,35 @@ describe('the form server-mutation drivers (store/actions.ts)', () => {
     // The form collapsed back to the entry list.
     expect(state().ui.editingProviderId).toBeNull()
     expect(state().ui.providerFormMode).toBe('collapsed')
+    // A draft with no checkbox edit saves the entry as unchecked.
+    const save = calls.find((call) => call.url === '/local-infer/save')
+    expect(JSON.parse(String(save?.init?.body)).autoRebuild).toBe(false)
+  })
+
+  it('performSave records the draft autoRebuild value with the entry', async () => {
+    const { store } = makeStore()
+    const provider = providerWith()
+    seedDraft(store, provider)
+    store.dispatch({
+      type: 'draft/edit',
+      draft: {
+        engine: 'ninfer',
+        config: { model: 'a-model' },
+        platform: {},
+        autoRebuild: true,
+      },
+    })
+    store.dispatch({ type: 'ui/patch', patch: { editingProviderId: 'p1' } })
+    const { calls, fetchMock } = routeFetch({
+      '/local-infer/save': () => jsonAnswer(summaryWith([provider])),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const promise = performSave(store, t)
+    vi.advanceTimersByTime(0)
+    await flush()
+    await promise
+    const save = calls.find((call) => call.url === '/local-infer/save')
+    expect(JSON.parse(String(save?.init?.body)).autoRebuild).toBe(true)
   })
 
   it('performDiscard reverts the draft and collapses the form (local-only)', async () => {

@@ -717,8 +717,14 @@ function summaryAck(state, summary) {
   const draft = state.draft !== null ? {
     engine: state.draft.engine,
     config: state.draft.config,
-    platform: mergedPlatform
+    platform: mergedPlatform,
+    // The Auto Rebuild checkbox is a draft-local edit, not a platform
+    // field: the live value rides through the merge (an absent value
+    // stays absent, which reads as unchecked).
+    ...state.draft.autoRebuild === void 0 ? {} : { autoRebuild: state.draft.autoRebuild }
   } : {
+    // A null-draft seed leaves autoRebuild absent: a fresh form reads
+    // as unchecked.
     engine: summary.engineId,
     config: summary.config,
     platform: mergedPlatform
@@ -853,7 +859,6 @@ function initialCardState() {
     notes: { deps: "", copy: "" },
     ui: {
       help: true,
-      autoRebuild: true,
       agentDefault: false,
       providerFormMode: "collapsed",
       editingProviderId: null,
@@ -2658,7 +2663,10 @@ function editProvider(store, provider) {
     draft: {
       engine: provider.engine,
       config: provider.config,
-      platform: { [provider.engine]: provider.platform }
+      platform: { [provider.engine]: provider.platform },
+      // A stored entry saved before the autoRebuild key existed (or saved
+      // while it was never checked) reads as an unchecked checkbox.
+      autoRebuild: provider.autoRebuild ?? false
     }
   });
   void repriceAll(store, { engine: provider.engine, config: provider.config });
@@ -2787,7 +2795,11 @@ function performEntryLaunch(store, provider, t) {
       engine: provider.engine,
       config: provider.config,
       platform: { [provider.engine]: provider.platform },
-      providerId: provider.id
+      providerId: provider.id,
+      // The entry's stored checkbox: an entry without the key launches with
+      // the rebuild steps skipped (an entry saved before the key existed
+      // reads as unchecked, like a newly created one).
+      autoRebuild: provider.autoRebuild ?? false
     },
     onStep,
     controller.signal,
@@ -2888,7 +2900,7 @@ function draftLaunchBody(store) {
   const draft = state.draft;
   const platform = draft !== null ? (draft.platform ?? {})[draft.engine] : void 0;
   const body = {
-    autoRebuild: state.ui.autoRebuild
+    autoRebuild: draft?.autoRebuild ?? false
   };
   if (draft !== null) {
     body.engine = draft.engine;
@@ -3368,7 +3380,10 @@ function performSave(store, t) {
       allowRunDeps: state.deps !== null && state.deps.runAllowed === true,
       platform: draft.platform ?? {},
       showHelp: state.ui.help,
-      logPath: state.ui.logPath
+      logPath: state.ui.logPath,
+      // Every card save records the draft's Auto Rebuild checkbox with the
+      // provider entry (an absent draft value saves as unchecked).
+      autoRebuild: draft.autoRebuild ?? false
     }).then((summary) => {
       store.dispatch({ type: "summary/ack", summary });
       store.dispatch({
@@ -4059,9 +4074,12 @@ function card(_react, localeRef, _primitives) {
       () => performGetCancel(store),
       t.cancel
     ), renderCheckbox({
-      checked: state.ui.autoRebuild,
+      checked: currentDraft.autoRebuild ?? false,
       onChange: (next) => {
-        store.dispatch({ type: "ui/patch", patch: { autoRebuild: next } });
+        store.dispatch({
+          type: "draft/edit",
+          draft: { ...currentDraft, autoRebuild: next }
+        });
       },
       label: t.autoRebuild
     })), launchCell.status === "error" && launchCell.detail !== "" ? /* @__PURE__ */ react.createElement("div", { style: { fontSize: 12 } }, launchCell.detail === "timeout" ? t.launchFailed : launchCell.detail) : null, stopCell.status === "error" && stopCell.detail !== "" ? /* @__PURE__ */ react.createElement("div", { style: { fontSize: 12 } }, stopCell.detail === "timeout" ? t.stopFailed : stopCell.detail) : null, /* @__PURE__ */ react.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginTop: 8 } }, renderButton(

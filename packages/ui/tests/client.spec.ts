@@ -134,9 +134,10 @@ describe('dsh/client.js artifact source pins', () => {
     // opens the entry for editing when the launch times out. The lifecycle
     // state lives in the per-provider launch map (state.launch), driven by the
     // performEntryLaunch / performEntryStop drivers. The main Launch is
-    // performDraftLaunch, and the Auto Rebuild checkbox (checked by default)
-    // rides the launch body: unchecked, the route skips the git sync and
-    // launches the checkout as-is.
+    // performDraftLaunch, and the Auto Rebuild checkbox renders from the
+    // draft (an absent value reads unchecked): the draft launch body carries
+    // the draft's value, and the per-entry launch carries the stored
+    // provider's. Unchecked, the route skips the sync, build, and pull.
     expect(source).toContain('lastLogs')
     expect(source).toContain('logPath')
     expect(source).toContain('EntryLaunchButton')
@@ -146,7 +147,9 @@ describe('dsh/client.js artifact source pins', () => {
     expect(source).toContain('state.launch')
     expect(source).toContain('performDraftLaunch')
     expect(source).toContain('autoRebuild')
-    expect(source).toContain('autoRebuild: state.ui.autoRebuild')
+    expect(source).toContain('autoRebuild: draft?.autoRebuild ?? false')
+    expect(source).toContain('autoRebuild: provider.autoRebuild ?? false')
+    expect(source).toContain('checked: currentDraft.autoRebuild ?? false')
   })
 
   it('pins the Logs auto-scroll and the vertical resize handle', () => {

@@ -78,6 +78,9 @@ export function editProvider(store, provider) {
             engine: provider.engine,
             config: provider.config,
             platform: { [provider.engine]: provider.platform },
+            // A stored entry saved before the autoRebuild key existed (or saved
+            // while it was never checked) reads as an unchecked checkbox.
+            autoRebuild: provider.autoRebuild ?? false,
         },
     });
     void repriceAll(store, { engine: provider.engine, config: provider.config });
@@ -295,6 +298,10 @@ export function performEntryLaunch(store, provider, t) {
         config: provider.config,
         platform: { [provider.engine]: provider.platform },
         providerId: provider.id,
+        // The entry's stored checkbox: an entry without the key launches with
+        // the rebuild steps skipped (an entry saved before the key existed
+        // reads as unchecked, like a newly created one).
+        autoRebuild: provider.autoRebuild ?? false,
     }, onStep, controller.signal, onSudo)
         .then((result) => {
         if (settle() !== true) {
@@ -421,14 +428,15 @@ export function performEntryStop(store, provider) {
 }
 // draftLaunchBody builds the launch/stop body the draft-based control sends:
 // the draft's engine, config, and the per-engine platform entry (the unsaved
-// Engine Directory / Fork edits), the Auto Rebuild flag, and the provider id
-// the form is editing (the route persists the launch record on that entry).
+// Engine Directory / Fork edits), the draft's Auto Rebuild checkbox (an
+// absent value launches as unchecked), and the provider id the form is
+// editing (the route persists the launch record on that entry).
 function draftLaunchBody(store) {
     const state = store.getSnapshot();
     const draft = state.draft;
     const platform = draft !== null ? (draft.platform ?? {})[draft.engine] : undefined;
     const body = {
-        autoRebuild: state.ui.autoRebuild,
+        autoRebuild: draft?.autoRebuild ?? false,
     };
     if (draft !== null) {
         body.engine = draft.engine;

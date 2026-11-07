@@ -205,6 +205,8 @@ describe('the provider list drivers (store/providers.ts)', () => {
         engine: 'ninfer',
         config: { model: 'a-model' },
         platform: { ninfer: { engineDirectory: '/eng/ninfer' } },
+        // The entry stores no autoRebuild key: the checkbox loads unchecked.
+        autoRebuild: false,
       })
       // A loaded provider reads as saved, not dirty.
       expect(state().dirty).toBe(false)
@@ -213,6 +215,38 @@ describe('the provider list drivers (store/providers.ts)', () => {
         (call) => String(call[0]).startsWith('/local-infer/summary'),
       )
       expect(String(summary?.[0])).toContain('engine=ninfer')
+    })
+
+    it('defaults an entry without the stored autoRebuild key to unchecked', () => {
+      const { store, state } = makeStore()
+      const provider = providerWith()
+      store.dispatch({
+        type: 'summary/ack',
+        summary: summaryWith([provider]),
+      })
+      const { fetchMock } = routeFetch({
+        '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
+        '/local-infer/deps': () => jsonAnswer({ engineId: 'ninfer' }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      editProvider(store, provider)
+      expect(state().draft?.autoRebuild).toBe(false)
+    })
+
+    it('loads a stored autoRebuild true into the draft', () => {
+      const { store, state } = makeStore()
+      const provider = providerWith({ autoRebuild: true })
+      store.dispatch({
+        type: 'summary/ack',
+        summary: summaryWith([provider]),
+      })
+      const { fetchMock } = routeFetch({
+        '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
+        '/local-infer/deps': () => jsonAnswer({ engineId: 'ninfer' }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      editProvider(store, provider)
+      expect(state().draft?.autoRebuild).toBe(true)
     })
   })
 
@@ -368,6 +402,32 @@ describe('the provider list drivers (store/providers.ts)', () => {
       expect(state().draft?.config).toEqual({ model: 'in-progress' })
     })
 
+    it('keeps the checkbox value through the cachedDraft round trip', async () => {
+      const { store, state } = makeStore()
+      const provider = providerWith()
+      store.dispatch({
+        type: 'summary/ack',
+        summary: summaryWith([provider]),
+      })
+      // The form carries a checked Auto Rebuild edit before Edit opens the
+      // stored entry (Edit caches it), so New provider must restore it.
+      store.dispatch({
+        type: 'draft/edit',
+        draft: { engine: 'ninfer', config: { model: 'in-progress' }, autoRebuild: true },
+      })
+      const { fetchMock } = routeFetch({
+        '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
+        '/local-infer/deps': () => jsonAnswer({ engineId: 'ninfer' }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      editProvider(store, provider)
+      expect(state().ui.cachedDraft?.autoRebuild).toBe(true)
+      newProvider(store)
+      await flush()
+      expect(state().draft?.autoRebuild).toBe(true)
+      expect(state().draft?.config).toEqual({ model: 'in-progress' })
+    })
+
     it('clears ui.sudoPending when a fresh provider abandons the draft run', async () => {
       const { store, state } = makeStore()
       const provider = providerWith()
@@ -406,6 +466,8 @@ describe('the provider list drivers (store/providers.ts)', () => {
         config: {},
         platform: {},
       })
+      // A fresh draft carries no autoRebuild key: it reads as unchecked.
+      expect('autoRebuild' in (state().draft ?? {})).toBe(false)
       // The re-price keeps the draft's config (the fresh provider's blank
       // config), the improved config value display the T3.8 note requires.
       await flush()
@@ -528,6 +590,48 @@ describe('the provider list drivers (store/providers.ts)', () => {
   })
 
   describe('performEntryLaunch', () => {
+    it('sends the stored autoRebuild value in the launch body', async () => {
+      const { store } = makeStore()
+      const provider = providerWith({ autoRebuild: true })
+      store.dispatch({
+        type: 'summary/ack',
+        summary: summaryWith([provider]),
+      })
+      const stream = launchStream()
+      const { calls, fetchMock } = routeFetch({
+        '/local-infer/launch': () => stream.response(),
+        '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      performEntryLaunch(store, provider, t)
+      const launch = calls.find((call) => call.url === '/local-infer/launch')
+      expect(JSON.parse(String(launch?.init?.body)).autoRebuild).toBe(true)
+      stream.enqueue('{"result":{"healthy":true}}')
+      stream.close()
+      await flush(50)
+    })
+
+    it('sends autoRebuild false for an entry stored without the key', async () => {
+      const { store } = makeStore()
+      const provider = providerWith()
+      store.dispatch({
+        type: 'summary/ack',
+        summary: summaryWith([provider]),
+      })
+      const stream = launchStream()
+      const { calls, fetchMock } = routeFetch({
+        '/local-infer/launch': () => stream.response(),
+        '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      performEntryLaunch(store, provider, t)
+      const launch = calls.find((call) => call.url === '/local-infer/launch')
+      expect(JSON.parse(String(launch?.init?.body)).autoRebuild).toBe(false)
+      stream.enqueue('{"result":{"healthy":true}}')
+      stream.close()
+      await flush(50)
+    })
+
     it('ignores a launch while a rebuild phase is in flight', () => {
       const { store, state } = makeStore()
       const provider = providerWith()
@@ -969,14 +1073,43 @@ describe('the provider list drivers (store/providers.ts)', () => {
         summary: summaryWith([provider]),
       })
       const stream = launchStream()
-      const { fetchMock } = routeFetch({
+      const { calls, fetchMock } = routeFetch({
         '/local-infer/launch': () => stream.response(),
         '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
         '/local-infer/deps': () => jsonAnswer({ engineId: 'ninfer' }),
       })
       vi.stubGlobal('fetch', fetchMock)
-      return { ...made, stream }
+      return { ...made, stream, calls }
     }
+
+    it('sends the draft autoRebuild value in the launch body', async () => {
+      const provider = providerWith()
+      const { store, stream, calls } = draftLaunchHarness(provider)
+      store.dispatch({
+        type: 'draft/edit',
+        draft: { engine: 'ninfer', config: { model: 'a-model' }, autoRebuild: true },
+      })
+      const run = performDraftLaunch(store, t)
+      stream.enqueue('{"result":{"healthy":true}}')
+      stream.close()
+      await run
+      const launch = calls.find((call) => call.url === '/local-infer/launch')
+      expect(JSON.parse(String(launch?.init?.body)).autoRebuild).toBe(true)
+    })
+
+    it('sends autoRebuild false when the draft carries no checkbox value', async () => {
+      const provider = providerWith()
+      // The harness seeds the draft through the summary ack: a null-draft
+      // seed leaves the key absent, so the launch body carries false.
+      const { store, stream, calls } = draftLaunchHarness(provider)
+      expect('autoRebuild' in (store.getSnapshot().draft ?? {})).toBe(false)
+      const run = performDraftLaunch(store, t)
+      stream.enqueue('{"result":{"healthy":true}}')
+      stream.close()
+      await run
+      const launch = calls.find((call) => call.url === '/local-infer/launch')
+      expect(JSON.parse(String(launch?.init?.body)).autoRebuild).toBe(false)
+    })
 
     it('sets ui.sudoPending on a sudo event and clears it when the run settles healthy', async () => {
       const provider = providerWith()

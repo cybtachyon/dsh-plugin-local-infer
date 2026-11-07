@@ -23,8 +23,8 @@ function idleActionState() {
 /**
  * initialCardState builds the store's starting state: no summary, no draft,
  * idle action cells, and the ui defaults the card's first render reads
- * (help on, Auto Rebuild on, the form collapsed, the Logs pane at its
- * default height in fresh mode).
+ * (help on, the form collapsed, the Logs pane at its default height in
+ * fresh mode).
  */
 export function initialCardState() {
     return {
@@ -48,7 +48,6 @@ export function initialCardState() {
         notes: { deps: '', copy: '' },
         ui: {
             help: true,
-            autoRebuild: true,
             agentDefault: false,
             providerFormMode: 'collapsed',
             editingProviderId: null,

@@ -75,7 +75,7 @@ describe('client store instance (store/useCardStore.ts)', () => {
     const store = createCardStore()
     const a = store.getSnapshot()
     expect(store.getSnapshot()).toBe(a)
-    store.dispatch({ type: 'ui/patch', patch: { autoRebuild: false } })
+    store.dispatch({ type: 'ui/patch', patch: { agentDefault: true } })
     expect(store.getSnapshot()).not.toBe(a)
   })
 
