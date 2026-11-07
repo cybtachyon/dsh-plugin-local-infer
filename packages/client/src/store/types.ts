@@ -116,12 +116,13 @@ export type ProviderFormMode = 'collapsed' | 'editing' | 'new'
 export type LogsScrollMode = 'fresh' | 'scrolling' | 'manual'
 
 /**
- * LogsPaneState is the Logs pane state: the streamed Get output buffer (null
- * while no run is in flight, so the pane shows the summary's lastLogs
- * instead), the chevron-resized height, and the auto-scroll mode.
+ * LogsPaneState is the Logs pane state: the live run-log buffer the attached
+ * run-log stream feeds (null while no live run feeds it, so the pane shows
+ * the summary's lastLogs instead), the chevron-resized height, and the
+ * auto-scroll mode.
  */
 export interface LogsPaneState {
-  getLogs: string | null
+  liveLogs: string | null
   height: number
   scrollMode: LogsScrollMode
 }
@@ -249,7 +250,7 @@ export function initialCardState(): CardState {
       deletingProviderId: null,
       cachedDraft: null,
       logPath: '',
-      logs: { getLogs: null, height: 96, scrollMode: 'fresh' },
+      logs: { liveLogs: null, height: 96, scrollMode: 'fresh' },
       getProgress: null,
       sudoPending: false,
     },

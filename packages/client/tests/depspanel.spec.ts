@@ -410,13 +410,15 @@ describe('the deps panel control handlers (render/DepsPanel.tsx)', () => {
       const getButton = children(controlRow)[2]
       ;(getButton.props.onClick as () => void)()
       vi.advanceTimersByTime(0)
-      stream.enqueue('{"log":"building...\\n"}\n')
+      stream.enqueue('{"progress":{"percent":40}}\n')
       await flush()
-      // The click seeded the buffer, and the get route's own chunks no
-      // longer feed it: the attached run-log stream (Q2) carries the run's
-      // live text, so no line lands twice.
-      expect(state().ui.logs.getLogs).toContain(t.getting)
-      expect(state().ui.logs.getLogs).not.toContain('building...')
+      // The click seeds nothing (the host's beginRun seed reaches the pane as
+      // runBegin/snapshot through the stream), the route's answer carries
+      // progress only, and this harness mounts no Logs pane, so no run-log
+      // stream attaches: the buffer stays null while the progress readout
+      // folds. No line ever lands twice.
+      expect(state().ui.logs.liveLogs).toBeNull()
+      expect(state().ui.getProgress).toEqual({ percent: 40 })
       stream.close()
       await flush(50)
       expect(state().actions.get.status).toBe('ok')

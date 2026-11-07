@@ -10,6 +10,7 @@
  * @module dsh-plugin-local-infer/client/store/reducer
  */
 import { launchNextState } from "../machine/launch.js";
+import { isLiveRunAttached } from "./run-markers.js";
 /**
  * ACTION_TIMEOUT_DETAIL is the detail a deadline timer stamps when an action
  * (or the template download) is still pending at the cap. The component maps
@@ -104,13 +105,21 @@ function summaryAck(state, summary) {
     // The stored preference wins over the default; a summary that predates the
     // key keeps the descriptions visible. The log-location field seeds from the
     // stored template only when it is a non-blank string.
+    // The Logs buffer yields to the summary's persisted lastLogs only while
+    // nothing is live: a summary ack during a run (the stop fast-poll, a
+    // debounced re-price) must not wipe the buffer the attached run-log stream
+    // feeds, so the live state rides the run-markers leaf registry (abort.ts's
+    // registry is the module-level precedent; the launch/move clock read is the
+    // one inside this file).
     const ui = {
         ...state.ui,
         help: summary.showHelp !== false,
         logPath: typeof summary.logPath === 'string' && summary.logPath !== ''
             ? summary.logPath
             : state.ui.logPath,
-        logs: { ...state.ui.logs, getLogs: null },
+        logs: isLiveRunAttached()
+            ? state.ui.logs
+            : { ...state.ui.logs, liveLogs: null },
     };
     return { ...state, summary, summaryNote: '', draft, ui };
 }

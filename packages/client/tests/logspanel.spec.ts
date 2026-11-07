@@ -5,6 +5,7 @@ import { LogsPanel } from '../src/render/LogsPanel.tsx'
 import { setPrimitivesModule } from '../src/render/primitives.tsx'
 import { clearInFlightRuns, trackGetAbort } from '../src/store/abort.ts'
 import { cardReducer } from '../src/store/reducer.ts'
+import { clearRunMarkers, markRunInFlight } from '../src/store/run-markers.ts'
 import type { CardStore } from '../src/store/sync.ts'
 import { initialCardState, type CardState } from '../src/store/types.ts'
 import { TEXT } from '../src/text.ts'
@@ -249,7 +250,7 @@ describe('the Logs section (render/LogsPanel.tsx)', () => {
     store.dispatch({ type: 'summary/ack', summary: summaryWith('persisted') })
     store.dispatch({
       type: 'ui/patch',
-      patch: { logs: { ...store.getSnapshot().ui.logs, getLogs: 'streamed chunk' } },
+      patch: { logs: { ...store.getSnapshot().ui.logs, liveLogs: 'streamed chunk' } },
     })
     const d = makeDispatcher()
     const root = render(d, store, t)
@@ -438,7 +439,7 @@ describe('the Logs section (render/LogsPanel.tsx)', () => {
       patch: {
         logs: {
           ...store.getSnapshot().ui.logs,
-          getLogs: 'system dependencies\nok\nmodel download: a-model\n',
+          liveLogs: 'system dependencies\nok\nmodel download: a-model\n',
         },
       },
     })
@@ -476,7 +477,7 @@ describe('the Logs section (render/LogsPanel.tsx)', () => {
       patch: {
         logs: {
           ...store.getSnapshot().ui.logs,
-          getLogs: 'system dependencies\nok\nmodel download: a-model\nget failed: timeout\n',
+          liveLogs: 'system dependencies\nok\nmodel download: a-model\nget failed: timeout\n',
         },
       },
     })
@@ -500,6 +501,39 @@ describe('the Logs section (render/LogsPanel.tsx)', () => {
     const d = makeDispatcher()
     const root = render(d, store, t)
     expect(chipRow(root)).toBeNull()
+  })
+
+  it('shows the five step chips and the Cancel pill for any live run, not only the Get cell', () => {
+    const { store } = makeStore()
+    store.dispatch({ type: 'summary/ack', summary: summaryWith() })
+    // A driver-started run in flight (an entry launch) with the live buffer
+    // fed by its run-log stream: the unified live state shows the chips
+    // without any Get cell activity.
+    markRunInFlight('p1')
+    try {
+      store.dispatch({
+        type: 'ui/patch',
+        patch: {
+          logs: {
+            ...store.getSnapshot().ui.logs,
+            liveLogs: '--- Launching...\nsystem dependencies\n',
+          },
+        },
+      })
+      const d = makeDispatcher()
+      const root = render(d, store, t)
+      const row = chipRow(root)
+      expect(row).not.toBeNull()
+      const chips = children(row!)
+      // The five chips plus the Cancel pill (the native pill button
+      // fallback), all rendered off the unified live state with no Get cell.
+      expect(chips.length).toBe(6)
+      const pill = chips[5]!
+      expect(pill.type).toBe('button')
+      expect(text(pill)).toBe(t.cancel)
+    } finally {
+      clearRunMarkers()
+    }
   })
 
   it('hides the Cancel pill with no run in flight', () => {
@@ -529,7 +563,7 @@ describe('the Logs section (render/LogsPanel.tsx)', () => {
         },
         logs: {
           ...store.getSnapshot().ui.logs,
-          getLogs: 'model download: a-model\n',
+          liveLogs: 'model download: a-model\n',
         },
       },
     })

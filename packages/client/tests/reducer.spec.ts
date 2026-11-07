@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { LocalInferSummary } from 'dsh-plugin-local-infer/ui'
+import {
+  clearRunInFlight,
+  clearStreamFollowed,
+  markRunInFlight,
+  markStreamFollowed,
+} from '../src/store/run-markers.ts'
 import { cardReducer, ACTION_TIMEOUT_DETAIL } from '../src/store/reducer.ts'
 import { initialCardState, type CardDraft, type CardState } from '../src/store/types.ts'
 import type { GetProgressState } from '../src/store/progress.ts'
@@ -93,22 +99,56 @@ describe('client store reducer (store/reducer.ts)', () => {
   })
 
   describe('summary/ack', () => {
-    it('stores the summary, clears the summary note and the Get buffer', () => {
+    it('stores the summary, clears the summary note and the live Logs buffer', () => {
       const state = madeState({
         summaryNote: 'load failed',
         ui: {
           ...initialCardState().ui,
-          logs: { getLogs: 'streamed tail', height: 96, scrollMode: 'scrolling' },
+          logs: { liveLogs: 'streamed tail', height: 96, scrollMode: 'scrolling' },
         },
       })
       const summary = makeSummary({ engineId: 'llama', logPath: '/var/log/x' })
       const next = cardReducer(state, { type: 'summary/ack', summary })
       expect(next.summary).toBe(summary)
       expect(next.summaryNote).toBe('')
-      expect(next.ui.logs.getLogs).toBeNull()
+      expect(next.ui.logs.liveLogs).toBeNull()
       // The rest of the logs pane is preserved.
       expect(next.ui.logs.height).toBe(96)
       expect(next.ui.logs.scrollMode).toBe('scrolling')
+    })
+
+    it('keeps the live Logs buffer while a run is in flight', () => {
+      markRunInFlight('p1')
+      try {
+        const state = madeState({
+          ui: {
+            ...initialCardState().ui,
+            logs: { liveLogs: 'streamed tail', height: 96, scrollMode: 'scrolling' },
+          },
+        })
+        const next = cardReducer(state, { type: 'summary/ack', summary: makeSummary() })
+        // The stop fast-poll or a debounced re-price mid-run must not wipe
+        // the buffer the attached run-log stream feeds.
+        expect(next.ui.logs.liveLogs).toBe('streamed tail')
+      } finally {
+        clearRunInFlight('p1')
+      }
+    })
+
+    it('keeps the live Logs buffer while the pane follows a run-log stream', () => {
+      markStreamFollowed('p1')
+      try {
+        const state = madeState({
+          ui: {
+            ...initialCardState().ui,
+            logs: { liveLogs: 'streamed tail', height: 96, scrollMode: 'scrolling' },
+          },
+        })
+        const next = cardReducer(state, { type: 'summary/ack', summary: makeSummary() })
+        expect(next.ui.logs.liveLogs).toBe('streamed tail')
+      } finally {
+        clearStreamFollowed('p1')
+      }
     })
 
     it('merges the platform field-level: local edits survive the re-price', () => {
@@ -418,12 +458,12 @@ describe('client store reducer (store/reducer.ts)', () => {
         patch: {
           providerFormMode: 'editing',
           editingProviderId: 'p1',
-          logs: { getLogs: 'tail', height: 200, scrollMode: 'manual' },
+          logs: { liveLogs: 'tail', height: 200, scrollMode: 'manual' },
         },
       })
       expect(next.ui.providerFormMode).toBe('editing')
       expect(next.ui.editingProviderId).toBe('p1')
-      expect(next.ui.logs).toEqual({ getLogs: 'tail', height: 200, scrollMode: 'manual' })
+      expect(next.ui.logs).toEqual({ liveLogs: 'tail', height: 200, scrollMode: 'manual' })
       // Unpatched ui fields are preserved.
       expect(next.ui.help).toBe(true)
     })

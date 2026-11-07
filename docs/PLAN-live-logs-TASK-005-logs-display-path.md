@@ -41,10 +41,10 @@ and after settle from `summary.lastLogs`:
 
 Definition of Done:
 
-- [ ] One display path; no double-append (a test renders a full fake run
+- [x] One display path; no double-append (a test renders a full fake run
       over the stream and asserts each line appears once).
-- [ ] The Get run's readout chips and progress strip still work with the
+- [x] The Get run's readout chips and progress strip still work with the
       log events removed from the Get response.
-- [ ] Auto-scroll and Cancel behavior tests still pass; chip visibility
+- [x] Auto-scroll and Cancel behavior tests still pass; chip visibility
       covers the launch process too.
-- [ ] `pnpm build` and `pnpm test` green.
+- [x] `pnpm build` and `pnpm test` green.

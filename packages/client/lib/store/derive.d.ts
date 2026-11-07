@@ -76,6 +76,15 @@ export declare function deriveLaunchDisabled(state: CardState): boolean;
  * share it, so the surfaces agree on when a Get is in flight.
  */
 export declare function isGettingInFlight(state: CardState): boolean;
+/**
+ * isLiveRunInFlight reports whether a provider process is live from the
+ * card's side: a Get run in flight (isGettingInFlight), any driver-started
+ * run in flight, or the pane following an attached run-log stream (the
+ * run-markers registry). The Logs pane renders its step chips and the Cancel
+ * pill from it, so the pane reads the launch, stop, download, and install
+ * processes the way it reads a Get, not only the Get cell.
+ */
+export declare function isLiveRunInFlight(state: CardState): boolean;
 export declare const PROGRESS_READOUT_SEPARATOR = " \u00B7 ";
 /**
  * formatProgressReadout renders a GetProgressState as the download readout:
@@ -102,9 +111,10 @@ export declare function formatProgressReadout(state: GetProgressState, t: TextTa
  */
 export declare function deriveLifecycleControl(state: CardState, t: TextTable): LifecycleControl;
 /**
- * deriveDisplayedLogs is the Logs section's text: the streamed Get buffer
- * while a run is in flight, else the summary's persisted last-run logs, else
- * the empty string. One value the auto-scroll effect and the textarea share.
+ * deriveDisplayedLogs is the Logs section's text: the live run-log buffer
+ * (the attached stream's text, or a driver's own appends) while one is in
+ * place, else the summary's persisted last-run logs, else the empty string.
+ * One value the auto-scroll effect and the textarea share.
  */
 export declare function deriveDisplayedLogs(state: CardState): string;
 /**

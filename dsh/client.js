@@ -629,6 +629,30 @@ function launchNextState(entry, event) {
   return { status: next, cause: nextCause };
 }
 
+// packages/client/src/store/run-markers.ts
+var runKeys = /* @__PURE__ */ new Set();
+var followedKey = null;
+function markRunInFlight(key) {
+  runKeys.add(key);
+}
+function clearRunInFlight(key) {
+  runKeys.delete(key);
+}
+function isRunInFlight(key) {
+  return runKeys.has(key);
+}
+function markStreamFollowed(key) {
+  followedKey = key;
+}
+function clearStreamFollowed(key) {
+  if (followedKey === key) {
+    followedKey = null;
+  }
+}
+function isLiveRunAttached() {
+  return runKeys.size > 0 || followedKey !== null;
+}
+
 // packages/client/src/store/reducer.ts
 var ACTION_TIMEOUT_DETAIL = "timeout";
 function cardReducer(state, action) {
@@ -701,7 +725,7 @@ function summaryAck(state, summary) {
     ...state.ui,
     help: summary.showHelp !== false,
     logPath: typeof summary.logPath === "string" && summary.logPath !== "" ? summary.logPath : state.ui.logPath,
-    logs: { ...state.ui.logs, getLogs: null }
+    logs: isLiveRunAttached() ? state.ui.logs : { ...state.ui.logs, liveLogs: null }
   };
   return { ...state, summary, summaryNote: "", draft, ui };
 }
@@ -809,7 +833,7 @@ function initialCardState() {
       deletingProviderId: null,
       cachedDraft: null,
       logPath: "",
-      logs: { getLogs: null, height: 96, scrollMode: "fresh" },
+      logs: { liveLogs: null, height: 96, scrollMode: "fresh" },
       getProgress: null,
       sudoPending: false
     }
@@ -1328,22 +1352,17 @@ async function readLaunchStream(response, onStep, onProgress, onSudo) {
   });
   return result;
 }
-async function readGetStream(response, onChunk, onProgress) {
+async function readGetStream(response, onProgress) {
   if (!response.ok) {
     const text = await response.text();
     throw new Error(text || "HTTP " + response.status);
   }
   if (response.body === null || typeof response.body.getReader !== "function") {
-    const text = await response.text();
-    if (text !== "") {
-      onChunk(text);
-    }
+    await response.text();
     return;
   }
   await readNdjsonLines(response.body, (event) => {
-    if (event.log !== void 0) {
-      onChunk(event.log);
-    } else if (event.progress !== void 0) {
+    if (event.progress !== void 0) {
       onProgress?.(event.progress);
     }
   });
@@ -1434,9 +1453,9 @@ async function postLaunch(request, onStep, signal, onSudo) {
 function postStop(request) {
   return postJson("/local-infer/stop", request);
 }
-async function postGet(request, onChunk, signal, onProgress) {
+async function postGet(request, signal, onProgress) {
   const response = await post("/local-infer/get", request, signal);
-  await readGetStream(response, onChunk, onProgress);
+  await readGetStream(response, onProgress);
 }
 function postDownload(request) {
   return postJson("/local-infer/download", request);
@@ -1466,38 +1485,25 @@ function joinLine(base, line) {
 function separatorLine(label) {
   return SEPARATOR_PREFIX + label + "\n";
 }
-function seedProcessLog(store, label) {
-  const state = store.getSnapshot();
-  const base = state.ui.logs.getLogs ?? state.summary?.lastLogs ?? "";
-  store.dispatch({
-    type: "ui/patch",
-    patch: {
-      logs: {
-        ...state.ui.logs,
-        getLogs: joinLine(base, separatorLine(label))
-      }
-    }
-  });
-}
 function appendProcessLog(store, line) {
   const logs = store.getSnapshot().ui.logs;
   store.dispatch({
     type: "ui/patch",
-    patch: { logs: { ...logs, getLogs: joinLine(logs.getLogs ?? "", line) } }
+    patch: { logs: { ...logs, liveLogs: joinLine(logs.liveLogs ?? "", line) } }
   });
 }
 function appendLogChunk(store, chunk) {
   const logs = store.getSnapshot().ui.logs;
   store.dispatch({
     type: "ui/patch",
-    patch: { logs: { ...logs, getLogs: (logs.getLogs ?? "") + chunk } }
+    patch: { logs: { ...logs, liveLogs: (logs.liveLogs ?? "") + chunk } }
   });
 }
 function replaceLogBuffer(store, text) {
   const logs = store.getSnapshot().ui.logs;
   store.dispatch({
     type: "ui/patch",
-    patch: { logs: { ...logs, getLogs: text } }
+    patch: { logs: { ...logs, liveLogs: text } }
   });
 }
 function appendCanceledLog(store) {
@@ -1523,7 +1529,6 @@ var active = null;
 var logsPaneMounted = false;
 var lastRunKey = null;
 var catchUpTriedFor = null;
-var runInFlight = /* @__PURE__ */ new Set();
 function attachRunLogStream(store, key) {
   if (active !== null && active.key === key) {
     return handleFor(active);
@@ -1538,11 +1543,12 @@ function attachRunLogStream(store, key) {
     reconnected: false
   };
   active = attachment;
+  markStreamFollowed(key);
   openStream(store, attachment);
   return handleFor(attachment);
 }
 function beginRun(store, key) {
-  runInFlight.add(key);
+  markRunInFlight(key);
   lastRunKey = key;
   if (catchUpTriedFor === key) {
     catchUpTriedFor = null;
@@ -1552,7 +1558,7 @@ function beginRun(store, key) {
   }
 }
 function endRun(store, key) {
-  runInFlight.delete(key);
+  clearRunInFlight(key);
   if (lastRunKey === key) {
     lastRunKey = null;
   }
@@ -1597,7 +1603,7 @@ function paneTargetKey(store) {
   if (editing !== null) {
     return editing;
   }
-  if (lastRunKey !== null && runInFlight.has(lastRunKey)) {
+  if (lastRunKey !== null && isRunInFlight(lastRunKey)) {
     return lastRunKey;
   }
   const summary = state.summary;
@@ -1623,6 +1629,7 @@ function detachAttachment(attachment) {
   }
   attachment.detached = true;
   attachment.controller.abort();
+  clearStreamFollowed(attachment.key);
   if (active === attachment) {
     active = null;
   }
@@ -1646,7 +1653,7 @@ function streamEvent(store, attachment, event) {
   if (event.snapshot !== void 0) {
     attachment.hostRunning = event.running === true;
     replaceLogBuffer(store, event.snapshot);
-    if (!attachment.hostRunning && !runInFlight.has(attachment.key)) {
+    if (!attachment.hostRunning && !isRunInFlight(attachment.key)) {
       catchUpTriedFor = attachment.key;
       attachment.settled = true;
       detachAttachment(attachment);
@@ -1665,14 +1672,15 @@ function streamEvent(store, attachment, event) {
   if (event.runEnd !== void 0) {
     attachment.hostRunning = false;
     attachment.settled = true;
-    runInFlight.delete(attachment.key);
+    clearRunInFlight(attachment.key);
+    clearStreamFollowed(attachment.key);
   }
 }
 function endPass(store, attachment) {
   if (attachment.detached || active !== attachment) {
     return;
   }
-  const runInFlightHere = !attachment.settled && (attachment.hostRunning || runInFlight.has(attachment.key));
+  const runInFlightHere = !attachment.settled && (attachment.hostRunning || isRunInFlight(attachment.key));
   if (runInFlightHere && !attachment.reconnected) {
     attachment.reconnected = true;
     setTimeout(() => {
@@ -1684,6 +1692,7 @@ function endPass(store, attachment) {
     return;
   }
   attachment.settled = true;
+  clearStreamFollowed(attachment.key);
   active = null;
 }
 
@@ -2154,102 +2163,6 @@ var ProgressThrottle = class {
   }
 };
 
-// packages/client/src/store/progress.ts
-var GET_STEP_ORDER = ["deps", "clone", "build", "model", "template"];
-var STEP_RUNNING_INDEX = {
-  deps: 0,
-  clone: 1,
-  build: 2,
-  model: 3,
-  template: 4,
-  done: 5
-};
-var FILES_LINE = /^Fetching (\d+) files:\s*(\d+(?:\.\d+)?)%\|[^|]*\|\s*(\d+)\s*\/\s*(\d+)(?:\s*\[([^\]]*)\])?/;
-var BYTES_LINE = /^(?:Downloading|Fetching)\s+([^:]+):\s*(\d+(?:\.\d+)?)%\s*\|\s*(\d+(?:\.\d+)?[KMGTP]?i?B?)\s*\/\s*(\d+(?:\.\d+)?[KMGTP]?i?B?)\s*(?:\[([^\]]*)\])?/;
-var UNIT_EXPONENTS = { K: 1, M: 2, G: 3, T: 4, P: 5 };
-function parseHumanSize(text) {
-  const match = /^(\d+(?:\.\d+)?)([KMGTP]?)i?B?$/.exec(text);
-  if (match === null) return 0;
-  const exponent = UNIT_EXPONENTS[match[2]] ?? 0;
-  const base = text.includes("i") ? 1024 : 1e3;
-  return Number(match[1]) * base ** exponent;
-}
-function durationSeconds(text) {
-  let seconds = 0;
-  for (const part of text.split(":")) {
-    seconds = seconds * 60 + Number(part);
-  }
-  return seconds;
-}
-function etaSecondsFromTail(tail) {
-  if (tail === void 0) return 0;
-  const match = /<\s*(\d+(?::\d+)+)/.exec(tail);
-  if (match === null) return 0;
-  return durationSeconds(match[1]);
-}
-function parseHfProgressLine(line) {
-  const trimmed = line.trim();
-  if (trimmed === "") return null;
-  const files = FILES_LINE.exec(trimmed);
-  if (files !== null) {
-    return {
-      step: `Fetching ${files[1]} files`,
-      percent: Number(files[2]),
-      doneBytes: Number(files[3]),
-      totalBytes: Number(files[4]),
-      etaSeconds: etaSecondsFromTail(files[5]),
-      unit: "files"
-    };
-  }
-  const bytes = BYTES_LINE.exec(trimmed);
-  if (bytes !== null) {
-    const verb = trimmed.startsWith("Fetching") ? "Fetching" : "Downloading";
-    return {
-      step: `${verb} ${bytes[1].trim()}`,
-      percent: Number(bytes[2]),
-      doneBytes: parseHumanSize(bytes[3]),
-      totalBytes: parseHumanSize(bytes[4]),
-      etaSeconds: etaSecondsFromTail(bytes[5]),
-      unit: "bytes"
-    };
-  }
-  return null;
-}
-function parseHfProgress(chunk, prior) {
-  let folded = prior;
-  for (const line of chunk.split(/\r\n|\r|\n/)) {
-    const parsed = parseHfProgressLine(line);
-    if (parsed !== null) folded = parsed;
-  }
-  return folded;
-}
-function deriveGetStep(log) {
-  let current = null;
-  for (const line of log.split("\n")) {
-    const step = stepForLine(line);
-    if (step !== null) current = step;
-  }
-  return current;
-}
-function deriveGetStepTones(log, failed) {
-  const current = deriveGetStep(log);
-  const runningIndex = current === null ? 0 : STEP_RUNNING_INDEX[current];
-  return GET_STEP_ORDER.map((_step, index) => {
-    if (index < runningIndex) return "success";
-    if (index === runningIndex) return failed ? "danger" : "info";
-    return "quiet";
-  });
-}
-function stepForLine(line) {
-  if (line.startsWith("system dependencies")) return "deps";
-  if (line.startsWith("engine clone:")) return "clone";
-  if (line.startsWith("engine build:")) return "build";
-  if (line.startsWith("model download:")) return "model";
-  if (line.startsWith("chat template:")) return "template";
-  if (line.trim() === "get complete") return "done";
-  return null;
-}
-
 // packages/client/src/store/deps.ts
 var GET_IDLE_MS = 12e4;
 var GET_PROGRESS_THROTTLE_MS = 500;
@@ -2362,18 +2275,10 @@ function performGet(store, t) {
   }
   const platform = (draft.platform ?? {})[draft.engine];
   const runKey = clientRunLogKey(state.summary?.providers ?? [], draft.engine, draft.config);
-  seedProcessLog(store, t.getting);
   beginRun(store, runKey);
   const throttle = new ProgressThrottle(store, GET_PROGRESS_THROTTLE_MS);
-  const foldProgress = (chunk) => {
-    const parsed = parseHfProgress(chunk, throttle.latest);
-    if (parsed !== null && parsed !== throttle.latest) {
-      throttle.note(parsed, false);
-    }
-  };
   const append = (text) => {
     appendLogChunk(store, text);
-    foldProgress(text);
   };
   let idleTimer = null;
   let finished = false;
@@ -2424,13 +2329,10 @@ function performGet(store, t) {
           config: draft.config,
           ...platform !== void 0 ? { platform } : {}
         },
-        (chunk) => {
-          foldProgress(chunk);
-          armIdle();
-        },
         controller.signal,
         (progress) => {
           throttle.note(progress, true);
+          armIdle();
         }
       ).then(() => {
         settleRun();
@@ -2490,6 +2392,9 @@ function deriveLaunchDisabled(state) {
 }
 function isGettingInFlight(state) {
   return state.actions.get.status === "pending" || hasInFlightGet();
+}
+function isLiveRunInFlight(state) {
+  return isGettingInFlight(state) || isLiveRunAttached();
 }
 function toGb(bytes) {
   return (bytes / 1e9).toFixed(1);
@@ -2606,8 +2511,8 @@ function deriveLifecycleControl(state, t) {
   };
 }
 function deriveDisplayedLogs(state) {
-  if (state.ui.logs.getLogs !== null) {
-    return state.ui.logs.getLogs;
+  if (state.ui.logs.liveLogs !== null) {
+    return state.ui.logs.liveLogs;
   }
   const lastLogs = state.summary?.lastLogs;
   return lastLogs !== void 0 && lastLogs !== "" ? lastLogs : "";
@@ -2794,7 +2699,6 @@ function performEntryLaunch(store, provider, t) {
   if (status !== "idle" && status !== "failed") {
     return noHandle;
   }
-  seedProcessLog(store, t.entryLaunching);
   const runKey = clientRunLogKey(
     store.getSnapshot().summary?.providers ?? [],
     provider.engine,
@@ -3032,6 +2936,13 @@ function performDraftStop(store, t) {
     return Promise.resolve();
   }
   const draft = state.draft;
+  const runKey = clientRunLogKey(
+    state.summary?.providers ?? [],
+    draft.engine,
+    draft.config,
+    state.ui.editingProviderId ?? void 0
+  );
+  beginRun(store, runKey);
   return performAction(
     store,
     "stop",
@@ -3040,7 +2951,9 @@ function performDraftStop(store, t) {
       return t.stopped;
     }),
     ACTION_TIMEOUTS.stop
-  );
+  ).then(() => {
+    endRun(store, runKey);
+  });
 }
 
 // packages/client/src/render/ProviderList.tsx
@@ -3245,6 +3158,43 @@ function EntryLaunchButton(props) {
   );
 }
 
+// packages/client/src/store/progress.ts
+var GET_STEP_ORDER = ["deps", "clone", "build", "model", "template"];
+var STEP_RUNNING_INDEX = {
+  deps: 0,
+  clone: 1,
+  build: 2,
+  model: 3,
+  template: 4,
+  done: 5
+};
+function deriveGetStep(log) {
+  let current = null;
+  for (const line of log.split("\n")) {
+    const step = stepForLine(line);
+    if (step !== null) current = step;
+  }
+  return current;
+}
+function deriveGetStepTones(log, failed) {
+  const current = deriveGetStep(log);
+  const runningIndex = current === null ? 0 : STEP_RUNNING_INDEX[current];
+  return GET_STEP_ORDER.map((_step, index) => {
+    if (index < runningIndex) return "success";
+    if (index === runningIndex) return failed ? "danger" : "info";
+    return "quiet";
+  });
+}
+function stepForLine(line) {
+  if (line.startsWith("system dependencies")) return "deps";
+  if (line.startsWith("engine clone:")) return "clone";
+  if (line.startsWith("engine build:")) return "build";
+  if (line.startsWith("model download:")) return "model";
+  if (line.startsWith("chat template:")) return "template";
+  if (line.trim() === "get complete") return "done";
+  return null;
+}
+
 // packages/client/src/render/LogsPanel.tsx
 var LOGS_MIN_HEIGHT = 96;
 var LOGS_MAX_HEIGHT = 480;
@@ -3270,8 +3220,8 @@ function LogsPanel(props) {
     };
   }, [store]);
   const getFailed = state.actions.get.status === "error";
-  const gettingInFlight = isGettingInFlight(state);
-  const chipsVisible = state.ui.logs.getLogs !== null && (gettingInFlight || getFailed);
+  const liveRunActive = isLiveRunInFlight(state);
+  const chipsVisible = state.ui.logs.liveLogs !== null && (liveRunActive || getFailed);
   const stepTones = chipsVisible ? deriveGetStepTones(displayedLogs, getFailed) : null;
   const stepLabels = [t.stepDeps, t.stepClone, t.stepBuild, t.stepModel, t.stepTemplate];
   const patchLogs = (patch) => {
@@ -3323,10 +3273,10 @@ function LogsPanel(props) {
   };
   const chevron = getPrimitivesModule()?.IconChevronDownOutlineRegular;
   const chevronGlyph = typeof chevron === "function" ? /* @__PURE__ */ react.createElement("span", { style: { display: "inline-flex", transform: "rotate(-45deg)" } }, react.createElement(chevron, { size: 12 })) : "\u231F";
-  return /* @__PURE__ */ react.createElement("div", { style: { marginTop: 8 } }, /* @__PURE__ */ react.createElement("div", { style: LABEL_STYLE }, t.logs), stepTones !== null || gettingInFlight ? /* @__PURE__ */ react.createElement("div", { style: STEP_CHIPS_ROW_STYLE }, stepTones !== null ? stepTones.map((tone, index) => /* @__PURE__ */ react.createElement("span", { key: index }, renderTag(
+  return /* @__PURE__ */ react.createElement("div", { style: { marginTop: 8 } }, /* @__PURE__ */ react.createElement("div", { style: LABEL_STYLE }, t.logs), stepTones !== null || liveRunActive ? /* @__PURE__ */ react.createElement("div", { style: STEP_CHIPS_ROW_STYLE }, stepTones !== null ? stepTones.map((tone, index) => /* @__PURE__ */ react.createElement("span", { key: index }, renderTag(
     tone,
     tone === "info" ? renderTextShimmer(stepLabels[index]) : stepLabels[index]
-  ))) : null, gettingInFlight ? renderPill(t.cancel, { onClick: () => performGetCancel(store) }) : null) : null, /* @__PURE__ */ react.createElement("div", { style: { position: "relative" } }, /* @__PURE__ */ react.createElement(
+  ))) : null, liveRunActive ? renderPill(t.cancel, { onClick: () => performGetCancel(store) }) : null) : null, /* @__PURE__ */ react.createElement("div", { style: { position: "relative" } }, /* @__PURE__ */ react.createElement(
     "textarea",
     {
       ref: textareaRef,

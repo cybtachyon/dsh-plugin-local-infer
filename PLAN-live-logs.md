@@ -85,7 +85,7 @@ must always match the provider process actually running.
   appends each `log` event to the live buffer (snapshot catch-up on attach,
   e.g. after a page refresh mid-run); close cleanly on settle / cancel /
   unmount.
-- [ ] [TASK-005-logs-display-path](docs/PLAN-live-logs-TASK-005-logs-display-path.md)
+- [x] [TASK-005-logs-display-path](docs/PLAN-live-logs-TASK-005-logs-display-path.md)
   Make the textarea's in-flight text come from the one streamed
   run-log path: the Get route's NDJSON drops its `log` events (the logs
   stream carries them), the Get stream keeps carrying progress/result, and

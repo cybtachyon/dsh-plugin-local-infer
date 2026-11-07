@@ -26,6 +26,7 @@ import type { LaunchStatus } from '../machine/launch.ts'
 import type { TextTable } from '../text.ts'
 import { hasInFlightGet } from './abort.ts'
 import type { GetProgressState } from './progress.ts'
+import { isLiveRunAttached } from './run-markers.ts'
 import type { CardState, ProviderFormMode } from './types.ts'
 
 /** The title-bar control's branches, as the spec's kind reads them. */
@@ -127,6 +128,18 @@ export function deriveLaunchDisabled(state: CardState): boolean {
  */
 export function isGettingInFlight(state: CardState): boolean {
   return state.actions.get.status === 'pending' || hasInFlightGet()
+}
+
+/**
+ * isLiveRunInFlight reports whether a provider process is live from the
+ * card's side: a Get run in flight (isGettingInFlight), any driver-started
+ * run in flight, or the pane following an attached run-log stream (the
+ * run-markers registry). The Logs pane renders its step chips and the Cancel
+ * pill from it, so the pane reads the launch, stop, download, and install
+ * processes the way it reads a Get, not only the Get cell.
+ */
+export function isLiveRunInFlight(state: CardState): boolean {
+  return isGettingInFlight(state) || isLiveRunAttached()
 }
 
 // toGb renders a byte count as GB with one decimal, the readout's size unit.
@@ -333,13 +346,14 @@ export function deriveLifecycleControl(
 }
 
 /**
- * deriveDisplayedLogs is the Logs section's text: the streamed Get buffer
- * while a run is in flight, else the summary's persisted last-run logs, else
- * the empty string. One value the auto-scroll effect and the textarea share.
+ * deriveDisplayedLogs is the Logs section's text: the live run-log buffer
+ * (the attached stream's text, or a driver's own appends) while one is in
+ * place, else the summary's persisted last-run logs, else the empty string.
+ * One value the auto-scroll effect and the textarea share.
  */
 export function deriveDisplayedLogs(state: CardState): string {
-  if (state.ui.logs.getLogs !== null) {
-    return state.ui.logs.getLogs
+  if (state.ui.logs.liveLogs !== null) {
+    return state.ui.logs.liveLogs
   }
   const lastLogs = state.summary?.lastLogs
   return lastLogs !== undefined && lastLogs !== '' ? lastLogs : ''

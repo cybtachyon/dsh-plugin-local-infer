@@ -15,6 +15,7 @@ import {
   performDraftLaunch,
   performDraftStop,
 } from '../src/store/providers.ts'
+import { clearRunLogStreams, setLogsPaneMounted } from '../src/store/logs-stream.ts'
 import type { CardStore } from '../src/store/sync.ts'
 import { initialCardState, type CardState } from '../src/store/types.ts'
 import { TEXT } from '../src/text.ts'
@@ -131,6 +132,7 @@ describe('the form server-mutation drivers (store/actions.ts)', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
+    clearRunLogStreams()
   })
 
   it('performSave upserts the entry, stores the fresh summary, and collapses the form', async () => {
@@ -240,6 +242,7 @@ describe('the form driver error paths and guards (store/actions.ts)', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
+    clearRunLogStreams()
   })
 
   it('a driver with no draft resolves without a round trip', async () => {
@@ -317,6 +320,7 @@ describe('the draft-based launch/stop guards (store/providers.ts)', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
+    clearRunLogStreams()
   })
 
   it('performDraftLaunch resolves without a round trip when there is no draft', async () => {
@@ -386,6 +390,7 @@ describe('the draft-based launch/stop drivers (store/providers.ts)', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.unstubAllGlobals()
+    clearRunLogStreams()
   })
 
   it('performDraftLaunch reads the stream, settles the launch cell, and re-prices', async () => {
@@ -426,5 +431,63 @@ describe('the draft-based launch/stop drivers (store/providers.ts)', () => {
     await promise
     expect(state().actions.stop.status).toBe('ok')
     expect(state().actions.stop.detail).toBe(t.stopped)
+  })
+
+  it('performDraftStop brackets one run-log stream for the run key', async () => {
+    const { store } = makeStore()
+    // The draft is the stored provider's config, so the mirrored key rule
+    // names the entry id (the same key the host's stop route writes).
+    seedDraft(store, providerWith())
+    const calls: Array<{ url: string; signal: AbortSignal | null }> = []
+    let streamController!: ReadableStreamDefaultController<Uint8Array>
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        streamController = c
+      },
+    })
+    const { fetchMock } = routeFetch({
+      '/local-infer/stop': () => jsonAnswer({ ok: true }),
+      '/local-infer/summary': () => jsonAnswer(summaryWith([providerWith()])),
+      '/local-infer/deps': () => jsonAnswer({ engineId: 'ninfer' }),
+    })
+    const logsFetch = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, signal: init?.signal ?? null })
+      init?.signal?.addEventListener(
+        'abort',
+        () => {
+          try {
+            streamController.error(new Error('The operation was aborted.'))
+          } catch {
+            // The reader is gone already: the abort just ends the pass.
+          }
+        },
+        { once: true },
+      )
+      return new Response(stream, {
+        status: 200,
+        headers: { 'content-type': 'application/x-ndjson' },
+      })
+    })
+    const combined = vi.fn(async (url: string, init?: RequestInit) =>
+      url.startsWith('/local-infer/logs') ? logsFetch(url, init) : fetchMock(url, init),
+    )
+    vi.stubGlobal('fetch', combined)
+    // The Logs pane is mounted: the mount's catch-up probe opens the
+    // engine-id key first (a stopped summary falls to the engine guess),
+    // and the one-pair stream attach the other drivers use brackets this
+    // round trip on the run key.
+    setLogsPaneMounted(store, true)
+    const promise = performDraftStop(store, t)
+    await vi.advanceTimersByTimeAsync(0)
+    await flush()
+    await promise
+    expect(calls.map((call) => call.url)).toEqual([
+      '/local-infer/logs?provider=ninfer',
+      '/local-infer/logs?provider=p1',
+    ])
+    // The run-key attach detached the replaced probe, and the settle
+    // detached the run's own stream.
+    expect(calls[0]!.signal?.aborted).toBe(true)
+    expect(calls[1]!.signal?.aborted).toBe(true)
   })
 })

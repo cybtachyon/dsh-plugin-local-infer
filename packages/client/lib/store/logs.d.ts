@@ -1,8 +1,9 @@
 /**
  * The shared Logs buffer helpers the provider and deps store modules both
- * write through: the run separator seed, the line append, the raw streamed
- * chunk append, the whole-buffer replace, and the "Canceled" line the abort
- * paths write.
+ * write through: the line append, the raw streamed chunk append, the
+ * whole-buffer replace, and the "Canceled" line the abort paths write. The
+ * run's own seed separator is the host's (beginRun seeds the hub, whose
+ * runBegin/snapshot replaces the buffer), so no client seed helper remains.
  *
  * The helpers live in a leaf module so deps.ts and providers.ts import them
  * from one place without an import edge between the two modules.
@@ -18,7 +19,6 @@ import type { CardStore } from './sync.ts';
  */
 export declare const SUDO_NOTE_LINE = "Check your CLI for a sudo prompt";
 export declare function separatorLine(label: string): string;
-export declare function seedProcessLog(store: CardStore, label: string): void;
 export declare function appendProcessLog(store: CardStore, line: string): void;
 export declare function appendLogChunk(store: CardStore, chunk: string): void;
 export declare function replaceLogBuffer(store: CardStore, text: string): void;

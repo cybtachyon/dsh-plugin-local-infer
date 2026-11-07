@@ -14,9 +14,11 @@
  * quietly with the buffer kept. A mount-time attach whose snapshot answers
  * running=false while nothing runs locally (the page-refresh catch-up read)
  * detaches right away and remembers the probe, so a re-render does not
- * re-open an idle key until a run starts there. clientRunLogKey mirrors the
- * host's runLogKey rule so the client names the buffer its own request
- * writes.
+ * re-open an idle key until a run starts there. The in-flight keys and the
+ * followed-key marker ride the run-markers leaf (abort.ts's registry pattern)
+ * so cardReducer and derive.ts read the live state without an import edge
+ * here. clientRunLogKey mirrors the host's runLogKey rule so the client
+ * names the buffer its own request writes.
  * @module dsh-plugin-local-infer/client/store/logs-stream
  */
 import type { Config } from 'dsh-plugin-local-infer/ui';

@@ -2,24 +2,24 @@
  * The Logs section: the last run's captured output in a read-only textarea,
  * the log-file location the launch writes to, the diagonal chevron drag
  * handle that resizes the textarea, the five Get step chips (deps /
- * clone / build / model / template) that head the pane while a Get run is in
- * flight, and the compact Cancel pill (the performGetCancel driver) that
- * heads the pane beside the chips while a run is in flight.
+ * clone / build / model / template) that head the pane while a provider
+ * process run is live, and the compact Cancel pill (the performGetCancel
+ * driver) that heads the pane beside the chips over the same live state.
  *
- * The pane state lives in the store (ui.logs: the streamed Get buffer, the
+ * The pane state lives in the store (ui.logs: the live run-log buffer, the
  * chevron-resized height, and the auto-scroll mode), so the section keeps no
  * pane state of its own. The displayed text is the deriveDisplayedLogs
- * projection (the streamed buffer while a run is in flight, else the
- * summary's lastLogs), and the auto-scroll effect pins the view to the bottom
- * while the mode is fresh or scrolling; a manual scroll up parks the mode at
- * manual, so content updates leave the view where the user put it. The
- * chevron drag clamps the height to the 96-480 px readable range. The pane's
- * mount registers the live run-log stream with the store module: mounted, the
- * pane target's stream attaches for the catch-up read; unmounted, it detaches.
+ * projection (the live buffer while one is in place, else the summary's
+ * lastLogs), and the auto-scroll effect pins the view to the bottom while the
+ * mode is fresh or scrolling; a manual scroll up parks the mode at manual, so
+ * content updates leave the view where the user put it. The chevron drag
+ * clamps the height to the 96-480 px readable range. The pane's mount
+ * registers the live run-log stream with the store module: mounted, the pane
+ * target's stream attaches for the catch-up read; unmounted, it detaches.
  * @module dsh-plugin-local-infer/client/render/LogsPanel
  */
 import { INPUT_STYLE, LABEL_STYLE, ROW_STYLE } from "../styles.js";
-import { deriveDisplayedLogs, isGettingInFlight } from "../store/derive.js";
+import { deriveDisplayedLogs, isLiveRunInFlight } from "../store/derive.js";
 import { performGetCancel } from "../store/deps.js";
 import { setLogsPaneMounted } from "../store/logs-stream.js";
 import { deriveGetStepTones } from "../store/progress.js";
@@ -43,14 +43,14 @@ const STEP_CHIPS_ROW_STYLE = {
 };
 /**
  * LogsPanel renders the Logs section from the store: the read-only textarea
- * (the streamed Get buffer while a run is in flight, else the summary's
+ * (the live run-log buffer while one is in place, else the summary's
  * lastLogs), the auto-scroll (the view pins to the bottom while the mode is
  * fresh or scrolling; a scroll up parks it at manual), the chevron resize
  * drag (clamped to 96-480 px), the log-location field (a ui preference the
  * save route persists, not a synced value), and the five Get step chips
  * (the running step toned info and shimmered, the completed steps success,
  * the not-started steps quiet, and the failed step danger) that head the
- * pane while a Get run is in flight.
+ * pane while a provider process run is live.
  */
 export function LogsPanel(props) {
     const { store, t } = props;
@@ -70,16 +70,19 @@ export function LogsPanel(props) {
             setLogsPaneMounted(store, false);
         };
     }, [store]);
-    // The step chips render only while a Get run is in flight (the streamed
-    // buffer is active and the get cell or the in-flight registry reads in
-    // flight, the isGettingInFlight detection), or while the run has just settled
-    // failed (the buffer is still active, so the failed step reads as danger).
-    // The Cancel pill (the performGetCancel driver) renders only while a run
-    // is in flight, beside the chips. With no run in flight the header shows
-    // nothing.
+    // The chip row and the Cancel pill render off the unified live state
+    // (isLiveRunInFlight: the Get cell or registry, a driver-started run, or
+    // the attached run-log stream), so the pane heads the launch, stop,
+    // download, and install processes the way it heads a Get. The chips still
+    // need a live buffer: a stored-last-Logs view never re-prices stale step
+    // headers, and the step tones price off the displayed text lines (the
+    // host's seed line and step headers arrive through the hub stream
+    // unchanged). The run's just-settled failed state keeps the chips (the
+    // failed step reads as danger until the next summary ack clears the
+    // buffer).
     const getFailed = state.actions.get.status === 'error';
-    const gettingInFlight = isGettingInFlight(state);
-    const chipsVisible = state.ui.logs.getLogs !== null && (gettingInFlight || getFailed);
+    const liveRunActive = isLiveRunInFlight(state);
+    const chipsVisible = state.ui.logs.liveLogs !== null && (liveRunActive || getFailed);
     const stepTones = chipsVisible
         ? deriveGetStepTones(displayedLogs, getFailed)
         : null;
@@ -155,13 +158,13 @@ export function LogsPanel(props) {
     const chevronGlyph = typeof chevron === 'function' ? (react.createElement("span", { style: { display: 'inline-flex', transform: 'rotate(-45deg)' } }, react.createElement(chevron, { size: 12 }))) : ('\u231F');
     return (react.createElement("div", { style: { marginTop: 8 } },
         react.createElement("div", { style: LABEL_STYLE }, t.logs),
-        stepTones !== null || gettingInFlight ? (react.createElement("div", { style: STEP_CHIPS_ROW_STYLE },
+        stepTones !== null || liveRunActive ? (react.createElement("div", { style: STEP_CHIPS_ROW_STYLE },
             stepTones !== null
                 ? stepTones.map((tone, index) => (react.createElement("span", { key: index }, renderTag(tone, tone === 'info'
                     ? renderTextShimmer(stepLabels[index])
                     : stepLabels[index]))))
                 : null,
-            gettingInFlight
+            liveRunActive
                 ? renderPill(t.cancel, { onClick: () => performGetCancel(store) })
                 : null)) : null,
         react.createElement("div", { style: { position: 'relative' } },
