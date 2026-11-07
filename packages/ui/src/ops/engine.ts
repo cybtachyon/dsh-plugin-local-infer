@@ -183,8 +183,9 @@ function registerLaunchPlatform(
  * optional cancel signal and download-progress sink. The exactOptionalProperty-
  * types-safe spreads keep an absent field from writing `undefined`, so the
  * host, signal, and sink travel as one group built in one place. Each caller
- * layers its own extras on the result: the launch adds autoRebuild and the
- * sync override, a standalone Get adds none.
+ * layers its own extras on the result: the launch adds autoRebuild, the step
+ * reporter, and the sync override, a standalone Get adds none (its control
+ * keeps its throbber, so no reporter rides).
  */
 function getStepsRequest(
   engineId: string,
@@ -312,15 +313,6 @@ export async function launchEngine(
   try {
     const hardware = await localInfer.detectHardware()
     const platform = registerLaunchPlatform(localInfer, request, stored, engineId)
-    // The prereqs phase: the system-dependency install the Get-steps routine
-    // runs. It runs only while the Play/Run trust gate is on, the same rule
-    // the Get step applies. The card's button reads "Prereqs..." for this
-    // phase, so the phase is reported only while an install actually runs
-    // (the gate on), not when the deps are already satisfied and the phase
-    // is skipped.
-    if (stored.allowRunDeps === true) {
-      onProgress?.('prereqs')
-    }
     // The Get steps (deps, git sync, build, model download, chat-template
     // download) run idempotently before the launch plan renders, so a launch
     // never reads a missing checkout, binary, model, or template. The Auto
@@ -328,12 +320,17 @@ export async function launchEngine(
     // adapter's deploy step applies. The launch always sets
     // continueOnSyncFailure: a failed git sync of an existing checkout
     // reports syncFailed on the result (the run keeps going with the
-    // checkout's current version) instead of halting the launch.
+    // checkout's current version) instead of halting the launch. The
+    // progress sink rides into the steps as onStep: each step announces its
+    // phase as its work actually starts (the prereqs announcement belongs to
+    // the dep install, not to the launch's start), so the card's button
+    // tracks the phase actually running.
     const get = await runGetSteps(
       localInfer,
       {
         ...getStepsRequest(engineId, config, stored, platform, host, signal, onChunk),
         ...(request.autoRebuild !== undefined ? { autoRebuild: request.autoRebuild } : {}),
+        ...(onProgress !== undefined ? { onStep: onProgress } : {}),
         continueOnSyncFailure: true,
       },
       appendRunText,

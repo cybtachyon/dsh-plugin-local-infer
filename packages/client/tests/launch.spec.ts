@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   LAUNCH_HEALTH_DEADLINE_MS,
   LAUNCH_PHASE_STATES,
-  LAUNCH_STEP_ORDER,
   STOP_HEALTH_DEADLINE_MS,
   STOP_POLL_MS,
   launchIsPhase,
@@ -45,12 +44,16 @@ const START: Record<LaunchStatus, LaunchStatus> = {
   failed: 'prereqs',
 }
 
+// The server stream is authoritative: a known step sets the reported state
+// directly from idle, any phase (forward or back; the host reports the real
+// order), and the sudo wait. Only running/stopping (a stop in flight) and
+// downloading (the re-poll state) hold, and an unknown name is a no-op.
 const STEP: Record<LaunchStatus, Record<StepName, LaunchStatus>> = {
   idle: { prereqs: 'prereqs', download: 'download', build: 'build', launch: 'launch', bogus: 'idle' },
   prereqs: { prereqs: 'prereqs', download: 'download', build: 'build', launch: 'launch', bogus: 'prereqs' },
-  download: { prereqs: 'download', download: 'download', build: 'build', launch: 'launch', bogus: 'download' },
-  build: { prereqs: 'build', download: 'build', build: 'build', launch: 'launch', bogus: 'build' },
-  launch: { prereqs: 'launch', download: 'launch', build: 'launch', launch: 'launch', bogus: 'launch' },
+  download: { prereqs: 'prereqs', download: 'download', build: 'build', launch: 'launch', bogus: 'download' },
+  build: { prereqs: 'prereqs', download: 'download', build: 'build', launch: 'launch', bogus: 'build' },
+  launch: { prereqs: 'prereqs', download: 'download', build: 'build', launch: 'launch', bogus: 'launch' },
   downloading: { prereqs: 'downloading', download: 'downloading', build: 'downloading', launch: 'downloading', bogus: 'downloading' },
   sudo: { prereqs: 'prereqs', download: 'download', build: 'build', launch: 'launch', bogus: 'sudo' },
   running: { prereqs: 'running', download: 'running', build: 'running', launch: 'running', bogus: 'running' },
@@ -169,8 +172,7 @@ const RESET: Record<LaunchStatus, LaunchStatus> = {
 }
 
 describe('client launch machine (machine/launch.ts)', () => {
-  it('pins the step order and the deadline constants', () => {
-    expect(LAUNCH_STEP_ORDER).toEqual({ prereqs: 0, download: 1, build: 2, launch: 3 })
+  it('pins the phase states and the deadline constants', () => {
     expect(LAUNCH_PHASE_STATES).toEqual(['prereqs', 'download', 'build', 'launch'])
     expect(LAUNCH_HEALTH_DEADLINE_MS).toBe(150000)
     expect(STOP_POLL_MS).toBe(1000)
@@ -225,6 +227,60 @@ describe('client launch machine (machine/launch.ts)', () => {
       expect(launchNextState({ status }, { type: 'reset' })).toEqual({ status: RESET[status] })
     })
   }
+
+  describe('server stream authoritative (the real Get-steps order)', () => {
+    it('advances build then download (the Get-steps sequence the forward-only guard dropped)', () => {
+      let entry = launchNextState(null, { type: 'start' })
+      expect(entry.status).toBe('prereqs')
+      entry = launchNextState(entry, { type: 'step', step: 'build' })
+      expect(entry.status).toBe('build')
+      // The model download follows the sync/build in the real Get-steps
+      // order: a step that moves backward in the old static order now sets
+      // the reported state directly.
+      entry = launchNextState(entry, { type: 'step', step: 'download' })
+      expect(entry.status).toBe('download')
+      entry = launchNextState(entry, { type: 'step', step: 'launch' })
+      expect(entry.status).toBe('launch')
+      entry = launchNextState(entry, { type: 'healthy' })
+      expect(entry.status).toBe('running')
+    })
+
+    it('a stop in flight supersedes a late step', () => {
+      expect(
+        launchNextState({ status: 'running' }, { type: 'step', step: 'download' }),
+      ).toEqual({ status: 'running' })
+      expect(
+        launchNextState({ status: 'stopping' }, { type: 'step', step: 'download' }),
+      ).toEqual({ status: 'stopping' })
+    })
+
+    it('unknown step names stay no-ops from any state', () => {
+      expect(launchNextState({ status: 'build' }, { type: 'step', step: 'bogus' })).toEqual({
+        status: 'build',
+      })
+      expect(launchNextState({ status: 'sudo' }, { type: 'step', step: 'bogus' })).toEqual({
+        status: 'sudo',
+      })
+    })
+
+    it('the downloading re-poll state ignores steps', () => {
+      expect(launchNextState({ status: 'downloading' }, { type: 'step', step: 'build' })).toEqual({
+        status: 'downloading',
+      })
+      expect(
+        launchNextState({ status: 'downloading' }, { type: 'step', step: 'download' }),
+      ).toEqual({ status: 'downloading' })
+    })
+
+    it('sudo resumes at the reported step whatever it is', () => {
+      expect(launchNextState({ status: 'sudo' }, { type: 'step', step: 'download' })).toEqual({
+        status: 'download',
+      })
+      expect(launchNextState({ status: 'sudo' }, { type: 'step', step: 'prereqs' })).toEqual({
+        status: 'prereqs',
+      })
+    })
+  })
 
   describe('sudo wait (the host is waiting for a password on the terminal)', () => {
     it('step resumes the run at the reported step, with no phase order to guard', () => {

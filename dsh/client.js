@@ -518,12 +518,6 @@ function labels(active2) {
 }
 
 // packages/client/src/machine/launch.ts
-var LAUNCH_STEP_ORDER = {
-  prereqs: 0,
-  download: 1,
-  build: 2,
-  launch: 3
-};
 var LAUNCH_PHASE_STATES = [
   "prereqs",
   "download",
@@ -537,7 +531,7 @@ function launchIsPhase(state) {
   return LAUNCH_PHASE_STATES.includes(state);
 }
 function isLaunchStep(step) {
-  return step in LAUNCH_STEP_ORDER;
+  return LAUNCH_PHASE_STATES.includes(step);
 }
 var SUDO_WAITABLE_STATES = [
   "prereqs",
@@ -566,20 +560,14 @@ function launchNextState(entry, event) {
       if (!isLaunchStep(target)) {
         next = current;
         nextCause = cause;
-      } else if (current === "idle" || current === "failed") {
-        next = target;
-        nextCause = void 0;
       } else if (current === "running" || current === "stopping") {
         next = current;
         nextCause = cause;
-      } else if (current === "sudo") {
-        next = target;
-        nextCause = void 0;
-      } else if (!isLaunchStep(current)) {
+      } else if (current === "downloading") {
         next = current;
         nextCause = cause;
       } else {
-        next = LAUNCH_STEP_ORDER[target] >= LAUNCH_STEP_ORDER[current] ? target : current;
+        next = target;
         nextCause = void 0;
       }
       break;

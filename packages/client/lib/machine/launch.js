@@ -10,34 +10,29 @@
  * the user typed the password or with the host's 60-second timeout
  * settling to failed), running (a Stop), stopping (a disabled throbber
  * while the stop is in flight), and failed (a red Logs). launchNextState
- * is the hardened transition: a step event only advances forward through
- * the rebuild phases (a stale or out-of-order step is a no-op), a healthy
- * result settles to running, a failed result settles to failed, a stop
- * moves a running (or idle, a provider running per the summary with no
- * machine entry) engine to stopping, a confirmed stop settles to idle, a
- * stop that is still running at the deadline settles to failed with the
- * cause 'stop', a sudoNeeded moves any in-flight state to sudo (where a
- * step resumes the run at the reported step, healthy and failed settle as
- * they do from a phase, a stop moves to stopping, and a reset settles to
- * idle), and a break (the Logs control, a navigation away) resets: a
- * launch failure reads as Launch (idle), a stop timeout reads as Stop
- * (running), because the engine is probably still up. The machine takes
- * the entry ({status, cause}) and returns the next entry, so the
- * cause-aware reset stays in one place. An event that names no legal next
- * state leaves the control where it is, so a late event never corrupts
- * it.
+ * is the hardened transition: a step event from the live run stream is
+ * authoritative for the run's reported phase and sets it directly (the
+ * host reports each phase as its work actually starts, and the real
+ * sequences are not one fixed order), so the only guarded cases are the
+ * in-flight states: a stop in flight supersedes a late step, the
+ * downloading re-poll state ignores steps, and an unknown step name is a
+ * no-op. A healthy result settles to running, a failed result settles to
+ * failed, a stop moves a running (or idle, a provider running per the
+ * summary with no machine entry) engine to stopping, a confirmed stop
+ * settles to idle, a stop that is still running at the deadline settles
+ * to failed with the cause 'stop', a sudoNeeded moves any in-flight state
+ * to sudo (where a step resumes the run at the reported step, healthy and
+ * failed settle as they do from a phase, a stop moves to stopping, and a
+ * reset settles to idle), and a break (the Logs control, a navigation
+ * away) resets: a launch failure reads as Launch (idle), a stop timeout
+ * reads as Stop (running), because the engine is probably still up. The
+ * machine takes the entry ({status, cause}) and returns the next entry,
+ * so the cause-aware reset stays in one place. An event that names no
+ * legal next state leaves the control where it is, so a late event never
+ * corrupts it.
  * @module dsh-plugin-local-infer/client/machine/launch
  */
-// The rebuild phases in the order the launch route streams them. A step
-// event only advances forward through this order; a stale or out-of-order
-// step is a no-op.
-export const LAUNCH_STEP_ORDER = {
-    prereqs: 0,
-    download: 1,
-    build: 2,
-    launch: 3,
-};
-/** The four rebuild phase states, in step order. */
+/** The four rebuild phase states. The step names the stream can carry. */
 export const LAUNCH_PHASE_STATES = [
     'prereqs',
     'download',
@@ -65,9 +60,9 @@ export function launchIsPhase(state) {
 }
 // isLaunchStep reports whether a step name names one of the four rebuild
 // phases. The step field is a plain string (the NDJSON stream carries
-// server step names), so the machine guards before indexing the order map.
+// server step names), so the machine guards before trusting it.
 function isLaunchStep(step) {
-    return step in LAUNCH_STEP_ORDER;
+    return LAUNCH_PHASE_STATES.includes(step);
 }
 // The in-flight states a host password wait can interrupt: the four
 // rebuild phases, the model fetch, or a sudo wait already in progress.
@@ -119,29 +114,24 @@ export function launchNextState(entry, event) {
                 next = current;
                 nextCause = cause;
             }
-            else if (current === 'idle' || current === 'failed') {
-                next = target;
-                nextCause = undefined;
-            }
             else if (current === 'running' || current === 'stopping') {
                 // A stop in flight supersedes a late launch step.
                 next = current;
                 nextCause = cause;
             }
-            else if (current === 'sudo') {
-                // The user typed the password: the run resumes at the step the
-                // host reports, and a sudo wait carries no phase order to guard.
-                next = target;
-                nextCause = undefined;
-            }
-            else if (!isLaunchStep(current)) {
-                // downloading has no step order, so a late step is a no-op.
+            else if (current === 'downloading') {
+                // The re-poll state reads the result's downloading verdict, not the
+                // step stream, so a late step is a no-op here too.
                 next = current;
                 nextCause = cause;
             }
             else {
-                // A step only advances forward through the rebuild phases.
-                next = LAUNCH_STEP_ORDER[target] >= LAUNCH_STEP_ORDER[current] ? target : current;
+                // The server stream is authoritative for the run in flight: a
+                // reported step sets the reported state directly (idle and failed
+                // seed it, a phase moves to it, and a sudo wait resumes at it). The
+                // host announces each phase as its work actually starts, so the
+                // stream's order is the run's real order and needs no comparison.
+                next = target;
                 nextCause = undefined;
             }
             break;

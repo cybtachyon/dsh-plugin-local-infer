@@ -8,7 +8,10 @@
  * hf download of any selected chat template when it is not already present.
  * Every step streams through the log sink as it lands, and an already-
  * satisfied step is skipped and logged as such, so a Launch that runs the
- * routine before the deploy is idempotent. A Launch can set
+ * routine before the deploy is idempotent. With an `onStep` reporter (a
+ * Launch's progress sink; a standalone Get passes none) each step announces
+ * its launch phase only when its work actually starts, so the card's button
+ * reads the phase that is running. A Launch can set
  * `continueOnSyncFailure` on the request: when the git sync (rebase) of an
  * existing checkout fails, the run keeps going with the checkout's current
  * version and reports `syncFailed` on the result, so a broken rebase never
@@ -16,7 +19,7 @@
  * sync failure.
  * @module dsh-plugin-local-infer/ui/ops/get-steps
  */
-import type { Config, LifecycleHost } from 'dsh-plugin-local-infer/core';
+import type { Config, LaunchProgress, LifecycleHost } from 'dsh-plugin-local-infer/core';
 import type { LocalInferService } from 'dsh-plugin-local-infer/service';
 import type { StoredPlatformConfig } from '../config.ts';
 /**
@@ -34,7 +37,12 @@ import type { StoredPlatformConfig } from '../config.ts';
  * `onChunk` is the hf download's raw stderr progress sink: the download
  * runner hands each streamed stdout and stderr chunk to it as it lands,
  * separate from the log text sink the step lines stream through, so the
- * caller parses the tqdm lines into progress events. `continueOnSyncFailure`
+ * caller parses the tqdm lines into progress events. `onStep` is the launch
+ * phase reporter (the card's button reader): a step announces its phase only
+ * when its work actually starts (the dep install, the sync/build, a model or
+ * template download), so a satisfied-and-skipped step announces nothing. A
+ * standalone Get passes none (its control keeps its throbber); a Launch
+ * threads its route progress sink here. `continueOnSyncFailure`
  * (a Launch-only flag) keeps the run going when the git sync of an existing
  * checkout fails: the run reports `syncFailed` on the result and the launch
  * continues with the checkout's current version, so a broken rebase never
@@ -50,6 +58,7 @@ export interface GetStepsRequest {
     host: LifecycleHost;
     signal?: AbortSignal;
     onChunk?: (chunk: string) => void;
+    onStep?: LaunchProgress;
 }
 /**
  * GetStepsResult reports the run: whether every step passed, a detail the

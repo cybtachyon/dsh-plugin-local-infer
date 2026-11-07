@@ -8,7 +8,10 @@
  * hf download of any selected chat template when it is not already present.
  * Every step streams through the log sink as it lands, and an already-
  * satisfied step is skipped and logged as such, so a Launch that runs the
- * routine before the deploy is idempotent. A Launch can set
+ * routine before the deploy is idempotent. With an `onStep` reporter (a
+ * Launch's progress sink; a standalone Get passes none) each step announces
+ * its launch phase only when its work actually starts, so the card's button
+ * reads the phase that is running. A Launch can set
  * `continueOnSyncFailure` on the request: when the git sync (rebase) of an
  * existing checkout fails, the run keeps going with the checkout's current
  * version and reports `syncFailed` on the result, so a broken rebase never
@@ -70,6 +73,10 @@ async function runDepsStep(ctx) {
     const buildMode = resolveBuildMode(engine, request.config);
     emit(`system dependencies (${buildMode})\n`);
     if (request.allowRunDeps === true) {
+        // The prereqs phase runs only here: with the gate on the install actually
+        // runs, so the step announces it as it starts (the gate-off re-check
+        // below is not a prereqs phase and announces nothing).
+        request.onStep?.('prereqs');
         // The install run's log sink is this step's emit, so the service writes
         // each dependency install command's `$ <command>` line into the same run
         // text (ahead of the per-dep results below) before the guarded runner
@@ -117,6 +124,10 @@ async function runSyncBuildStep(ctx) {
         emit('engine sync and build: auto rebuild off, skipped\n');
         return null;
     }
+    // The sync and build actually run (the Auto Rebuild checkbox is not off),
+    // so the step announces its build phase as it starts; a skipped step
+    // announces nothing.
+    request.onStep?.('build');
     // The distinct clone and build headers let the Logs-header step chips track
     // the two sub-steps separately: the clone chip runs until the build header
     // lands, and the build chip runs until the model header lands.
@@ -195,6 +206,9 @@ async function runModelDownloadStep(ctx) {
                 emit(`model download: ${modelId} is already present, skipped\n`);
             }
             else {
+                // The download actually runs, so the step announces its download
+                // phase as it starts; an already-present artifact announces nothing.
+                request.onStep?.('download');
                 // The `$ <hf download ...>` line is written by the service's download
                 // exec site (through downloadOptions' onLog), so the command logs
                 // exactly once per run, from wherever the child actually spawns.
@@ -210,7 +224,13 @@ async function runModelDownloadStep(ctx) {
         emit('model download: no model selected, skipped\n');
     }
     if (request.engineId === 'infernix') {
-        for (const command of infernixGetDownloads(request.config, target.directory, target.useHubCache)) {
+        const extras = infernixGetDownloads(request.config, target.directory, target.useHubCache);
+        if (extras.length > 0) {
+            // The extras actually download (even when the selected artifact was
+            // already present), so the step announces its download phase once here.
+            request.onStep?.('download');
+        }
+        for (const command of extras) {
             emit(`$ ${command}\n`);
             // The Infernix extra downloads stream through the host, so their tqdm
             // lines reach the log sink and the onChunk progress sink together, the
@@ -258,6 +278,9 @@ async function runChatTemplateStep(ctx) {
             emit(`chat template: ${template} is already present, skipped\n`);
         }
         else {
+            // The template download actually runs, so the step announces its
+            // download phase as it starts.
+            request.onStep?.('download');
             // The `$ <hf chat-template ...>` line is written by the service's
             // download exec site (through downloadOptions' onLog), logging once.
             const download = await localInfer.downloadChatTemplate(template, target.directory, downloadOptions(ctx));
