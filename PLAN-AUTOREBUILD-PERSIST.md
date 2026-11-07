@@ -81,7 +81,7 @@ Depends: 002, 003 -> 001.
   always`, so the Hyper-Qwen engine cannot skip the image pull) thread the flag
   into `formatLaunchCommand`, use `--pull missing` when off, skip the build-phase
   announcement, and keep the Logs command note identical to the command run.
-- [ ] [TASK-005-launch-chain-pin](docs/PLAN-AUTOREBUILD-PERSIST-TASK-005-launch-chain-pin.md) -
+- [x] [TASK-005-launch-chain-pin](docs/PLAN-AUTOREBUILD-PERSIST-TASK-005-launch-chain-pin.md) -
   pin the full chain: launch request `autoRebuild: false` -> Get steps emit the
   skip line, `localInfer.launch` receives `autoRebuild: false`, deploy spawns the
   plan's expected parameters with no sync/build/pull. DoD: ui launch-route test.
