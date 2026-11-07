@@ -21,6 +21,7 @@
  * @module dsh-plugin-local-infer/client/store/derive
  */
 import { hasInFlightGet } from "./abort.js";
+import { isLiveRunAttached } from "./run-markers.js";
 /**
  * editingProvider resolves the provider entry the form is editing, if any:
  * the summary entry whose id matches ui.editingProviderId. A stale id (the
@@ -81,6 +82,17 @@ export function deriveLaunchDisabled(state) {
  */
 export function isGettingInFlight(state) {
     return state.actions.get.status === 'pending' || hasInFlightGet();
+}
+/**
+ * isLiveRunInFlight reports whether a provider process is live from the
+ * card's side: a Get run in flight (isGettingInFlight), any driver-started
+ * run in flight, or the pane following an attached run-log stream (the
+ * run-markers registry). The Logs pane renders its step chips and the Cancel
+ * pill from it, so the pane reads the launch, stop, download, and install
+ * processes the way it reads a Get, not only the Get cell.
+ */
+export function isLiveRunInFlight(state) {
+    return isGettingInFlight(state) || isLiveRunAttached();
 }
 // toGb renders a byte count as GB with one decimal, the readout's size unit.
 function toGb(bytes) {
@@ -258,13 +270,14 @@ export function deriveLifecycleControl(state, t) {
     };
 }
 /**
- * deriveDisplayedLogs is the Logs section's text: the streamed Get buffer
- * while a run is in flight, else the summary's persisted last-run logs, else
- * the empty string. One value the auto-scroll effect and the textarea share.
+ * deriveDisplayedLogs is the Logs section's text: the live run-log buffer
+ * (the attached stream's text, or a driver's own appends) while one is in
+ * place, else the summary's persisted last-run logs, else the empty string.
+ * One value the auto-scroll effect and the textarea share.
  */
 export function deriveDisplayedLogs(state) {
-    if (state.ui.logs.getLogs !== null) {
-        return state.ui.logs.getLogs;
+    if (state.ui.logs.liveLogs !== null) {
+        return state.ui.logs.liveLogs;
     }
     const lastLogs = state.summary?.lastLogs;
     return lastLogs !== undefined && lastLogs !== '' ? lastLogs : '';

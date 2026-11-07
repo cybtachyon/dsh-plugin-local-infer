@@ -12,9 +12,10 @@
  * each phase begins, a sudo event when a sudo command waits for the password
  * on the host's CLI, a progress event when the Get-steps hf download's tqdm
  * output folds into a structured state, then a final result event), the
- * get route streams NDJSON too (a log event per log line, a progress event
- * per folded download state), and the logs route streams NDJSON per run key
- * (a catch-up snapshot, then log, runBegin, or runEnd events), which
+ * get route streams NDJSON progress events only (its log text moved to the
+ * logs route, so a Get line never reaches the card twice), and the logs
+ * route streams NDJSON per run key (a catch-up snapshot, then log, runBegin,
+ * or runEnd events), which
  * subscribeRunLogs holds open. readNdjsonLines buffers
  * chunks into whole lines: a line split across chunks completes on the
  * next chunk, a partial final line (a stream that ends without a trailing
@@ -98,28 +99,25 @@ export async function readLaunchStream(response, onStep, onProgress, onSudo) {
     return result;
 }
 /**
- * readGetStream reads the get route's NDJSON answer and hands each log event
- * to onChunk and each progress event to onProgress. A non-OK response throws
- * with the body text. A response with no streamable body (a host that cannot
- * stream) reads the whole body as one log chunk.
+ * readGetStream reads the get route's NDJSON answer and hands each progress
+ * event to onProgress. The route carries no log lines anymore (the logs
+ * route's stream is the run's one display path), so a line without a
+ * progress state reads as nothing. A non-OK response throws with the body
+ * text. A response with no streamable body (a host that cannot stream) has
+ * no progress to hand and resolves quietly.
  */
-export async function readGetStream(response, onChunk, onProgress) {
+export async function readGetStream(response, onProgress) {
     if (!response.ok) {
         const text = await response.text();
         throw new Error(text || 'HTTP ' + response.status);
     }
     if (response.body === null || typeof response.body.getReader !== 'function') {
-        const text = await response.text();
-        if (text !== '') {
-            onChunk(text);
-        }
+        // Drain the body so the connection closes; there is no log path to feed.
+        await response.text();
         return;
     }
     await readNdjsonLines(response.body, (event) => {
-        if (event.log !== undefined) {
-            onChunk(event.log);
-        }
-        else if (event.progress !== undefined) {
+        if (event.progress !== undefined) {
             onProgress?.(event.progress);
         }
     });
@@ -260,14 +258,14 @@ export function postStop(request) {
 }
 /**
  * postGet runs the git sync, the dependency plan, and the build through the
- * get route's NDJSON stream, handing each log event to onChunk as it lands
- * and each progress event to the optional onProgress. The optional signal is
- * the card's cancel: an abort closes the in-flight stream, and the route
- * interrupts the in-flight hf child on the host.
+ * get route's NDJSON stream, handing each progress event to the optional
+ * onProgress (the route's log text moved to the logs route's stream). The
+ * optional signal is the card's cancel: an abort closes the in-flight
+ * stream, and the route interrupts the in-flight hf child on the host.
  */
-export async function postGet(request, onChunk, signal, onProgress) {
+export async function postGet(request, signal, onProgress) {
     const response = await post('/local-infer/get', request, signal);
-    await readGetStream(response, onChunk, onProgress);
+    await readGetStream(response, onProgress);
 }
 /** postDownload pulls the selected model into the model directory. */
 export function postDownload(request) {

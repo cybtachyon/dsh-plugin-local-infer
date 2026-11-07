@@ -1,8 +1,9 @@
 /**
  * The shared Logs buffer helpers the provider and deps store modules both
- * write through: the run separator seed, the line append, the raw streamed
- * chunk append, the whole-buffer replace, and the "Canceled" line the abort
- * paths write.
+ * write through: the line append, the raw streamed chunk append, the
+ * whole-buffer replace, and the "Canceled" line the abort paths write. The
+ * run's own seed separator is the host's (beginRun seeds the hub, whose
+ * runBegin/snapshot replaces the buffer), so no client seed helper remains.
  *
  * The helpers live in a leaf module so deps.ts and providers.ts import them
  * from one place without an import edge between the two modules.
@@ -36,40 +37,29 @@ export function separatorLine(label: string): string {
   return SEPARATOR_PREFIX + label + '\n'
 }
 
-// seedProcessLog writes a "Launching..." separator to the Logs buffer, so the
-// run reads as a fresh Logs section the launch appends to.
-export function seedProcessLog(store: CardStore, label: string): void {
-  const state = store.getSnapshot()
-  const base = state.ui.logs.getLogs ?? state.summary?.lastLogs ?? ''
-  store.dispatch({
-    type: 'ui/patch',
-    patch: {
-      logs: {
-        ...state.ui.logs,
-        getLogs: joinLine(base, separatorLine(label)),
-      },
-    },
-  })
-}
+// seedProcessLog removed with TASK-005: the host's beginRun seeds the run
+// (the "Launching...", "Getting engine and model..." separators) and the
+// run-log stream delivers that seed as runBegin/snapshot, so a client-side
+// seed would land the line twice.
 
-// appendProcessLog appends a line to the Logs buffer (the build separator),
-// keeping the existing buffer.
+// appendProcessLog appends a line to the Logs buffer (the build separator,
+// the sudo note), keeping the existing buffer.
 export function appendProcessLog(store: CardStore, line: string): void {
   const logs = store.getSnapshot().ui.logs
   store.dispatch({
     type: 'ui/patch',
-    patch: { logs: { ...logs, getLogs: joinLine(logs.getLogs ?? '', line) } },
+    patch: { logs: { ...logs, liveLogs: joinLine(logs.liveLogs ?? '', line) } },
   })
 }
 
 // appendLogChunk appends a raw streamed chunk to the Logs buffer without the
-// newline join: the Get stream's chunks are complete lines the server framed,
-// so they concatenate directly.
+// newline join: the run-log stream's chunks are complete lines the server
+// framed, so they concatenate directly.
 export function appendLogChunk(store: CardStore, chunk: string): void {
   const logs = store.getSnapshot().ui.logs
   store.dispatch({
     type: 'ui/patch',
-    patch: { logs: { ...logs, getLogs: (logs.getLogs ?? '') + chunk } },
+    patch: { logs: { ...logs, liveLogs: (logs.liveLogs ?? '') + chunk } },
   })
 }
 
@@ -80,7 +70,7 @@ export function replaceLogBuffer(store: CardStore, text: string): void {
   const logs = store.getSnapshot().ui.logs
   store.dispatch({
     type: 'ui/patch',
-    patch: { logs: { ...logs, getLogs: text } },
+    patch: { logs: { ...logs, liveLogs: text } },
   })
 }
 

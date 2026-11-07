@@ -14,15 +14,25 @@
  * quietly with the buffer kept. A mount-time attach whose snapshot answers
  * running=false while nothing runs locally (the page-refresh catch-up read)
  * detaches right away and remembers the probe, so a re-render does not
- * re-open an idle key until a run starts there. clientRunLogKey mirrors the
- * host's runLogKey rule so the client names the buffer its own request
- * writes.
+ * re-open an idle key until a run starts there. The in-flight keys and the
+ * followed-key marker ride the run-markers leaf (abort.ts's registry pattern)
+ * so cardReducer and derive.ts read the live state without an import edge
+ * here. clientRunLogKey mirrors the host's runLogKey rule so the client
+ * names the buffer its own request writes.
  * @module dsh-plugin-local-infer/client/store/logs-stream
  */
 
 import type { Config } from 'dsh-plugin-local-infer/ui'
 import { subscribeRunLogs, type RunLogsEvent } from '../api/routes.ts'
 import { appendLogChunk, replaceLogBuffer } from './logs.ts'
+import {
+  clearRunInFlight,
+  clearRunMarkers,
+  clearStreamFollowed,
+  isRunInFlight,
+  markRunInFlight,
+  markStreamFollowed,
+} from './run-markers.ts'
 import type { CardStore } from './sync.ts'
 
 /**
@@ -97,12 +107,13 @@ interface Attachment {
 
 // The module's single attach and its run bookkeeping. Module-level (the way
 // abort.ts tracks in-flight runs): the card mounts one pane and one driver
-// set, and clearRunLogStreams resets the slate for tests.
+// set, and clearRunLogStreams resets the slate for tests. The in-flight run
+// keys and the followed-key marker themselves live in the run-markers leaf,
+// which cardReducer and derive.ts read without an import edge here.
 let active: Attachment | null = null
 let logsPaneMounted = false
 let lastRunKey: string | null = null
 let catchUpTriedFor: string | null = null
-const runInFlight = new Set<string>()
 
 /**
  * attachRunLogStream opens the card's one run-log stream for key: an attach
@@ -124,6 +135,7 @@ export function attachRunLogStream(store: CardStore, key: string): RunLogStreamH
     reconnected: false,
   }
   active = attachment
+  markStreamFollowed(key)
   openStream(store, attachment)
   return handleFor(attachment)
 }
@@ -136,7 +148,7 @@ export function attachRunLogStream(store: CardStore, key: string): RunLogStreamH
  * host's runBegin event replaces it with the new run's seed.
  */
 export function beginRun(store: CardStore, key: string): void {
-  runInFlight.add(key)
+  markRunInFlight(key)
   lastRunKey = key
   if (catchUpTriedFor === key) {
     catchUpTriedFor = null
@@ -154,7 +166,7 @@ export function beginRun(store: CardStore, key: string): void {
  * pane back to the stored lastLogs.
  */
 export function endRun(store: CardStore, key: string): void {
-  runInFlight.delete(key)
+  clearRunInFlight(key)
   if (lastRunKey === key) {
     lastRunKey = null
   }
@@ -221,7 +233,7 @@ function paneTargetKey(store: CardStore): string | null {
   if (editing !== null) {
     return editing
   }
-  if (lastRunKey !== null && runInFlight.has(lastRunKey)) {
+  if (lastRunKey !== null && isRunInFlight(lastRunKey)) {
     return lastRunKey
   }
   const summary = state.summary
@@ -244,7 +256,7 @@ function paneTargetKey(store: CardStore): string | null {
  */
 export function clearRunLogStreams(): void {
   detachActive()
-  runInFlight.clear()
+  clearRunMarkers()
   lastRunKey = null
   catchUpTriedFor = null
   logsPaneMounted = false
@@ -264,6 +276,7 @@ function detachAttachment(attachment: Attachment): void {
   }
   attachment.detached = true
   attachment.controller.abort()
+  clearStreamFollowed(attachment.key)
   if (active === attachment) {
     active = null
   }
@@ -301,7 +314,7 @@ function streamEvent(store: CardStore, attachment: Attachment, event: RunLogsEve
   if (event.snapshot !== undefined) {
     attachment.hostRunning = event.running === true
     replaceLogBuffer(store, event.snapshot)
-    if (!attachment.hostRunning && !runInFlight.has(attachment.key)) {
+    if (!attachment.hostRunning && !isRunInFlight(attachment.key)) {
       catchUpTriedFor = attachment.key
       attachment.settled = true
       detachAttachment(attachment)
@@ -320,7 +333,11 @@ function streamEvent(store: CardStore, attachment: Attachment, event: RunLogsEve
   if (event.runEnd !== undefined) {
     attachment.hostRunning = false
     attachment.settled = true
-    runInFlight.delete(attachment.key)
+    clearRunInFlight(attachment.key)
+    // The pane no longer follows a live run: the followed marker clears now
+    // (the connection may still be open), so a summary ack after the runEnd
+    // hands the buffer back to the summary's persisted lastLogs.
+    clearStreamFollowed(attachment.key)
   }
 }
 
@@ -334,7 +351,7 @@ function endPass(store: CardStore, attachment: Attachment): void {
     return
   }
   const runInFlightHere =
-    !attachment.settled && (attachment.hostRunning || runInFlight.has(attachment.key))
+    !attachment.settled && (attachment.hostRunning || isRunInFlight(attachment.key))
   if (runInFlightHere && !attachment.reconnected) {
     attachment.reconnected = true
     setTimeout(() => {
@@ -346,5 +363,9 @@ function endPass(store: CardStore, attachment: Attachment): void {
     return
   }
   attachment.settled = true
+  // The pass ended without a run to follow: the pane no longer holds a live
+  // view, so the followed marker clears and a summary ack may hand the buffer
+  // back to the stored lastLogs.
+  clearStreamFollowed(attachment.key)
   active = null
 }

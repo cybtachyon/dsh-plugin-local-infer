@@ -13,10 +13,9 @@
  */
 import { fetchDeps, fetchSummary, postGet, postInstall, postSave, } from "../api/routes.js";
 import { cancelInFlightRuns, forgetGetAbort, hasInFlightGet, trackGetAbort, } from "./abort.js";
-import { appendCanceledLog, appendLogChunk, seedProcessLog } from "./logs.js";
+import { appendCanceledLog, appendLogChunk } from "./logs.js";
 import { beginRun, clientRunLogKey, endRun } from "./logs-stream.js";
 import { ProgressThrottle } from "./progress-throttle.js";
-import { parseHfProgress } from "./progress.js";
 import { performAction, ACTION_TIMEOUTS } from "./sync.js";
 /**
  * GET_IDLE_MS is the Get run's output-idle cap in ms. Two minutes without a
@@ -181,22 +180,18 @@ export function performInstall(store, t) {
 }
 /**
  * performGet runs the git sync, the dependency plan, and the build through
- * the get route's NDJSON stream. The click seeds the Logs section's streamed
- * buffer from the persisted last-run logs with a "Getting engine and
- * model..." separator, so the run reads as a fresh Logs section, and
- * brackets one run-log stream under the key the host's get route writes (no
- * providerId, the draft's engine and config, per the mirrored runLogKey
- * rule): the run's live text reaches the Logs buffer through that stream
- * (Q2), NOT through the get route's own log events, so no line lands twice
- * (the route's log events drop in TASK-005). Each streamed chunk still
- * re-arms the idle cap: two minutes without a
- * line settles the get cell (the control re-enables) while the run keeps
- * streaming in the background. The run folds the streamed tqdm state into
- * the ui.getProgress readout through the ProgressThrottle (the 500 ms
- * cadence): a { progress } event (the server-parsed state) wins over the
- * text parse of a log chunk, and the field clears when the run settles
- * (success, failure, or abort), so the readout never outlives the run. When
- * the stream ends, the route has
+ * the get route's NDJSON stream. The route's answer carries progress events
+ * only (its log events are gone): the run's live text reaches the Logs buffer
+ * through the one attached run-log stream under the key the host's get route
+ * writes (no providerId, the draft's engine and config, per the mirrored
+ * runLogKey rule), whose runBegin lands the host's "Getting engine and
+ * model..." seed, so no line lands twice. Each progress event re-arms the
+ * idle cap: two minutes without a line settles the get cell (the control
+ * re-enables) while the run keeps streaming in the background. The run folds
+ * the structured progress state into the ui.getProgress readout through the
+ * ProgressThrottle (the 500 ms cadence), and the field clears when the run
+ * settles (success, failure, or abort), so the readout never outlives the
+ * run. When the stream ends, the route has
  * persisted the run as the last logs, so a re-read of both read models (the
  * summary and the deps panel) hands the Logs section back to the stored
  * value. The run registers its AbortController in the in-flight
@@ -226,28 +221,16 @@ export function performGet(store, t) {
     // providerId, so the draft's engine and model pick the stored entry, else
     // the engine id), and the run brackets one stream for it.
     const runKey = clientRunLogKey(state.summary?.providers ?? [], draft.engine, draft.config);
-    seedProcessLog(store, t.getting);
     beginRun(store, runKey);
-    // The readout throttle: a { progress } event (the server-parsed state)
-    // wins over the text parse of a log chunk, and settle lands the latest
-    // state before clearing the field, so the readout never outlives the run.
+    // The readout throttle: the structured { progress } events land at the
+    // bounded cadence, and settle lands the latest state before clearing the
+    // field, so the readout never outlives the run.
     const throttle = new ProgressThrottle(store, GET_PROGRESS_THROTTLE_MS);
-    // The text parse is the fallback for hosts that stream log text without
-    // progress events: fold the chunk into the latest state, and note the
-    // state only when the chunk carries a bar update (the fold returns the
-    // prior state unchanged otherwise).
-    const foldProgress = (chunk) => {
-        const parsed = parseHfProgress(chunk, throttle.latest);
-        if (parsed !== null && parsed !== throttle.latest) {
-            throttle.note(parsed, false);
-        }
-    };
     // append writes the buffer directly: the client's own notes (the failure
     // line) take this path, while the run's live text reaches the buffer
     // through the attached run-log stream (Q2).
     const append = (text) => {
         appendLogChunk(store, text);
-        foldProgress(text);
     };
     let idleTimer = null;
     let finished = false;
@@ -304,18 +287,11 @@ export function performGet(store, t) {
             engine: draft.engine,
             config: draft.config,
             ...(platform !== undefined ? { platform } : {}),
-        }, (chunk) => {
-            // The chunk's text no longer feeds the buffer here (the attached
-            // run-log stream carries the run's lines; appending them at both
-            // readers would land every Get line twice). The progress fold
-            // and the idle cap keep riding the streamed chunk while the
-            // route still emits log events (they drop in TASK-005).
-            foldProgress(chunk);
-            armIdle();
         }, controller.signal, (progress) => {
-            // The structured event is the server-parsed state: it wins over
-            // the text parse when both arrive.
+            // The structured event is the server-parsed download state: it
+            // folds the readout and re-arms the idle cap.
             throttle.note(progress, true);
+            armIdle();
         })
             .then(() => {
             settleRun();

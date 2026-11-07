@@ -362,7 +362,7 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       expect(fetchMock).not.toHaveBeenCalled()
     })
 
-    it('seeds the Logs buffer, leaves the streamed lines to the run-log stream, and re-reads the summary on the end', async () => {
+    it('leaves the Logs buffer to the run-log stream and re-reads the summary on the end', async () => {
       const { store, state } = makeStore()
       prime(store, depsWith())
       store.dispatch({
@@ -381,15 +381,15 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       })
       vi.stubGlobal('fetch', fetchMock)
       const promise = performGet(store, t)
-      // The get route's own log chunks no longer feed the buffer: the run's
-      // live text reaches it through the attached run-log stream alone, so
-      // the same line arriving on this stream never lands twice.
-      stream.enqueue('{"log":"line one\\n"}\n')
+      // The click seeds nothing (the host's beginRun seed reaches the pane as
+      // runBegin/snapshot through the stream), and the get route's answer
+      // carries no log lines at all: with the pane unmounted here no stream
+      // attaches, so the buffer stays null while the run's progress events
+      // flow.
+      stream.enqueue('{"progress":{"percent":12}}\n')
       await vi.advanceTimersByTimeAsync(0)
-      expect(state().ui.logs.getLogs).toBe('old logs\n--- ' + t.getting + '\n')
-      stream.enqueue('{"log":"line two\\n"}\n')
-      await vi.advanceTimersByTimeAsync(0)
-      expect(state().ui.logs.getLogs).not.toContain('line two')
+      expect(state().ui.logs.liveLogs).toBeNull()
+      expect(state().ui.getProgress).toEqual({ percent: 12 })
       // The pane is unmounted in this harness, so the driver attached no
       // run-log stream either.
       expect(calls.filter((call) => call.url.startsWith('/local-infer/logs'))).toHaveLength(0)
@@ -398,7 +398,7 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       await promise
       // The repriceAll settle re-read (both read models) hands the Logs
       // section back to the stored value.
-      expect(state().ui.logs.getLogs).toBeNull()
+      expect(state().ui.logs.liveLogs).toBeNull()
       expect(state().summary).toEqual(summary)
       expect(state().actions.get).toEqual({ status: 'ok', detail: 'ok' })
       const get = calls.find((call) => call.url === '/local-infer/get')
@@ -408,7 +408,7 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       })
     })
 
-    it('brackets one run-log stream and lands each Get line exactly once', async () => {
+    it('brackets one run-log stream and renders a full fake Get run each line exactly once', async () => {
       const { store, state } = makeStore()
       const getStream = streamResponse()
       const logs = logsStreams()
@@ -433,15 +433,32 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       const promise = performGet(store, t)
       await vi.advanceTimersByTimeAsync(0)
       expect(logs.calls.map((call) => call.url)).toEqual(['/local-infer/logs?provider=ninfer'])
-      // The same line arrives on both readers: the get route's own NDJSON
-      // (kept until TASK-005 drops it) and the run-log hub.
-      getStream.enqueue('{"log":"cloning repo\\n"}\n')
-      logs.streams[0].enqueue('{"log":"cloning repo\\n","seq":1}')
+      // The full fake run: the hub stream is the run's only text path (the
+      // Get route's answer carries progress only), so the host seed, the run
+      // lines, and the progress line each reach the buffer exactly once.
+      const hub = logs.streams[0]!
+      hub.enqueue('{"runBegin":"--- Getting engine and model...\\n","seq":0}')
+      hub.enqueue('{"log":"$ hf download Qwen/Big --local-dir .\\n","seq":1}')
+      hub.enqueue('{"log":"model download: a-model\\n","seq":2}')
+      hub.enqueue('{"log":"get complete\\n","seq":3}')
+      getStream.enqueue('{"progress":{"percent":100}}\n')
       await vi.advanceTimersByTimeAsync(0)
-      const buffer = state().ui.logs.getLogs ?? ''
-      // The line appears exactly once, after the client's seed.
-      expect(buffer).toBe('--- ' + t.getting + '\ncloning repo\n')
-      expect(buffer.match(/cloning repo/g)).toHaveLength(1)
+      const buffer = state().ui.logs.liveLogs ?? ''
+      expect(buffer).toBe(
+        '--- Getting engine and model...\n' +
+          '$ hf download Qwen/Big --local-dir .\n' +
+          'model download: a-model\n' +
+          'get complete\n',
+      )
+      for (const line of [
+        '--- Getting engine and model...',
+        '$ hf download Qwen/Big --local-dir .',
+        'model download: a-model',
+        'get complete',
+      ]) {
+        expect(buffer.split(line).length - 1).toBe(1)
+      }
+      expect(buffer.split('percent').length - 1).toBe(0)
       // The run settles and the driver detaches the stream.
       getStream.close()
       await vi.advanceTimersByTimeAsync(0)
@@ -449,7 +466,7 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       expect(logs.calls[0].signal?.aborted).toBe(true)
     })
 
-    it('folds the tqdm log chunks into getProgress (throttled) and clears it on the settle', async () => {
+    it('folds the structured progress events into getProgress (throttled) and clears it on the settle', async () => {
       const { store, state } = makeStore()
       prime(store, depsWith())
       const patches = trackProgressPatches(store)
@@ -463,12 +480,19 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       vi.stubGlobal('fetch', fetchMock)
       const bar = (percent: number, done: string, total: string): string =>
         JSON.stringify({
-          log: `Downloading x.safetensors: ${percent}% | ${done}/${total} [00:01<00:02, 1.0MB/s]\n`,
+          progress: {
+            step: 'Downloading x.safetensors',
+            percent,
+            doneBytes: Number.parseFloat(done.slice(0, -1)) * 1e9,
+            totalBytes: Number.parseFloat(total.slice(0, -1)) * 1e9,
+            etaSeconds: 2,
+            unit: 'bytes',
+          },
         }) + '\n'
       const promise = performGet(store, t)
-      // A burst of tqdm chunks: the first patches immediately, and the rest
-      // land inside the 500 ms window, so the throttle arms one timer for
-      // the burst (no more than ~2 patches per second).
+      // A burst of progress events: the first patches immediately, and the
+      // rest land inside the 500 ms window, so the throttle arms one timer
+      // for the burst (no more than ~2 patches per second).
       stream.enqueue(bar(10, '5.0G', '50.0G'))
       await vi.advanceTimersByTimeAsync(0)
       stream.enqueue(bar(20, '10.0G', '50.0G'))
@@ -484,10 +508,10 @@ describe('the deps panel drivers (store/deps.ts)', () => {
         etaSeconds: 2,
         unit: 'bytes',
       })
-      // The Logs buffer no longer carries the get stream's chunks: the
-      // attached run-log stream owns the live text, and the progress parse
-      // is the get stream's only remaining reader.
-      expect(state().ui.logs.getLogs).not.toContain('10%')
+      // The Logs buffer stays empty (the pane is unmounted and the Get
+      // answer carries no text): the progress events are the route's only
+      // stream content.
+      expect(state().ui.logs.liveLogs).toBeNull()
       // The window's end lands the latest state of the burst.
       await vi.advanceTimersByTimeAsync(GET_PROGRESS_THROTTLE_MS)
       expect(patches).toHaveLength(2)
@@ -499,7 +523,7 @@ describe('the deps panel drivers (store/deps.ts)', () => {
         etaSeconds: 2,
         unit: 'bytes',
       })
-      // The settle lands the latest state (the final chunk), then clears the
+      // The settle lands the latest state (the final event), then clears the
       // field back to null: the readout must not outlive the run.
       stream.close()
       await vi.advanceTimersByTimeAsync(0)
@@ -516,10 +540,9 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       expect(state().ui.getProgress).toBeNull()
     })
 
-    it('lands the structured progress event in getProgress (throttled) and lets it win over the text parse', async () => {
+    it('keeps folding progress events and holds the idle cap down through the deadline window', async () => {
       const { store, state } = makeStore()
       prime(store, depsWith())
-      const patches = trackProgressPatches(store)
       const stream = streamResponse()
       const fetchMock = vi.fn(async (url: string) => {
         if (url === '/local-infer/get') {
@@ -528,62 +551,30 @@ describe('the deps panel drivers (store/deps.ts)', () => {
         return new Response('{}', { status: 200 })
       })
       vi.stubGlobal('fetch', fetchMock)
-      const promise = performGet(store, t)
-      // The text parse lands first (the fallback for hosts that stream log
-      // text without progress events)...
-      stream.enqueue(
-        JSON.stringify({
-          log: 'Downloading x.safetensors: 10% | 5.0G/50.0G [00:01<00:02, 1.0MB/s]\n',
-        }) + '\n',
-      )
-      await vi.advanceTimersByTimeAsync(0)
-      expect(state().ui.getProgress).toEqual({
+      const structured = (percent: number): GetProgressState => ({
         step: 'Downloading x.safetensors',
-        percent: 10,
-        doneBytes: 5.0e9,
-        totalBytes: 50.0e9,
-        etaSeconds: 2,
-        unit: 'bytes',
-      })
-      // ...and the structured event (the server-parsed state) wins,
-      // throttled to the window's end.
-      const structured: GetProgressState = {
-        step: 'Downloading x.safetensors',
-        percent: 55,
-        doneBytes: 27.5e9,
+        percent,
+        doneBytes: percent * 0.5e9,
         totalBytes: 50.0e9,
         etaSeconds: 30,
         unit: 'bytes',
-      }
-      stream.enqueue(JSON.stringify({ progress: structured }) + '\n')
-      await vi.advanceTimersByTimeAsync(0)
-      // Inside the 500 ms window the patch is held, so the readout keeps the
-      // text-parsed state until the window's end.
-      expect(patches).toHaveLength(1)
-      expect(state().ui.getProgress).toEqual({
-        step: 'Downloading x.safetensors',
-        percent: 10,
-        doneBytes: 5.0e9,
-        totalBytes: 50.0e9,
-        etaSeconds: 2,
-        unit: 'bytes',
       })
-      await vi.advanceTimersByTimeAsync(GET_PROGRESS_THROTTLE_MS)
-      expect(patches).toHaveLength(2)
-      expect(state().ui.getProgress).toEqual(structured)
-      // A later text parse never overwrites the server-parsed state.
-      stream.enqueue(
-        JSON.stringify({
-          log: 'Downloading x.safetensors: 60% | 30.0G/50.0G [00:02<00:01, 1.0MB/s]\n',
-        }) + '\n',
-      )
-      await vi.advanceTimersByTimeAsync(GET_PROGRESS_THROTTLE_MS)
-      expect(state().ui.getProgress).toEqual(structured)
-      // The get stream's log chunks stay out of the Logs buffer now (the
-      // run-log stream carries the run's live text; TASK-005 drops the
-      // route's log events).
-      expect(state().ui.logs.getLogs).not.toContain('10%')
-      expect(state().ui.logs.getLogs).not.toContain('60%')
+      const promise = performGet(store, t)
+      stream.enqueue(JSON.stringify({ progress: structured(55) }) + '\n')
+      await vi.advanceTimersByTimeAsync(0)
+      expect(state().ui.getProgress).toEqual(structured(55))
+      // A stale-host log line carries no progress and reads as nothing.
+      stream.enqueue(JSON.stringify({ log: 'Downloading x.safetensors: 60%\n' }) + '\n')
+      await vi.advanceTimersByTimeAsync(60_000)
+      stream.enqueue(JSON.stringify({ progress: structured(60) }) + '\n')
+      await vi.advanceTimersByTimeAsync(0)
+      // Past the throttle window the event flushes through immediately.
+      expect(state().ui.getProgress).toEqual(structured(60))
+      // The second event re-armed the idle cap: one minute short of the cap
+      // and one minute past the first event, the run is still in flight.
+      await vi.advanceTimersByTimeAsync(59_000)
+      expect(state().actions.get).toEqual({ status: 'pending', detail: '' })
+      expect(state().ui.logs.liveLogs).toBeNull()
       stream.close()
       await vi.advanceTimersByTimeAsync(0)
       await promise
@@ -602,16 +593,17 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       })
       vi.stubGlobal('fetch', fetchMock)
       const promise = performGet(store, t)
-      // A silent stream: no chunk re-arms the cap, so the idle settle (armed
-      // before the action deadline) fires at the cap and re-enables the
-      // control while the run keeps streaming in the background.
+      // A silent stream: no progress event re-arms the cap, so the idle
+      // settle (armed before the action deadline) fires at the cap and
+      // re-enables the control while the run keeps streaming in the
+      // background.
       await vi.advanceTimersByTimeAsync(GET_IDLE_MS)
       expect(state().actions.get).toEqual({ status: 'ok', detail: 'idle' })
-      stream.enqueue('{"log":"line one\\n"}\n')
+      stream.enqueue('{"progress":{"percent":30}}\n')
       await vi.advanceTimersByTimeAsync(0)
-      // The background chunk still re-arms the idle cap for the live run,
-      // but it no longer feeds the Logs buffer (the run-log stream does).
-      expect(state().ui.logs.getLogs).not.toContain('line one')
+      // The background progress event settles the idle-capped cell no
+      // second time, and the answer's lines never feed the Logs buffer.
+      expect(state().ui.logs.liveLogs).toBeNull()
       stream.close()
       await vi.advanceTimersByTimeAsync(0)
       await promise
@@ -668,19 +660,16 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       })
       vi.stubGlobal('fetch', fetchMock)
       const promise = performGet(store, t)
-      stream.enqueue('{"log":"line one\\n"}\n')
-      await vi.advanceTimersByTimeAsync(0)
       stream.fail('the build broke')
       await vi.advanceTimersByTimeAsync(0)
-      // The stream's line one stays out of the buffer (the run-log stream
-      // would have carried it); the client's own failure line still appends.
-      expect(state().ui.logs.getLogs).toBe(
-        '--- ' + t.getting + '\n\n' + t.getFailed + ': the build broke\n',
-      )
+      // The client's own failure line lands on an otherwise-empty buffer
+      // (no client seed; the run's text belongs to the run-log stream, and
+      // the pane is unmounted here so no stream attaches).
+      expect(state().ui.logs.liveLogs).toBe('\n' + t.getFailed + ': the build broke\n')
       resolveSummary(new Response(JSON.stringify(summary), { status: 200 }))
       await vi.advanceTimersByTimeAsync(0)
       await promise
-      expect(state().ui.logs.getLogs).toBeNull()
+      expect(state().ui.logs.liveLogs).toBeNull()
       expect(state().actions.get).toEqual({ status: 'error', detail: 'the build broke' })
       expect(state().summary).toEqual(summary)
     })
@@ -713,26 +702,25 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       })
       vi.stubGlobal('fetch', fetchMock)
       const promise = performGet(store, t)
-      stream.enqueue('{"log":"line one\\n"}\n')
       await vi.advanceTimersByTimeAsync(0)
       // The provider form's Cancel: abort the in-flight run.
       expect(cancelInFlightRuns()).toBe(true)
       await vi.advanceTimersByTimeAsync(0)
       await promise
       // The aborted run settles the get cell to error with the abort message,
-      // and the buffer keeps the streamed lines without a failure line (the
-      // "Canceled" line the Cancel wrote is the run's tail).
+      // and the buffer stays clean of any failure line (a direct registry
+      // cancel writes nothing; the run-log stream owns the run's text).
       expect(state().actions.get).toEqual({
         status: 'error',
         detail: 'The operation was aborted.',
       })
-      expect(state().ui.logs.getLogs).toBe('--- ' + t.getting + '\n')
+      expect(state().ui.logs.liveLogs).toBeNull()
       // The run is no longer in flight: a second cancel reads as nothing to
       // abort.
       expect(cancelInFlightRuns()).toBe(false)
       resolveSummary(new Response('{}', { status: 200 }))
       await vi.advanceTimersByTimeAsync(0)
-      expect(state().ui.logs.getLogs).toBeNull()
+      expect(state().ui.logs.liveLogs).toBeNull()
     })
   })
 
@@ -776,24 +764,19 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       })
       vi.stubGlobal('fetch', fetchMock)
       const promise = performGet(store, t)
-      // A tqdm chunk lands the progress readout, so the cancel has a live
-      // getProgress to clear.
-      stream.enqueue(
-        JSON.stringify({
-          log: 'Downloading x.safetensors: 10% | 5.0G/50.0G [00:01<00:02, 1.0MB/s]\n',
-        }) + '\n',
-      )
+      // A structured progress event lands the readout, so the cancel has a
+      // live getProgress to clear.
+      stream.enqueue(JSON.stringify({ progress: { percent: 10 } }) + '\n')
       await vi.advanceTimersByTimeAsync(0)
       expect(state().ui.getProgress).not.toBeNull()
       expect(hasInFlightGet()).toBe(true)
       // The cancel: abort the in-flight run, keep the form open.
       performGetCancel(store)
       expect(hasInFlightGet()).toBe(false)
-      // The "Canceled" line lands in the buffer as the run's tail (the tqdm
-      // chunk itself stays out: the run-log stream would have carried it).
-      expect(state().ui.logs.getLogs).toBe(
-        'old logs\n--- ' + t.getting + '\n\n--- Canceled\n',
-      )
+      // The "Canceled" line lands in the buffer as the run's tail (the only
+      // line: the host seeds and streams the run's own text, and no stream
+      // attaches with the pane unmounted here).
+      expect(state().ui.logs.liveLogs).toBe('--- Canceled\n')
       // The readout clears, and the form stays open (the draft and the form
       // mode are untouched, unlike cancelProvider).
       expect(state().ui.getProgress).toBeNull()
@@ -812,7 +795,7 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       await promise
       // The repriceAll settle re-read (both read models) hands the Logs
       // section back to the stored value.
-      expect(state().ui.logs.getLogs).toBeNull()
+      expect(state().ui.logs.liveLogs).toBeNull()
     })
 
     it('no-ops the Canceled line when no run is in flight', async () => {
@@ -827,7 +810,7 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       performGetCancel(store)
       // Nothing was aborted: no "Canceled" line lands, the readout stays
       // null, and the form stays open.
-      expect(state().ui.logs.getLogs).toBeNull()
+      expect(state().ui.logs.liveLogs).toBeNull()
       expect(state().ui.getProgress).toBeNull()
       expect(state().ui.providerFormMode).toBe('editing')
       expect(state().ui.editingProviderId).toBe('p1')

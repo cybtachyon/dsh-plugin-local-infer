@@ -96,8 +96,8 @@ export declare function deleteProvider(store: CardStore, providerId: string): Pr
 export declare function openEntryLogs(store: CardStore, provider: ProviderSummaryEntry): void;
 /**
  * performEntryLaunch runs one card entry's own Launch control: it starts the
- * entry's launch machine at the prereqs phase, seeds the Logs buffer with a
- * "Launching..." separator, and reads the launch stream (a step event as each
+ * entry's launch machine at the prereqs phase and reads the launch stream (a
+ * step event as each
  * phase begins, then a final result event). Each step event advances the
  * phase label; the build step writes a "Building..." separator; the launch
  * step arms the health-poll deadline (the route's poll runs up to two
@@ -114,8 +114,9 @@ export declare function openEntryLogs(store: CardStore, provider: ProviderSummar
  * provider's status dot repaints from red to green and the deps panel
  * re-prices. The run's live output reaches the Logs buffer through the
  * attached run-log stream: beginRun names the run key (the host keys this
- * launch on the provider id, per the mirrored runLogKey rule) and the run's
- * settle detaches it.
+ * launch on the provider id, per the mirrored runLogKey rule), the run's
+ * settle detaches it, and the host's "Launching..." seed arrives through
+ * that stream (runBegin/snapshot), never a client-side seed.
  */
 export declare function performEntryLaunch(store: CardStore, provider: ProviderSummaryEntry, t: TextTable): EntryTimerHandle;
 /**
@@ -155,7 +156,11 @@ export declare function performDraftLaunch(store: CardStore, t: TextTable): Prom
  * draft target): it signals the tracked process through the stop route and
  * settles the draft's stop cell. A successful stop reads as stopped (the
  * control becomes Launch). The summary and deps read models re-fetch so the
- * provider's status dot repaints and the deps panel re-prices.
+ * provider's status dot repaints and the deps panel re-prices. The round
+ * trip brackets one run-log stream with the same one-pair attach the other
+ * drivers use (the mirrored runLogKey rule, the edited provider id when the
+ * request names one), so the pane follows draft stop output the way it
+ * follows the entry Stop's.
  */
 export declare function performDraftStop(store: CardStore, t: TextTable): Promise<void>;
 //# sourceMappingURL=providers.d.ts.map

@@ -317,10 +317,12 @@ describe('the provider list drivers (store/providers.ts)', () => {
       performEntryLaunch(store, provider, t)
       await flush()
       expect(state().launch['p1']?.status).toBe('prereqs')
-      // The provider form's Cancel: abort the in-flight launch and append the
-      // "Canceled" line to the Logs buffer.
+      // The provider form's Cancel: abort the in-flight run and append the
+      // "Canceled" line to the Logs buffer (the client's only line: the host
+      // seeds the run, and the run-log stream carries its text; no stream
+      // attaches here with the pane unmounted).
       cancelProvider(store, 'p1')
-      expect(state().ui.logs.getLogs).toBe('old logs\n--- ' + t.entryLaunching + '\n\n--- Canceled\n')
+      expect(state().ui.logs.liveLogs).toBe('--- Canceled\n')
       // The form collapsed, and the aborted run settles the machine to
       // failed (the red Logs control re-opens the entry for a re-launch).
       expect(state().ui.editingProviderId).toBeNull()
@@ -567,10 +569,11 @@ describe('the provider list drivers (store/providers.ts)', () => {
       stream.enqueue('{"step":"build"}')
       await flush()
       expect(state().launch['p1']?.status).toBe('build')
-      // The build step wrote the "Building..." separator to the Logs buffer.
-      expect(state().ui.logs.getLogs).toBe(
-        'old logs\n--- ' + t.entryLaunching + '\n\n--- ' + t.entryBuilding + '\n',
-      )
+      // The build step wrote the "Building..." separator to the Logs buffer
+      // (the client's only line: the host's "Launching..." seed and the run
+      // text belong to the run-log stream, which no attach brings in here
+      // with the pane unmounted).
+      expect(state().ui.logs.liveLogs).toBe('--- ' + t.entryBuilding + '\n')
       stream.enqueue('{"result":{"healthy":true}}')
       stream.close()
       await flush(50)
@@ -613,7 +616,7 @@ describe('the provider list drivers (store/providers.ts)', () => {
       await flush()
       // The run's live text reaches the Logs buffer through the stream,
       // replacing the client's seed with the host's own buffer.
-      expect(state().ui.logs.getLogs).toBe('engine output streaming\n')
+      expect(state().ui.logs.liveLogs).toBe('engine output streaming\n')
       stream.enqueue('{"result":{"healthy":true}}')
       stream.close()
       await flush(50)
@@ -748,9 +751,10 @@ describe('the provider list drivers (store/providers.ts)', () => {
       expect(state().launch['p1']?.status).toBe('sudo')
       // The note line is asserted literally (not through the client constant)
       // so the client's copy stays pinned to the host's core SUDO_CLI_NOTE.
-      expect(state().ui.logs.getLogs).toBe(
-        'old logs\n--- ' + t.entryLaunching + '\n\nCheck your CLI for a sudo prompt',
-      )
+      // It is the buffer's only line: the host seeds the run and the run-log
+      // stream carries its text, and no stream attaches with the pane
+      // unmounted here.
+      expect(state().ui.logs.liveLogs).toBe('Check your CLI for a sudo prompt')
       // A password that never lands settles the control through the shared
       // failed path just past the host's 60 s kill.
       await vi.advanceTimersByTimeAsync(SUDO_DEADLINE_MS - 1)

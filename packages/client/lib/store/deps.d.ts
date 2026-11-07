@@ -81,22 +81,18 @@ export declare function performAllowRun(store: CardStore, checked: boolean): Pro
 export declare function performInstall(store: CardStore, t: TextTable): Promise<void>;
 /**
  * performGet runs the git sync, the dependency plan, and the build through
- * the get route's NDJSON stream. The click seeds the Logs section's streamed
- * buffer from the persisted last-run logs with a "Getting engine and
- * model..." separator, so the run reads as a fresh Logs section, and
- * brackets one run-log stream under the key the host's get route writes (no
- * providerId, the draft's engine and config, per the mirrored runLogKey
- * rule): the run's live text reaches the Logs buffer through that stream
- * (Q2), NOT through the get route's own log events, so no line lands twice
- * (the route's log events drop in TASK-005). Each streamed chunk still
- * re-arms the idle cap: two minutes without a
- * line settles the get cell (the control re-enables) while the run keeps
- * streaming in the background. The run folds the streamed tqdm state into
- * the ui.getProgress readout through the ProgressThrottle (the 500 ms
- * cadence): a { progress } event (the server-parsed state) wins over the
- * text parse of a log chunk, and the field clears when the run settles
- * (success, failure, or abort), so the readout never outlives the run. When
- * the stream ends, the route has
+ * the get route's NDJSON stream. The route's answer carries progress events
+ * only (its log events are gone): the run's live text reaches the Logs buffer
+ * through the one attached run-log stream under the key the host's get route
+ * writes (no providerId, the draft's engine and config, per the mirrored
+ * runLogKey rule), whose runBegin lands the host's "Getting engine and
+ * model..." seed, so no line lands twice. Each progress event re-arms the
+ * idle cap: two minutes without a line settles the get cell (the control
+ * re-enables) while the run keeps streaming in the background. The run folds
+ * the structured progress state into the ui.getProgress readout through the
+ * ProgressThrottle (the 500 ms cadence), and the field clears when the run
+ * settles (success, failure, or abort), so the readout never outlives the
+ * run. When the stream ends, the route has
  * persisted the run as the last logs, so a re-read of both read models (the
  * summary and the deps panel) hands the Logs section back to the stored
  * value. The run registers its AbortController in the in-flight

@@ -19,7 +19,7 @@ import { postLaunch, postProviderDelete, postStop, } from "../api/routes.js";
 import { LAUNCH_HEALTH_DEADLINE_MS, STOP_HEALTH_DEADLINE_MS, STOP_POLL_MS, } from "../machine/launch.js";
 import { cancelInFlightRuns, forgetLaunchAbort, trackLaunchAbort, } from "./abort.js";
 import { repriceAll, repriceSummary } from "./deps.js";
-import { appendCanceledLog, appendProcessLog, seedProcessLog, separatorLine, SUDO_NOTE_LINE, } from "./logs.js";
+import { appendCanceledLog, appendProcessLog, separatorLine, SUDO_NOTE_LINE, } from "./logs.js";
 import { beginRun, clientRunLogKey, endRun } from "./logs-stream.js";
 import { ACTION_TIMEOUTS, performAction } from "./sync.js";
 /**
@@ -174,8 +174,8 @@ export function openEntryLogs(store, provider) {
 }
 /**
  * performEntryLaunch runs one card entry's own Launch control: it starts the
- * entry's launch machine at the prereqs phase, seeds the Logs buffer with a
- * "Launching..." separator, and reads the launch stream (a step event as each
+ * entry's launch machine at the prereqs phase and reads the launch stream (a
+ * step event as each
  * phase begins, then a final result event). Each step event advances the
  * phase label; the build step writes a "Building..." separator; the launch
  * step arms the health-poll deadline (the route's poll runs up to two
@@ -192,8 +192,9 @@ export function openEntryLogs(store, provider) {
  * provider's status dot repaints from red to green and the deps panel
  * re-prices. The run's live output reaches the Logs buffer through the
  * attached run-log stream: beginRun names the run key (the host keys this
- * launch on the provider id, per the mirrored runLogKey rule) and the run's
- * settle detaches it.
+ * launch on the provider id, per the mirrored runLogKey rule), the run's
+ * settle detaches it, and the host's "Launching..." seed arrives through
+ * that stream (runBegin/snapshot), never a client-side seed.
  */
 export function performEntryLaunch(store, provider, t) {
     const prior = store.getSnapshot().launch[provider.id];
@@ -203,7 +204,6 @@ export function performEntryLaunch(store, provider, t) {
     if (status !== 'idle' && status !== 'failed') {
         return noHandle;
     }
-    seedProcessLog(store, t.entryLaunching);
     const runKey = clientRunLogKey(store.getSnapshot().summary?.providers ?? [], provider.engine, provider.config, provider.id);
     beginRun(store, runKey);
     move(store, provider.id, { type: 'start' });
@@ -501,7 +501,11 @@ export function performDraftLaunch(store, t) {
  * draft target): it signals the tracked process through the stop route and
  * settles the draft's stop cell. A successful stop reads as stopped (the
  * control becomes Launch). The summary and deps read models re-fetch so the
- * provider's status dot repaints and the deps panel re-prices.
+ * provider's status dot repaints and the deps panel re-prices. The round
+ * trip brackets one run-log stream with the same one-pair attach the other
+ * drivers use (the mirrored runLogKey rule, the edited provider id when the
+ * request names one), so the pane follows draft stop output the way it
+ * follows the entry Stop's.
  */
 export function performDraftStop(store, t) {
     const state = store.getSnapshot();
@@ -509,9 +513,16 @@ export function performDraftStop(store, t) {
         return Promise.resolve();
     }
     const draft = state.draft;
+    // The key rule mirrors the stop route's (draftLaunchBody names the edited
+    // provider id when the form is one, so the pane follows the same key the
+    // host writes the stop under).
+    const runKey = clientRunLogKey(state.summary?.providers ?? [], draft.engine, draft.config, state.ui.editingProviderId ?? undefined);
+    beginRun(store, runKey);
     return performAction(store, 'stop', () => postStop(draftLaunchBody(store)).then(() => {
         void repriceAll(store, { engine: draft.engine, config: draft.config });
         return t.stopped;
-    }), ACTION_TIMEOUTS.stop);
+    }), ACTION_TIMEOUTS.stop).then(() => {
+        endRun(store, runKey);
+    });
 }
 //# sourceMappingURL=providers.js.map

@@ -303,15 +303,12 @@ describe('readLaunchStream (the launch route answer)', () => {
 })
 
 describe('readGetStream (the get route answer)', () => {
-  it('hands log events to onChunk and progress events to onProgress', async () => {
-    const chunks: string[] = []
+  it('hands progress events to onProgress', async () => {
     const progress: unknown[] = []
     const response = streamResponse([
-      '{"log":"line one\\n"}\n{"progress":{"step":"Downloading x.safetensors","percent":12,"doneBytes":5200000000,"totalBytes":43500000000,"etaSeconds":611,"unit":"bytes"}}\n',
-      '{"log":"line two\\n"}\n',
+      '{"progress":{"step":"Downloading x.safetensors","percent":12,"doneBytes":5200000000,"totalBytes":43500000000,"etaSeconds":611,"unit":"bytes"}}\n',
     ])
-    await readGetStream(response, (text) => chunks.push(text), (state) => progress.push(state))
-    expect(chunks).toEqual(['line one\n', 'line two\n'])
+    await readGetStream(response, (state) => progress.push(state))
     expect(progress).toEqual([
       {
         step: 'Downloading x.safetensors',
@@ -324,23 +321,23 @@ describe('readGetStream (the get route answer)', () => {
     ])
   })
 
-  it('ignores progress events when no onProgress is given', async () => {
-    const chunks: string[] = []
+  it('ignores a log event (the route carries no log lines; the logs route streams the text)', async () => {
+    const progress: unknown[] = []
     const response = streamResponse(['{"progress":{"percent":12}}\n{"log":"line one\\n"}\n'])
-    await readGetStream(response, (text) => chunks.push(text))
-    expect(chunks).toEqual(['line one\n'])
+    await readGetStream(response, (state) => progress.push(state))
+    expect(progress).toEqual([{ percent: 12 }])
   })
 
   it('throws with the body text on a non-OK response', async () => {
     const response = new Response('the build broke', { status: 400 })
-    await expect(readGetStream(response, () => undefined)).rejects.toThrow('the build broke')
+    await expect(readGetStream(response)).rejects.toThrow('the build broke')
   })
 
-  it('reads the whole body as one log chunk when the host cannot stream', async () => {
-    const chunks: string[] = []
+  it('resolves quietly when the host cannot stream (no progress to hand)', async () => {
+    const progress: unknown[] = []
     const response = nonStreamJsonResponse('the whole body')
-    await readGetStream(response, (text) => chunks.push(text))
-    expect(chunks).toEqual(['"the whole body"'])
+    await expect(readGetStream(response, (state) => progress.push(state))).resolves.toBeUndefined()
+    expect(progress).toEqual([])
   })
 })
 
@@ -359,28 +356,20 @@ describe('postLaunch and postGet (the streamed routes)', () => {
     expect(result).toEqual({ healthy: true })
   })
 
-  it('appends each get log event through onChunk', async () => {
-    stubFetch(() =>
-      streamResponse(['{"log":"line one\\n"}\n', '{"log":"line two\\n"}\n']),
-    )
-    const chunks: string[] = []
-    await postGet({ engine: 'ninfer' }, (text) => chunks.push(text))
-    expect(chunks.join('')).toBe('line one\nline two\n')
+  it('reads a get answer that carries no log lines (no callback to hand them to)', async () => {
+    stubFetch(() => streamResponse(['{"log":"line one\\n"}\n', '{"log":"line two\\n"}\n']))
+    await expect(postGet({ engine: 'ninfer' })).resolves.toBeUndefined()
   })
 
-  it('hands get progress events through onProgress', async () => {
+  it('hands get progress events through onProgress and threads the signal', async () => {
+    const controller = new AbortController()
     stubFetch(() =>
       streamResponse([
         '{"progress":{"step":"Downloading x.safetensors","percent":12,"doneBytes":5200000000,"totalBytes":43500000000,"etaSeconds":611,"unit":"bytes"}}\n',
       ]),
     )
     const progress: unknown[] = []
-    await postGet(
-      { engine: 'ninfer' },
-      () => undefined,
-      undefined,
-      (state) => progress.push(state),
-    )
+    await postGet({ engine: 'ninfer' }, controller.signal, (state) => progress.push(state))
     expect(progress).toEqual([
       {
         step: 'Downloading x.safetensors',

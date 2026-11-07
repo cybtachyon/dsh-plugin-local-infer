@@ -3324,7 +3324,8 @@ describe('get route (git sync, deps, build)', () => {
   }
 
   // ndjsonEvents parses the get route's NDJSON stream chunks into events, so
-  // a test reads the log and progress events the route wrote.
+  // a test reads the progress events the route wrote (and asserts the
+  // answer carries no log events: TASK-005 moved the run text to the hub).
   function ndjsonEvents(
     chunks: string[],
   ): Array<{ log?: string; progress?: Record<string, unknown> }> {
@@ -3466,10 +3467,11 @@ describe('get route (git sync, deps, build)', () => {
     expect(logged).toContain('get complete')
   })
 
-  it('streams the run through the route and persists it as the last logs', async () => {
+  it('persists the run to the last logs and the run-log hub, streaming no log lines itself', async () => {
     writeConfig('ninfer', {}, true)
     const { host } = stubGetHost({ exists: false })
-    const route = getRouteWith(host)
+    const service = stubService([])
+    const route = getRouteWith(host, service)
     const res = fakeStreamRes()
     await route.handler(
       fakePost(JSON.stringify({ engine: 'ninfer', config: { modelDirectory: MODEL_DIR } })),
@@ -3477,21 +3479,22 @@ describe('get route (git sync, deps, build)', () => {
     )
     expect(res.status).toBe(200)
     expect(res.headers['content-type']).toContain('application/x-ndjson')
+    // TASK-005: the Get answer carries progress events only. The run's text
+    // reaches the card through the run-log hub (the logs route's source), so
+    // one line never lands twice.
     const events = ndjsonEvents(res.chunks)
-    const logText = events
-      .filter((event) => event.log !== undefined)
-      .map((event) => event.log!)
-      .join('')
-    expect(logText).toContain('$ git clone')
-    expect(logText).toContain('get complete')
-    // The streamed run persists as the last logs the Logs section shows, under
+    expect(events.some((event) => event.log !== undefined)).toBe(false)
+    const hubText = service.readRunLog('ninfer').text
+    expect(hubText).toContain('$ git clone')
+    expect(hubText).toContain('get complete')
+    // The run persists as the last logs the Logs section shows, under
     // the "Getting engine and model..." separator the route writes when the
     // Get button is clicked.
     expect(readConfig().lastLogs).toContain('--- Getting engine and model...')
     expect(readConfig().lastLogs).toContain('get complete')
   })
 
-  it('streams and persists the CLI sudo note when the host announces a waiting sudo', async () => {
+  it('persists and feeds the hub the CLI sudo note when the host announces a waiting sudo', async () => {
     writeConfig('ninfer', {}, true)
     const observerSets: Array<((command: string) => void) | undefined> = []
     const service = stubService([], {
@@ -3519,28 +3522,23 @@ describe('get route (git sync, deps, build)', () => {
       res,
     )
     expect(res.status).toBe(200)
-    const events = ndjsonEvents(res.chunks)
-    const logText = events
-      .filter((event) => event.log !== undefined)
-      .map((event) => event.log!)
-      .join('')
-    // The note lands in the streamed run exactly once, prefixed with the
+    const hubText = service.readRunLog('ninfer').text
+    // The note lands in the live hub run exactly once, prefixed with the
     // `!!` marker the Get step's own failure lines use.
-    expect(logText).toContain(`!! ${SUDO_CLI_NOTE}\n`)
-    expect(logText.split(SUDO_CLI_NOTE).length - 1).toBe(1)
+    expect(hubText).toContain(`!! ${SUDO_CLI_NOTE}\n`)
+    expect(hubText.split(SUDO_CLI_NOTE).length - 1).toBe(1)
     // The note persists through persistProcessLog while the run is still
-    // hung on the prompt, and the streamed run persists with it under the
+    // hung on the prompt, and the collected run persists with it under the
     // "Getting engine and model..." separator. finishRunSection closes the
     // run over the pre-run baseline, so the provisional mid-run note line
     // and the collected run text persist the note exactly once.
     expect(readConfig().lastLogs).toContain(`!! ${SUDO_CLI_NOTE}`)
     expect(readConfig().lastLogs.split(SUDO_CLI_NOTE).length - 1).toBe(1)
     expect(readConfig().lastLogs).toContain('--- Getting engine and model...')
-    // The Get route streams no control-state event: the card's Get control
-    // keeps its throbber, so the body carries only log (and progress) lines.
-    expect(events.every((event) => event.log !== undefined || event.progress !== undefined)).toBe(
-      true,
-    )
+    // The Get route streams no control-state event and no log lines (Q2):
+    // the answer carries only progress events.
+    const events = ndjsonEvents(res.chunks)
+    expect(events.every((event) => event.progress !== undefined)).toBe(true)
     // The run registered its observer and cleared it when it settled:
     // registered, then cleared.
     expect(observerSets).toHaveLength(2)
@@ -3742,8 +3740,8 @@ describe('get route (git sync, deps, build)', () => {
     )
     const events = ndjsonEvents(res.chunks)
     const progress = events.filter((event) => event.progress !== undefined)
-    // The folded tqdm line lands as one progress event, between the log
-    // events, with the parsed state the card renders.
+    // The folded tqdm line lands as one progress event with the parsed state
+    // the card renders.
     expect(progress).toHaveLength(1)
     expect(progress[0]?.progress).toEqual({
       step: 'Downloading x.safetensors',
@@ -3753,14 +3751,14 @@ describe('get route (git sync, deps, build)', () => {
       etaSeconds: 611,
       unit: 'bytes',
     })
-    // The log events carry the plain step text, and the persisted run stays
-    // plain text: the log file reads the run, not the NDJSON it streamed.
-    const logText = events
-      .filter((event) => event.log !== undefined)
-      .map((event) => event.log!)
-      .join('')
-    expect(logText).toContain('$ hf download')
-    expect(logText).toContain('get complete')
+    // TASK-005: the answer carries no log lines. The run's plain text
+    // reaches the card through the run-log hub (no matching provider entry,
+    // so the engine-id key), and the persisted run stays plain text: the log
+    // file reads the run, not the NDJSON it streamed.
+    expect(events.some((event) => event.log !== undefined)).toBe(false)
+    const hubText = service.readRunLog('ninfer').text
+    expect(hubText).toContain('$ hf download')
+    expect(hubText).toContain('get complete')
     expect(readConfig().lastLogs).toContain('$ hf download')
     expect(readConfig().lastLogs).not.toContain('{"log"')
   })
@@ -3773,18 +3771,23 @@ describe('get route (git sync, deps, build)', () => {
     expect(res.chunks).toHaveLength(0)
   })
 
-  it('streams the failure note when the run throws', async () => {
+  it('persists the failure note on the run-log hub and the last logs when the run throws', async () => {
     writeConfig('ninfer', {}, true)
     const throwingHost: LifecycleHost = {
       async run(): Promise<{ ok: boolean; detail?: string }> {
         throw new Error('host exploded')
       },
     }
-    const route = getRouteWith(throwingHost)
+    const service = stubService([])
+    const route = getRouteWith(throwingHost, service)
     const res = fakeStreamRes()
     await route.handler(fakePost(JSON.stringify({ engine: 'ninfer' })), res)
     expect(res.status).toBe(200)
-    expect(res.chunks.join('')).toContain('get failed: host exploded')
+    // TASK-005: the failure note no longer rides the answer. The live hub
+    // buffer and the persisted last logs carry it for the Logs section.
+    expect(res.chunks.join('')).not.toContain('get failed: host exploded')
+    expect(service.readRunLog('ninfer').text).toContain('get failed: host exploded')
+    expect(readConfig().lastLogs).toContain('get failed: host exploded')
   })
 
   it('aborts the in-flight download on a client disconnect and persists the Canceled line', async () => {

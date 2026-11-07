@@ -1,9 +1,11 @@
 /**
  * The POST /local-infer/get route: the Get step. Its answer streams as
- * NDJSON: a log event per log line the card appends to its Logs section, and
- * a progress event when the hf download's tqdm stderr (the onChunk sink)
- * folds into a structured state. The full run persists as the last-run logs
- * in plain text, so the log file and the Logs section read the run the same
+ * NDJSON progress events only (a structured download state folded from the
+ * hf download's tqdm stderr): the run's log text reaches the card through
+ * the per-provider run-log stream (the GET /local-infer/logs route fed by the
+ * hub), so one line never arrives twice. The full run still collects,
+ * persists as the last-run logs in plain text, and feeds the live hub, so
+ * the log file, the Logs section, and the streamed run read the run the same
  * way.
  * @module dsh-plugin-local-infer/ui/routes/get
  */
@@ -60,13 +62,14 @@ export function getRoute(
       // that provisional line and the collected run text persist once.
       const baseline = captureRunBaseline()
       let collected = ''
-      // The log sink collects the plain-text run (the persisted log), appends
-      // the same chunk to the live hub, and streams it as an NDJSON log event,
-      // one event per chunk.
+      // The log sink collects the plain-text run (the persisted log) and
+      // appends the same chunk to the live hub, whose run-log stream carries
+      // the text to the card's Logs pane (Q2: one streamed display path).
+      // The route's own answer no longer mirrors the text as log events, so
+      // a line never lands twice.
       const log = (text: string): void => {
         collected += text
         localInfer.appendRunLog(runKey, text)
-        ndjsonLine(res, { log: text })
       }
       // The hf download's raw stderr sink: the core chunk folder turns the
       // tqdm lines into a structured state, and the sink emits a progress

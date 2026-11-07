@@ -13,6 +13,7 @@ import {
   retargetRunLogs,
   setLogsPaneMounted,
 } from '../src/store/logs-stream.ts'
+import { deriveDisplayedLogs } from '../src/store/derive.ts'
 import { cardReducer } from '../src/store/reducer.ts'
 import type { CardStore } from '../src/store/sync.ts'
 import { initialCardState, type CardState } from '../src/store/types.ts'
@@ -169,7 +170,7 @@ describe('the live run-log stream (store/logs-stream.ts)', () => {
       expect(logs.calls.map((call) => call.url)).toEqual(['/local-infer/logs?provider=p1'])
       logs.streams[0].enqueue('{"snapshot":"prior tail text\\n","seq":3,"running":true}')
       await flush()
-      expect(state().ui.logs.getLogs).toBe('prior tail text\n')
+      expect(state().ui.logs.liveLogs).toBe('prior tail text\n')
     })
 
     it('log appends and runBegin replaces the live buffer', async () => {
@@ -182,11 +183,11 @@ describe('the live run-log stream (store/logs-stream.ts)', () => {
       logs.streams[0].enqueue('{"snapshot":"first\\n","seq":1,"running":true}')
       logs.streams[0].enqueue('{"log":"second\\n","seq":2}')
       await flush()
-      expect(state().ui.logs.getLogs).toBe('first\nsecond\n')
+      expect(state().ui.logs.liveLogs).toBe('first\nsecond\n')
       logs.streams[0].enqueue('{"runBegin":"--- Launching...\\n","seq":0}')
       logs.streams[0].enqueue('{"log":"building\\n","seq":1}')
       await flush()
-      expect(state().ui.logs.getLogs).toBe('--- Launching...\nbuilding\n')
+      expect(state().ui.logs.liveLogs).toBe('--- Launching...\nbuilding\n')
     })
 
     it('a runEnd ends the key in-flight marker, and a later break ends quietly', async () => {
@@ -199,7 +200,7 @@ describe('the live run-log stream (store/logs-stream.ts)', () => {
       logs.streams[0].enqueue('{"snapshot":"run text\\n","seq":1,"running":true}')
       logs.streams[0].enqueue('{"runEnd":true,"seq":1}')
       await flush()
-      expect(state().ui.logs.getLogs).toBe('run text\n')
+      expect(state().ui.logs.liveLogs).toBe('run text\n')
       logs.streams[0].fail('connection reset')
       await vi.advanceTimersByTimeAsync(RECONNECT_BACKOFF_MS * 2)
       // The run settled: the break ends quietly, no reconnect re-opened it.
@@ -220,7 +221,57 @@ describe('the live run-log stream (store/logs-stream.ts)', () => {
       // buffer survives the gap.
       await vi.advanceTimersByTimeAsync(RECONNECT_BACKOFF_MS)
       expect(logs.calls).toHaveLength(2)
-      expect(state().ui.logs.getLogs).toBe('full run text\n')
+      expect(state().ui.logs.liveLogs).toBe('full run text\n')
+    })
+
+    it('a summary ack keeps the fed buffer while the run is live and clears it after the runEnd', async () => {
+      const { store, state } = makeStore()
+      const logs = logsStreams()
+      stubLogs(logs)
+      store.dispatch({
+        type: 'summary/ack',
+        summary: {
+          engineId: 'ninfer',
+          config: {},
+          providers: [],
+          lastLogs: 'persisted run text',
+        } as unknown as LocalInferSummary,
+      })
+      beginRun(store, 'p1')
+      attachRunLogStream(store, 'p1')
+      await flush()
+      logs.streams[0].enqueue('{"snapshot":"","seq":0,"running":true}')
+      logs.streams[0].enqueue('{"log":"line one\\n","seq":1}')
+      logs.streams[0].enqueue('{"log":"line two\\n","seq":2}')
+      await flush()
+      expect(state().ui.logs.liveLogs).toBe('line one\nline two\n')
+      // A summary ack during the live run (the stop fast-poll, a debounced
+      // re-price) must not wipe the buffer the attached stream feeds.
+      store.dispatch({
+        type: 'summary/ack',
+        summary: {
+          engineId: 'ninfer',
+          config: {},
+          providers: [],
+          lastLogs: 'persisted run text',
+        } as unknown as LocalInferSummary,
+      })
+      expect(state().ui.logs.liveLogs).toBe('line one\nline two\n')
+      // After the runEnd the followed marker is gone: a later summary ack
+      // hands the pane back to the summary's persisted lastLogs.
+      logs.streams[0].enqueue('{"runEnd":true,"seq":2}')
+      await flush()
+      store.dispatch({
+        type: 'summary/ack',
+        summary: {
+          engineId: 'ninfer',
+          config: {},
+          providers: [],
+          lastLogs: 'persisted run text',
+        } as unknown as LocalInferSummary,
+      })
+      expect(state().ui.logs.liveLogs).toBeNull()
+      expect(deriveDisplayedLogs(store.getSnapshot())).toBe('persisted run text')
     })
   })
 
@@ -247,7 +298,7 @@ describe('the live run-log stream (store/logs-stream.ts)', () => {
       // The retry's snapshot catch-up replaces the buffer.
       logs.streams[1].enqueue('{"snapshot":"caught up\\n","seq":5,"running":true}')
       await flush()
-      expect(state().ui.logs.getLogs).toBe('caught up\n')
+      expect(state().ui.logs.liveLogs).toBe('caught up\n')
       // The retry is the single one: a second break ends quietly.
       logs.streams[1].fail('connection reset again')
       await vi.advanceTimersByTimeAsync(RECONNECT_BACKOFF_MS * 2)
@@ -293,7 +344,7 @@ describe('the live run-log stream (store/logs-stream.ts)', () => {
       setLogsPaneMounted(store, true)
       await vi.advanceTimersByTimeAsync(RECONNECT_BACKOFF_MS * 2)
       expect(fetchMock).toHaveBeenCalledTimes(1)
-      expect(state().ui.logs.getLogs).toBeNull()
+      expect(state().ui.logs.liveLogs).toBeNull()
     })
 
     it('a not-OK answer is a quiet end', async () => {
@@ -330,7 +381,7 @@ describe('the live run-log stream (store/logs-stream.ts)', () => {
       expect(logs.calls[0].signal?.aborted).toBe(true)
       logs.streams[0].enqueue('{"log":"late line\\n","seq":2}')
       await flush()
-      expect(state().ui.logs.getLogs).toBe('base\n')
+      expect(state().ui.logs.liveLogs).toBe('base\n')
     })
 
     it('endRun detaches the stream the driver started', async () => {
@@ -344,7 +395,7 @@ describe('the live run-log stream (store/logs-stream.ts)', () => {
       await flush()
       endRun(store, 'p1')
       expect(logs.calls[0].signal?.aborted).toBe(true)
-      expect(state().ui.logs.getLogs).toBe('run\n')
+      expect(state().ui.logs.liveLogs).toBe('run\n')
       // The pane target is gone with the run: a retarget attaches nothing.
       retargetRunLogs(store)
       expect(logs.calls).toHaveLength(1)
@@ -483,7 +534,7 @@ describe('the live run-log stream (store/logs-stream.ts)', () => {
       await flush()
       // The idle probe detached right away.
       expect(logs.calls[0].signal?.aborted).toBe(true)
-      expect(state().ui.logs.getLogs).toBe('')
+      expect(state().ui.logs.liveLogs).toBe('')
       // A re-render does not re-open the probed idle key.
       retargetRunLogs(store)
       await flush()

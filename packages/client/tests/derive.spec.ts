@@ -8,7 +8,13 @@ import {
   deriveProviderFormMode,
   formatProgressReadout,
   isGettingInFlight,
+  isLiveRunInFlight,
 } from '../src/store/derive.ts'
+import {
+  clearRunMarkers,
+  markRunInFlight,
+  markStreamFollowed,
+} from '../src/store/run-markers.ts'
 import type { GetProgressState } from '../src/store/progress.ts'
 import {
   initialCardState,
@@ -483,7 +489,7 @@ describe('client store derive (store/derive.ts)', () => {
   describe('deriveDisplayedLogs', () => {
     it('shows the streamed Get buffer while a run is in flight', () => {
       const state = makeState([], {
-        ui: { ...initialCardState().ui, logs: { getLogs: 'stream', height: 96, scrollMode: 'scrolling' } },
+        ui: { ...initialCardState().ui, logs: { liveLogs: 'stream', height: 96, scrollMode: 'scrolling' } },
       })
       expect(deriveDisplayedLogs(state)).toBe('stream')
     })
@@ -563,11 +569,49 @@ describe('client store derive (store/derive.ts)', () => {
 
     it('reads true while the in-flight registry carries a run after the idle cap settled the cell', () => {
       trackGetAbort(new AbortController())
-      expect(isGettingInFlight(makeState([]))).toBe(true)
+      try {
+        expect(isGettingInFlight(makeState([]))).toBe(true)
+      } finally {
+        clearInFlightRuns()
+      }
     })
 
     it('reads false with no pending cell and no registered run', () => {
       expect(isGettingInFlight(makeState([]))).toBe(false)
+    })
+  })
+
+  describe('isLiveRunInFlight', () => {
+    it('reads false with no run cell, no marker, and no attached stream', () => {
+      expect(isLiveRunInFlight(makeState([]))).toBe(false)
+    })
+
+    it('reads true while the get cell is pending', () => {
+      const state = makeState([], {
+        actions: {
+          ...initialCardState().actions,
+          get: { status: 'pending', detail: '' },
+        },
+      })
+      expect(isLiveRunInFlight(state)).toBe(true)
+    })
+
+    it('reads true while any driver-started run is in flight (a launch, stop, download, or install)', () => {
+      markRunInFlight('p1')
+      try {
+        expect(isLiveRunInFlight(makeState([]))).toBe(true)
+      } finally {
+        clearRunMarkers()
+      }
+    })
+
+    it('reads true while the pane follows an attached run-log stream', () => {
+      markStreamFollowed('p1')
+      try {
+        expect(isLiveRunInFlight(makeState([]))).toBe(true)
+      } finally {
+        clearRunMarkers()
+      }
     })
   })
 })
