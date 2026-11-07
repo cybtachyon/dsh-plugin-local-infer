@@ -78,7 +78,7 @@ must always match the provider process actually running.
 
 ### Phase 2: Client live Logs
 
-- [ ] [TASK-004-client-logs-stream](docs/PLAN-live-logs-TASK-004-client-logs-stream.md)
+- [x] [TASK-004-client-logs-stream](docs/PLAN-live-logs-TASK-004-client-logs-stream.md)
   Add `subscribeRunLogs` plus store wiring: while a stateful provider
   process runs (launch, get, download, install, stop) and the Logs section
   is mounted, the card holds the per-provider NDJSON stream open and

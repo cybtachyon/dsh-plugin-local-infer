@@ -43,9 +43,9 @@ runs, so the Logs textarea updates the moment the host appends a line.
 
 Definition of Done:
 
-- [ ] `logs-stream.ts` with unit tests (fetch stub streaming NDJSON):
+- [x] `logs-stream.ts` with unit tests (fetch stub streaming NDJSON):
       snapshot replace, runBegin replace, log append, runEnd, detach on
       unmount/cancel/switch, single-attach invariant, reconnect-once.
-- [ ] Every driver above attaches and detaches exactly one stream per run;
+- [x] Every driver above attaches and detaches exactly one stream per run;
       tests cover the entry-launch and get paths.
-- [ ] `pnpm build` and `pnpm test` green.
+- [x] `pnpm build` and `pnpm test` green.
