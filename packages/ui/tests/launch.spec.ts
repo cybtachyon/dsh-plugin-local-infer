@@ -32,6 +32,7 @@ describe('launch and stop route helpers', () => {
   })
 
   it('renders the plan through the registered adapter and returns the launch answer', async () => {
+    writeConfig('ninfer', {}, false) // Pinned: the trust gate is off, no platform, no providers.
     const service = stubService([], {
       launchResult: { plan: { engineId: 'ninfer', kind: 'process', port: 18020, healthUrl: 'http://127.0.0.1:18020/health' }, healthy: true },
     })
@@ -165,6 +166,7 @@ describe('launch and stop route helpers', () => {
   })
 
   it('threads the auto-rebuild flag to the service launch', async () => {
+    writeConfig('ninfer', {}, false) // Pinned: the trust gate is off, no platform, no providers.
     // The checkbox off: the route passes the flag into the service launch
     // options, which the service threads to the deploy step, which skips the
     // git sync (fetch, rebase, rebuild).
@@ -252,6 +254,7 @@ describe('launch and stop route helpers', () => {
   })
 
   it('keeps the request auto-rebuild flag when the Get sync passes', async () => {
+    writeConfig('ninfer', {}, false) // Pinned: the trust gate is off, no platform, no providers.
     // The Get sync passes (no stubbed failure), so the request's autoRebuild
     // threads into the deploy unchanged, on and absent.
     let seenOptions: { autoRebuild?: boolean } | undefined
@@ -313,6 +316,7 @@ describe('launch and stop route helpers', () => {
   })
 
   it('persists the launch logs as the last run and writes the log file', async () => {
+    writeConfig('ninfer', {}, false) // Pinned: the trust gate is off, no platform, no providers.
     const service = stubService([], {
       launchResult: {
         plan: { engineId: 'ninfer', kind: 'process', port: 18020, healthUrl: 'http://127.0.0.1:18020/health' },
@@ -352,6 +356,7 @@ describe('launch and stop route helpers', () => {
   })
 
   it('persists the Get-step output exactly once in a successful launch run', async () => {
+    writeConfig('ninfer', {}, false) // Pinned: the trust gate is off, no platform, no providers.
     const service = stubService([], {
       launchResult: {
         plan: { engineId: 'ninfer', kind: 'process', port: 18020, healthUrl: 'http://127.0.0.1:18020/health' },
@@ -372,6 +377,7 @@ describe('launch and stop route helpers', () => {
   })
 
   it('prints the plan launch command above the run logs the card shows', async () => {
+    writeConfig('ninfer', {}, false) // Pinned: the trust gate is off, no platform, no providers.
     const argv = ['infernix-serve', '/opt/hf-models/m.infernix', '--host', '127.0.0.1', '--port', '18080']
     const service = stubService([], {
       engines: [argvAdapter('infernix', argv)],
@@ -401,6 +407,7 @@ describe('launch and stop route helpers', () => {
   })
 
   it('orders the build output before the launch command and the engine output', async () => {
+    writeConfig('ninfer', {}, false) // Pinned: the trust gate is off, no platform, no providers.
     const argv = ['infernix-serve', '/opt/hf-models/m.infernix', '--host', '127.0.0.1', '--port', '18080']
     const buildLogs =
       '>> /engines/infernix is behind dsh-fork/main; rebasing and rebuilding.\n' +
@@ -436,6 +443,7 @@ describe('launch and stop route helpers', () => {
   })
 
   it('persists the launch command before the deploy so a hung launch stays readable', async () => {
+    writeConfig('ninfer', {}, false) // Pinned: the trust gate is off, no platform, no providers.
     const service = stubService([], { engines: [argvAdapter('infernix', ['infernix-serve', '--port', '18080'])] })
     let logsDuringLaunch: string | undefined
     service.launch = async (plan: LaunchPlan): Promise<LaunchResult> => {
@@ -451,6 +459,7 @@ describe('launch and stop route helpers', () => {
   })
 
   it('reports the launch command even when the deploy failed silently', async () => {
+    writeConfig('ninfer', {}, false) // Pinned: the trust gate is off, no platform, no providers.
     const service = stubService([], {
       engines: [argvAdapter('infernix', ['infernix-serve', '--port', '18080'])],
       launchResult: {
@@ -478,6 +487,7 @@ describe('launch and stop route helpers', () => {
   })
 
   it('renders the plan and calls the service stop entry point with it', async () => {
+    writeConfig('ninfer', {}, false) // Pinned: the trust gate is off, no platform, no providers.
     let stoppedPlan: LaunchPlan | undefined
     const service = stubService([], { engines: [fakeAdapter('ninfer')] })
     service.stop = async (plan: LaunchPlan) => {
@@ -489,6 +499,7 @@ describe('launch and stop route helpers', () => {
   })
 
   it('refuses to launch an engine no adapter serves with a 404', async () => {
+    writeConfig('ninfer', {}, false) // Pinned: the trust gate is off, no platform, no providers.
     const service = stubService([], { engines: [] })
     await expect(launchEngine(service, { engine: 'strata' })).rejects.toThrow(
       expect.objectContaining<RouteError>({ status: 404 }),
@@ -874,6 +885,7 @@ describe('platform config (§3.10) round trip and launch pass-through', () => {
   })
 
   it('registers the request platform override with the service before launch', async () => {
+    writeConfig('ninfer', { port: 18020 }, false, {}) // Pinned: clean stored platform map; the request carries the override.
     let seen: EnginePlatformConfig | undefined
     const service = stubService([], {
       onPlatform: (config: EnginePlatformConfig) => {
