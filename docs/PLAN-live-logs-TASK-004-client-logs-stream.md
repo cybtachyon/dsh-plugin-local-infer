@@ -33,7 +33,11 @@ runs, so the Logs textarea updates the moment the host appends a line.
   `performEntryLaunch`, `performDraftLaunch`, `performEntryStop`,
   `performGet`, `performInstall`, and the model/template download, using
   the same key rule the host applies (provider id, else engine id; the
-  client knows its own provider id).
+  client knows its own provider id). Mirror the host rule exactly
+  (`runLogKey` in packages/service/src/run-logs.ts: providerId -> stored
+  entry matched by engine+model -> engine id): the client computes it from
+  the summary's provider list plus the request's engine/config, so an
+  unsaved model edit falls to the engine-id key on both sides alike.
 - The run-log stream keeps the per-provider capability the route has; only
   the pane's target key is attached (Q3).
 
