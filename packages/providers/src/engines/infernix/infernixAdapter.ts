@@ -23,6 +23,7 @@ import {
   modelDownloadTarget,
 } from '../../../../core/lib/index.js'
 import type {
+  CommandLogger,
   Config,
   DefaultModel,
   DeployOptions,
@@ -39,6 +40,7 @@ import type {
   ProcessHandle,
 } from '../../../../core/lib/index.js'
 import {
+  auditRun,
   customArgFlags,
   flagsFromSpecs,
   nodeLifecycleHost,
@@ -217,7 +219,7 @@ export class InfernixAdapter extends EngineAdapter {
     const withLogs = (result: DeployResult): DeployResult =>
       buildLogs !== '' ? { ...result, logs: buildLogs } : result
     onProgress?.('download')
-    const download = await this.downloadModel(plan)
+    const download = await this.downloadModel(plan, options?.onLog)
     if (!download.ok) return withLogs(download)
     const handle = this.host.spawn(plan.argv ?? [], plan.env ?? {}, engineDir)
     this.children.set(this.planKey(plan), handle)
@@ -230,7 +232,7 @@ export class InfernixAdapter extends EngineAdapter {
     return pollHealth(this.host, plan, options, this.children.get(this.planKey(plan)))
   }
 
-  async stop(plan: LaunchPlan): Promise<void> {
+  async stop(plan: LaunchPlan, log?: CommandLogger): Promise<void> {
     const handle = this.children.get(this.planKey(plan))
     if (handle !== undefined) {
       handle.kill()
@@ -240,7 +242,7 @@ export class InfernixAdapter extends EngineAdapter {
     // No tracked child (an engine a DSH restart re-adopted): signal the pid
     // the stored launch record stamped on the plan, so the stop reaches a
     // process this adapter instance did not spawn.
-    await stopProcessPlan(this.host, plan)
+    await stopProcessPlan(this.host, plan, log)
   }
 
   private port(config: Config): number {
@@ -249,7 +251,7 @@ export class InfernixAdapter extends EngineAdapter {
     return typeof config.port === 'number' ? config.port : 8080
   }
 
-  private async downloadModel(plan: LaunchPlan): Promise<DeployResult> {
+  private async downloadModel(plan: LaunchPlan, log?: CommandLogger): Promise<DeployResult> {
     const artifact =
       plan.modelId !== undefined ? INFERNIX_MODEL_ARTIFACTS[plan.modelId] : undefined
     // A model key that names a local artifact file carries no artifact entry,
@@ -279,7 +281,7 @@ export class InfernixAdapter extends EngineAdapter {
     // interrupted first download) re-runs the cheap hf download, which
     // reuses the blobs and writes the links.
     if (modelArtifactPresent(entry, baseDir, useHubCache)) return { ok: true }
-    const download = await this.host.run(hfDownloadCommand(entry, baseDir, useHubCache))
+    const download = await auditRun(this.host, hfDownloadCommand(entry, baseDir, useHubCache), log)
     if (!download.ok) {
       return { ok: false, detail: `model download failed: ${download.detail ?? 'unknown'}` }
     }

@@ -25,9 +25,14 @@ export interface InstallResponse {
  * re-check, so the "Get" gate opens only after a re-check passes. A run that
  * actually starts brackets one live hub run under the runLogKey rule (the
  * stored entry matching the engine and model, else the engine id): the seed
- * is the "Installing deps..." separator, each per-dep install result appends
- * in the Get step's `  <id>: <status>` shape, and the run ends at settle,
- * a throwing install included. A 409 refusal starts no run.
+ * is the "Installing deps..." separator, the service writes each install
+ * command's `$ <command>` line into the run (through onLog) before its child
+ * spawns, each per-dep install result appends in the Get step's
+ * `  <id>: <status>` shape, and the run ends at settle, a throwing install
+ * included. The run registers the sudo hook the launch and Get paths
+ * register, so a guarded dependency install waiting for a password on the CLI
+ * lands the shared SUDO_CLI_NOTE line in the live run and the persisted run.
+ * A 409 refusal starts no run.
  */
 export declare function runInstallFor(localInfer: LocalInferService, request: DepsRequest): Promise<InstallResponse>;
 //# sourceMappingURL=depsHelpers.d.ts.map

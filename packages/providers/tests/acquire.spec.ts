@@ -339,6 +339,27 @@ describe('syncEngineRepo', () => {
     expect(state.logged).toContain('$ git clone')
   })
 
+  it('leads the clone output with the command line', async () => {
+    // The exec audit rule for the git sync: the `$ <command>` line is written
+    // before the child's own output lands, so the run reads the command first.
+    const { host, state } = stubHost({
+      exists: false,
+      stream: { 'git clone': "Cloning into '/models/ninfer'...\n" },
+    })
+    const result = await syncEngineRepo(
+      host,
+      { engineId: 'ninfer', directory: '/models/ninfer' },
+      (chunk) => {
+        state.logged += chunk
+      },
+    )
+    expect(result.ok).toBe(true)
+    const commandAt = state.logged.indexOf('$ git clone')
+    const outputAt = state.logged.indexOf("Cloning into '/models/ninfer'")
+    expect(commandAt).toBeGreaterThanOrEqual(0)
+    expect(commandAt).toBeLessThan(outputAt)
+  })
+
   it('prices a clean checkout through the plain-run fallback (no stdout reads as clean)', async () => {
     const { host, state } = stubHost({ noStream: true })
     const result = await syncEngineRepo(
@@ -362,6 +383,22 @@ describe('buildEngineRepo', () => {
     expect(result.ok).toBe(true)
     expect(state.logged).toContain('cmake -S /src/ninfer -B /src/ninfer/build')
     expect(state.logged).not.toContain('{dir}')
+  })
+
+  it('leads the build step output with the command line', async () => {
+    // The exec audit rule for the engine build: each step's `$ <command>`
+    // line is written before the step's own output lands.
+    const { host, state } = stubHost({
+      stream: { cmake: '[1/2] Building CXX object main.cpp.o\n' },
+    })
+    const result = await buildEngineRepo(host, 'ninfer', '/src/ninfer', (chunk) => {
+      state.logged += chunk
+    })
+    expect(result.ok).toBe(true)
+    const firstCommandAt = state.logged.indexOf('$ cmake')
+    const firstOutputAt = state.logged.indexOf('[1/2] Building CXX object')
+    expect(firstCommandAt).toBeGreaterThanOrEqual(0)
+    expect(firstOutputAt).toBeGreaterThan(firstCommandAt)
   })
 
   it('reports a failed build step', async () => {
@@ -472,6 +509,13 @@ describe('syncAndRebuildEngine', () => {
     expect(state.logged).toContain('git -C /src/ninfer checkout master')
     expect(state.logged).toContain('git -C /src/ninfer clean -fxd')
     expect(state.logged).toContain('cmake -S /src/ninfer -B /src/ninfer/build')
+    // The exec audit rule reaches the conditional rebuild too: the mutating
+    // fetch logs its `$ <command>` line, not just its outcome.
+    expect(state.logged).toContain('$ git -C /src/ninfer fetch origin || true')
+    // And the build command line leads the build step in the captured log.
+    expect(state.logged.indexOf('$ cmake -S /src/ninfer')).toBeLessThan(
+      state.logged.indexOf('cmake --build /src/ninfer/build'),
+    )
   })
 
   it('skips the rebuild when the checkout is up to date with the remote', async () => {
@@ -525,6 +569,10 @@ describe('syncAndRebuildEngine', () => {
       ),
     ).toBe(true)
     expect(state.logged).toContain('is behind dsh-fork/main')
+    // The remote setup mutates the checkout's git config, so its command line
+    // is audited in the log (the expected add failure on a re-run reads as a
+    // named command, not a bare failure detail).
+    expect(state.logged).toContain('$ git -C /src/infernix remote add dsh-fork')
   })
 
   it('links a rebuilt binary into /usr/local/bin when the trust gate is on', async () => {

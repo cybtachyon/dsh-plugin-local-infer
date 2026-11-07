@@ -9,7 +9,7 @@
  * @module dsh-plugin-local-infer/providers/engines/llamacpp/llamacppAdapter
  */
 import { EngineAdapter } from '../../../../core/lib/index.js';
-import type { Config, DeployOptions, DeployResult, EngineLaunchSignature, EnginePlatformConfig, HealthCheckOptions, HealthResult, HardwareProfile, LaunchPlan, LaunchProgress, LifecycleHost, ParameterSpec } from '../../../../core/lib/index.js';
+import type { CommandLogger, Config, DeployOptions, DeployResult, EngineLaunchSignature, EnginePlatformConfig, HealthCheckOptions, HealthResult, HardwareProfile, LaunchPlan, LaunchProgress, LifecycleHost, ParameterSpec } from '../../../../core/lib/index.js';
 /**
  * The llama.cpp docker image the adapter pulls and runs. The engineFork
  * platform config overrides the git source for a local build; the image stays
@@ -42,7 +42,7 @@ export declare class LlamaCppAdapter extends EngineAdapter {
     renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan;
     deploy(plan: LaunchPlan, platform?: EnginePlatformConfig, onProgress?: LaunchProgress, options?: DeployOptions): Promise<DeployResult>;
     healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;
-    stop(plan: LaunchPlan): Promise<void>;
+    stop(plan: LaunchPlan, log?: CommandLogger): Promise<void>;
     private buildMode;
     private port;
     private downloadModel;

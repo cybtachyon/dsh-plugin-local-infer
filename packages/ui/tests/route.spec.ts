@@ -25,7 +25,7 @@ import type {
   VramModel,
   VramVerdict,
 } from 'dsh-plugin-local-infer/core'
-import { DEFAULT_LOG_PATH_TEMPLATE, SUDO_CLI_NOTE, dshEngineCacheDirectory, providerIdFor, resolveLogPath } from 'dsh-plugin-local-infer/core'
+import { DEFAULT_LOG_PATH_TEMPLATE, SUDO_CLI_NOTE, dshEngineCacheDirectory, hfChatTemplateCommand, hfDownloadCommand, providerIdFor, resolveLogPath } from 'dsh-plugin-local-infer/core'
 import { LocalInfer, RunLogStore } from 'dsh-plugin-local-infer/service'
 import type {
   DownloadModelOptions,
@@ -35,6 +35,7 @@ import type {
   LocalInferService,
   RegisterModelOptions,
   RunLogListener,
+  RunInstallOptions,
 } from 'dsh-plugin-local-infer/service'
 import { apply as applyProviders } from 'dsh-plugin-local-infer/providers'
 import { localInferConfigPath, readConfig, writeConfig } from '../src/config.ts'
@@ -225,11 +226,23 @@ function stubService(
     registeredVramModels: () => (extras.models ?? []),
     registeredEngines: () => (extras.engines ?? [fakeAdapter('ninfer'), fakeAdapter('hyperqwen')]),
     deps: async () => (extras.deps ?? []),
-    runInstall: async () =>
-      extras.installResult ?? {
-        ok: true,
-        results: (extras.deps ?? []).map((dep) => ({ id: dep.id, status: 'satisfied' as const })),
-      },
+    runInstall: async (_engineId, _buildMode, hw, options?: RunInstallOptions) => {
+      // The real service logs each install command's `$ <command>` line to the
+      // run's log sink (options.onLog) before the guarded runner spawns the
+      // child; the stub replays that so the run reads the command ahead of the
+      // per-dep results below.
+      for (const dep of extras.deps ?? []) {
+        for (const command of dep.install[hw.packageManager ?? '']?.commands ?? []) {
+          options?.onLog?.(`$ ${command}\n`)
+        }
+      }
+      return (
+        extras.installResult ?? {
+          ok: true,
+          results: (extras.deps ?? []).map((dep) => ({ id: dep.id, status: 'satisfied' as const })),
+        }
+      )
+    },
     launch: async (plan: LaunchPlan): Promise<LaunchResult> =>
       extras.launchResult ?? { plan, healthy: true },
     stop: async () => {
@@ -283,6 +296,10 @@ function stubService(
     hfCliAvailable: async () => extras.hfCliPath ?? null,
     downloadModel: async (entry: DefaultModel, directory: string, options?: DownloadModelOptions) => {
       extras.onDownload?.({ entry, directory, useHubCache: options?.useHubCache === true })
+      // The real service writes the hf download's `$ <command>` line through
+      // options.onLog before its runner spawns; the stub replays it so every
+      // download path reads the command line exactly once, as the service does.
+      options?.onLog?.(`$ ${hfDownloadCommand(entry, directory, options?.useHubCache === true)}\n`)
       return extras.downloadResult ?? { ok: true }
     },
     downloadChatTemplate: async (
@@ -295,6 +312,9 @@ function stubService(
         directory,
         useHubCache: options?.useHubCache === true,
       })
+      options?.onLog?.(
+        `$ ${hfChatTemplateCommand(repo, directory, options?.useHubCache === true)}\n`,
+      )
       return extras.chatTemplateDownloadResult ?? { ok: true }
     },
     modelIsRegistered: async () => extras.modelIsRegisteredResult ?? false,
@@ -3805,12 +3825,14 @@ describe('get route (git sync, deps, build)', () => {
     const { host } = stubGetHost({ exists: false })
     const service = stubService([])
     // The stubbed download invokes the injected onChunk, the way the real
-    // service hands the runner's streamed stderr chunks to it.
+    // service hands the runner's streamed stderr chunks to it, and writes the
+    // `$ <command>` line through onLog before the download, as the service does.
     service.downloadModel = (
-      _entry: DefaultModel,
-      _directory: string,
-      options?: { onChunk?: (chunk: string) => void },
+      entry: DefaultModel,
+      directory: string,
+      options?: { onChunk?: (chunk: string) => void; onLog?: (line: string) => void },
     ) => {
+      options?.onLog?.(`$ ${hfDownloadCommand(entry, directory, false)}\n`)
       options?.onChunk?.('42%| 4.2G/10G [00:12<00:16, 300.0MiB/s]\n')
       return Promise.resolve({ ok: true })
     }
@@ -3848,7 +3870,12 @@ describe('get route (git sync, deps, build)', () => {
     // The stubbed download invokes the injected onChunk with a tqdm line, the
     // way the real runner hands the hf download's streamed stderr to it.
     const tqdmLine = 'Downloading x.safetensors: 12% | 5.2G/43.5G [01:23<10:11, 72.3MB/s]\n'
-    service.downloadModel = (_entry: DefaultModel, _directory: string, options?: { onChunk?: (chunk: string) => void }) => {
+    service.downloadModel = (
+      entry: DefaultModel,
+      directory: string,
+      options?: { onChunk?: (chunk: string) => void; onLog?: (line: string) => void },
+    ) => {
+      options?.onLog?.(`$ ${hfDownloadCommand(entry, directory, false)}\n`)
       options?.onChunk?.(tqdmLine)
       return Promise.resolve({ ok: true })
     }
@@ -4019,6 +4046,7 @@ describe('shared Get-steps routine', () => {
     // the model download, and the chat-template download.
     const order = [
       'system dependencies (local)',
+      '$ sudo apt install cmake',
       '  cmake: satisfied',
       'engine clone: ninfer',
       `$ git clone https://github.com/Neroued/ninfer ${dshEngineCacheDirectory('ninfer')}`,
@@ -4033,6 +4061,17 @@ describe('shared Get-steps routine', () => {
       expect(index, `missing "${line}" in the Get log`).toBeGreaterThan(last)
       last = index
     }
+    // Each download's `$ <command>` audit line lands exactly once per run:
+    // the service's exec site writes it, and no Get step repeats it.
+    expect(
+      logged.split('$ hf download neroued/Qwen3.8-27B-nvfp4-NInfer').length - 1,
+    ).toBe(1)
+    expect(
+      logged.split('$ hf download froggeric/Qwen-Fixed-Chat-Templates').length - 1,
+    ).toBe(1)
+    // The install command's audit line likewise appears once, ahead of the
+    // re-check result the Get step logs.
+    expect(logged.split('$ sudo apt install cmake').length - 1).toBe(1)
     // The downloads run through the service's hf download entry points, into
     // the model directory.
     expect(downloads).toHaveLength(1)
@@ -4609,11 +4648,16 @@ describe('run-log hub wiring', () => {
     expect(snapshot.running).toBe(false)
     expect(snapshot.text.startsWith(GET_RUN_SEED)).toBe(true)
     const cloneAt = snapshot.text.indexOf('$ git clone')
-    const downloadAt = snapshot.text.indexOf('Qwen3.8-27B')
+    const downloadAt = snapshot.text.indexOf('$ hf download neroued/Qwen3.8-27B-nvfp4-NInfer')
     const completeAt = snapshot.text.indexOf('get complete')
     expect(cloneAt).toBeGreaterThan(GET_RUN_SEED.length - 1)
     expect(downloadAt).toBeGreaterThan(cloneAt)
     expect(completeAt).toBeGreaterThan(downloadAt)
+    // The download's command line leads the run's output for that step and
+    // lands exactly once (the service writes it; nothing repeats it).
+    expect(snapshot.text.split('$ hf download neroued/Qwen3.8-27B-nvfp4-NInfer').length - 1).toBe(
+      1,
+    )
     // A draft under the engine-id fallback key stayed untouched.
     expect(service.readRunLog('ninfer')).toEqual({ seq: 0, text: '', running: false })
   })
@@ -4761,12 +4805,19 @@ describe('run-log hub wiring', () => {
     const order = [
       LAUNCH_RUN_SEED,
       '$ git clone',
+      '$ hf download neroued/Qwen3.8-27B-nvfp4-NInfer',
       '[local-infer] launch: ninfer-serve',
       'build output',
       'engine output',
     ].map((needle) => snapshot.text.indexOf(needle))
     expect(order.every((index) => index >= 0)).toBe(true)
     expect(order).toEqual([...order].sort((left, right) => left - right))
+    // The download's audit line appears exactly once in the launch run too:
+    // the launch-embedded Get writes it through the service, not a second
+    // time from the launch's own note path.
+    expect(
+      snapshot.text.split('$ hf download neroued/Qwen3.8-27B-nvfp4-NInfer').length - 1,
+    ).toBe(1)
   })
 
   it('settles a canceled launch with the Canceled line', async () => {
@@ -4780,13 +4831,17 @@ describe('run-log hub wiring', () => {
     ])
     rmSync(join(MODEL_DIR, 'qwen3_8_27b_nvfp4.ninfer'), { force: true })
     const service = stubService([])
-    // A download that hangs until the route's cancel aborts the signal.
+    // A download that writes its `$ <command>` line (as the service does) and
+    // then hangs until the route's cancel aborts the signal.
     service.downloadModel = (
-      _entry: DefaultModel,
-      _directory: string,
-      options?: { signal?: AbortSignal },
-    ) =>
-      new Promise<DownloadResult>((resolve) => {
+      entry: DefaultModel,
+      directory: string,
+      options?: DownloadModelOptions,
+    ) => {
+      options?.onLog?.(
+        `$ ${hfDownloadCommand(entry, directory, options?.useHubCache === true)}\n`,
+      )
+      return new Promise<DownloadResult>((resolve) => {
         options?.signal?.addEventListener(
           'abort',
           () => {
@@ -4795,6 +4850,7 @@ describe('run-log hub wiring', () => {
           { once: true },
         )
       })
+    }
     const route = hubRoutes(service, undefined, stubGetHost({ exists: false }).host)(
       '/local-infer/launch',
     )
@@ -4821,13 +4877,17 @@ describe('run-log hub wiring', () => {
       { id: 'hub-dl', engine: 'ninfer', config: { model: 'qwen36-35b' }, platform: {} },
     ])
     const service = stubService([])
-    // The stub download plays the hf runner's chunk callback, the way the
-    // real runner hands streamed output to the download options.
+    // The stub download plays the hf runner's chunk callback and the service's
+    // `$ <command>` emit (through onLog before the download runs), the way the
+    // real service writes the exec audit line ahead of the streamed output.
     service.downloadModel = (
-      _entry: DefaultModel,
-      _directory: string,
+      entry: DefaultModel,
+      directory: string,
       options?: DownloadModelOptions,
     ) => {
+      options?.onLog?.(
+        `$ ${hfDownloadCommand(entry, directory, options?.useHubCache === true)}\n`,
+      )
       options?.onChunk?.('hf: downloading 42%\n')
       return Promise.resolve({ ok: true })
     }
@@ -4843,11 +4903,23 @@ describe('run-log hub wiring', () => {
     )
     expect(res.status).toBe(200)
     const snapshot = service.readRunLog('hub-dl')
-    expect(snapshot.text).toBe(`${DOWNLOAD_RUN_SEED}hf: downloading 42%\ndownload complete\n`)
+    // The exec audit rule: the `$ hf download` line leads the streamed
+    // output, and the run carries it exactly once (the service writes it, no
+    // second copy from the route or the Get step).
+    const commandAt = snapshot.text.indexOf('$ hf download')
+    const chunkAt = snapshot.text.indexOf('hf: downloading 42%')
+    const settleAt = snapshot.text.indexOf('download complete')
+    expect(commandAt).toBeGreaterThanOrEqual(0)
+    expect(commandAt).toBeLessThan(chunkAt)
+    expect(chunkAt).toBeLessThan(settleAt)
+    expect(snapshot.text.split('$ hf download').length - 1).toBe(1)
     expect(snapshot.running).toBe(false)
-    // The persisted read model keeps its "Downloading..." section unchanged.
+    // The persisted read model keeps its "Downloading..." section, now with
+    // the same single command line, and no NDJSON leak.
     expect(readConfig().lastLogs).toContain('--- Downloading...')
+    expect(readConfig().lastLogs).toContain('$ hf download')
     expect(readConfig().lastLogs).toContain('download complete')
+    expect(readConfig().lastLogs.split('$ hf download').length - 1).toBe(1)
   })
 
   it('notes a failed download in the live run and settles it', async () => {
@@ -4857,7 +4929,15 @@ describe('run-log hub wiring', () => {
     const service = stubService([], { downloadResult: { ok: false, detail: 'hf exploded' } })
     await downloadFor(service, { engine: 'ninfer', model: 'qwen36-35b', directory: MODEL_DIR })
     const snapshot = service.readRunLog('hub-dl-fail')
-    expect(snapshot.text).toBe(`${DOWNLOAD_RUN_SEED}!! download failed: hf exploded\n`)
+    // The command line leads the failure note: the run reads what was tried
+    // before what went wrong.
+    const seedAt = snapshot.text.indexOf(DOWNLOAD_RUN_SEED)
+    const commandAt = snapshot.text.indexOf('$ hf download')
+    const noteAt = snapshot.text.indexOf('!! download failed: hf exploded')
+    expect(seedAt).toBe(0)
+    expect(commandAt).toBeGreaterThan(seedAt)
+    expect(noteAt).toBeGreaterThan(commandAt)
+    expect(snapshot.text.endsWith('!! download failed: hf exploded\n')).toBe(true)
     expect(snapshot.running).toBe(false)
   })
 
@@ -4872,10 +4952,13 @@ describe('run-log hub wiring', () => {
     )
     const service = stubService([])
     service.downloadChatTemplate = (
-      _repo: string,
-      _directory: string,
+      repo: string,
+      directory: string,
       options?: DownloadModelOptions,
     ) => {
+      options?.onLog?.(
+        `$ ${hfChatTemplateCommand(repo, directory, options?.useHubCache === true)}\n`,
+      )
       options?.onChunk?.('template fetched\n')
       return Promise.resolve({ ok: true })
     }
@@ -4884,7 +4967,13 @@ describe('run-log hub wiring', () => {
     await route.handler(hubPost('/local-infer/chat-template', { directory: MODEL_DIR }), res)
     expect(res.status).toBe(200)
     const snapshot = service.readRunLog('hub-tpl')
-    expect(snapshot.text).toBe(`${DOWNLOAD_RUN_SEED}template fetched\n`)
+    // The exec audit rule for the template download too: the `$ hf download`
+    // line for the template repo leads the streamed output, exactly once.
+    const commandAt = snapshot.text.indexOf('$ hf download froggeric/Qwen-Fixed-Chat-Templates')
+    const chunkAt = snapshot.text.indexOf('template fetched')
+    expect(commandAt).toBeGreaterThanOrEqual(0)
+    expect(commandAt).toBeLessThan(chunkAt)
+    expect(snapshot.text.split('$ hf download').length - 1).toBe(1)
     expect(snapshot.running).toBe(false)
   })
 
@@ -4896,9 +4985,13 @@ describe('run-log hub wiring', () => {
     await route.handler(hubPost('/local-infer/install', { engine: 'ninfer' }), res)
     expect(res.status).toBe(200)
     // No provider entry matches the draft, so the key falls back to the
-    // engine id, and each re-checked dep lands in the Get step's shape.
+    // engine id. The exec audit rule leads the run: the install command's
+    // `$ <command>` line lands before the re-checked dep's result, in the Get
+    // step's shape.
     const snapshot = service.readRunLog('ninfer')
-    expect(snapshot.text).toBe(`${INSTALL_RUN_SEED}  cmake: satisfied\n`)
+    expect(snapshot.text).toBe(
+      `${INSTALL_RUN_SEED}$ sudo apt install cmake\n  cmake: satisfied\n`,
+    )
     expect(snapshot.running).toBe(false)
   })
 

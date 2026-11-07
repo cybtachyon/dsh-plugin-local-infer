@@ -17,7 +17,7 @@
  */
 import { join } from 'node:path';
 import { EngineAdapter } from '../../../../core/lib/index.js';
-import { HEALTH_POLL_DEFAULT_MS, HEALTH_POLL_MAX_ATTEMPTS, customArgEnv, customArgFlags, delay, envFromSpecs, flagsFromSpecs, nodeLifecycleHost, stopProcessPlan, trackChild, } from "../../adapters.js";
+import { HEALTH_POLL_DEFAULT_MS, HEALTH_POLL_MAX_ATTEMPTS, auditRun, customArgEnv, customArgFlags, delay, envFromSpecs, flagsFromSpecs, nodeLifecycleHost, stopProcessPlan, trackChild, } from "../../adapters.js";
 import { syncEngineForDeploy } from "../../acquire.js";
 import { STRATA_PARAMETERS, strataDefaults, strataModelKey, } from "./strata.js";
 import { strataLinuxSourceLaunch } from "./strataLinux.js";
@@ -272,9 +272,10 @@ export class StrataAdapter extends EngineAdapter {
     async deploy(plan, platform, onProgress, options) {
         if (plan.kind === 'docker') {
             // The image pull is the docker build step: the card's button reads
-            // "Building..." for it.
+            // "Building..." for it, and its `$ <command>` line reaches the launch
+            // run's log sink before the child spawns.
             onProgress?.('build');
-            const pull = await this.host.run(`docker pull ${STRATA_DOCKER_IMAGE}`);
+            const pull = await auditRun(this.host, `docker pull ${STRATA_DOCKER_IMAGE}`, options?.onLog);
             if (!pull.ok) {
                 return { ok: false, detail: `docker pull failed: ${pull.detail ?? 'unknown'}` };
             }
@@ -293,9 +294,10 @@ export class StrataAdapter extends EngineAdapter {
             let buildLogs = '';
             if (isBinary) {
                 // The install script downloads the Terminal: the card's button reads
-                // "Downloading..." for it.
+                // "Downloading..." for it, and its `$ <command>` line reaches the
+                // launch run's log sink before the child spawns.
                 onProgress?.('download');
-                const install = await this.host.run(STRATA_BINARY_INSTALL);
+                const install = await auditRun(this.host, STRATA_BINARY_INSTALL, options?.onLog);
                 if (!install.ok) {
                     return { ok: false, detail: `strata install failed: ${install.detail ?? 'unknown'}` };
                 }
@@ -411,14 +413,14 @@ export class StrataAdapter extends EngineAdapter {
             detail: `health check did not return 200 within ${maxAttempts} attempts`,
         };
     }
-    async stop(plan) {
+    async stop(plan, log) {
         if (plan.kind === 'docker' && plan.containerName !== undefined) {
-            await this.host.run(`docker stop ${plan.containerName}`);
+            await auditRun(this.host, `docker stop ${plan.containerName}`, log);
         }
         // The binary plan stops through the strata command; the source-build plan
         // has no strata command, so it stops by signalling the tracked process.
         if (plan.kind === 'process' && plan.argv?.[0] === 'strata') {
-            await this.host.run('strata launch --stop');
+            await auditRun(this.host, 'strata launch --stop', log);
         }
         const handle = this.children.get(this.planKey(plan));
         if (handle !== undefined) {
@@ -429,7 +431,7 @@ export class StrataAdapter extends EngineAdapter {
         // No tracked child (an engine a DSH restart re-adopted): signal the pid
         // the stored launch record stamped on the plan, so the stop reaches a
         // process this adapter instance did not spawn.
-        await stopProcessPlan(this.host, plan);
+        await stopProcessPlan(this.host, plan, log);
     }
     buildMode(config) {
         const mode = config.buildMode;

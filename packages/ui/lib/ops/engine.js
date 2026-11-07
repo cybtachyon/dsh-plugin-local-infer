@@ -165,7 +165,7 @@ function getStepsRequest(engineId, config, stored, platform, host, signal, onChu
  * Get passes none because its control keeps its throbber. The caller invokes
  * the disposer in a finally so a failed run leaves no hook behind.
  */
-function registerSudoObserver(localInfer, runKey, noteLine, noteTo, onSudo) {
+export function registerSudoObserver(localInfer, runKey, noteLine, noteTo, onSudo) {
     return localInfer.registerSudoObserver(runKey, () => {
         noteTo(noteLine);
         persistProcessLog(noteLine.replace(/\n$/, ''));
@@ -279,12 +279,16 @@ export async function launchEngine(localInfer, request, onProgress, host = nodeL
         // autoRebuild: false into the deploy, which skips its own git sync (it
         // would hit the same rebase conflict) and launches the checkout's
         // current version; a Get run whose sync passed keeps the request's
-        // autoRebuild.
+        // autoRebuild. onLog is the deploy's run-log sink: the deploy's mutating
+        // commands (image pull, model download) write their `$ <command>` lines
+        // through it before their children spawn, so the live launch run reads
+        // each command ahead of its output.
         const launchAutoRebuild = get.syncFailed === true ? false : request.autoRebuild;
         const result = await localInfer.launch(plan, {
             ...(onProgress !== undefined ? { onProgress } : {}),
             allowRunDeps: stored.allowRunDeps,
             ...(launchAutoRebuild !== undefined ? { autoRebuild: launchAutoRebuild } : {}),
+            onLog: appendRunText,
         });
         // The deploy step's build output and the engine's runtime output reach
         // the live buffer at settle (they only exist once the launch returns;
@@ -452,11 +456,12 @@ export function handleEngineDeath(event, runLogs) {
         `${event.port !== undefined ? ` (port ${event.port})` : ''}` +
         ` pid ${event.pid ?? 'unknown'} exited${signalNote}` +
         `${event.detail !== undefined ? `: ${event.detail}` : ''}\n`;
-    writeStored(stored, {
-        providers,
-        // Keep the last-run tail bounded, the same rule the launch logs cap uses.
-        lastLogs: capRunLogs(stored.lastLogs + note),
-    });
+    // The note persists through the shared fold (persistProcessLog: the
+    // join + capRunLogs tail every appender shares, the per-run log file
+    // included) instead of a bespoke lastLogs tail-join; the entry clear rides
+    // its own write before it.
+    writeStored(stored, { providers });
+    persistProcessLog(note);
     if (runLogs === undefined)
         return;
     // The death's run key follows the runLogKey rule over the matched entry
@@ -524,7 +529,11 @@ export async function stopEngine(localInfer, request) {
     const runKey = runLogKey(stored.providers, engineId, request.providerId, config);
     localInfer.beginRun(runKey, STOP_RUN_SEED);
     try {
-        await localInfer.stop(plan);
+        // The stop's log sink is the live run buffer: the adapter writes the
+        // `$ <command>` line of every command it runs (compose down, docker stop,
+        // a pid signal) through it before the child runs, so the stop's live run
+        // reads the command ahead of any note.
+        await localInfer.stop(plan, (line) => localInfer.appendRunLog(runKey, line));
         clearLaunchRecord(engineId, config, request.providerId);
     }
     catch (error) {

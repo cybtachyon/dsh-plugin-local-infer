@@ -91,6 +91,7 @@ export {
 export { EngineAdapter } from './adapter.ts'
 export type {
   BuildMode,
+  CommandLogger,
   DeployOptions,
   DeployResult,
   EngineLaunchState,

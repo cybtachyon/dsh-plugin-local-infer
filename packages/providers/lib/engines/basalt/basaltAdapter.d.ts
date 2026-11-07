@@ -17,7 +17,7 @@
  * @module dsh-plugin-local-infer/providers/engines/basalt/basaltAdapter
  */
 import { EngineAdapter } from '../../../../core/lib/index.js';
-import type { Config, DeployOptions, DeployResult, EngineLaunchSignature, EnginePlatformConfig, HealthCheckOptions, HealthResult, HardwareProfile, LaunchPlan, LaunchProgress, LifecycleHost, ParameterSpec } from '../../../../core/lib/index.js';
+import type { CommandLogger, Config, DeployOptions, DeployResult, EngineLaunchSignature, EnginePlatformConfig, HealthCheckOptions, HealthResult, HardwareProfile, LaunchPlan, LaunchProgress, LifecycleHost, ParameterSpec } from '../../../../core/lib/index.js';
 export { BASALT_MODEL_FILE, BASALT_MODEL_REPO } from './basalt.ts';
 /**
  * The config file name the deploy step writes. It lands in the plugin's
@@ -79,7 +79,7 @@ export declare class BasaltAdapter extends EngineAdapter {
      */
     private writeConfigFile;
     healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;
-    stop(plan: LaunchPlan): Promise<void>;
+    stop(plan: LaunchPlan, log?: CommandLogger): Promise<void>;
     private port;
 }
 //# sourceMappingURL=basaltAdapter.d.ts.map

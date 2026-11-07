@@ -19,6 +19,7 @@ import {
   modelDownloadTarget,
 } from '../../../../core/lib/index.js'
 import type {
+  CommandLogger,
   Config,
   DefaultModel,
   DeployOptions,
@@ -35,6 +36,7 @@ import type {
   ProcessHandle,
 } from '../../../../core/lib/index.js'
 import {
+  auditRun,
   customArgFlags,
   flagsFromSpecs,
   nodeLifecycleHost,
@@ -241,7 +243,7 @@ export class LlamaCppAdapter extends EngineAdapter {
       const withLogs = (result: DeployResult): DeployResult =>
         buildLogs !== '' ? { ...result, logs: buildLogs } : result
       onProgress?.('download')
-      const download = await this.downloadModel(plan)
+      const download = await this.downloadModel(plan, options?.onLog)
       if (!download.ok) return withLogs(download)
       const handle = this.host.spawn(plan.argv ?? [], plan.env ?? {}, engineDir)
       trackChild(this.children, this.planKey(plan), handle)
@@ -249,9 +251,14 @@ export class LlamaCppAdapter extends EngineAdapter {
     }
     if (plan.kind === 'docker') {
       // The image pull is the docker build step: the card's button reads
-      // "Building..." for it.
+      // "Building..." for it, and its `$ <command>` line reaches the launch
+      // run's log sink before the child spawns.
       onProgress?.('build')
-      const pull = await this.host.run(`docker pull ${LLAMACPP_DOCKER_IMAGE}`)
+      const pull = await auditRun(
+        this.host,
+        `docker pull ${LLAMACPP_DOCKER_IMAGE}`,
+        options?.onLog,
+      )
       if (!pull.ok) {
         return { ok: false, detail: `docker pull failed: ${pull.detail ?? 'unknown'}` }
       }
@@ -269,9 +276,9 @@ export class LlamaCppAdapter extends EngineAdapter {
     return pollHealth(this.host, plan, options, this.children.get(this.planKey(plan)))
   }
 
-  async stop(plan: LaunchPlan): Promise<void> {
+  async stop(plan: LaunchPlan, log?: CommandLogger): Promise<void> {
     if (plan.kind === 'docker' && plan.containerName !== undefined) {
-      await this.host.run(`docker stop ${plan.containerName}`)
+      await auditRun(this.host, `docker stop ${plan.containerName}`, log)
     }
     const handle = this.children.get(this.planKey(plan))
     if (handle !== undefined) {
@@ -282,7 +289,7 @@ export class LlamaCppAdapter extends EngineAdapter {
     // No tracked child (an engine a DSH restart re-adopted): signal the pid
     // the stored launch record stamped on the plan, so the stop reaches a
     // process this adapter instance did not spawn.
-    await stopProcessPlan(this.host, plan)
+    await stopProcessPlan(this.host, plan, log)
   }
 
   private buildMode(config: Config): 'docker' | 'local' {
@@ -295,7 +302,7 @@ export class LlamaCppAdapter extends EngineAdapter {
     return typeof config.port === 'number' ? config.port : 8080
   }
 
-  private async downloadModel(plan: LaunchPlan): Promise<DeployResult> {
+  private async downloadModel(plan: LaunchPlan, log?: CommandLogger): Promise<DeployResult> {
     const artifact = plan.modelId !== undefined ? LLAMACPP_MODEL_ARTIFACTS[plan.modelId] : undefined
     if (artifact === undefined) return { ok: true }
     // The hub-cache layout (no --local-dir) applies when the model directory is
@@ -315,7 +322,7 @@ export class LlamaCppAdapter extends EngineAdapter {
     // whose snapshot links are missing re-runs the cheap hf download, which
     // reuses the blobs and writes the links.
     if (modelArtifactPresent(entry, baseDir, useHubCache)) return { ok: true }
-    const download = await this.host.run(hfDownloadCommand(entry, baseDir, useHubCache))
+    const download = await auditRun(this.host, hfDownloadCommand(entry, baseDir, useHubCache), log)
     if (!download.ok) {
       return { ok: false, detail: `model download failed: ${download.detail ?? 'unknown'}` }
     }

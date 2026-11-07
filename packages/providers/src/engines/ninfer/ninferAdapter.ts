@@ -26,6 +26,7 @@ import {
   modelDownloadTarget,
 } from '../../../../core/lib/index.js'
 import type {
+  CommandLogger,
   Config,
   DefaultModel,
   DeployOptions,
@@ -42,6 +43,7 @@ import type {
   ProcessHandle,
 } from '../../../../core/lib/index.js'
 import {
+  auditRun,
   customArgFlags,
   flagsFromSpecs,
   nodeLifecycleHost,
@@ -297,14 +299,14 @@ export class NInferAdapter extends EngineAdapter {
       const withLogs = (result: DeployResult): DeployResult =>
         buildLogs !== '' ? { ...result, logs: buildLogs } : result
       onProgress?.('download')
-      const download = await this.downloadModel(plan)
+      const download = await this.downloadModel(plan, options?.onLog)
       if (!download.ok) return withLogs(download)
       // A chat template the user picked as an HF repo reference (the combo
       // control's known choices) is not a path the engine can read, so the
       // deploy step downloads it into the model directory and rewrites the
       // --chat-template flag to the local file before the spawn.
       onProgress?.('download')
-      const templateResult = await this.resolveChatTemplate(plan)
+      const templateResult = await this.resolveChatTemplate(plan, options?.onLog)
       if (!templateResult.ok) return withLogs(templateResult)
       // A relative launch path (the NInfer Windows build tree,
       // build-windows\apps\Release\ninfer-serve.exe) is joined against the
@@ -323,9 +325,10 @@ export class NInferAdapter extends EngineAdapter {
     }
     if (plan.kind === 'docker') {
       // The image pull is the docker build step: the card's button reads
-      // "Building..." for it.
+      // "Building..." for it, and its `$ <command>` line reaches the launch
+      // run's log sink before the child spawns.
       onProgress?.('build')
-      const pull = await this.host.run(`docker pull ${NINFER_DOCKER_IMAGE}`)
+      const pull = await auditRun(this.host, `docker pull ${NINFER_DOCKER_IMAGE}`, options?.onLog)
       if (!pull.ok) {
         return { ok: false, detail: `docker pull failed: ${pull.detail ?? 'unknown'}` }
       }
@@ -343,9 +346,9 @@ export class NInferAdapter extends EngineAdapter {
     return pollHealth(this.host, plan, options, this.children.get(this.planKey(plan)))
   }
 
-  async stop(plan: LaunchPlan): Promise<void> {
+  async stop(plan: LaunchPlan, log?: CommandLogger): Promise<void> {
     if (plan.kind === 'docker' && plan.containerName !== undefined) {
-      await this.host.run(`docker stop ${plan.containerName}`)
+      await auditRun(this.host, `docker stop ${plan.containerName}`, log)
     }
     const handle = this.children.get(this.planKey(plan))
     if (handle !== undefined) {
@@ -356,7 +359,7 @@ export class NInferAdapter extends EngineAdapter {
     // No tracked child (an engine a DSH restart re-adopted): signal the pid
     // the stored launch record stamped on the plan, so the stop reaches a
     // process this adapter instance did not spawn.
-    await stopProcessPlan(this.host, plan)
+    await stopProcessPlan(this.host, plan, log)
   }
 
   private buildMode(config: Config): 'docker' | 'local' {
@@ -369,7 +372,7 @@ export class NInferAdapter extends EngineAdapter {
     return typeof config.port === 'number' ? config.port : 18020
   }
 
-  private async downloadModel(plan: LaunchPlan): Promise<DeployResult> {
+  private async downloadModel(plan: LaunchPlan, log?: CommandLogger): Promise<DeployResult> {
     const artifact = plan.modelId !== undefined ? NINFER_MODEL_ARTIFACTS[plan.modelId] : undefined
     if (artifact === undefined) return { ok: true }
     // The hub-cache layout (no --local-dir) applies when the model directory is
@@ -389,7 +392,7 @@ export class NInferAdapter extends EngineAdapter {
     // whose snapshot links are missing re-runs the cheap hf download, which
     // reuses the blobs and writes the links.
     if (modelArtifactPresent(entry, baseDir, useHubCache)) return { ok: true }
-    const download = await this.host.run(hfDownloadCommand(entry, baseDir, useHubCache))
+    const download = await auditRun(this.host, hfDownloadCommand(entry, baseDir, useHubCache), log)
     if (!download.ok) {
       return { ok: false, detail: `model download failed: ${download.detail ?? 'unknown'}` }
     }
@@ -405,7 +408,7 @@ export class NInferAdapter extends EngineAdapter {
    * disk is used without a re-fetch, and a missing hf CLI leaves the flag
    * untouched so the engine reports the missing template itself.
    */
-  private async resolveChatTemplate(plan: LaunchPlan): Promise<DeployResult> {
+  private async resolveChatTemplate(plan: LaunchPlan, log?: CommandLogger): Promise<DeployResult> {
     const argv = plan.argv
     if (argv === undefined) return { ok: true }
     const index = argv.indexOf('--chat-template')
@@ -434,7 +437,11 @@ export class NInferAdapter extends EngineAdapter {
     // A template already on disk skips the re-fetch; the hf CLI is optional,
     // so a download failure is reported but does not abort the launch.
     if (localPath === null) {
-      const download = await this.host.run(hfChatTemplateCommand(value, baseDir, useHubCache))
+      const download = await auditRun(
+        this.host,
+        hfChatTemplateCommand(value, baseDir, useHubCache),
+        log,
+      )
       if (!download.ok) {
         return {
           ok: false,

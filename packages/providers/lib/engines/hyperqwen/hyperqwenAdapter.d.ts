@@ -7,7 +7,7 @@
  * @module dsh-plugin-local-infer/providers/engines/hyperqwen/hyperqwenAdapter
  */
 import { EngineAdapter } from '../../../../core/lib/index.js';
-import type { Config, DeployOptions, DeployResult, EngineLaunchSignature, EnginePlatformConfig, HealthCheckOptions, HealthResult, HardwareProfile, LaunchPlan, LaunchProgress, LifecycleHost, ParameterSpec } from '../../../../core/lib/index.js';
+import type { CommandLogger, Config, DeployOptions, DeployResult, EngineLaunchSignature, EnginePlatformConfig, HealthCheckOptions, HealthResult, HardwareProfile, LaunchPlan, LaunchProgress, LifecycleHost, ParameterSpec } from '../../../../core/lib/index.js';
 /**
  * HyperQwenAdapter is the docker-compose engine. `renderLaunch` renders a
  * compose plan (the compose file, the profile, and the `.env` the spec surface
@@ -29,9 +29,9 @@ export declare class HyperQwenAdapter extends EngineAdapter {
     };
     launchSignature(config?: Config): EngineLaunchSignature;
     renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan;
-    deploy(plan: LaunchPlan, platform?: EnginePlatformConfig, onProgress?: LaunchProgress, _options?: DeployOptions): Promise<DeployResult>;
+    deploy(plan: LaunchPlan, platform?: EnginePlatformConfig, onProgress?: LaunchProgress, options?: DeployOptions): Promise<DeployResult>;
     healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;
-    stop(plan: LaunchPlan): Promise<void>;
+    stop(plan: LaunchPlan, log?: CommandLogger): Promise<void>;
     private port;
     private profile;
 }

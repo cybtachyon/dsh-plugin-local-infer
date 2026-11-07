@@ -10,7 +10,7 @@
  */
 import { basename, dirname, join } from 'node:path';
 import { EngineAdapter, hfDownloadCommand, hfHubCacheDirectory, hubCacheSnapshotFilePath, modelArtifactPresent, modelDownloadTarget, } from '../../../../core/lib/index.js';
-import { customArgFlags, flagsFromSpecs, nodeLifecycleHost, pollHealth, stopProcessPlan, trackChild, } from "../../adapters.js";
+import { auditRun, customArgFlags, flagsFromSpecs, nodeLifecycleHost, pollHealth, stopProcessPlan, trackChild, } from "../../adapters.js";
 import { syncEngineForDeploy } from "../../acquire.js";
 import { LLAMACPP_MODEL_ARTIFACTS, LLAMACPP_PARAMETERS, llamaCppModelKey, } from "./llamacpp.js";
 import { llamacppLinuxBinary } from "./llamacppLinux.js";
@@ -187,7 +187,7 @@ export class LlamaCppAdapter extends EngineAdapter {
             }
             const withLogs = (result) => buildLogs !== '' ? { ...result, logs: buildLogs } : result;
             onProgress?.('download');
-            const download = await this.downloadModel(plan);
+            const download = await this.downloadModel(plan, options?.onLog);
             if (!download.ok)
                 return withLogs(download);
             const handle = this.host.spawn(plan.argv ?? [], plan.env ?? {}, engineDir);
@@ -196,9 +196,10 @@ export class LlamaCppAdapter extends EngineAdapter {
         }
         if (plan.kind === 'docker') {
             // The image pull is the docker build step: the card's button reads
-            // "Building..." for it.
+            // "Building..." for it, and its `$ <command>` line reaches the launch
+            // run's log sink before the child spawns.
             onProgress?.('build');
-            const pull = await this.host.run(`docker pull ${LLAMACPP_DOCKER_IMAGE}`);
+            const pull = await auditRun(this.host, `docker pull ${LLAMACPP_DOCKER_IMAGE}`, options?.onLog);
             if (!pull.ok) {
                 return { ok: false, detail: `docker pull failed: ${pull.detail ?? 'unknown'}` };
             }
@@ -214,9 +215,9 @@ export class LlamaCppAdapter extends EngineAdapter {
         // crash) ends the poll early with a failed result.
         return pollHealth(this.host, plan, options, this.children.get(this.planKey(plan)));
     }
-    async stop(plan) {
+    async stop(plan, log) {
         if (plan.kind === 'docker' && plan.containerName !== undefined) {
-            await this.host.run(`docker stop ${plan.containerName}`);
+            await auditRun(this.host, `docker stop ${plan.containerName}`, log);
         }
         const handle = this.children.get(this.planKey(plan));
         if (handle !== undefined) {
@@ -227,7 +228,7 @@ export class LlamaCppAdapter extends EngineAdapter {
         // No tracked child (an engine a DSH restart re-adopted): signal the pid
         // the stored launch record stamped on the plan, so the stop reaches a
         // process this adapter instance did not spawn.
-        await stopProcessPlan(this.host, plan);
+        await stopProcessPlan(this.host, plan, log);
     }
     buildMode(config) {
         return config.buildMode === 'docker' ? 'docker' : 'local';
@@ -237,7 +238,7 @@ export class LlamaCppAdapter extends EngineAdapter {
         // config launches on it.
         return typeof config.port === 'number' ? config.port : 8080;
     }
-    async downloadModel(plan) {
+    async downloadModel(plan, log) {
         const artifact = plan.modelId !== undefined ? LLAMACPP_MODEL_ARTIFACTS[plan.modelId] : undefined;
         if (artifact === undefined)
             return { ok: true };
@@ -259,7 +260,7 @@ export class LlamaCppAdapter extends EngineAdapter {
         // reuses the blobs and writes the links.
         if (modelArtifactPresent(entry, baseDir, useHubCache))
             return { ok: true };
-        const download = await this.host.run(hfDownloadCommand(entry, baseDir, useHubCache));
+        const download = await auditRun(this.host, hfDownloadCommand(entry, baseDir, useHubCache), log);
         if (!download.ok) {
             return { ok: false, detail: `model download failed: ${download.detail ?? 'unknown'}` };
         }

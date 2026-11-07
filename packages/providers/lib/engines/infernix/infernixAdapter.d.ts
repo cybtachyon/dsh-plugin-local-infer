@@ -13,7 +13,7 @@
  * @module dsh-plugin-local-infer/providers/engines/infernix/infernixAdapter
  */
 import { EngineAdapter } from '../../../../core/lib/index.js';
-import type { Config, DeployOptions, DeployResult, EngineLaunchSignature, EnginePlatformConfig, HealthCheckOptions, HealthResult, HardwareProfile, LaunchPlan, LaunchProgress, LifecycleHost, ParameterSpec } from '../../../../core/lib/index.js';
+import type { CommandLogger, Config, DeployOptions, DeployResult, EngineLaunchSignature, EnginePlatformConfig, HealthCheckOptions, HealthResult, HardwareProfile, LaunchPlan, LaunchProgress, LifecycleHost, ParameterSpec } from '../../../../core/lib/index.js';
 /**
  * InfernixAdapter is the local-only engine for Infernix, the C++/CUDA fork
  * of NInfer (https://github.com/wallawalla47/infernix) tuned for Qwen models
@@ -45,7 +45,7 @@ export declare class InfernixAdapter extends EngineAdapter {
     renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan;
     deploy(plan: LaunchPlan, platform?: EnginePlatformConfig, onProgress?: LaunchProgress, options?: DeployOptions): Promise<DeployResult>;
     healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;
-    stop(plan: LaunchPlan): Promise<void>;
+    stop(plan: LaunchPlan, log?: CommandLogger): Promise<void>;
     private port;
     private downloadModel;
 }

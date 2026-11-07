@@ -65,6 +65,7 @@ import {
 } from '../../core/lib/index.js'
 import type {
   BuildMode,
+  CommandLogger,
   CommandOutcome,
   CommandRunner,
   Config,
@@ -117,6 +118,7 @@ import type {
   LocalInferService,
   ProviderStatusOptions,
   RegisterModelOptions,
+  RunInstallOptions,
   RunLogListener,
   RunLogSnapshot,
   SettingsDescribeResult,
@@ -143,6 +145,7 @@ export type {
   LocalInferService,
   ProviderStatusOptions,
   RegisterModelOptions,
+  RunInstallOptions,
   RunLogAppendEvent,
   RunLogEndEvent,
   RunLogEvent,
@@ -693,13 +696,30 @@ export class LocalInfer extends Service implements LocalInferService {
    * captures the per-command exit, so a failure names the command that broke,
    * and a declared-sudo command whose probe finds no cached credentials
    * announces the CLI prompt through the sudo observer and fails at the
-   * sudo deadline.
+   * sudo deadline. options.onLog is the install run's log sink: the command
+   * line reaches it as a `$ <command>` line before the guarded runner spawns
+   * the child (and before the sudo guard's probe announces), so the run text
+   * carries the command ahead of the per-dep results. options.runner injects
+   * the command runner so a test reads the command lines without a real shell.
    */
-  async runInstall(engineId: string, buildMode: BuildMode, hw: HardwareProfile): Promise<InstallResult> {
+  async runInstall(
+    engineId: string,
+    buildMode: BuildMode,
+    hw: HardwareProfile,
+    options?: RunInstallOptions,
+  ): Promise<InstallResult> {
     const deps = await this.deps(engineId, buildMode, hw)
     // The guarded runner is built per call so every sudo announcement
     // reaches the observers registered when this call runs.
-    return runInstall(deps, hw, guardedShellRunner((command) => this.notifySudoNeeded(command)))
+    const runner = options?.runner ?? guardedShellRunner((command) => this.notifySudoNeeded(command))
+    // The audit wrapper logs each command the core provisioner actually runs
+    // (a satisfied dep never runs, so it never logs) before delegating to the
+    // runner. Keeping the wrapper here leaves the core provisioner pure.
+    const loggedRunner: CommandRunner = (command, runOptions) => {
+      options?.onLog?.(`$ ${command}\n`)
+      return runner(command, runOptions)
+    }
+    return runInstall(deps, hw, loggedRunner)
   }
 
   /**
@@ -729,11 +749,14 @@ export class LocalInfer extends Service implements LocalInferService {
     // exactOptionalPropertyTypes: only pass the option object when a key is
     // present.
     const hasDeployOptions =
-      options?.allowRunDeps !== undefined || options?.autoRebuild !== undefined
+      options?.allowRunDeps !== undefined ||
+      options?.autoRebuild !== undefined ||
+      options?.onLog !== undefined
     const deployOptions = hasDeployOptions
       ? {
           ...(options?.allowRunDeps !== undefined ? { allowRunDeps: options.allowRunDeps } : {}),
           ...(options?.autoRebuild !== undefined ? { autoRebuild: options.autoRebuild } : {}),
+          ...(options?.onLog !== undefined ? { onLog: options.onLog } : {}),
         }
       : undefined
     // The in-flight launch flag: the provider-status detector keeps this
@@ -1107,9 +1130,12 @@ export class LocalInfer extends Service implements LocalInferService {
   /**
    * stop signals the engine a launch started: it resolves the adapter by the
    * plan's engineId and runs the adapter's stop step (kill the tracked process,
-   * stop the named container, or compose down).
+   * stop the named container, or compose down). The optional `log` is the
+   * stop run's log sink: the adapter writes the `$ <command>` line of every
+   * command it runs (compose down, docker stop, a pid signal) through it
+   * before the child runs, so the stop's live run reads the command first.
    */
-  async stop(plan: LaunchPlan): Promise<void> {
+  async stop(plan: LaunchPlan, log?: CommandLogger): Promise<void> {
     const adapter = this.engineRegistry.get(plan.engineId)
     if (adapter === undefined) {
       throw new LocalInferError(
@@ -1125,7 +1151,7 @@ export class LocalInfer extends Service implements LocalInferService {
     const stopKey = this.engineKey(plan.engineId, plan.port)
     this.stoppingEngines.add(stopKey)
     try {
-      await adapter.stop(plan)
+      await adapter.stop(plan, log)
     } catch (error) {
       // A stop that failed (a kill the host could not deliver) settles the
       // in-flight state: the flag clears, so the provider reads from the
@@ -1323,7 +1349,10 @@ export class LocalInfer extends Service implements LocalInferService {
    * downloadModel runs the hf CLI download for one default model into the
    * model directory: it creates the target directory when absent (the
    * recursive flag covers the parents too), renders the command through the
-   * core builder (the single source the card shows), and runs it through the
+   * core builder (the single source the card shows), logs the rendered
+   * command's `$ <command>` line through options.onLog before the runner
+   * spawns the child (so every caller's run reads command first, output
+   * after, and the line is written once, here), and runs it through the
    * injected runner when one is given, so a test captures the command without
    * a live hf. A failure keeps the runner's detail, so the card names the
    * broken step.
@@ -1335,11 +1364,9 @@ export class LocalInfer extends Service implements LocalInferService {
   ): Promise<DownloadResult> {
     mkdirSync(directory, { recursive: true })
     const runner = options?.runner ?? downloadRunner
-    const result = await runner(
-      hfDownloadCommand(entry, directory, options?.useHubCache === true),
-      options?.signal,
-      options?.onChunk,
-    )
+    const command = hfDownloadCommand(entry, directory, options?.useHubCache === true)
+    options?.onLog?.(`$ ${command}\n`)
+    const result = await runner(command, options?.signal, options?.onChunk)
     if (result.ok) return { ok: true }
     return { ok: false, detail: `model download failed: ${result.detail ?? 'unknown'}` }
   }
@@ -1348,8 +1375,9 @@ export class LocalInfer extends Service implements LocalInferService {
    * downloadChatTemplate pulls the chat template file for one HF repo
    * reference into the model directory, so a selected template (the Froggeric
    * set, a custom repo) works out of the box. It shares the model download's
-   * recursive directory creation, runner, and long timeout: a template is a
-   * small file, but the hf CLI's cold start and auth are the same cost.
+   * recursive directory creation, runner, log line before the spawn, and long
+   * timeout: a template is a small file, but the hf CLI's cold start and auth
+   * are the same cost.
    */
   async downloadChatTemplate(
     repo: string,
@@ -1358,11 +1386,9 @@ export class LocalInfer extends Service implements LocalInferService {
   ): Promise<DownloadResult> {
     mkdirSync(directory, { recursive: true })
     const runner = options?.runner ?? downloadRunner
-    const result = await runner(
-      hfChatTemplateCommand(repo, directory, options?.useHubCache === true),
-      options?.signal,
-      options?.onChunk,
-    )
+    const command = hfChatTemplateCommand(repo, directory, options?.useHubCache === true)
+    options?.onLog?.(`$ ${command}\n`)
+    const result = await runner(command, options?.signal, options?.onChunk)
     if (result.ok) return { ok: true }
     return { ok: false, detail: `chat template download failed: ${result.detail ?? 'unknown'}` }
   }

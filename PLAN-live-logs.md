@@ -97,7 +97,7 @@ must always match the provider process actually running.
 
 ### Phase 3: Exec / URL logging audit
 
-- [ ] [TASK-007-exec-command-logging](docs/PLAN-live-logs-TASK-007-exec-command-logging.md)
+- [x] [TASK-007-exec-command-logging](docs/PLAN-live-logs-TASK-007-exec-command-logging.md)
   Audit every exec site (service `runCommand` / `guardedShellRunner` /
   download runner spawn, providers' git sync + build, engine adapters'
   compose up/down, systemDeps probes); every mutating command writes

@@ -28,6 +28,7 @@ import {
   repoIdFromUrl,
 } from '../../../../core/lib/index.js'
 import type {
+  CommandLogger,
   Config,
   DeployOptions,
   DeployResult,
@@ -45,6 +46,7 @@ import type {
   ProcessHandle,
 } from '../../../../core/lib/index.js'
 import {
+  auditRun,
   configFileFromSpecs,
   nodeLifecycleHost,
   pollHealth,
@@ -398,6 +400,7 @@ export class BasaltAdapter extends EngineAdapter {
       baseDir,
       useHubCache,
       onProgress,
+      options?.onLog,
     )
     if (!artifact.ok) {
       return withLogs({ ok: false, detail: artifact.detail })
@@ -451,11 +454,12 @@ export class BasaltAdapter extends EngineAdapter {
     baseDir: string,
     useHubCache: boolean,
     onProgress?: LaunchProgress,
+    log?: CommandLogger,
   ): Promise<{ ok: true; path: string } | { ok: false; detail: string }> {
     const modelFile = entry.file
     if (!modelArtifactPresent(entry, baseDir, useHubCache)) {
       onProgress?.('download')
-      const download = await this.host.run(hfDownloadCommand(entry, baseDir, useHubCache))
+      const download = await auditRun(this.host, hfDownloadCommand(entry, baseDir, useHubCache), log)
       if (!download.ok) {
         return { ok: false, detail: `model download failed: ${download.detail ?? 'unknown'}` }
       }
@@ -517,7 +521,7 @@ export class BasaltAdapter extends EngineAdapter {
     return { ...result, state }
   }
 
-  async stop(plan: LaunchPlan): Promise<void> {
+  async stop(plan: LaunchPlan, log?: CommandLogger): Promise<void> {
     // The serve process is the tracked child: signal it and drop the entry,
     // so a later stop never signals a pid a recycled process has taken over.
     const handle = this.children.get(this.planKey(plan))
@@ -529,7 +533,7 @@ export class BasaltAdapter extends EngineAdapter {
     // No tracked child (an engine a DSH restart re-adopted): signal the pid
     // the stored launch record stamped on the plan, so the stop reaches a
     // process this adapter instance did not spawn.
-    await stopProcessPlan(this.host, plan)
+    await stopProcessPlan(this.host, plan, log)
   }
 
   private port(config: Config): number {

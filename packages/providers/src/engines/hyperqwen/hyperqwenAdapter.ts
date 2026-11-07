@@ -9,6 +9,7 @@
 
 import { EngineAdapter, formatLaunchCommand } from '../../../../core/lib/index.js'
 import type {
+  CommandLogger,
   Config,
   DeployOptions,
   DeployResult,
@@ -22,7 +23,7 @@ import type {
   LifecycleHost,
   ParameterSpec,
 } from '../../../../core/lib/index.js'
-import { customArgEnv, envFromSpecs, nodeLifecycleHost, pollHealth } from '../../adapters.ts'
+import { auditRun, customArgEnv, envFromSpecs, nodeLifecycleHost, pollHealth } from '../../adapters.ts'
 import { HYPERQWEN_PARAMETERS } from './hyperqwen.ts'
 
 /**
@@ -87,7 +88,7 @@ export class HyperQwenAdapter extends EngineAdapter {
     plan: LaunchPlan,
     platform?: EnginePlatformConfig,
     onProgress?: LaunchProgress,
-    _options?: DeployOptions,
+    options?: DeployOptions,
   ): Promise<DeployResult> {
     // The card's docker-tag field carries the compose arguments (the profile
     // the up step selects); the deploy step applies it to the plan so the up
@@ -102,9 +103,10 @@ export class HyperQwenAdapter extends EngineAdapter {
       return { ok: false, detail: 'compose plan carries no command' }
     }
     // The compose up is the docker build step: the card's button reads
-    // "Building..." for it.
+    // "Building..." for it. The `$ <command>` line reaches the launch run's
+    // log sink before the child spawns, so the run reads the command first.
     onProgress?.('build')
-    const up = await this.host.run(command)
+    const up = await auditRun(this.host, command, options?.onLog)
     if (!up.ok) {
       return { ok: false, detail: `compose up failed: ${up.detail ?? 'unknown'}` }
     }
@@ -115,17 +117,20 @@ export class HyperQwenAdapter extends EngineAdapter {
     return pollHealth(this.host, plan, options)
   }
 
-  async stop(plan: LaunchPlan): Promise<void> {
+  async stop(plan: LaunchPlan, log?: CommandLogger): Promise<void> {
     // The down step brings down the containers the up step started, so it
     // runs the same compose arguments (the profile the up selected); an
-    // absent composeArgs falls back to the engine's default profile.
+    // absent composeArgs falls back to the engine's default profile. The
+    // `$ <command>` line reaches the stop run's log sink before the child.
     const composeArgs = plan.composeArgs?.split(/\s+/).filter((token) => token !== '')
     const args =
       composeArgs !== undefined && composeArgs.length > 0
         ? composeArgs.join(' ')
         : `--profile ${plan.profile ?? 'single'}`
-    await this.host.run(
+    await auditRun(
+      this.host,
       `docker compose -f ${plan.composeFile ?? 'docker-compose.yml'} ${args} down`,
+      log,
     )
   }
 

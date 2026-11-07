@@ -5,9 +5,11 @@
  * re-check, so the "Get" gate opens only after a re-check passes.
  * @module dsh-plugin-local-infer/ui/viewmodels/depsHelpers
  */
+import { SUDO_CLI_NOTE } from '../../../core/lib/index.js';
 import { runLogKey } from '../../../service/lib/index.js';
 import { readConfig } from "../config.js";
 import { INSTALL_RUN_SEED } from "../ops/logs.js";
+import { registerSudoObserver } from "../ops/engine.js";
 import { RouteError } from "../route.js";
 import { buildDeps } from "./deps.js";
 /**
@@ -17,9 +19,14 @@ import { buildDeps } from "./deps.js";
  * re-check, so the "Get" gate opens only after a re-check passes. A run that
  * actually starts brackets one live hub run under the runLogKey rule (the
  * stored entry matching the engine and model, else the engine id): the seed
- * is the "Installing deps..." separator, each per-dep install result appends
- * in the Get step's `  <id>: <status>` shape, and the run ends at settle,
- * a throwing install included. A 409 refusal starts no run.
+ * is the "Installing deps..." separator, the service writes each install
+ * command's `$ <command>` line into the run (through onLog) before its child
+ * spawns, each per-dep install result appends in the Get step's
+ * `  <id>: <status>` shape, and the run ends at settle, a throwing install
+ * included. The run registers the sudo hook the launch and Get paths
+ * register, so a guarded dependency install waiting for a password on the CLI
+ * lands the shared SUDO_CLI_NOTE line in the live run and the persisted run.
+ * A 409 refusal starts no run.
  */
 export async function runInstallFor(localInfer, request) {
     const stored = readConfig();
@@ -29,9 +36,20 @@ export async function runInstallFor(localInfer, request) {
     const model = await buildDeps(localInfer, request);
     const hardware = await localInfer.detectHardware();
     const runKey = runLogKey(stored.providers, model.engineId, undefined, request.config ?? stored.config);
+    // The install run owns a sudo hook under its run key (the shared
+    // registerSudoObserver wiring): a guarded install waiting on the CLI writes
+    // the core CLI note into the live hub and, through persistProcessLog inside
+    // the helper, into the persisted run and log file, so a hung install reads
+    // where the prompt landed. The disposer clears only this run's slot.
+    const clearSudoObserver = registerSudoObserver(localInfer, runKey, `${SUDO_CLI_NOTE}\n`, (line) => localInfer.appendRunLog(runKey, line));
     localInfer.beginRun(runKey, INSTALL_RUN_SEED);
     try {
-        const result = await localInfer.runInstall(model.engineId, model.buildMode, hardware);
+        const result = await localInfer.runInstall(model.engineId, model.buildMode, hardware, {
+            // Each install command's `$ <command>` line reaches the live hub before
+            // the guarded runner spawns the child, so the run reads the command
+            // ahead of the per-dep results below.
+            onLog: (line) => localInfer.appendRunLog(runKey, line),
+        });
         // The per-dep results stream as the re-check reported them, in the same
         // indented shape the Get step's dep block logs, so both readers (the
         // live buffer and, later, a re-rendered Logs pane) say the same thing.
@@ -48,6 +66,7 @@ export async function runInstallFor(localInfer, request) {
         };
     }
     finally {
+        clearSudoObserver();
         localInfer.endRun(runKey);
     }
 }

@@ -18,12 +18,12 @@
  * @module dsh-plugin-local-infer/service
  */
 import { Context, Service } from '@deepseek-ai/cordis';
-import type { BuildMode, CommandOutcome, CommandRunner, Config, DefaultModel, ModelCacheEntry, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, GpuUsageProbe, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, ProviderLaunchRecord, ProviderRef, ProviderStatus, ReLinkOutcome, RegisterResult, ReserveResolution, ResolvedDefaults, SudoGuard, SystemDep, VramModel } from 'dsh-plugin-local-infer/core';
-import type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EngineDeathEvent, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, ProviderStatusOptions, RegisterModelOptions, RunLogListener, RunLogSnapshot } from './types.ts';
+import type { BuildMode, CommandLogger, CommandOutcome, CommandRunner, Config, DefaultModel, ModelCacheEntry, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, GpuUsageProbe, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, ProviderLaunchRecord, ProviderRef, ProviderStatus, ReLinkOutcome, RegisterResult, ReserveResolution, ResolvedDefaults, SudoGuard, SystemDep, VramModel } from 'dsh-plugin-local-infer/core';
+import type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EngineDeathEvent, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, ProviderStatusOptions, RegisterModelOptions, RunInstallOptions, RunLogListener, RunLogSnapshot } from './types.ts';
 import { RunLogStore, runLogKey } from './run-logs.ts';
 import { findLaunchTarget } from './launch-target.ts';
 export { RunLogStore, runLogKey, findLaunchTarget };
-export type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EngineDeathEvent, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LaunchTargetEntry, LocalInferService, ProviderStatusOptions, RegisterModelOptions, RunLogAppendEvent, RunLogEndEvent, RunLogEvent, RunLogListener, RunLogResetEvent, RunLogSnapshot, SettingsDescribeResult, SettingsForms, SettingsNamespaceDescriptor, } from './types.ts';
+export type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EngineDeathEvent, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LaunchTargetEntry, LocalInferService, ProviderStatusOptions, RegisterModelOptions, RunInstallOptions, RunLogAppendEvent, RunLogEndEvent, RunLogEvent, RunLogListener, RunLogResetEvent, RunLogSnapshot, SettingsDescribeResult, SettingsForms, SettingsNamespaceDescriptor, } from './types.ts';
 declare module '@deepseek-ai/cordis' {
     interface Context {
         localInfer: LocalInferService;
@@ -194,9 +194,13 @@ export declare class LocalInfer extends Service implements LocalInferService {
      * captures the per-command exit, so a failure names the command that broke,
      * and a declared-sudo command whose probe finds no cached credentials
      * announces the CLI prompt through the sudo observer and fails at the
-     * sudo deadline.
+     * sudo deadline. options.onLog is the install run's log sink: the command
+     * line reaches it as a `$ <command>` line before the guarded runner spawns
+     * the child (and before the sudo guard's probe announces), so the run text
+     * carries the command ahead of the per-dep results. options.runner injects
+     * the command runner so a test reads the command lines without a real shell.
      */
-    runInstall(engineId: string, buildMode: BuildMode, hw: HardwareProfile): Promise<InstallResult>;
+    runInstall(engineId: string, buildMode: BuildMode, hw: HardwareProfile, options?: RunInstallOptions): Promise<InstallResult>;
     /**
      * launch is the lifecycle entry point: it resolves the adapter that rendered
      * the plan (by the plan's engineId), runs the adapter's deploy step (build
@@ -333,9 +337,12 @@ export declare class LocalInfer extends Service implements LocalInferService {
     /**
      * stop signals the engine a launch started: it resolves the adapter by the
      * plan's engineId and runs the adapter's stop step (kill the tracked process,
-     * stop the named container, or compose down).
+     * stop the named container, or compose down). The optional `log` is the
+     * stop run's log sink: the adapter writes the `$ <command>` line of every
+     * command it runs (compose down, docker stop, a pid signal) through it
+     * before the child runs, so the stop's live run reads the command first.
      */
-    stop(plan: LaunchPlan): Promise<void>;
+    stop(plan: LaunchPlan, log?: CommandLogger): Promise<void>;
     /**
      * registerModel publishes a confirmed-working engine as a DSH model. It
      * builds the entry from the plan (the provider id, the base URL, and the
@@ -401,7 +408,10 @@ export declare class LocalInfer extends Service implements LocalInferService {
      * downloadModel runs the hf CLI download for one default model into the
      * model directory: it creates the target directory when absent (the
      * recursive flag covers the parents too), renders the command through the
-     * core builder (the single source the card shows), and runs it through the
+     * core builder (the single source the card shows), logs the rendered
+     * command's `$ <command>` line through options.onLog before the runner
+     * spawns the child (so every caller's run reads command first, output
+     * after, and the line is written once, here), and runs it through the
      * injected runner when one is given, so a test captures the command without
      * a live hf. A failure keeps the runner's detail, so the card names the
      * broken step.
@@ -411,8 +421,9 @@ export declare class LocalInfer extends Service implements LocalInferService {
      * downloadChatTemplate pulls the chat template file for one HF repo
      * reference into the model directory, so a selected template (the Froggeric
      * set, a custom repo) works out of the box. It shares the model download's
-     * recursive directory creation, runner, and long timeout: a template is a
-     * small file, but the hf CLI's cold start and auth are the same cost.
+     * recursive directory creation, runner, log line before the spawn, and long
+     * timeout: a template is a small file, but the hf CLI's cold start and auth
+     * are the same cost.
      */
     downloadChatTemplate(repo: string, directory: string, options?: DownloadModelOptions): Promise<DownloadResult>;
     /**

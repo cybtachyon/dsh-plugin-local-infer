@@ -21,6 +21,7 @@ import {
   sudoFailureDetail,
 } from '../../core/lib/index.js'
 import type {
+  CommandLogger,
   CommandOutcome,
   Config,
   DebugLogger,
@@ -778,18 +779,42 @@ export function resolveLaunchArgv(
 }
 
 /**
+ * auditRun runs one mutating host command through the run's log sink: the
+ * `$ <command>` line reaches the sink before the child spawns, so the launch
+ * or stop run reads the command ahead of its outcome. No sink (a headless
+ * call) and the command runs as before. The deploy and stop steps share this
+ * one audit rule for their direct `host.run` calls; the git and build steps
+ * run through the acquire step's own command-first echo.
+ */
+export async function auditRun(
+  host: LifecycleHost,
+  command: string,
+  log?: CommandLogger,
+  options?: RunOptions,
+): Promise<CommandOutcome> {
+  log?.(`$ ${command}\n`)
+  return host.run(command, options)
+}
+
+/**
  * stopProcessPlan signals the engine process a stop targets when the adapter
  * tracks no child handle for it: an engine a DSH restart re-adopted from a
  * stored launch record carries no in-memory handle, so the stop signals the
  * pid the record stamped on the plan (kill on Linux and macOS, taskkill on a
- * Windows plan). A plan that names no pid is a no-op (nothing to signal), and
- * a kill the host reports as failed throws with the host's detail, so the
- * stop route names the broken step in the card's Logs section.
+ * Windows plan). The optional `log` is the stop run's log sink: the signal
+ * command's `$ <command>` line reaches it before the child runs. A plan that
+ * names no pid is a no-op (nothing to signal), and a kill the host reports as
+ * failed throws with the host's detail, so the stop route names the broken
+ * step in the card's Logs section.
  */
-export async function stopProcessPlan(host: LifecycleHost, plan: LaunchPlan): Promise<void> {
+export async function stopProcessPlan(
+  host: LifecycleHost,
+  plan: LaunchPlan,
+  log?: CommandLogger,
+): Promise<void> {
   if (plan.pid === undefined) return
   const command = plan.os === 'windows' ? `taskkill /PID ${plan.pid} /T` : `kill ${plan.pid}`
-  const outcome = await host.run(command)
+  const outcome = await auditRun(host, command, log)
   if (!outcome.ok) {
     throw new Error(`stop: signal pid ${plan.pid} failed: ${outcome.detail ?? 'unknown'}`)
   }

@@ -14,7 +14,7 @@
  */
 import { join } from 'node:path';
 import { EngineAdapter, hfDownloadCommand, hfHubCacheDirectory, hubCacheSnapshotFilePath, modelArtifactPresent, modelDownloadTarget, } from '../../../../core/lib/index.js';
-import { customArgFlags, flagsFromSpecs, nodeLifecycleHost, pollHealth, stopProcessPlan, } from "../../adapters.js";
+import { auditRun, customArgFlags, flagsFromSpecs, nodeLifecycleHost, pollHealth, stopProcessPlan, } from "../../adapters.js";
 import { syncEngineForDeploy } from "../../acquire.js";
 import { INFERNIX_MODEL_ARTIFACTS, INFERNIX_PARAMETERS, infernixArtifactFor, infernixDraftModelPath, infernixModelKey, } from "./infernix.js";
 import { infernixLinuxBinary } from "./infernixLinux.js";
@@ -165,7 +165,7 @@ export class InfernixAdapter extends EngineAdapter {
         }
         const withLogs = (result) => buildLogs !== '' ? { ...result, logs: buildLogs } : result;
         onProgress?.('download');
-        const download = await this.downloadModel(plan);
+        const download = await this.downloadModel(plan, options?.onLog);
         if (!download.ok)
             return withLogs(download);
         const handle = this.host.spawn(plan.argv ?? [], plan.env ?? {}, engineDir);
@@ -177,7 +177,7 @@ export class InfernixAdapter extends EngineAdapter {
         // crash) ends the poll early with a failed result.
         return pollHealth(this.host, plan, options, this.children.get(this.planKey(plan)));
     }
-    async stop(plan) {
+    async stop(plan, log) {
         const handle = this.children.get(this.planKey(plan));
         if (handle !== undefined) {
             handle.kill();
@@ -187,14 +187,14 @@ export class InfernixAdapter extends EngineAdapter {
         // No tracked child (an engine a DSH restart re-adopted): signal the pid
         // the stored launch record stamped on the plan, so the stop reaches a
         // process this adapter instance did not spawn.
-        await stopProcessPlan(this.host, plan);
+        await stopProcessPlan(this.host, plan, log);
     }
     port(config) {
         // 8080 is the infernix-serve CLI default, so the form seeds it and the
         // adapter falls back to it when a config names no port.
         return typeof config.port === 'number' ? config.port : 8080;
     }
-    async downloadModel(plan) {
+    async downloadModel(plan, log) {
         const artifact = plan.modelId !== undefined ? INFERNIX_MODEL_ARTIFACTS[plan.modelId] : undefined;
         // A model key that names a local artifact file carries no artifact entry,
         // so the file the user has on disk launches as-is without a download.
@@ -225,7 +225,7 @@ export class InfernixAdapter extends EngineAdapter {
         // reuses the blobs and writes the links.
         if (modelArtifactPresent(entry, baseDir, useHubCache))
             return { ok: true };
-        const download = await this.host.run(hfDownloadCommand(entry, baseDir, useHubCache));
+        const download = await auditRun(this.host, hfDownloadCommand(entry, baseDir, useHubCache), log);
         if (!download.ok) {
             return { ok: false, detail: `model download failed: ${download.detail ?? 'unknown'}` };
         }

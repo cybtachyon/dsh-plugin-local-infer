@@ -546,6 +546,47 @@ describe('ctx.localInfer dep provisioning', () => {
     expect(broken?.detail).toContain('exit 1')
   })
 
+  it('writes each install command to the log sink before the runner spawns it', async () => {
+    const ctx = await seam()
+    const plan: EngineDepPlan = {
+      docker: [],
+      local: {
+        linux: [
+          {
+            id: 'first',
+            purpose: 'a first command',
+            requiresSudo: false,
+            install: { apt: { commands: ['apt-get install -y first'] } },
+          },
+          {
+            id: 'second',
+            purpose: 'a second command',
+            requiresSudo: false,
+            install: { apt: { commands: ['apt-get install -y second'] } },
+          },
+        ],
+      },
+    }
+    ctx.localInfer.registerDepPlan('logtest', plan)
+    // The journal orders every audit line against its own runner call: each
+    // `$ <command>` line reaches the log sink before that command's child
+    // spawns, in plan order.
+    const journal: string[] = []
+    await ctx.localInfer.runInstall('logtest', 'local', { ...HW, packageManager: 'apt' }, {
+      onLog: (line) => journal.push(`log: ${line.trimEnd()}`),
+      runner: async (command: string) => {
+        journal.push(`run: ${command}`)
+        return { ok: true }
+      },
+    })
+    expect(journal).toEqual([
+      'log: $ apt-get install -y first',
+      'run: apt-get install -y first',
+      'log: $ apt-get install -y second',
+      'run: apt-get install -y second',
+    ])
+  })
+
   it('detects the package-manager winner in the live hardware probes', async () => {
     const ctx = await seam()
     const profile = await ctx.localInfer.detectHardware()
@@ -2103,13 +2144,23 @@ describe('model directory, hf CLI, and model download', () => {
       file: 'qwen3_8_27b_nvfp4.ninfer',
     }
     const commands: string[] = []
+    // The journal orders the audit line against the runner call: the service
+    // writes `$ <command>` to the log sink before the runner spawns (the
+    // command-before-spawn rule).
+    const journal: string[] = []
     const runner = async (command: string) => {
+      journal.push(`run: ${command}`)
       commands.push(command)
       return { ok: true }
     }
     const target = join(home, 'models')
-    const result = await ctx.localInfer.downloadModel(entry, target, { runner })
+    const command = `hf download neroued/Qwen3.8-27B-nvfp4-NInfer qwen3_8_27b_nvfp4.ninfer --local-dir ${target} --format human`
+    const result = await ctx.localInfer.downloadModel(entry, target, {
+      runner,
+      onLog: (line) => journal.push(`log: ${line.trimEnd()}`),
+    })
     expect(result).toEqual({ ok: true })
+    expect(journal).toEqual([`log: $ ${command}`, `run: ${command}`])
     expect(commands).toEqual([
       `hf download neroued/Qwen3.8-27B-nvfp4-NInfer qwen3_8_27b_nvfp4.ninfer --local-dir ${target} --format human`,
     ])
@@ -2241,7 +2292,11 @@ describe('model directory, hf CLI, and model download', () => {
   it('renders the hub-cache layout command for a default-directory chat template download', async () => {
     const ctx = await seam()
     const commands: string[] = []
+    // The journal orders the audit line against the runner call: the service
+    // writes `$ <command>` to the log sink before the runner spawns.
+    const journal: string[] = []
     const runner = async (command: string) => {
+      journal.push(`run: ${command}`)
       commands.push(command)
       return { ok: true }
     }
@@ -2249,9 +2304,17 @@ describe('model directory, hf CLI, and model download', () => {
     const result = await ctx.localInfer.downloadChatTemplate(
       'froggeric/Qwen-Fixed-Chat-Templates',
       hub,
-      { runner, useHubCache: true },
+      {
+        runner,
+        useHubCache: true,
+        onLog: (line) => journal.push(`log: ${line.trimEnd()}`),
+      },
     )
     expect(result).toEqual({ ok: true })
+    expect(journal).toEqual([
+      'log: $ hf download froggeric/Qwen-Fixed-Chat-Templates chat_template.jinja --format human',
+      'run: hf download froggeric/Qwen-Fixed-Chat-Templates chat_template.jinja --format human',
+    ])
     expect(commands).toEqual([
       'hf download froggeric/Qwen-Fixed-Chat-Templates chat_template.jinja --format human',
     ])

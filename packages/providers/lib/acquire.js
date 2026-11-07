@@ -311,10 +311,13 @@ export async function syncAndRebuildEngine(host, request, log) {
     else {
         if (fork !== undefined) {
             // Add the fork under its own remote name; a re-launch updates the URL in
-            // place so an edited fork field takes effect on the next run.
-            const add = await runLogged(host, `git -C ${directory} remote add ${FORK_REMOTE} ${fork}`, emit, { echo: false });
+            // place so an edited fork field takes effect on the next run. Both
+            // remote commands mutate the checkout's git config, so their `$ command`
+            // lines lead their output (the TASK-007 exec-audit rule): a re-launch
+            // reads the expected add failure and the set-url that follows.
+            const add = await runLogged(host, `git -C ${directory} remote add ${FORK_REMOTE} ${fork}`, emit);
             if (!add.ok) {
-                await runLogged(host, `git -C ${directory} remote set-url ${FORK_REMOTE} ${fork}`, emit, { echo: false });
+                await runLogged(host, `git -C ${directory} remote set-url ${FORK_REMOTE} ${fork}`, emit);
             }
         }
         const status = await runLogged(host, `git -C ${directory} status --short`, emit, { echo: false });
@@ -331,7 +334,10 @@ export async function syncAndRebuildEngine(host, request, log) {
             return { ok: true, rebuilt: false, logs: chunks.join('') };
         }
         // The fetch is best-effort: an offline host prices the checkout it has.
-        await runLogged(host, `git -C ${directory} fetch ${remote} || true`, emit, { echo: false });
+        // It mutates the checkout's objects and refs, so the `$ command` line
+        // leads its output (the TASK-007 exec-audit rule); the `|| true` keeps a
+        // failed fetch silent so the behind-check prices what is already present.
+        await runLogged(host, `git -C ${directory} fetch ${remote} || true`, emit);
         // Price whether the current branch is behind the remote branch. A fetch
         // that failed (offline) or a missing remote branch reads as not-behind, so
         // the checkout builds as-is.
