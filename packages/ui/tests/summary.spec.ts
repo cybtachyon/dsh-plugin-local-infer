@@ -624,6 +624,39 @@ describe('provider list round trip', () => {
     ])
   })
 
+  it('carries the stored autoRebuild per entry and no key when it is absent', async () => {
+    // The edit form and the entry launch read the Auto Rebuild checkbox from
+    // the summary entry, so a stored false must survive the read model and an
+    // entry saved before the key existed must carry no key (the card then
+    // draws the box unchecked). toStrictEqual pins the key's absence: a plain
+    // toEqual would let an `autoRebuild: undefined` through.
+    writeConfig('ninfer', { model: 'qwen3-27b' }, false, {}, true, [
+      { id: 'p1', engine: 'ninfer', config: { model: 'qwen3-27b' }, platform: {}, autoRebuild: false },
+      { id: 'p2', engine: 'ninfer', config: { model: 'qwen3-27b' }, platform: {} },
+    ])
+    const service = stubService([])
+    const summary = await buildSummary(service, { engine: 'ninfer', config: {} })
+    expect(summary.providers).toStrictEqual([
+      {
+        id: 'p1',
+        engine: 'ninfer',
+        model: 'qwen3-27b',
+        status: 'unsure',
+        config: { model: 'qwen3-27b' },
+        platform: {},
+        autoRebuild: false,
+      },
+      {
+        id: 'p2',
+        engine: 'ninfer',
+        model: 'qwen3-27b',
+        status: 'unsure',
+        config: { model: 'qwen3-27b' },
+        platform: {},
+      },
+    ])
+  })
+
   it('re-links recorded providers in the summary and clears the dead records', async () => {
     writeConfig('ninfer', { model: 'qwen3-27b' }, false, {}, true, [
       {
