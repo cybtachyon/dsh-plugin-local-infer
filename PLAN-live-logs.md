@@ -61,7 +61,7 @@ must always match the provider process actually running.
 
 ### Phase 1: Host shared run-log service
 
-- [ ] [TASK-001-run-log-service](docs/PLAN-live-logs-TASK-001-run-log-service.md)
+- [x] [TASK-001-run-log-service](docs/PLAN-live-logs-TASK-001-run-log-service.md)
   Add the per-key run-log hub (begin/append/subscribe/read-snapshot/end,
   bounded tail, running flag, reset detection) to `LocalInferService`, keyed
   by provider id with an engine-id fallback rule shared by all run paths.
