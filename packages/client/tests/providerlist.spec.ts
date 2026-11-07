@@ -489,6 +489,47 @@ describe('the per-entry Launch control (render/ProviderList.tsx EntryLaunchButto
     expect(text(wrapped)).toBe(t.entrySudo)
   })
 
+  it('prices each row from its own machine entry, not another entry run', () => {
+    const { store } = makeStore()
+    const building = providerWith()
+    store.dispatch({
+      type: 'summary/ack',
+      summary: summaryWith([building, providerWith({ id: 'p2', status: 'running' })]),
+    })
+    // Entry p1's own machine is mid-build; entry p2's engine is up per the
+    // summary with no machine entry. Each row reads only its own entry: p1
+    // throbs with its phase label, p2 reads its own Stop.
+    store.dispatch({ type: 'launch/move', providerId: 'p1', event: { type: 'start' } })
+    store.dispatch({ type: 'launch/move', providerId: 'p1', event: { type: 'step', step: 'build' } })
+    const buildThrobber = renderEntry(store)
+    expect(el(buildThrobber).props['aria-label']).toBe(t.entryBuilding)
+    expect(text(renderEntry(store, { id: 'p2', status: 'running' }))).toBe(t.entryStop)
+    // An idle row with no machine entry (and a stopped status) is unaffected:
+    // a plain Launch, not the build throbber its sibling shows.
+    expect(text(renderEntry(store, { id: 'p3' }))).toBe(t.entryLaunch)
+  })
+
+  it('keeps the stopping label across the stop fast-poll summary acks', () => {
+    const { store } = makeStore()
+    store.dispatch({
+      type: 'summary/ack',
+      summary: summaryWith([providerWith({ status: 'running' })]),
+    })
+    store.dispatch({ type: 'launch/move', providerId: 'p1', event: { type: 'stop' } })
+    // The stop fast-poll re-reads the summary while the stop runs: the
+    // machine, not the summary read, drives the control, so the acks do not
+    // flicker the label off Stopping.
+    store.dispatch({
+      type: 'summary/ack',
+      summary: summaryWith([providerWith({ status: 'running' })]),
+    })
+    store.dispatch({
+      type: 'summary/ack',
+      summary: summaryWith([providerWith({ status: 'running' })]),
+    })
+    expect(el(renderEntry(store, { status: 'running' })).props['aria-label']).toBe(t.stopping)
+  })
+
   // One event path per in-flight state so the machine (not a hand-set
   // entry) drives the control, and the expected label reads through the
   // machine's LAUNCH_STATE_DISPLAY mapping: the entry button can only
@@ -758,6 +799,36 @@ describe('the provider list control handlers (render/ProviderList.tsx)', () => {
       await flush()
       expect(state().ui.editingProviderId).toBe('p1')
       expect(state().launch['p1']?.status).toBe('idle')
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('the red Logs after a stop timeout resets to a Stop control (engine still up)', async () => {
+    vi.useFakeTimers()
+    try {
+      const { store, state } = makeStore()
+      const provider = providerWith({ status: 'running' })
+      store.dispatch({ type: 'summary/ack', summary: summaryWith([provider]) })
+      // A stop that timed out: failed with the 'stop' cause, read as a red
+      // Logs control.
+      store.dispatch({ type: 'launch/move', providerId: 'p1', event: { type: 'stop' } })
+      store.dispatch({ type: 'launch/move', providerId: 'p1', event: { type: 'stopFailed' } })
+      const handleRef: { current: EntryTimerHandle | null } = { current: null }
+      const logs = el(EntryLaunchButton({ store, provider, t, handleRef }))
+      expect(text(logs)).toBe(t.entryLogs)
+      const fetchMock = routeFetch({
+        '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
+        '/local-infer/deps': () => jsonAnswer({ engineId: 'ninfer' }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      ;(logs.props.onClick as () => void)()
+      await flush()
+      // The cause-aware reset reads the engine as probably still up: the
+      // control settles to a Stop, not a Launch.
+      expect(state().launch['p1']?.status).toBe('running')
+      expect(text(el(EntryLaunchButton({ store, provider, t, handleRef })))).toBe(t.entryStop)
     } finally {
       vi.useRealTimers()
       vi.unstubAllGlobals()

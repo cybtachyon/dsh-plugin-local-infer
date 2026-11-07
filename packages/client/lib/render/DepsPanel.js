@@ -89,7 +89,7 @@ export function DepsPanel(props) {
                 ? renderProcessButton({
                     busy: installCell.status === 'pending',
                     label: '▶ ' + t.run,
-                    busyLabel: t.running,
+                    busyLabel: t.installing,
                     variant: 'ghost',
                     onClick: () => {
                         void performInstall(store, t);

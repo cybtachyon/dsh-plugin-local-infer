@@ -187,9 +187,10 @@ export function ProviderRow(props) {
 // starts the entry's engine; a rebuild in flight shows a disabled control with
 // the spinner and the phase label (Prereqs, Downloading, Building, Launching);
 // a sudo wait reads as a "Sudo needed" throbber painted in the warning token
-// color (the title-bar control's sudo branch shares the derivation); a healthy
-// engine reads as an enabled Stop; a launch that timed out reads as
-// a red Logs control that opens the entry for editing. The control reads the
+// color (the title-bar control's sudo branch shares the derivation); a failed
+// or stop-timed-out machine reads as a red Logs control that opens the entry
+// for editing (it prices before the status-dot Stop, matching the title-bar
+// control); a healthy engine reads as an enabled Stop. The control reads the
 // entry's launch machine (the only lifecycle source), so it always agrees with
 // the title-bar control.
 export function EntryLaunchButton(props) {
@@ -217,6 +218,18 @@ export function EntryLaunchButton(props) {
         });
         return status === 'sudo' ? (react.createElement("span", { style: { color: SUDO_STATE_LABEL_COLOR } }, throbber)) : (throbber);
     }
+    if (status === 'failed') {
+        // A launch (or a stop) that failed or timed out: a red Logs control that
+        // opens the entry for editing and resets the machine, so the control
+        // reads as Launch again (a launch failure) or Stop (a stop timeout, whose
+        // cause-aware reset keeps a still-up engine on Stop). It prices before
+        // the summary-status branch: the machine owns the failed read (the
+        // title-bar control shows the same red Logs for it), and the Stop the
+        // green dot would otherwise keep is a no-op from a failed machine.
+        return (react.createElement("button", { type: "button", onClick: () => {
+                openEntryLogs(store, provider);
+            }, style: { color: 'var(--dsw-alias-label-error, #ff3b30)', ...GHOST_BUTTON }, "aria-label": t.entryLogs }, t.entryLogs));
+    }
     // The Stop control reads from the provider status dot, not just the
     // per-entry launch state: the launch state is lost when the user navigates
     // away from the plugin page and back, so a running engine (a green dot) must
@@ -227,14 +240,6 @@ export function EntryLaunchButton(props) {
                 handleRef.current = performEntryStop(store, provider);
             },
         }, t.entryStop);
-    }
-    if (status === 'failed') {
-        // A launch that timed out or failed: a red Logs control that opens the
-        // entry for editing and clears the failed state, so the control reads as
-        // Launch again and the user can fix the config and re-launch.
-        return (react.createElement("button", { type: "button", onClick: () => {
-                openEntryLogs(store, provider);
-            }, style: { color: 'var(--dsw-alias-label-error, #ff3b30)', ...GHOST_BUTTON }, "aria-label": t.entryLogs }, t.entryLogs));
     }
     // Idle: a plain Launch control that starts the entry's own engine.
     return renderButton('ghost', {

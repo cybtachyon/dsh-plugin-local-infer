@@ -22,7 +22,11 @@
  */
 
 import type { ProviderSummaryEntry } from 'dsh-plugin-local-infer/ui'
-import { launchDisplayKeyFor, type LaunchStatus } from '../machine/launch.ts'
+import {
+  LAUNCH_STATE_DISPLAY,
+  launchDisplayKeyFor,
+  type LaunchStatus,
+} from '../machine/launch.ts'
 import type { TextTable } from '../text.ts'
 import { hasInFlightGet } from './abort.ts'
 import type { GetProgressState } from './progress.ts'
@@ -252,14 +256,17 @@ export function deriveLifecycleControl(
 
   // The fresh-draft form's sudo wait: its control has no machine entry to
   // read, so the ui flag performDraftLaunch sets drives the same sudo
-  // throbber. It prices only when no machine state claims the control.
+  // throbber. The label key rides the machine's displayText mapping (the
+  // machine's sudo state and this flag-driven branch show one label from one
+  // key). It prices only when no machine state claims the control.
   if (status === undefined && state.ui.sudoPending) {
+    const sudoLabel = t[LAUNCH_STATE_DISPLAY.sudo]
     return {
       kind: 'phase',
-      label: t.entrySudo,
+      label: sudoLabel,
       variant: 'ghost',
       busy: true,
-      busyLabel: t.entrySudo,
+      busyLabel: sudoLabel,
       disabled: false,
       target: 'draft',
       action: 'none',

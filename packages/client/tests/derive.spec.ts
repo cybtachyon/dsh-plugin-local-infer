@@ -163,12 +163,15 @@ describe('client store derive (store/derive.ts)', () => {
           },
           ui: { ...initialCardState().ui, editingProviderId: null, sudoPending: true },
         })
+        // The label key reads the machine's displayText mapping (the
+        // single-source rule the machine-driven sudo throbber shares).
+        const sudoLabel = t[LAUNCH_STATE_DISPLAY.sudo]
         expect(deriveLifecycleControl(state, t)).toEqual({
           kind: 'phase',
-          label: t.entrySudo,
+          label: sudoLabel,
           variant: 'ghost',
           busy: true,
-          busyLabel: t.entrySudo,
+          busyLabel: sudoLabel,
           disabled: false,
           target: 'draft',
           action: 'none',

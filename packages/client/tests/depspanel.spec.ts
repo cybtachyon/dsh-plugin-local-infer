@@ -206,7 +206,8 @@ describe('the System dependencies panel (render/DepsPanel.tsx)', () => {
     // The first control is the allow-run checkbox; the Run and Get buttons
     // follow it.
     const [, run, get] = children(controlRow)
-    expect(text(run)).toBe(t.running)
+    // The install cell's busy label names the install process.
+    expect(text(run)).toBe(t.installing)
     expect(el(run).props.disabled).toBe(true)
     expect(text(get)).toBe(t.getting)
     expect(el(get).props.disabled).toBe(true)

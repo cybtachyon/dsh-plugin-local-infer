@@ -262,7 +262,7 @@ var en = {
   copied: "copied",
   copyFailed: "copy failed",
   run: "Run",
-  running: "running...",
+  installing: "installing...",
   get: "Get",
   getting: "Getting engine and model...",
   gettingReadout: "Getting\u2026",
@@ -409,7 +409,7 @@ var zh = {
   copied: "\u5DF2\u590D\u5236",
   copyFailed: "\u590D\u5236\u5931\u8D25",
   run: "\u8FD0\u884C",
-  running: "\u8FD0\u884C\u4E2D\u2026",
+  installing: "\u5B89\u88C5\u4E2D\u2026",
   get: "\u83B7\u53D6",
   getting: "\u83B7\u53D6\u5F15\u64CE\u548C\u6A21\u578B\u4E2D\u2026",
   gettingReadout: "\u83B7\u53D6\u4E2D\u2026",
@@ -2446,12 +2446,13 @@ function deriveLifecycleControl(state, t) {
     };
   }
   if (status === void 0 && state.ui.sudoPending) {
+    const sudoLabel = t[LAUNCH_STATE_DISPLAY.sudo];
     return {
       kind: "phase",
-      label: t.entrySudo,
+      label: sudoLabel,
       variant: "ghost",
       busy: true,
-      busyLabel: t.entrySudo,
+      busyLabel: sudoLabel,
       disabled: false,
       target: "draft",
       action: "none",
@@ -2576,7 +2577,7 @@ function DepsPanel(props) {
   }), deps.runAllowed && !deps.allSatisfied ? renderProcessButton({
     busy: installCell.status === "pending",
     label: "\u25B6 " + t.run,
-    busyLabel: t.running,
+    busyLabel: t.installing,
     variant: "ghost",
     onClick: () => {
       void performInstall(store, t);
@@ -3113,17 +3114,6 @@ function EntryLaunchButton(props) {
     });
     return status === "sudo" ? /* @__PURE__ */ react.createElement("span", { style: { color: SUDO_STATE_LABEL_COLOR } }, throbber) : throbber;
   }
-  if (status === "running" || provider.status === "running") {
-    return renderButton(
-      "ghost",
-      {
-        onClick: () => {
-          handleRef.current = performEntryStop(store, provider);
-        }
-      },
-      t.entryStop
-    );
-  }
   if (status === "failed") {
     return /* @__PURE__ */ react.createElement(
       "button",
@@ -3136,6 +3126,17 @@ function EntryLaunchButton(props) {
         "aria-label": t.entryLogs
       },
       t.entryLogs
+    );
+  }
+  if (status === "running" || provider.status === "running") {
+    return renderButton(
+      "ghost",
+      {
+        onClick: () => {
+          handleRef.current = performEntryStop(store, provider);
+        }
+      },
+      t.entryStop
     );
   }
   return renderButton(

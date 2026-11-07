@@ -53,7 +53,7 @@ declare const en: {
     copied: string;
     copyFailed: string;
     run: string;
-    running: string;
+    installing: string;
     get: string;
     getting: string;
     gettingReadout: string;
