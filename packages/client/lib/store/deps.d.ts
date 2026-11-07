@@ -15,9 +15,13 @@ import { type PriceQuery } from '../api/routes.ts';
 import type { TextTable } from '../text.ts';
 import { type CardStore } from './sync.ts';
 /**
- * GET_IDLE_MS is the Get run's output-idle cap in ms. Two minutes without a
- * streamed line reads as a stalled build: the card settles the get cell (the
- * control re-enables) while the run keeps streaming in the background.
+ * GET_IDLE_MS is the Get run's output-idle cap in ms and the get cell's
+ * only deadline (performAction arms no fixed timer for get, the
+ * NO_FIXED_DEADLINE rule in sync.ts). Two minutes without a streamed line
+ * reads as a stalled build: the card settles the get cell (the control
+ * re-enables) while the run keeps streaming in the background. Each
+ * progress event re-arms it, so an actively streaming run holds the cell
+ * pending for as long as it runs.
  */
 export declare const GET_IDLE_MS = 120000;
 /**

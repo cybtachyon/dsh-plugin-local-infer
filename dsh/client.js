@@ -1697,6 +1697,7 @@ function endPass(store, attachment) {
 }
 
 // packages/client/src/store/sync.ts
+var NO_FIXED_DEADLINE = 0;
 var ACTION_TIMEOUTS = {
   save: 3e4,
   install: 12e4,
@@ -1704,7 +1705,7 @@ var ACTION_TIMEOUTS = {
   unregister: 3e4,
   launch: 15e4,
   stop: 1e4,
-  get: 12e4,
+  get: NO_FIXED_DEADLINE,
   download: 12e4
 };
 function performAction(store, key, run, timeoutMs) {
@@ -1713,23 +1714,27 @@ function performAction(store, key, run, timeoutMs) {
   }
   store.dispatch({ type: "action/start", key });
   let settled = false;
-  const timer = setTimeout(() => {
+  const timer = timeoutMs > NO_FIXED_DEADLINE ? setTimeout(() => {
     settled = true;
     store.dispatch({ type: "action/timeout", key });
-  }, timeoutMs);
+  }, timeoutMs) : void 0;
   return run().then((detail) => {
     if (settled) {
       return;
     }
     settled = true;
-    clearTimeout(timer);
+    if (timer !== void 0) {
+      clearTimeout(timer);
+    }
     store.dispatch({ type: "action/ack", key, detail });
   }).catch((error) => {
     if (settled) {
       return;
     }
     settled = true;
-    clearTimeout(timer);
+    if (timer !== void 0) {
+      clearTimeout(timer);
+    }
     store.dispatch({ type: "action/fail", key, detail: actionFailDetail(error) });
   });
 }
