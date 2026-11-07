@@ -142,7 +142,10 @@ export interface LocalInferSummary {
  * ProviderSummaryEntry is the card-facing view of one saved provider config:
  * the stable id the card edits and deletes against, the engine and model the
  * title renders ("NInfer: <model>"), the running-state the status dot paints,
- * and the full config and platform the expanded form draws from.
+ * the per-provider Auto Rebuild checkbox value the edit form and the entry
+ * launch read, and the full config and platform the expanded form draws from.
+ * An entry saved before the autoRebuild key existed carries no key, so the
+ * card draws the checkbox unchecked.
  */
 export interface ProviderSummaryEntry {
   id: string
@@ -151,6 +154,8 @@ export interface ProviderSummaryEntry {
   status: ProviderStatus
   config: Config
   platform: StoredPlatformConfig
+  // The stored Auto Rebuild flag, carried only when the stored entry has it.
+  autoRebuild?: boolean
 }
 
 /**
@@ -346,6 +351,10 @@ export async function buildSummary(
     status: providerStatuses[provider.id] ?? 'unsure',
     config: provider.config,
     platform: provider.platform,
+    // exactOptionalPropertyTypes: carry the Auto Rebuild flag only when the
+    // stored entry has it, so an entry saved before the key existed carries
+    // no key and the card draws the checkbox unchecked.
+    ...(provider.autoRebuild !== undefined ? { autoRebuild: provider.autoRebuild } : {}),
   }))
   // The "unsure" banner: shown when no provider is confirmed running but at
   // least one reads as unsure (a foreign engine the detector saw but could

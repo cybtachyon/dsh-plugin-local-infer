@@ -146,6 +146,10 @@ export async function buildSummary(localInfer, request) {
         status: providerStatuses[provider.id] ?? 'unsure',
         config: provider.config,
         platform: provider.platform,
+        // exactOptionalPropertyTypes: carry the Auto Rebuild flag only when the
+        // stored entry has it, so an entry saved before the key existed carries
+        // no key and the card draws the checkbox unchecked.
+        ...(provider.autoRebuild !== undefined ? { autoRebuild: provider.autoRebuild } : {}),
     }));
     // The "unsure" banner: shown when no provider is confirmed running but at
     // least one reads as unsure (a foreign engine the detector saw but could

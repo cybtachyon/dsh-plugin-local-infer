@@ -64,7 +64,7 @@ keep their current behavior.
   save route persists the body's `autoRebuild` onto the upserted entry; absent
   body key carries the existing entry's value over; settings-only save untouched.
   DoD: save-route tests for the three upsert paths.
-- [ ] [TASK-003-summary-readmodel](docs/PLAN-AUTOREBUILD-PERSIST-TASK-003-summary-readmodel.md) -
+- [x] [TASK-003-summary-readmodel](docs/PLAN-AUTOREBUILD-PERSIST-TASK-003-summary-readmodel.md) -
   `ProviderSummaryEntry.autoRebuild?: boolean` carried in `buildSummary`.
   DoD: summary viewmodel test shows the stored value per entry.
 
