@@ -1,6 +1,6 @@
 # TASK-010 - Refactor review of the plan's commits
 
-Review the files touched by the previous 8 commits and identify the following code risks:
+Review the files touched by the previous 9 commits and identify the following code risks:
  - **Multiple Sources of Truth**: Same calculations done in multiple places.
  - **Duplicate Code**: Nearly-identical code in multiple methods.
  - **Bloaters**: Too many things done in a single method or class.

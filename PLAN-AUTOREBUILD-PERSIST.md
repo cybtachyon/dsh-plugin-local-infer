@@ -76,12 +76,17 @@ Depends: 002, 003 -> 001.
   guard `docker pull` (ninfer, llamacpp, strata) and the Strata binary installer
   with `options?.autoRebuild !== false`; spawn proceeds with the plan's argv.
   DoD: per-adapter tests (pull/install skipped, spawn still runs expected argv).
+- [ ] [TASK-011-compose-pull-skip](docs/PLAN-AUTOREBUILD-PERSIST-TASK-011-compose-pull-skip.md) -
+  (added from TASK-004's report: the compose `up` line hardcodes `--pull
+  always`, so the Hyper-Qwen engine cannot skip the image pull) thread the flag
+  into `formatLaunchCommand`, use `--pull missing` when off, skip the build-phase
+  announcement, and keep the Logs command note identical to the command run.
 - [ ] [TASK-005-launch-chain-pin](docs/PLAN-AUTOREBUILD-PERSIST-TASK-005-launch-chain-pin.md) -
   pin the full chain: launch request `autoRebuild: false` -> Get steps emit the
   skip line, `localInfer.launch` receives `autoRebuild: false`, deploy spawns the
   plan's expected parameters with no sync/build/pull. DoD: ui launch-route test.
 
-Depends: 005 -> 004.
+Depends: 011 -> 004; 005 -> 004, 011.
 
 ### Phase 3 - Client: per-provider checkbox
 
