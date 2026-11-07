@@ -595,6 +595,12 @@ function launchNextState(entry, event) {
       nextCause = void 0;
       break;
     }
+    case "summaryStatus": {
+      const settled = current !== "downloading" || event.status === "unsure" ? current : event.status === "running" ? "running" : "idle";
+      next = settled;
+      nextCause = settled === current ? cause : void 0;
+      break;
+    }
     case "stop": {
       next = current === "running" || current === "stopping" || current === "idle" || launchIsAwaitingResult(current) ? "stopping" : current;
       nextCause = void 0;
@@ -723,7 +729,32 @@ function summaryAck(state, summary) {
     logPath: typeof summary.logPath === "string" && summary.logPath !== "" ? summary.logPath : state.ui.logPath,
     logs: isLiveRunAttached() ? state.ui.logs : { ...state.ui.logs, liveLogs: null }
   };
-  return { ...state, summary, summaryNote: "", draft, ui };
+  return { ...state, summary, summaryNote: "", draft, ui, launch: foldDownloading(state.launch, summary) };
+}
+function foldDownloading(launch, summary) {
+  if (!Object.values(launch).some((entry) => entry.status === "downloading")) {
+    return launch;
+  }
+  const next = {};
+  let changed = false;
+  for (const [providerId, entry] of Object.entries(launch)) {
+    if (entry.status !== "downloading") {
+      next[providerId] = entry;
+      continue;
+    }
+    const provider = summary.providers.find((p) => p.id === providerId);
+    const settled = launchNextState(entry, {
+      type: "summaryStatus",
+      status: provider?.status ?? "stopped"
+    });
+    if (settled.status === entry.status) {
+      next[providerId] = entry;
+      continue;
+    }
+    next[providerId] = { ...settled, startTime: entry.startTime };
+    changed = true;
+  }
+  return changed ? next : launch;
 }
 function draftEdit(state, draft) {
   return {
@@ -2482,7 +2513,7 @@ function deriveLifecycleControl(state, t) {
   const launchPending = state.actions.launch.status === "pending";
   const stopPending = state.actions.stop.status === "pending";
   const draftRunning = state.actions.launch.status === "ok" && state.actions.stop.status !== "ok";
-  const running = isFresh ? draftRunning : false;
+  const running = isFresh ? draftRunning : provider?.status === "running";
   if (!running && isGettingInFlight(state)) {
     return deriveGettingControl(state, t, isFresh);
   }

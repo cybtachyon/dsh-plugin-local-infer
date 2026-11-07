@@ -7,7 +7,10 @@
  * running" sources. It reads the per-provider launch machine (the only
  * lifecycle source) for the provider being edited, and falls back to the
  * draft's action cells for a fresh provider with no machine entry, so the
- * title-bar control and the provider entry's Launch button always agree. A
+ * title-bar control and the provider entry's Launch button always agree. An
+ * edited provider whose machine is idle or absent prices the summary's
+ * provider status into the Stop side (the same read the provider row gives a
+ * running engine with a lost machine). A
  * Get run in flight (the get cell pending, or the in-flight registry true
  * after the idle cap settled the cell) renders a 'getting' throbber with the
  * live download readout. isGettingInFlight is the single source of that
@@ -303,14 +306,17 @@ export function deriveLifecycleControl(
   }
 
   // The default Launch/Stop. A fresh provider (no machine entry) reads the
-  // draft's action cells; an edited provider at idle reads the entry, so its
-  // click routes to the entry's launch.
+  // draft's action cells; an edited provider at idle (or with no machine
+  // entry at all, a fresh card after a DSH restart) reads the entry, and the
+  // summary's provider status prices the Stop the way the provider row does:
+  // an engine running with no machine entry must not read as a plain Launch
+  // whose entry click the stop driver guards to a no-op.
   const isFresh = provider === undefined
   const launchPending = state.actions.launch.status === 'pending'
   const stopPending = state.actions.stop.status === 'pending'
   const draftRunning =
     state.actions.launch.status === 'ok' && state.actions.stop.status !== 'ok'
-  const running = isFresh ? draftRunning : false
+  const running = isFresh ? draftRunning : provider?.status === 'running'
 
   // A Get run in flight: a busy throbber with the live download readout,
   // replacing the greyed-out Launch the gate used to render. The registry

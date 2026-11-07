@@ -212,6 +212,60 @@ describe('client store reducer (store/reducer.ts)', () => {
       )
       expect(predates.ui.help).toBe(true)
     })
+
+    it('folds the summary provider status into downloading machines', () => {
+      // The downloading state has no stream left to move it; the summary ack
+      // is the settle source: running settles to running (Stop), stopped (or
+      // a vanished entry) lands idle, unsure holds for a later summary.
+      const entry = { status: 'downloading' as const, cause: undefined, startTime: 7 }
+      const state = madeState({ launch: { p1: entry, p2: entry, p3: entry } })
+      const summary = makeSummary({
+        providers: [
+          { id: 'p1', engine: 'ninfer', model: 'm', status: 'running' },
+          { id: 'p2', engine: 'ninfer', model: 'm', status: 'stopped' },
+          { id: 'p3', engine: 'ninfer', model: 'm', status: 'unsure' },
+        ] as LocalInferSummary['providers'],
+      })
+      const next = cardReducer(state, { type: 'summary/ack', summary })
+      expect(next.launch.p1?.status).toBe('running')
+      expect(next.launch.p2?.status).toBe('idle')
+      expect(next.launch.p3?.status).toBe('downloading')
+      // The fold keeps the store entry shape (the startTime the timers price).
+      expect(next.launch.p1?.startTime).toBe(7)
+    })
+
+    it('settles a downloading machine whose provider entry vanished as stopped', () => {
+      const state = madeState({
+        launch: {
+          gone: { status: 'downloading', cause: undefined, startTime: 1 },
+        },
+      })
+      const next = cardReducer(state, { type: 'summary/ack', summary: makeSummary() })
+      expect(next.launch.gone?.status).toBe('idle')
+    })
+
+    it('leaves non-downloading machines untouched and keeps the map identity', () => {
+      const state = madeState({
+        launch: {
+          r: { status: 'running', cause: undefined, startTime: 2 },
+          s: { status: 'stopping', cause: 'stop', startTime: 3 },
+        },
+      })
+      const next = cardReducer(state, {
+        type: 'summary/ack',
+        summary: makeSummary({
+          providers: [
+            { id: 'r', engine: 'ninfer', model: 'm', status: 'stopped' },
+            { id: 's', engine: 'ninfer', model: 'm', status: 'stopped' },
+          ] as LocalInferSummary['providers'],
+        }),
+      })
+      // The summary never overrides the machine for these states: the stop
+      // in flight waits for its own `stopped` confirmation.
+      expect(next.launch.r?.status).toBe('running')
+      expect(next.launch.s?.status).toBe('stopping')
+      expect(next.launch).toBe(state.launch)
+    })
   })
 
   describe('summary/fail', () => {

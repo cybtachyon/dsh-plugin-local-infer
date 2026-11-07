@@ -4,7 +4,10 @@
  *
  * The states are the control's reads: idle (a plain Launch), the four
  * rebuild phases (prereqs, download, build, launch), downloading (a busy
- * throbber while the engine fetches model files), sudo (the host is
+ * throbber while the engine fetches model files, settled by the
+ * summaryStatus fold the summary ack dispatches: a reported-running
+ * provider settles to running, a reported-stopped one lands idle like the
+ * stop rule's confirmed-down), sudo (the host is
  * waiting for a sudo password on the terminal that launched the profile;
  * it is the same state whether the wait ends with the run resuming after
  * the user typed the password or with the host's 60-second timeout
@@ -15,9 +18,11 @@
  * host reports each phase as its work actually starts, and the real
  * sequences are not one fixed order), so the only guarded cases are the
  * in-flight states: a stop in flight supersedes a late step, the
- * downloading re-poll state ignores steps, and an unknown step name is a
+ * downloading state ignores steps, and an unknown step name is a
  * no-op. A healthy result settles to running, a failed result settles to
- * failed, a stop moves a running (or idle, a provider running per the
+ * failed, the summaryStatus event settles the downloading state from the
+ * summary's provider status, a stop moves a running (or idle, a provider
+ * running per the
  * summary with no machine entry) engine to stopping, a confirmed stop
  * settles to idle, a stop that is still running at the deadline settles
  * to failed with the cause 'stop', a sudoNeeded moves any in-flight state
@@ -35,6 +40,7 @@
  * in the text tables.
  * @module dsh-plugin-local-infer/client/machine/launch
  */
+import type { ProviderSummaryEntry } from 'dsh-plugin-local-infer/ui';
 /**
  * LAUNCH_PHASE_STATES is the card-side step-name tuple: the four rebuild
  * phases the launch step stream can carry, as the one machine-local source the
@@ -70,6 +76,9 @@ export type LaunchEvent = {
     type: 'failed';
 } | {
     type: 'downloading';
+} | {
+    type: 'summaryStatus';
+    status: ProviderSummaryEntry['status'];
 } | {
     type: 'sudoNeeded';
 } | {

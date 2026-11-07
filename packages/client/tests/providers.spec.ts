@@ -627,7 +627,10 @@ describe('the provider list drivers (store/providers.ts)', () => {
 
     it('settles a downloading result to downloading', async () => {
       const { store, state } = makeStore()
-      const provider = providerWith()
+      // The engine is up fetching its files: the detector sees the process
+      // but cannot attribute a model yet (unsure), so the settle fold holds
+      // the Downloading throbber instead of guessing.
+      const provider = providerWith({ status: 'unsure' })
       store.dispatch({
         type: 'summary/ack',
         summary: summaryWith([provider]),
@@ -643,6 +646,14 @@ describe('the provider list drivers (store/providers.ts)', () => {
       stream.close()
       await flush()
       expect(state().launch['p1']?.status).toBe('downloading')
+      // The settle path from here is the summary status fold (see
+      // foldDownloading in reducer.spec): a later ack reporting the
+      // provider running turns the throbber into a Stop.
+      store.dispatch({
+        type: 'summary/ack',
+        summary: summaryWith([{ ...provider, status: 'running' }]),
+      })
+      expect(state().launch['p1']?.status).toBe('running')
     })
 
     it('settles a failed result to failed', async () => {

@@ -4,7 +4,10 @@
  *
  * The states are the control's reads: idle (a plain Launch), the four
  * rebuild phases (prereqs, download, build, launch), downloading (a busy
- * throbber while the engine fetches model files), sudo (the host is
+ * throbber while the engine fetches model files, settled by the
+ * summaryStatus fold the summary ack dispatches: a reported-running
+ * provider settles to running, a reported-stopped one lands idle like the
+ * stop rule's confirmed-down), sudo (the host is
  * waiting for a sudo password on the terminal that launched the profile;
  * it is the same state whether the wait ends with the run resuming after
  * the user typed the password or with the host's 60-second timeout
@@ -15,9 +18,11 @@
  * host reports each phase as its work actually starts, and the real
  * sequences are not one fixed order), so the only guarded cases are the
  * in-flight states: a stop in flight supersedes a late step, the
- * downloading re-poll state ignores steps, and an unknown step name is a
+ * downloading state ignores steps, and an unknown step name is a
  * no-op. A healthy result settles to running, a failed result settles to
- * failed, a stop moves a running (or idle, a provider running per the
+ * failed, the summaryStatus event settles the downloading state from the
+ * summary's provider status, a stop moves a running (or idle, a provider
+ * running per the
  * summary with no machine entry) engine to stopping, a confirmed stop
  * settles to idle, a stop that is still running at the deadline settles
  * to failed with the cause 'stop', a sudoNeeded moves any in-flight state
@@ -110,7 +115,7 @@ const SUDO_WAITABLE_STATES = [
 // launchIsAwaitingResult reports whether a healthy or failed result
 // settles the state: a rebuild phase, or a sudo wait (the run is still
 // in flight, paused on the password or resumed by it). The downloading
-// state waits on a re-poll instead, so it stays out.
+// state waits on the summaryStatus fold instead, so it stays out.
 function launchIsAwaitingResult(state) {
     return launchIsPhase(state) || state === 'sudo';
 }
@@ -151,8 +156,8 @@ export function launchNextState(entry, event) {
                 nextCause = cause;
             }
             else if (current === 'downloading') {
-                // The re-poll state reads the result's downloading verdict, not the
-                // step stream, so a late step is a no-op here too.
+                // The downloading state settles from the summaryStatus fold, not
+                // the step stream, so a late step is a no-op here too.
                 next = current;
                 nextCause = cause;
             }
@@ -181,10 +186,31 @@ export function launchNextState(entry, event) {
         }
         case 'downloading': {
             // The engine is fetching its model files: a busy throbber, not a
-            // failure. The card re-polls (a re-launch) until the engine reports
-            // ready, which settles the control to running.
+            // failure. The launch settled to this verdict, so the run's own
+            // stream and result are spent; the summaryStatus fold (the summary
+            // ack's provider status) is what settles the control from here.
             next = launchIsPhase(current) ? 'downloading' : current;
             nextCause = undefined;
+            break;
+        }
+        case 'summaryStatus': {
+            // The summary fold for the downloading state only: the control that
+            // reads "Downloading..." has no stream left to move it, so the
+            // summary's provider status is the settle source. A provider the
+            // summary reports running settles to running (the control becomes
+            // Stop); a provider reported stopped (the engine process is gone, or
+            // its entry vanished) lands idle, the confirmed-down landing the stop
+            // rule gives an in-flight control, so the entry offers a fresh
+            // Launch. An unsure read holds the throbber: the detector cannot
+            // attribute the engine, and a guess is worse than the next summary.
+            // Every other state ignores the fold (the no-op default).
+            const settled = current !== 'downloading' || event.status === 'unsure'
+                ? current
+                : event.status === 'running'
+                    ? 'running'
+                    : 'idle';
+            next = settled;
+            nextCause = settled === current ? cause : undefined;
             break;
         }
         case 'stop': {

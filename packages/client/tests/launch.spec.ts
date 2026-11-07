@@ -175,6 +175,25 @@ const RESET: Record<LaunchStatus, LaunchStatus> = {
   failed: 'idle',
 }
 
+// The summaryStatus fold: the summary's provider status settles only the
+// downloading state (running -> running, stopped -> idle, unsure holds).
+// Every other state holds: the machine owns those reads, not the summary.
+const SUMMARY_STATUSES = ['running', 'stopped', 'unsure'] as const
+type SummaryStatus = (typeof SUMMARY_STATUSES)[number]
+
+const SUMMARY: Record<LaunchStatus, Record<SummaryStatus, LaunchStatus>> = {
+  idle: { running: 'idle', stopped: 'idle', unsure: 'idle' },
+  prereqs: { running: 'prereqs', stopped: 'prereqs', unsure: 'prereqs' },
+  download: { running: 'download', stopped: 'download', unsure: 'download' },
+  build: { running: 'build', stopped: 'build', unsure: 'build' },
+  launch: { running: 'launch', stopped: 'launch', unsure: 'launch' },
+  downloading: { running: 'running', stopped: 'idle', unsure: 'downloading' },
+  sudo: { running: 'sudo', stopped: 'sudo', unsure: 'sudo' },
+  running: { running: 'running', stopped: 'running', unsure: 'running' },
+  stopping: { running: 'stopping', stopped: 'stopping', unsure: 'stopping' },
+  failed: { running: 'failed', stopped: 'failed', unsure: 'failed' },
+}
+
 describe('client launch machine (machine/launch.ts)', () => {
   it('pins the phase states to the host LaunchStep tuple and the deadline constants', () => {
     // The two sides of the step-name contract (core LAUNCH_STEPS, the machine
@@ -255,6 +274,11 @@ describe('client launch machine (machine/launch.ts)', () => {
       expect(launchNextState({ status }, { type: 'downloading' })).toEqual({
         status: DOWNLOADING[status],
       })
+      for (const summaryStatus of SUMMARY_STATUSES) {
+        expect(
+          launchNextState({ status }, { type: 'summaryStatus', status: summaryStatus }),
+        ).toEqual({ status: SUMMARY[status][summaryStatus] })
+      }
       expect(launchNextState({ status }, { type: 'sudoNeeded' })).toEqual({
         status: SUDO_NEEDED[status],
       })
@@ -274,6 +298,44 @@ describe('client launch machine (machine/launch.ts)', () => {
       expect(launchNextState({ status }, { type: 'reset' })).toEqual({ status: RESET[status] })
     })
   }
+
+  describe('downloading settle path (the summaryStatus fold)', () => {
+    it('settles a downloading engine that reports up to running (Stop)', () => {
+      // The launch settled to the health poll's downloading verdict, so the
+      // run's stream is spent: the next summary ack reporting the provider
+      // running is what turns the Downloading throbber into a Stop.
+      let entry = launchNextState(null, { type: 'start' })
+      entry = launchNextState(entry, { type: 'downloading' })
+      expect(entry.status).toBe('downloading')
+      // An unattributable read holds the throbber, not a guess.
+      entry = launchNextState(entry, { type: 'summaryStatus', status: 'unsure' })
+      expect(entry.status).toBe('downloading')
+      entry = launchNextState(entry, { type: 'summaryStatus', status: 'running' })
+      expect(entry).toEqual({ status: 'running' })
+    })
+
+    it('settles a downloading engine whose process is gone to idle (Launch)', () => {
+      // The engine died after the verdict: the confirmed-down landing the
+      // stop rule gives an in-flight control, so the entry offers a fresh
+      // Launch instead of a throbber that never ends.
+      let entry = launchNextState({ status: 'downloading' }, { type: 'summaryStatus', status: 'stopped' })
+      expect(entry).toEqual({ status: 'idle' })
+    })
+
+    it('never overrides a machine state other than downloading', () => {
+      // A stop in flight waits for its own confirmed `stopped`; the summary
+      // cannot settle it early.
+      expect(
+        launchNextState({ status: 'stopping', cause: 'stop' }, { type: 'summaryStatus', status: 'stopped' }),
+      ).toEqual({ status: 'stopping', cause: 'stop' })
+      // A running engine keeps its Stop even while the dot reads red (the
+      // machine owns the Stop read; the row's status-dot Stop branch is the
+      // fallback for the lost machine).
+      expect(
+        launchNextState({ status: 'running' }, { type: 'summaryStatus', status: 'stopped' }),
+      ).toEqual({ status: 'running' })
+    })
+  })
 
   describe('server stream authoritative (the real Get-steps order)', () => {
     it('advances build then download (the Get-steps sequence the forward-only guard dropped)', () => {
