@@ -24,6 +24,17 @@ and after settle from `summary.lastLogs`:
   Cancel pill; the chips' in-flight condition follows the unified live
   state, not only the Get cell, and the Get chips keep pricing off the
   streamed text lines.
+- Fix the discovered reducer flaw (`packages/client/src/store/reducer.ts`,
+  summaryAck always clears `ui.logs.getLogs`): a summary ack during a live
+  run (the stop fast-poll, a debounced re-price) must NOT wipe the attached
+  live buffer; clear only when nothing is attached/in flight. Test: stream
+  two lines, ack a summary, assert the buffer survived; ack again after
+  runEnd, assert the fallback to `lastLogs`.
+- Wire the missing driver: `performDraftStop` gets the one-line
+  beginRun/endRun attach pair (same key rule), so the pane follows draft
+  stop output.
+- Remove the now-redundant `seedProcessLog` client seeds (the host
+  `beginRun` seed arrives as `runBegin`/snapshot).
 - Update `packages/client/tests/logspanel.spec.ts`, `derive.spec.ts`,
   `deps.spec.ts`, `sync.spec.ts` and the `routes.spec.ts` stream reader
   tests.
