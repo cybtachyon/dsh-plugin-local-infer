@@ -17,7 +17,7 @@
  * @module dsh-plugin-local-infer/providers/engines/basalt/basaltAdapter
  */
 import { basename, join } from 'node:path';
-import { EngineAdapter, dshConfigCacheDirectory, hfDownloadCommand, hubCacheSnapshotFilePath, modelArtifactPresent, modelDownloadTarget, repoIdFromUrl, } from '../../../../core/lib/index.js';
+import { EngineAdapter, autoRebuildEnabled, dshConfigCacheDirectory, hfDownloadCommand, hubCacheSnapshotFilePath, modelArtifactPresent, modelDownloadTarget, repoIdFromUrl, } from '../../../../core/lib/index.js';
 import { auditRun, configFileFromSpecs, nodeLifecycleHost, pollHealth, resolveLaunchArgv, stopProcessPlan, trackChild, } from "../../adapters.js";
 import { engineBuildDir, syncEngineForDeploy } from "../../acquire.js";
 import { defaultModelFor, defaultModelsForEngine } from "../../model-defaults.js";
@@ -270,7 +270,7 @@ export class BasaltAdapter extends EngineAdapter {
         let buildLogs = '';
         // Auto Rebuild off (the card's checkbox): the git sync (fetch, rebase,
         // rebuild) is skipped and the checkout launches as-is.
-        if (engineDir !== undefined && options?.autoRebuild !== false) {
+        if (engineDir !== undefined && autoRebuildEnabled(options?.autoRebuild)) {
             // The conditional rebuild fetches the checkout, prices it against the
             // remote branch, and rebuilds only when it is behind (or a fresh
             // clone). The decision, the build command, and its output are captured

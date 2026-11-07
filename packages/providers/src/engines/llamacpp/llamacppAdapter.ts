@@ -12,6 +12,7 @@
 import { basename, dirname, join } from 'node:path'
 import {
   EngineAdapter,
+  autoRebuildEnabled,
   hfDownloadCommand,
   hfHubCacheDirectory,
   hubCacheSnapshotFilePath,
@@ -219,7 +220,7 @@ export class LlamaCppAdapter extends EngineAdapter {
       let buildLogs = ''
       // Auto Rebuild off (the card's checkbox): the git sync (fetch, rebase,
       // rebuild) is skipped and the checkout launches as-is.
-      if (engineDir !== undefined && options?.autoRebuild !== false) {
+      if (engineDir !== undefined && autoRebuildEnabled(options?.autoRebuild)) {
         // The conditional rebuild fetches the checkout, prices it against the
         // remote branch, and rebuilds only when it is behind (or a fresh
         // clone). The decision, the build command, and its output are captured
@@ -255,7 +256,7 @@ export class LlamaCppAdapter extends EngineAdapter {
       // step: the card's button reads "Building..." for it, and its
       // `$ <command>` line reaches the launch run's log sink before the child
       // spawns.
-      if (options?.autoRebuild !== false) {
+      if (autoRebuildEnabled(options?.autoRebuild)) {
         onProgress?.('build')
         const pull = await auditRun(
           this.host,

@@ -1,3 +1,4 @@
+import { autoRebuildEnabled } from "./adapter.js";
 /**
  * formatLaunchCommand renders a launch plan as the shell command string the
  * deploy step runs to start the engine: the quoted argv joined for a process
@@ -45,7 +46,7 @@ export function formatLaunchCommand(plan, autoRebuild) {
             plan.profile ?? 'single',
             'up',
             '--pull',
-            autoRebuild === false ? 'missing' : 'always',
+            autoRebuildEnabled(autoRebuild) ? 'always' : 'missing',
             '-d',
         ]
             .map(quoteArg)

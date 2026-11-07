@@ -29,6 +29,7 @@ import type {
   ModelDirectoryResolution,
 } from 'dsh-plugin-local-infer/core'
 import {
+  autoRebuildEnabled,
   chatTemplatePresent,
   checkDeps,
   commandLogLine,
@@ -242,7 +243,7 @@ async function runDepsStep(ctx: GetStepContext): Promise<GetStepFailure> {
  */
 async function runSyncBuildStep(ctx: GetStepContext): Promise<GetStepFailure> {
   const { request, directory, emit } = ctx
-  if (request.autoRebuild === false) {
+  if (!autoRebuildEnabled(request.autoRebuild)) {
     emit('engine sync and build: auto rebuild off, skipped\n')
     return null
   }

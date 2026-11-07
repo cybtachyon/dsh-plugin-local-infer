@@ -115,7 +115,7 @@ Depends: 006 -> 003 (read model field), 007 -> 006, 008 -> 007.
   `pnpm build`, `pnpm test`, `pnpm test:coverage`, `pnpm lint` all green;
   tracked `lib/` + `dsh/client.js` emitted and committed. DoD: commands quoted
   with passing output.
-- [ ] [TASK-010-refactor](docs/PLAN-AUTOREBUILD-PERSIST-TASK-010-refactor.md) -
+- [x] [TASK-010-refactor](docs/PLAN-AUTOREBUILD-PERSIST-TASK-010-refactor.md) -
   refactor review of the phase commits (see task file for the code-risk block).
 
 Depends: 010 -> 009.

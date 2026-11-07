@@ -12,7 +12,7 @@
  * @module dsh-plugin-local-infer/providers/engines/ninfer/ninferAdapter
  */
 import { basename, dirname, join } from 'node:path';
-import { CHAT_TEMPLATE_FILE, EngineAdapter, chatTemplateArtifactPath, chatTemplatePresent, hfChatTemplateCommand, hfDownloadCommand, hfHubCacheDirectory, hubCacheSnapshotFilePath, modelArtifactPresent, modelDownloadTarget, } from '../../../../core/lib/index.js';
+import { CHAT_TEMPLATE_FILE, EngineAdapter, autoRebuildEnabled, chatTemplateArtifactPath, chatTemplatePresent, hfChatTemplateCommand, hfDownloadCommand, hfHubCacheDirectory, hubCacheSnapshotFilePath, modelArtifactPresent, modelDownloadTarget, } from '../../../../core/lib/index.js';
 import { auditRun, customArgFlags, flagsFromSpecs, nodeLifecycleHost, pollHealth, resolveLaunchArgv, stopProcessPlan, trackChild, } from "../../adapters.js";
 import { syncEngineForDeploy } from "../../acquire.js";
 import { NINFER_PARAMETERS } from "./ninfer.js";
@@ -207,7 +207,7 @@ export class NInferAdapter extends EngineAdapter {
             let buildLogs = '';
             // Auto Rebuild off (the card's checkbox): the git sync (fetch, rebase,
             // rebuild) is skipped and the checkout launches as-is.
-            if (engineDir !== undefined && options?.autoRebuild !== false) {
+            if (engineDir !== undefined && autoRebuildEnabled(options?.autoRebuild)) {
                 // The conditional rebuild fetches the checkout, prices it against the
                 // remote branch, and rebuilds only when it is behind (or a fresh
                 // clone). The decision, the build command, and its output are captured
@@ -262,7 +262,7 @@ export class NInferAdapter extends EngineAdapter {
             // step: the card's button reads "Building..." for it, and its
             // `$ <command>` line reaches the launch run's log sink before the child
             // spawns.
-            if (options?.autoRebuild !== false) {
+            if (autoRebuildEnabled(options?.autoRebuild)) {
                 onProgress?.('build');
                 const pull = await auditRun(this.host, `docker pull ${NINFER_DOCKER_IMAGE}`, options?.onLog);
                 if (!pull.ok) {

@@ -19,7 +19,7 @@
  * sync failure.
  * @module dsh-plugin-local-infer/ui/ops/get-steps
  */
-import { chatTemplatePresent, checkDeps, commandLogLine, dshEngineCacheDirectory, modelArtifactPresent, resolveModelDirectory, } from '../../../core/lib/index.js';
+import { autoRebuildEnabled, chatTemplatePresent, checkDeps, commandLogLine, dshEngineCacheDirectory, modelArtifactPresent, resolveModelDirectory, } from '../../../core/lib/index.js';
 import { buildEngineRepo, defaultModelFor, ENGINES, infernixGetDownloads, syncEngineRepo, } from '../../../providers/lib/index.js';
 import { isHfRepoReference } from "../viewmodels/summaryHelpers.js";
 import { resolveBuildMode } from "../viewmodels/deps.js";
@@ -120,7 +120,7 @@ async function runDepsStep(ctx) {
  */
 async function runSyncBuildStep(ctx) {
     const { request, directory, emit } = ctx;
-    if (request.autoRebuild === false) {
+    if (!autoRebuildEnabled(request.autoRebuild)) {
         emit('engine sync and build: auto rebuild off, skipped\n');
         return null;
     }

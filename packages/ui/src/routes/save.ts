@@ -59,6 +59,19 @@ export function saveRoute(localInfer: LocalInferService): LocalInferRoute {
       // upsert keeps the stored entry's flag instead of dropping it.
       const autoRebuild =
         typeof body.autoRebuild === 'boolean' ? body.autoRebuild : undefined
+      // carryAutoRebuild writes the Auto Rebuild flag onto an upserted
+      // entry: the body's boolean wins, a body that omits the key carries
+      // the stored entry's flag over, and an entry with neither keeps no key
+      // (the card draws the box unchecked, so no migration is needed).
+      const carryAutoRebuild = (
+        provider: StoredProviderConfig,
+        storedFlag: boolean | undefined,
+      ): void => {
+        const flag = autoRebuild ?? storedFlag
+        if (flag !== undefined) {
+          provider.autoRebuild = flag
+        }
+      }
       // Save upserts a provider entry: an id updates the stored entry in
       // place, an absent id updates a stored entry that already matches the
       // engine, config, and platform in place, and only a save with no match
@@ -88,11 +101,7 @@ export function saveRoute(localInfer: LocalInferService): LocalInferRoute {
           config,
           platform: platform[engine] ?? {},
         }
-        if (autoRebuild !== undefined) {
-          provider.autoRebuild = autoRebuild
-        } else if (existing?.autoRebuild !== undefined) {
-          provider.autoRebuild = existing.autoRebuild
-        }
+        carryAutoRebuild(provider, existing?.autoRebuild)
         if (existing?.launch !== undefined) {
           provider.launch = existing.launch
         }
@@ -117,11 +126,7 @@ export function saveRoute(localInfer: LocalInferService): LocalInferRoute {
             config,
             platform: platformConfig,
           }
-          if (autoRebuild !== undefined) {
-            provider.autoRebuild = autoRebuild
-          } else if (matching.autoRebuild !== undefined) {
-            provider.autoRebuild = matching.autoRebuild
-          }
+          carryAutoRebuild(provider, matching.autoRebuild)
           if (matching.launch !== undefined) {
             provider.launch = matching.launch
           }
@@ -133,11 +138,8 @@ export function saveRoute(localInfer: LocalInferService): LocalInferRoute {
             config,
             platform: platformConfig,
           }
-          // A brand-new entry with no body key stays without the key: the
-          // card draws the box unchecked, so no migration is needed.
-          if (autoRebuild !== undefined) {
-            provider.autoRebuild = autoRebuild
-          }
+          // A brand-new entry with no body key stays without the key.
+          carryAutoRebuild(provider, undefined)
           providers = [provider, ...stored.providers]
         }
       }

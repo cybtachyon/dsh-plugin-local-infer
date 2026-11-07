@@ -12,7 +12,7 @@ export { commandMatchesArgv, launchRecordFromPlan, reLinkRecord, } from "./launc
 export { formatLaunchCommand } from "./launch-command.js";
 export { computeProviderStatuses, isGpuBusy, } from "./status.js";
 export { DEFAULT_LOG_PATH_TEMPLATE, LOG_FILE_NAME_TEMPLATE, LOG_TAIL_BYTES, LOG_TEMPLATE_ENGINE, LOG_TEMPLATE_HOME, LOG_TEMPLATE_MODEL, LOG_TEMPLATE_TIMESTAMP, formatLogTimestamp, resolveLogPath, slugifyModelName, } from "./logs.js";
-export { COMMAND_LOG_PREFIX, EngineAdapter, LAUNCH_STEPS, URL_LOG_PREFIX, commandLogLine, urlLogLine, } from "./adapter.js";
+export { COMMAND_LOG_PREFIX, EngineAdapter, LAUNCH_STEPS, URL_LOG_PREFIX, autoRebuildEnabled, commandLogLine, urlLogLine, } from "./adapter.js";
 export { NOOP_DEBUG_LOGGER, createCommandDebugLogger, isHarnessLogDebug, } from "./debug.js";
 export { constraintId, evaluateGuidelines, modelGuidelines } from "./guideline.js";
 export { hardwareClass, presetFromFetch, resolveDefaults, WILDCARD_HARDWARE_CLASS, } from "./defaults.js";
