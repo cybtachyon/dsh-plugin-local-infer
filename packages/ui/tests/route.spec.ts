@@ -26,7 +26,7 @@ import type {
   VramVerdict,
 } from 'dsh-plugin-local-infer/core'
 import { DEFAULT_LOG_PATH_TEMPLATE, SUDO_CLI_NOTE, dshEngineCacheDirectory, providerIdFor, resolveLogPath } from 'dsh-plugin-local-infer/core'
-import { LocalInfer } from 'dsh-plugin-local-infer/service'
+import { LocalInfer, RunLogStore } from 'dsh-plugin-local-infer/service'
 import type {
   DownloadModelOptions,
   DownloadResult,
@@ -34,10 +34,24 @@ import type {
   LaunchResult,
   LocalInferService,
   RegisterModelOptions,
+  RunLogListener,
 } from 'dsh-plugin-local-infer/service'
 import { apply as applyProviders } from 'dsh-plugin-local-infer/providers'
 import { localInferConfigPath, readConfig, writeConfig } from '../src/config.ts'
-import { getEngine, handleEngineDeath, launchEngine, stopEngine } from '../src/ops/engine.ts'
+import {
+  CANCELED_LINE,
+  getEngine,
+  handleEngineDeath,
+  launchEngine,
+  stopEngine,
+} from '../src/ops/engine.ts'
+import {
+  DOWNLOAD_RUN_SEED,
+  GET_RUN_SEED,
+  INSTALL_RUN_SEED,
+  LAUNCH_RUN_SEED,
+  STOP_RUN_SEED,
+} from '../src/ops/logs.ts'
 import { runGetSteps } from '../src/ops/get-steps.ts'
 import { downloadFor } from '../src/ops/hf.ts'
 import { registerFor, resolveContextWindow, unregisterFor } from '../src/ops/model.ts'
@@ -182,6 +196,10 @@ function stubService(
   // notifySudoNeeded dispatches the command to it, mirroring the real
   // service, so a test can drive a guarded announcement end to end.
   let sudoObserver: ((command: string) => void) | undefined
+  // The run-log seam: the stub keeps one real RunLogStore (the service
+  // package's own hub) so the launch, get, download, install, and stop paths
+  // write live buffers the tests read back through readRunLog.
+  const runLogs = new RunLogStore()
   return {
     detectHardware: async () => HW,
     estimate: async () => ({
@@ -287,6 +305,21 @@ function stubService(
     },
     notifySudoNeeded: (command: string): void => {
       sudoObserver?.(command)
+    },
+    // The run-log seam: the hub operations the route run paths bracket with
+    // (beginRun, appendRunLog, readRunLog, subscribeRunLog, endRun), on the
+    // real store so assertions read the same buffers the routes write.
+    beginRun: (key: string, seed: string): void => {
+      runLogs.begin(key, seed)
+    },
+    appendRunLog: (key: string, text: string): void => {
+      runLogs.append(key, text)
+    },
+    readRunLog: (key: string) => runLogs.read(key),
+    subscribeRunLog: (key: string, listener: RunLogListener): (() => void) =>
+      runLogs.subscribe(key, listener),
+    endRun: (key: string): void => {
+      runLogs.end(key)
     },
     // The registration seam no route touches: the literal carries no-op
     // registrations and empty reads so the whole stub is one shape with the
@@ -4309,5 +4342,490 @@ describe('engine death persistence', () => {
     // The config rides into the detector so the signature prices the
     // provider's own port rather than the adapter's default.
     expect(refs?.[0]?.config).toEqual({ model: 'qwen3-27b', port: 18080 })
+  })
+})
+
+describe('run-log hub wiring', () => {
+  let home: string
+
+  beforeAll(() => {
+    home = mkdtempSync(join(tmpdir(), 'local-infer-hub-'))
+    pointHomeAt(home)
+  })
+
+  afterAll(() => {
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  /**
+   * hubRoutes registers every route over a fake web server and answers the
+   * one for a path; getHost feeds the Get route's stub host, launchHost the
+   * launch route's.
+   */
+  function hubRoutes(service: LocalInferService, getHost?: LifecycleHost, launchHost?: LifecycleHost) {
+    const routes: { path: string; handler: (req: unknown, res: unknown) => Promise<void> }[] = []
+    const scope = {
+      webServer: {
+        register(route: { path: string; handler: (req: unknown, res: unknown) => Promise<void> }) {
+          routes.push(route)
+          return () => undefined
+        },
+      },
+      effect(fn: () => unknown): void {
+        fn()
+      },
+    }
+    registerLocalInferRoute(
+      scope as unknown as import('@deepseek-ai/cordis').Context & {
+        webServer: import('../src/route.ts').WebServerService
+      },
+      service,
+      getHost,
+      launchHost,
+    )
+    return (path: string) => routes.find((route) => route.path === path)!
+  }
+
+  function hubRes() {
+    const res = {
+      status: 0,
+      body: '',
+      chunks: [] as string[],
+      closeListeners: [] as Array<() => void>,
+      writeHead(status: number) {
+        res.status = status
+        return res
+      },
+      write(chunk: string) {
+        res.chunks.push(chunk)
+        return true
+      },
+      end(body?: string) {
+        res.body = body ?? ''
+        return res
+      },
+      on(event: string, listener: (...args: unknown[]) => void) {
+        if (event === 'close') {
+          res.closeListeners.push(listener as () => void)
+        }
+        return res
+      },
+    }
+    return res
+  }
+
+  function hubPost(path: string, body: Record<string, unknown>) {
+    return {
+      method: 'POST',
+      url: path,
+      destroy(): void {
+        /* the handlers only destroy on an oversize body */
+      },
+      async *[Symbol.asyncIterator](): AsyncGenerator<Buffer> {
+        yield Buffer.from(JSON.stringify(body))
+      },
+    }
+  }
+
+  function providerWithLaunchRecord(id: string): StoredProviderConfig {
+    return {
+      id,
+      engine: 'infernix',
+      config: { model: 'qwen3-27b', port: 18080 },
+      platform: {},
+      launch: {
+        pid: 4242,
+        startedAt: '2026-10-23T12:00:00.000Z',
+        argv: ['infernix-serve', '--port', '18080'],
+        previousPids: [],
+        engineId: 'infernix',
+        modelId: 'qwen3-27b',
+        port: 18080,
+      },
+    }
+  }
+
+  it('brackets the Get run under the matched entry key and settles it', async () => {
+    writeConfig('ninfer', { model: 'qwen3-27b', modelDirectory: MODEL_DIR }, true, undefined, true, [
+      {
+        id: 'hub-get',
+        engine: 'ninfer',
+        config: { model: 'qwen3-27b', modelDirectory: MODEL_DIR },
+        platform: {},
+      },
+    ])
+    // The model artifact starts absent, so the download step's command line
+    // lands in the run and names this entry's model.
+    rmSync(join(MODEL_DIR, 'qwen3_8_27b_nvfp4.ninfer'), { force: true })
+    const service = stubService([])
+    const route = hubRoutes(service, stubGetHost({ exists: false }).host)('/local-infer/get')
+    const res = hubRes()
+    await route.handler(
+      hubPost('/local-infer/get', {
+        engine: 'ninfer',
+        config: { model: 'qwen3-27b', modelDirectory: MODEL_DIR },
+      }),
+      res,
+    )
+    // The run key is the stored entry the engine and model match names, and
+    // the buffer holds the seed, the Get steps, and the settle line in order.
+    const snapshot = service.readRunLog('hub-get')
+    expect(snapshot.running).toBe(false)
+    expect(snapshot.text.startsWith(GET_RUN_SEED)).toBe(true)
+    const cloneAt = snapshot.text.indexOf('$ git clone')
+    const downloadAt = snapshot.text.indexOf('Qwen3.8-27B')
+    const completeAt = snapshot.text.indexOf('get complete')
+    expect(cloneAt).toBeGreaterThan(GET_RUN_SEED.length - 1)
+    expect(downloadAt).toBeGreaterThan(cloneAt)
+    expect(completeAt).toBeGreaterThan(downloadAt)
+    // A draft under the engine-id fallback key stayed untouched.
+    expect(service.readRunLog('ninfer')).toEqual({ seq: 0, text: '', running: false })
+  })
+
+  it('keeps concurrent runs under different keys from interleaving', async () => {
+    writeConfig('ninfer', { modelDirectory: MODEL_DIR }, true, undefined, true, [
+      {
+        id: 'hub-a',
+        engine: 'ninfer',
+        config: { model: 'qwen3-27b', modelDirectory: MODEL_DIR },
+        platform: {},
+      },
+      {
+        id: 'hub-b',
+        engine: 'ninfer',
+        config: { model: 'qwen36-35b', modelDirectory: MODEL_DIR },
+        platform: {},
+      },
+    ])
+    rmSync(join(MODEL_DIR, 'qwen3_8_27b_nvfp4.ninfer'), { force: true })
+    rmSync(join(MODEL_DIR, 'qwen3_6_35b_a3b.ninfer'), { force: true })
+    const service = stubService([])
+    const route = hubRoutes(service, stubGetHost({ exists: false }).host)('/local-infer/get')
+    await Promise.all([
+      route.handler(
+        hubPost('/local-infer/get', {
+          engine: 'ninfer',
+          config: { model: 'qwen3-27b', modelDirectory: MODEL_DIR },
+        }),
+        hubRes(),
+      ),
+      route.handler(
+        hubPost('/local-infer/get', {
+          engine: 'ninfer',
+          config: { model: 'qwen36-35b', modelDirectory: MODEL_DIR },
+        }),
+        hubRes(),
+      ),
+    ])
+    // Each key holds only its own run: one entry's model names never reach
+    // the other's buffer, and both settle.
+    const a = service.readRunLog('hub-a')
+    const b = service.readRunLog('hub-b')
+    expect(a.text).toContain('Qwen3.8-27B')
+    expect(a.text).not.toContain('Qwen3.6-35B')
+    expect(b.text).toContain('Qwen3.6-35B')
+    expect(b.text).not.toContain('Qwen3.8-27B')
+    expect(a.running).toBe(false)
+    expect(b.running).toBe(false)
+  })
+
+  it('brackets the launch run with the seed, Get steps, command note, build, and engine output in order', async () => {
+    writeConfig('ninfer', { model: 'qwen3-27b', modelDirectory: MODEL_DIR }, false, undefined, true, [
+      {
+        id: 'hub-launch',
+        engine: 'ninfer',
+        config: { model: 'qwen3-27b', modelDirectory: MODEL_DIR },
+        platform: {},
+      },
+    ])
+    rmSync(join(MODEL_DIR, 'qwen3_8_27b_nvfp4.ninfer'), { force: true })
+    const service = stubService([], {
+      engines: [argvAdapter('ninfer', ['ninfer-serve', '--port', '18080'])],
+      launchResult: {
+        plan: { engineId: 'ninfer', kind: 'process', port: 18080, healthUrl: 'http://127.0.0.1:18080/health' },
+        healthy: true,
+        buildLogs: 'build output\n',
+        logs: 'engine output\n',
+      },
+    })
+    await launchEngine(
+      service,
+      {
+        engine: 'ninfer',
+        providerId: 'hub-launch',
+        config: { model: 'qwen3-27b', modelDirectory: MODEL_DIR },
+      },
+      undefined,
+      stubGetHost({ exists: false }).host,
+    )
+    const snapshot = service.readRunLog('hub-launch')
+    expect(snapshot.running).toBe(false)
+    const order = [
+      LAUNCH_RUN_SEED,
+      '$ git clone',
+      '[local-infer] launch: ninfer-serve',
+      'build output',
+      'engine output',
+    ].map((needle) => snapshot.text.indexOf(needle))
+    expect(order.every((index) => index >= 0)).toBe(true)
+    expect(order).toEqual([...order].sort((left, right) => left - right))
+  })
+
+  it('settles a canceled launch with the Canceled line', async () => {
+    writeConfig('ninfer', { model: 'qwen3-27b', modelDirectory: MODEL_DIR }, false, undefined, true, [
+      {
+        id: 'hub-cancel',
+        engine: 'ninfer',
+        config: { model: 'qwen3-27b', modelDirectory: MODEL_DIR },
+        platform: {},
+      },
+    ])
+    rmSync(join(MODEL_DIR, 'qwen3_8_27b_nvfp4.ninfer'), { force: true })
+    const service = stubService([])
+    // A download that hangs until the route's cancel aborts the signal.
+    service.downloadModel = (
+      _entry: DefaultModel,
+      _directory: string,
+      options?: { signal?: AbortSignal },
+    ) =>
+      new Promise<DownloadResult>((resolve) => {
+        options?.signal?.addEventListener(
+          'abort',
+          () => {
+            resolve({ ok: false, detail: 'download canceled' })
+          },
+          { once: true },
+        )
+      })
+    const route = hubRoutes(service, undefined, stubGetHost({ exists: false }).host)(
+      '/local-infer/launch',
+    )
+    const res = hubRes()
+    const pending = route.handler(
+      hubPost('/local-infer/launch', {
+        engine: 'ninfer',
+        providerId: 'hub-cancel',
+        config: { model: 'qwen3-27b', modelDirectory: MODEL_DIR },
+      }),
+      res,
+    )
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    res.closeListeners[0]?.()
+    await pending
+    const snapshot = service.readRunLog('hub-cancel')
+    expect(snapshot.text).toContain('Qwen3.8-27B')
+    expect(snapshot.text.endsWith(CANCELED_LINE)).toBe(true)
+    expect(snapshot.running).toBe(false)
+  })
+
+  it('brackets the download run with streamed hf chunks and the settle line', async () => {
+    writeConfig('ninfer', { model: 'qwen36-35b' }, false, undefined, true, [
+      { id: 'hub-dl', engine: 'ninfer', config: { model: 'qwen36-35b' }, platform: {} },
+    ])
+    const service = stubService([])
+    // The stub download plays the hf runner's chunk callback, the way the
+    // real runner hands streamed output to the download options.
+    service.downloadModel = (
+      _entry: DefaultModel,
+      _directory: string,
+      options?: DownloadModelOptions,
+    ) => {
+      options?.onChunk?.('hf: downloading 42%\n')
+      return Promise.resolve({ ok: true })
+    }
+    const route = hubRoutes(service)('/local-infer/download')
+    const res = hubRes()
+    await route.handler(
+      hubPost('/local-infer/download', {
+        engine: 'ninfer',
+        model: 'qwen36-35b',
+        directory: MODEL_DIR,
+      }),
+      res,
+    )
+    expect(res.status).toBe(200)
+    const snapshot = service.readRunLog('hub-dl')
+    expect(snapshot.text).toBe(`${DOWNLOAD_RUN_SEED}hf: downloading 42%\ndownload complete\n`)
+    expect(snapshot.running).toBe(false)
+    // The persisted read model keeps its "Downloading..." section unchanged.
+    expect(readConfig().lastLogs).toContain('--- Downloading...')
+    expect(readConfig().lastLogs).toContain('download complete')
+  })
+
+  it('notes a failed download in the live run and settles it', async () => {
+    writeConfig('ninfer', { model: 'qwen36-35b' }, false, undefined, true, [
+      { id: 'hub-dl-fail', engine: 'ninfer', config: { model: 'qwen36-35b' }, platform: {} },
+    ])
+    const service = stubService([], { downloadResult: { ok: false, detail: 'hf exploded' } })
+    await downloadFor(service, { engine: 'ninfer', model: 'qwen36-35b', directory: MODEL_DIR })
+    const snapshot = service.readRunLog('hub-dl-fail')
+    expect(snapshot.text).toBe(`${DOWNLOAD_RUN_SEED}!! download failed: hf exploded\n`)
+    expect(snapshot.running).toBe(false)
+  })
+
+  it('brackets the chat-template run under the engine-and-model key', async () => {
+    writeConfig(
+      'ninfer',
+      { model: 'qwen3-27b', chatTemplate: 'froggeric/Qwen-Fixed-Chat-Templates' },
+      false,
+      undefined,
+      true,
+      [{ id: 'hub-tpl', engine: 'ninfer', config: { model: 'qwen3-27b' }, platform: {} }],
+    )
+    const service = stubService([])
+    service.downloadChatTemplate = (
+      _repo: string,
+      _directory: string,
+      options?: DownloadModelOptions,
+    ) => {
+      options?.onChunk?.('template fetched\n')
+      return Promise.resolve({ ok: true })
+    }
+    const route = hubRoutes(service)('/local-infer/chat-template')
+    const res = hubRes()
+    await route.handler(hubPost('/local-infer/chat-template', { directory: MODEL_DIR }), res)
+    expect(res.status).toBe(200)
+    const snapshot = service.readRunLog('hub-tpl')
+    expect(snapshot.text).toBe(`${DOWNLOAD_RUN_SEED}template fetched\n`)
+    expect(snapshot.running).toBe(false)
+  })
+
+  it('brackets the install run with the per-dep results and settles it', async () => {
+    writeConfig('ninfer', {}, true)
+    const service = stubService([], { deps: [TEST_DEP] })
+    const route = hubRoutes(service)('/local-infer/install')
+    const res = hubRes()
+    await route.handler(hubPost('/local-infer/install', { engine: 'ninfer' }), res)
+    expect(res.status).toBe(200)
+    // No provider entry matches the draft, so the key falls back to the
+    // engine id, and each re-checked dep lands in the Get step's shape.
+    const snapshot = service.readRunLog('ninfer')
+    expect(snapshot.text).toBe(`${INSTALL_RUN_SEED}  cmake: satisfied\n`)
+    expect(snapshot.running).toBe(false)
+  })
+
+  it('starts no hub run for a refused (409) install', async () => {
+    writeConfig('ninfer', {}, false)
+    const service = stubService([], { deps: [TEST_DEP] })
+    const route = hubRoutes(service)('/local-infer/install')
+    const res = hubRes()
+    await route.handler(hubPost('/local-infer/install', { engine: 'ninfer' }), res)
+    expect(res.status).toBe(409)
+    expect(service.readRunLog('ninfer')).toEqual({ seq: 0, text: '', running: false })
+  })
+
+  it('brackets the stop run under the provider key', async () => {
+    writeConfig('ninfer', { model: 'qwen3-27b' }, false, undefined, true, [
+      { id: 'hub-stop', engine: 'ninfer', config: { model: 'qwen3-27b' }, platform: {} },
+    ])
+    const service = stubService([])
+    await stopEngine(service, { engine: 'ninfer', providerId: 'hub-stop' })
+    const snapshot = service.readRunLog('hub-stop')
+    expect(snapshot.text).toBe(STOP_RUN_SEED)
+    expect(snapshot.running).toBe(false)
+  })
+
+  it('notes a stop failure in the live run and settles it', async () => {
+    writeConfig('ninfer', { model: 'qwen3-27b' }, false, undefined, true, [
+      { id: 'hub-stop-fail', engine: 'ninfer', config: { model: 'qwen3-27b' }, platform: {} },
+    ])
+    const service = stubService([])
+    service.stop = async (): Promise<void> => {
+      throw new Error('kill failed')
+    }
+    await expect(
+      stopEngine(service, { engine: 'ninfer', providerId: 'hub-stop-fail' }),
+    ).rejects.toThrow('kill failed')
+    const snapshot = service.readRunLog('hub-stop-fail')
+    expect(snapshot.text).toContain(
+      '[local-infer] stop failed for ninfer (qwen3-27b): kill failed',
+    )
+    expect(snapshot.running).toBe(false)
+  })
+
+  it('lands a late engine-death note without stranding the key as running', () => {
+    const event: EngineDeathEvent = {
+      engineId: 'infernix',
+      port: 18080,
+      pid: 4242,
+      code: null,
+      signal: 'SIGTERM',
+    }
+    // An open run: the note joins the live buffer and the running flag
+    // stays set (the run owns its own end).
+    writeConfig(
+      'infernix',
+      {},
+      false,
+      undefined,
+      true,
+      [providerWithLaunchRecord('hub-death')],
+      DEFAULT_LOG_PATH_TEMPLATE,
+      'engine up\n',
+    )
+    const open = stubService([])
+    open.beginRun('hub-death', 'engine up\n')
+    handleEngineDeath(event, open)
+    const openRun = open.readRunLog('hub-death')
+    expect(openRun.text).toContain('engine up\n')
+    expect(openRun.text).toContain('pid 4242 exited on signal SIGTERM')
+    expect(openRun.running).toBe(true)
+    // A settled run: the late append reopens the key, so the death handler
+    // settles it again right away.
+    writeConfig(
+      'infernix',
+      {},
+      false,
+      undefined,
+      true,
+      [providerWithLaunchRecord('hub-death')],
+      DEFAULT_LOG_PATH_TEMPLATE,
+      'engine up\n',
+    )
+    const settled = stubService([])
+    handleEngineDeath(event, settled)
+    const lateNote = settled.readRunLog('hub-death')
+    expect(lateNote.text).toContain('pid 4242 exited on signal SIGTERM')
+    expect(lateNote.running).toBe(false)
+    // An event matching no launch record leaves the hub untouched.
+    writeConfig(
+      'infernix',
+      {},
+      false,
+      undefined,
+      true,
+      [{ id: 'hub-death', engine: 'infernix', config: { model: 'qwen3-27b', port: 18080 }, platform: {} }],
+      DEFAULT_LOG_PATH_TEMPLATE,
+      '',
+    )
+    const quiet = stubService([])
+    handleEngineDeath(event, quiet)
+    expect(quiet.readRunLog('hub-death')).toEqual({ seq: 0, text: '', running: false })
+  })
+
+  it('wires the mounted death observer through the service hub', () => {
+    writeConfig(
+      'infernix',
+      {},
+      false,
+      undefined,
+      true,
+      [providerWithLaunchRecord('hub-wired')],
+      DEFAULT_LOG_PATH_TEMPLATE,
+      '',
+    )
+    let observer: ((event: EngineDeathEvent) => void) | undefined
+    const service = stubService([], {
+      onSetDeathObserver: (next): void => {
+        observer = next
+      },
+    })
+    hubRoutes(service)('/local-infer/summary')
+    observer?.({ engineId: 'infernix', port: 18080, pid: 4242, code: 1, signal: null })
+    // The route's observer closure captured the service, so the note reaches
+    // the hub key and the reopened run settles.
+    const snapshot = service.readRunLog('hub-wired')
+    expect(snapshot.text).toContain('engine infernix (port 18080) pid 4242 exited with exit code 1')
+    expect(snapshot.running).toBe(false)
   })
 })

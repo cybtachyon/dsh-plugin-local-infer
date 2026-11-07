@@ -9,6 +9,18 @@
  * @module dsh-plugin-local-infer/ui/ops/logs
  */
 /**
+ * The run seeds are the `--- <process>...` separator lines that lead each
+ * provider process's run: the persisted section and the live run-log buffer
+ * share the constant, so the streamed run reads like the persisted one. The
+ * launch, get, and download steps already wrote these lines; the live hub
+ * reuses them.
+ */
+export declare const GET_RUN_SEED = "--- Getting engine and model...\n";
+export declare const LAUNCH_RUN_SEED = "--- Launching...\n";
+export declare const DOWNLOAD_RUN_SEED = "--- Downloading...\n";
+export declare const INSTALL_RUN_SEED = "--- Installing deps...\n";
+export declare const STOP_RUN_SEED = "--- Stopping...\n";
+/**
  * persistProcessLog appends one process run's output to the stored last-run
  * logs (capped to the launch logs' tail, so a long build cannot grow the
  * config without bound) and writes the run to the configured log file. A

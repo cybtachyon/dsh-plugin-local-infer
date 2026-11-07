@@ -185,8 +185,13 @@ export function registerLocalInferRoute(scope, localInfer, getHost, launchHost) 
         // The engine death observer: a crash, a pkill, or the poll-detected exit
         // of an adopted process clears the provider entry's launch record and
         // notes the exit in the last-run logs the moment it happens, so the card
-        // and a later restart read the provider stopped rather than stale.
-        localInfer.setEngineDeathObserver(handleEngineDeath);
+        // and a later restart read the provider stopped rather than stale. The
+        // closure captures the service so the same note reaches the dead entry's
+        // live run-log buffer (handleEngineDeath closes a run its late append
+        // reopened, so the note never strands the key as running).
+        localInfer.setEngineDeathObserver((event) => {
+            handleEngineDeath(event, localInfer);
+        });
         // The mount re-link: re-adopt a surviving engine from a stored launch
         // record and start its liveness watcher without waiting for the card to
         // open the summary route, so a DSH that restarts re-attaches its engines

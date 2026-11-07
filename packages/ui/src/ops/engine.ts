@@ -40,7 +40,7 @@ import type {
   LaunchResult,
   LocalInferService,
 } from 'dsh-plugin-local-infer/service'
-import { findLaunchTarget } from '../../../service/lib/index.js'
+import { findLaunchTarget, runLogKey } from '../../../service/lib/index.js'
 import { nodeLifecycleHost } from '../../../providers/lib/index.js'
 import type {
   StoredConfig,
@@ -48,7 +48,11 @@ import type {
   StoredProviderConfig,
 } from '../config.ts'
 import { readConfig, writeStored } from '../config.ts'
-import { persistProcessLog } from './logs.ts'
+import {
+  LAUNCH_RUN_SEED,
+  persistProcessLog,
+  STOP_RUN_SEED,
+} from './logs.ts'
 import { resolveEngineDirectory, runGetSteps } from './get-steps.ts'
 import type { GetStepsRequest, GetStepsResult } from './get-steps.ts'
 import { RouteError } from '../route.ts'
@@ -126,9 +130,10 @@ function persistStoredLogs(logs: string): void {
 /**
  * resolveStoredRequest resolves a route request's engine and config against
  * the stored config: the request's fields win, and an absent field falls back
- * to the stored value, the same rule every route applies.
+ * to the stored value, the same rule every route applies. The Get route
+ * reads it for its run-log key before delegating to getEngine.
  */
-function resolveStoredRequest(
+export function resolveStoredRequest(
   request: { engine?: string; config?: Config },
 ): { stored: StoredConfig; engineId: string; config: Config } {
   const stored = readConfig()
@@ -262,7 +267,10 @@ function registerSudoObserver(
  * service's sudo observer answers a guarded command waiting for a password on
  * the launching CLI by landing the core CLI note in the run logs and the log
  * file and calling onSudo; the observer is unregistered when the run settles,
- * failed or not, so a failing run leaves none behind.
+ * failed or not, so a failing run leaves none behind. The whole run brackets
+ * one live hub run under the runLogKey rule (the "--- Launching..." seed,
+ * the Get-steps sink, the command note, the deploy and engine output at
+ * settle, end in a finally), so the streaming logs route reads the launch.
  */
 export async function launchEngine(
   localInfer: LocalInferService,
@@ -275,27 +283,16 @@ export async function launchEngine(
 ): Promise<LaunchResult> {
   const { stored, engineId, config } = resolveStoredRequest(request)
   const adapter = resolveAdapter(localInfer, engineId)
-  const hardware = await localInfer.detectHardware()
-  const platform = registerLaunchPlatform(localInfer, request, stored, engineId)
-  // The prereqs phase: the system-dependency install the Get-steps routine
-  // runs. It runs only while the Play/Run trust gate is on, the same rule the
-  // Get step applies. The card's button reads "Prereqs..." for this phase, so
-  // the phase is reported only while an install actually runs (the gate on),
-  // not when the deps are already satisfied and the phase is skipped.
-  if (stored.allowRunDeps === true) {
-    onProgress?.('prereqs')
-  }
-  // The Get steps (deps, git sync, build, model download, chat-template
-  // download) run idempotently before the launch plan renders, so a launch
-  // never reads a missing checkout, binary, model, or template. The Auto
-  // Rebuild checkbox off skips the sync and build steps, the same rule the
-  // adapter's deploy step applies. The launch always sets
-  // continueOnSyncFailure: a failed git sync of an existing checkout reports
-  // syncFailed on the result (the run keeps going with the checkout's
-  // current version) instead of halting the launch.
+  // The run key this launch's live buffer rides, the shared runLogKey rule
+  // the streaming logs route resolves the same way. The seed resets the
+  // key's buffer, so a mid-run re-launch replaces the previous run's text.
+  const runKey = runLogKey(stored.providers, engineId, request.providerId, config)
   let getLogs = ''
   const appendGetLogs = (chunk: string): void => {
     getLogs += chunk
+    // One chunk, two readers: the persisted run and the live hub, no third
+    // copy of the text.
+    localInfer.appendRunLog(runKey, chunk)
   }
   // The run owns the sudo observer, not the route, so the note lands in the
   // persisted run and in the stream from one place (see
@@ -309,7 +306,27 @@ export async function launchEngine(
     appendGetLogs,
     onSudo,
   )
+  localInfer.beginRun(runKey, LAUNCH_RUN_SEED)
   try {
+    const hardware = await localInfer.detectHardware()
+    const platform = registerLaunchPlatform(localInfer, request, stored, engineId)
+    // The prereqs phase: the system-dependency install the Get-steps routine
+    // runs. It runs only while the Play/Run trust gate is on, the same rule
+    // the Get step applies. The card's button reads "Prereqs..." for this
+    // phase, so the phase is reported only while an install actually runs
+    // (the gate on), not when the deps are already satisfied and the phase
+    // is skipped.
+    if (stored.allowRunDeps === true) {
+      onProgress?.('prereqs')
+    }
+    // The Get steps (deps, git sync, build, model download, chat-template
+    // download) run idempotently before the launch plan renders, so a launch
+    // never reads a missing checkout, binary, model, or template. The Auto
+    // Rebuild checkbox off skips the sync and build steps, the same rule the
+    // adapter's deploy step applies. The launch always sets
+    // continueOnSyncFailure: a failed git sync of an existing checkout
+    // reports syncFailed on the result (the run keeps going with the
+    // checkout's current version) instead of halting the launch.
     const get = await runGetSteps(
       localInfer,
       {
@@ -321,6 +338,9 @@ export async function launchEngine(
     )
     const plan = adapter.renderLaunch(config, hardware)
     if (!get.ok) {
+      if (signal?.aborted === true) {
+        localInfer.appendRunLog(runKey, CANCELED_LINE)
+      }
       return settleGetFailure(
         plan,
         get,
@@ -338,15 +358,17 @@ export async function launchEngine(
       // steps and the command readable in the Logs section across a card
       // reload, where the engine output has not landed yet.
       persistStoredLogs(getLogs + commandNote)
+      localInfer.appendRunLog(runKey, commandNote)
     }
-    // The trust gate and the auto-rebuild flag ride into the deploy step, which
-    // reads them to decide whether a rebuild's missing-binary symlink into
-    // /usr/local/bin runs (on) or is written to the card's Logs section (off),
-    // and whether the deploy's own git sync (fetch, rebase, rebuild) runs at
-    // all. A Get sync that failed under the override threads autoRebuild:
-    // false into the deploy, which skips its own git sync (it would hit the
-    // same rebase conflict) and launches the checkout's current version; a Get
-    // run whose sync passed keeps the request's autoRebuild.
+    // The trust gate and the auto-rebuild flag ride into the deploy step,
+    // which reads them to decide whether a rebuild's missing-binary symlink
+    // into /usr/local/bin runs (on) or is written to the card's Logs section
+    // (off), and whether the deploy's own git sync (fetch, rebase, rebuild)
+    // runs at all. A Get sync that failed under the override threads
+    // autoRebuild: false into the deploy, which skips its own git sync (it
+    // would hit the same rebase conflict) and launches the checkout's
+    // current version; a Get run whose sync passed keeps the request's
+    // autoRebuild.
     const launchAutoRebuild = get.syncFailed === true ? false : request.autoRebuild
     const result = await localInfer.launch(
       plan,
@@ -356,10 +378,25 @@ export async function launchEngine(
         ...(launchAutoRebuild !== undefined ? { autoRebuild: launchAutoRebuild } : {}),
       },
     )
+    // The deploy step's build output and the engine's runtime output reach
+    // the live buffer at settle (they only exist once the launch returns;
+    // the Get-step sink and the command note already streamed through
+    // appendRunLog). composeLaunchLogs then folds every part into the
+    // persisted order (Get steps, build, command, engine), where the hub
+    // carries them in arrival order (Get steps, command, build, engine).
+    const deployLogs = result.buildLogs ?? ''
+    const engineLogs = result.logs ?? ''
+    if (deployLogs + engineLogs !== '') {
+      localInfer.appendRunLog(runKey, deployLogs + engineLogs)
+    }
     // A cancel that landed after the Get steps (the card's provider-form Cancel
     // closed the stream during the deploy or health poll) adds the "Canceled"
     // line, so the persisted run reads as canceled.
-    composeLaunchLogs(result, getLogs, commandNote, signal?.aborted === true)
+    const canceled = signal?.aborted === true
+    composeLaunchLogs(result, getLogs, commandNote, canceled)
+    if (canceled) {
+      localInfer.appendRunLog(runKey, CANCELED_LINE)
+    }
     // The result's logs field already carries the Get-step output via
     // composeLaunchLogs, so the persisted run leads with no getLogs. Passing
     // getLogs again would include the Get steps twice in the persisted run.
@@ -367,6 +404,9 @@ export async function launchEngine(
     return result
   } finally {
     clearSudoObserver()
+    // The bracket closes on every settle path: healthy, failed, and canceled
+    // all clear the key's running flag.
+    localInfer.endRun(runKey)
   }
 }
 
@@ -512,6 +552,16 @@ function clearLaunchRecord(
 }
 
 /**
+ * RunLogWriter is the hub slice handleEngineDeath needs: the catch-up read,
+ * the append, and the settle. The LocalInfer service satisfies it, so the
+ * route's observer closure can hand the service itself to the note path.
+ */
+export type RunLogWriter = Pick<
+  LocalInferService,
+  'readRunLog' | 'appendRunLog' | 'endRun'
+>
+
+/**
  * handleEngineDeath persists a provider entry's state when its engine process
  * dies outside the plugin's stop path: a crash, a pkill of a plugin-launched
  * child seen through the service's exit watch, or the poll-detected exit of a
@@ -521,11 +571,15 @@ function clearLaunchRecord(
  * line lands in the card's last-run logs beside the engine's own output. An
  * event that matches no entry carrying a record (a stop the route already
  * cleared, an engine the plugin never tracked) is a no-op, which keeps an
- * expected stop quiet.
+ * expected stop quiet. With a run-log hub (the route's observer closure
+ * captures the service), the same note line also lands in the dead entry's
+ * live buffer: the snapshot is read first, and if the run was NOT already
+ * running, the append's lazy reopen is settled with endRun right after, so a
+ * late note streams without stranding the key as running.
  */
-export function handleEngineDeath(event: EngineDeathEvent): void {
+export function handleEngineDeath(event: EngineDeathEvent, runLogs?: RunLogWriter): void {
   const stored = readConfig()
-  let matched = false
+  let matched: StoredProviderConfig | undefined
   const providers = stored.providers.map((entry) => {
     const record = entry.launch
     if (record === undefined) return entry
@@ -533,10 +587,10 @@ export function handleEngineDeath(event: EngineDeathEvent): void {
     const byEnginePort =
       event.port !== undefined && record.engineId === entry.engine && record.port === event.port
     if (!byPid && !byEnginePort) return entry
-    matched = true
+    matched = matched ?? entry
     return withoutLaunchRecord(entry)
   })
-  if (!matched) return
+  if (matched === undefined) return
   const signalNote =
     event.signal !== null && event.signal !== undefined
       ? ` on signal ${event.signal}`
@@ -551,6 +605,16 @@ export function handleEngineDeath(event: EngineDeathEvent): void {
     // Keep the last-run tail bounded, the same rule the launch logs cap uses.
     lastLogs: (stored.lastLogs + note).slice(-LOG_TAIL_BYTES),
   })
+  if (runLogs === undefined) return
+  // The death's run key follows the runLogKey rule over the matched entry
+  // (the same resolution the launch wrote the buffer under: the entry id
+  // when its config names the model, else the engine id).
+  const runKey = runLogKey(stored.providers, event.engineId, undefined, matched.config)
+  const wasRunning = runLogs.readRunLog(runKey).running
+  runLogs.appendRunLog(runKey, note)
+  if (!wasRunning) {
+    runLogs.endRun(runKey)
+  }
 }
 
 /**
@@ -572,9 +636,9 @@ export function persistLaunchLogs(
   const stored = readConfig()
   // The "Launching..." separator leads the persisted run, so the Logs
   // section and the log file read the launch as a fresh process section, the
-  // same line the card writes when a Launch button is clicked.
+  // same line the launch's live hub run seeds with (LAUNCH_RUN_SEED).
   const body = getLogs + (result.logs === undefined ? '' : result.logs)
-  const logs = body === '' ? '' : `--- Launching...\n${body}`
+  const logs = body === '' ? '' : `${LAUNCH_RUN_SEED}${body}`
   writeStored(stored, { lastLogs: logs })
   if (logs === '') {
     return
@@ -619,28 +683,40 @@ export async function stopEngine(
   if (target?.launch?.pid !== undefined) {
     plan.pid = target.launch.pid
   }
+  const runKey = runLogKey(stored.providers, engineId, request.providerId, config)
+  localInfer.beginRun(runKey, STOP_RUN_SEED)
   try {
     await localInfer.stop(plan)
+    clearLaunchRecord(engineId, config, request.providerId)
   } catch (error) {
-    persistStopFailure(engineId, config, error)
+    persistStopFailure(engineId, config, error, localInfer, runKey)
     throw error
+  } finally {
+    localInfer.endRun(runKey)
   }
-  clearLaunchRecord(engineId, config, request.providerId)
 }
 
 /**
  * persistStopFailure appends a stop's failure note to the stored last-run logs
  * (the card's Logs section shows it after the summary re-fetch) and writes it
  * to the configured log file, the same per-run file rule the launch step
- * applies. A host that threw without a message reads as "unknown".
+ * applies, and to the stop's live run-log buffer under runKey (one note text,
+ * no third copy). A host that threw without a message reads as "unknown".
  */
-function persistStopFailure(engineId: string, config: Config, error: unknown): void {
+function persistStopFailure(
+  engineId: string,
+  config: Config,
+  error: unknown,
+  localInfer: LocalInferService,
+  runKey: string,
+): void {
   const detail = error instanceof Error ? error.message : String(error)
   const modelId = typeof config.model === 'string' ? config.model : undefined
   const note =
     `[local-infer] stop failed for ${engineId}` +
     `${modelId !== undefined ? ` (${modelId})` : ''}: ${detail}\n`
   persistProcessLog(note)
+  localInfer.appendRunLog(runKey, note)
 }
 
 /**

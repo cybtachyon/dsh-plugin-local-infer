@@ -28,7 +28,7 @@ import { Service } from '@deepseek-ai/cordis';
 import { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, buildModelEntry, detectHardware as detectHardwareFromProbes, detectPackageManager, evaluateGuidelines, estimateVram, guardSudoCommand, hfChatTemplateCommand, hfDatasetsCacheDirectory, hfDownloadCommand, hfHubCacheDirectory, isGpuBusy, LLM_PI_AI_NAMESPACE, matchLaunchSignature, modelGuidelines, reLinkRecord, computeProviderStatuses, modelRowsFrom, parseNvidiaSmiGpu, parseNvidiaSmiGpuUsage, presetFromFetch, providerRegistrationOps, providerRemovalOps, removeModelRow, renderInstallString, resolveDefaults as resolveDefaultsFromPresets, resolveOsReserve, runInstall, SUDO_PROBE_COMMAND, sudoFailureDetail, } from '../../core/lib/index.js';
 import { RunLogStore, runLogKey } from "./run-logs.js";
 import { findLaunchTarget } from "./launch-target.js";
-export { runLogKey, findLaunchTarget };
+export { RunLogStore, runLogKey, findLaunchTarget };
 /**
  * Local-inference failure. Extends Error with a stable `code`
  * (`LOCAL_INFER_CONFLICT`, `LOCAL_INFER_INVALID_ENGINE`,
