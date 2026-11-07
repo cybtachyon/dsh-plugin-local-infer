@@ -250,6 +250,41 @@ describe('the provider list drivers (store/providers.ts)', () => {
     })
   })
 
+  describe('the Auto Rebuild save/reload regression', () => {
+    it('reloads an entry saved unchecked as an explicit false and launches it with false', async () => {
+      // The original bug: the flag lived only in card UI state, so every
+      // save/reload reset the box to checked. The save route echoes the
+      // stored false on the fresh summary entry, so a fresh store seeded
+      // from that summary must read it back unchecked at both consumer
+      // boundaries: the Edit load and the entry's own Launch.
+      const { store, state } = makeStore()
+      const saved = providerWith({ autoRebuild: false })
+      store.dispatch({
+        type: 'summary/ack',
+        summary: summaryWith([saved]),
+      })
+      const stream = launchStream()
+      const { calls, fetchMock } = routeFetch({
+        '/local-infer/launch': () => stream.response(),
+        '/local-infer/summary': () => jsonAnswer(summaryWith([saved])),
+        '/local-infer/deps': () => jsonAnswer({ engineId: 'ninfer' }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      editProvider(store, saved)
+      // Representation pin: a stored false loads as an explicit false in
+      // the draft (the key is present, not absent), the value the
+      // checkbox renders unchecked from either representation.
+      expect('autoRebuild' in (state().draft ?? {})).toBe(true)
+      expect(state().draft?.autoRebuild).toBe(false)
+      performEntryLaunch(store, saved, t)
+      const launch = calls.find((call) => call.url === '/local-infer/launch')
+      expect(JSON.parse(String(launch?.init?.body)).autoRebuild).toBe(false)
+      stream.enqueue('{"result":{"healthy":true}}')
+      stream.close()
+      await flush(50)
+    })
+  })
+
   describe('cancelProvider', () => {
     it('collapses the form and reverts the draft to the summary', async () => {
       const { store, state } = makeStore()

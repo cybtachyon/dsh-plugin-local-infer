@@ -101,7 +101,7 @@ Depends: 011 -> 004; 005 -> 004, 011.
   the card's checkbox renders from the draft and dispatches `draft/edit`;
   `SaveRequest` gains `autoRebuild`. DoD: card render test toggles per-draft
   value, source pins updated.
-- [ ] [TASK-008-client-tests](docs/PLAN-AUTOREBUILD-PERSIST-TASK-008-client-tests.md) -
+- [x] [TASK-008-client-tests](docs/PLAN-AUTOREBUILD-PERSIST-TASK-008-client-tests.md) -
   update `useCardStore.spec.ts`, `card.spec.ts`, `client.spec.ts` pins; add
   per-provider persistence regression (save then reload keeps the stored value;
   an entry without the key renders unchecked and launches with

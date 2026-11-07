@@ -496,9 +496,12 @@ describe('the card composer (src/Card.tsx)', () => {
     expect(store.getSnapshot().dirty).toBe(true)
     const checked = rerender()
     expect(autoRebuildBox(checked).props?.checked).toBe(true)
-    // Unchecking rides the same draft/edit path back to false.
+    // Unchecking rides the same draft/edit path back to false: the draft
+    // now carries an explicit false (the same representation a stored
+    // false loads to), and the box redraws unchecked from it.
     clickBox(autoRebuildBox(checked), false)
     expect(store.getSnapshot().draft?.autoRebuild).toBe(false)
+    expect(autoRebuildBox(rerender()).props?.checked).toBe(false)
   })
 
   it('shows each provider its own stored Auto Rebuild value when opened for editing', async () => {
