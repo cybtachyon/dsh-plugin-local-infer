@@ -85,7 +85,7 @@ describe('ui entry bootstrap', () => {
     execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' })
   })
 
-  it('apply bootstraps the plugin: all 12 routes register and dispose', async () => {
+  it('apply bootstraps the plugin: all 13 routes register and dispose', async () => {
     const mod = await import('../lib/index.js')
     expect(mod.name).toBe('local-infer-ui')
     expect(mod.inject).toEqual(['localInfer'])
@@ -135,11 +135,12 @@ describe('ui entry bootstrap', () => {
       '/local-infer/get',
       '/local-infer/launch',
       '/local-infer/stop',
+      '/local-infer/logs',
       '/local-infer/register',
       '/local-infer/unregister',
     ])
     // The effect disposer unregisters every route it registered.
-    expect(disposed).toBe(12)
+    expect(disposed).toBe(13)
   })
 })
 

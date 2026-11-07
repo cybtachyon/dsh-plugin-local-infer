@@ -59,6 +59,11 @@ export type {
 } from './viewmodels/summary.ts'
 export type { Config, CustomArg, RegisterResult } from 'dsh-plugin-local-infer/core'
 export type { DownloadResult, LaunchResult } from 'dsh-plugin-local-infer/service'
+// The lines the logs route streams. The client bundle mirrors this union by
+// hand in packages/client/src/api/routes.ts (it cannot import the node-side
+// ui package), so this export is the one named source the mirror follows;
+// the two copies change together by hand.
+export type { LogsStreamEvent } from './routes/logs.ts'
 
 /**
  * Mount the Web UI. The browser card (dsh/client.js) registers into the

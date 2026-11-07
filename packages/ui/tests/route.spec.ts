@@ -1830,6 +1830,7 @@ describe('route handlers over a fake web server', () => {
       '/local-infer/get',
       '/local-infer/launch',
       '/local-infer/stop',
+      '/local-infer/logs',
       '/local-infer/register',
       '/local-infer/unregister',
     ])
@@ -4827,5 +4828,211 @@ describe('run-log hub wiring', () => {
     const snapshot = service.readRunLog('hub-wired')
     expect(snapshot.text).toContain('engine infernix (port 18080) pid 4242 exited with exit code 1')
     expect(snapshot.running).toBe(false)
+  })
+})
+
+describe('logs route (GET /local-infer/logs stream)', () => {
+  let home: string
+
+  beforeAll(() => {
+    home = mkdtempSync(join(tmpdir(), 'local-infer-logs-'))
+    pointHomeAt(home)
+  })
+
+  afterAll(() => {
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  /**
+   * logsRouteAt registers every route over a fake web server and answers
+   * the logs route's definition.
+   */
+  function logsRouteAt(service: LocalInferService) {
+    const routes: { path: string; handler: (req: unknown, res: unknown) => Promise<void> }[] = []
+    const scope = {
+      webServer: {
+        register(route: { path: string; handler: (req: unknown, res: unknown) => Promise<void> }) {
+          routes.push(route)
+          return () => undefined
+        },
+      },
+      effect(fn: () => unknown): void {
+        fn()
+      },
+    }
+    registerLocalInferRoute(
+      scope as unknown as import('@deepseek-ai/cordis').Context & {
+        webServer: import('../src/route.ts').WebServerService
+      },
+      service,
+    )
+    return routes.find((route) => route.path === '/local-infer/logs')!
+  }
+
+  function logsRes() {
+    const res = {
+      status: 0,
+      headers: {} as Record<string, string>,
+      chunks: [] as string[],
+      closeListeners: [] as Array<() => void>,
+      writeHead(status: number, headers?: Record<string, string>) {
+        res.status = status
+        Object.assign(res.headers, headers ?? {})
+        return res
+      },
+      write(chunk: string) {
+        res.chunks.push(chunk)
+        return true
+      },
+      end() {
+        return res
+      },
+      // The logs route watches the response's client disconnect to dispose
+      // its hub subscription; the fake captures the listener so a test
+      // simulates the card's pane closing the stream.
+      on(event: string, listener: (...args: unknown[]) => void) {
+        if (event === 'close') {
+          res.closeListeners.push(listener as () => void)
+        }
+        return res
+      },
+    }
+    return res
+  }
+
+  function fakeGet(url: string) {
+    return {
+      method: 'GET',
+      url,
+      destroy(): void {
+        /* a GET request carries no body to destroy */
+      },
+      async *[Symbol.asyncIterator](): AsyncGenerator<Buffer> {},
+    }
+  }
+
+  // logsEvents parses the logs route's NDJSON chunks into events, so a test
+  // reads the snapshot, runBegin, log, and runEnd lines in stream order.
+  function logsEvents(chunks: string[]): Record<string, unknown>[] {
+    return chunks
+      .join('')
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+  }
+
+  it('writes the catch-up snapshot first and follows appends and the run end', async () => {
+    const service = stubService([])
+    const route = logsRouteAt(service)
+    const res = logsRes()
+    await route.handler(fakeGet('/local-infer/logs?provider=pane'), res)
+    expect(res.status).toBe(200)
+    expect(res.headers['content-type']).toContain('application/x-ndjson')
+    // A key that never ran streams the empty snapshot and stays attached.
+    expect(logsEvents(res.chunks)).toEqual([{ snapshot: '', seq: 0, running: false }])
+    // A new run reaches the attached reader as a runBegin line, the appends
+    // as log lines continuing the seq, and the settle as a runEnd line.
+    service.beginRun('pane', '--- Launching...\n')
+    service.appendRunLog('pane', 'engine up\n')
+    service.appendRunLog('pane', 'healthy\n')
+    service.endRun('pane')
+    expect(logsEvents(res.chunks).slice(1)).toEqual([
+      { runBegin: '--- Launching...\n', seq: 0 },
+      { log: 'engine up\n', seq: 1 },
+      { log: 'healthy\n', seq: 2 },
+      { runEnd: true, seq: 2 },
+    ])
+  })
+
+  it('catches a late reader up with the buffered text, the seq, and the running flag', async () => {
+    const service = stubService([])
+    service.beginRun('late', '--- Launching...\n')
+    service.appendRunLog('late', 'step one\n')
+    const route = logsRouteAt(service)
+    const res = logsRes()
+    await route.handler(fakeGet('/local-infer/logs?provider=late'), res)
+    // The snapshot carries everything the pane missed, with the running flag.
+    expect(logsEvents(res.chunks)).toEqual([
+      { snapshot: '--- Launching...\nstep one\n', seq: 1, running: true },
+    ])
+    // Live appends continue the snapshot's seq.
+    service.appendRunLog('late', 'step two\n')
+    service.endRun('late')
+    expect(logsEvents(res.chunks).slice(1)).toEqual([
+      { log: 'step two\n', seq: 2 },
+      { runEnd: true, seq: 2 },
+    ])
+  })
+
+  it('does not duplicate an append that lands between subscribe and the snapshot read', async () => {
+    const service = stubService([])
+    service.beginRun('race', 'seed\n')
+    service.appendRunLog('race', 'first\n')
+    const read = service.readRunLog.bind(service)
+    // The raced append: it lands after the route subscribed but before the
+    // route read the snapshot, so its text is already inside the snapshot.
+    service.readRunLog = (key: string) => {
+      service.appendRunLog(key, 'raced\n')
+      return read(key)
+    }
+    const route = logsRouteAt(service)
+    const res = logsRes()
+    await route.handler(fakeGet('/local-infer/logs?provider=race'), res)
+    const events = logsEvents(res.chunks)
+    // The snapshot stays the stream's first line and already holds the raced
+    // chunk.
+    expect(events[0]).toEqual({
+      snapshot: 'seed\nfirst\nraced\n',
+      seq: 2,
+      running: true,
+    })
+    // The raced append never streams a second time...
+    expect(events.filter((event) => event.log === 'raced\n')).toEqual([])
+    // ...and a later append still streams above the dedup watermark.
+    service.appendRunLog('race', 'after\n')
+    expect(logsEvents(res.chunks).at(-1)).toEqual({ log: 'after\n', seq: 3 })
+  })
+
+  it('disposes the hub subscription when the client disconnects', async () => {
+    const service = stubService([])
+    let disposed = false
+    const subscribe = service.subscribeRunLog.bind(service)
+    service.subscribeRunLog = (key: string, listener: RunLogListener): (() => void) => {
+      const dispose = subscribe(key, listener)
+      return () => {
+        disposed = true
+        dispose()
+      }
+    }
+    const route = logsRouteAt(service)
+    const res = logsRes()
+    await route.handler(fakeGet('/local-infer/logs?provider=gone'), res)
+    expect(res.closeListeners).toHaveLength(1)
+    // The card's pane closing fires the node 'close'.
+    res.closeListeners[0]!()
+    expect(disposed).toBe(true)
+    // The dead connection stops receiving hub events.
+    service.beginRun('gone', 'seed\n')
+    expect(logsEvents(res.chunks)).toEqual([{ snapshot: '', seq: 0, running: false }])
+  })
+
+  it('streams the empty snapshot and stays attached for a blank or unknown key', async () => {
+    const service = stubService([])
+    const route = logsRouteAt(service)
+    // The missing provider param is the blank key; both keys stream an open
+    // empty stream rather than a 404.
+    const cases = [
+      ['/local-infer/logs', ''],
+      ['/local-infer/logs?provider=never-ran', 'never-ran'],
+    ] as const
+    for (const [url, key] of cases) {
+      const res = logsRes()
+      await route.handler(fakeGet(url), res)
+      expect(res.status).toBe(200)
+      expect(logsEvents(res.chunks)).toEqual([{ snapshot: '', seq: 0, running: false }])
+      // Still attached: a run that starts later reaches this connection.
+      service.beginRun(key, 'late start\n')
+      expect(logsEvents(res.chunks).at(-1)).toEqual({ runBegin: 'late start\n', seq: 0 })
+    }
   })
 })

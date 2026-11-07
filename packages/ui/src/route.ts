@@ -39,6 +39,7 @@ import { downloadRoute } from './routes/download.ts'
 import { getRoute } from './routes/get.ts'
 import { installRoute } from './routes/install.ts'
 import { launchRoute } from './routes/launch.ts'
+import { logsRoute } from './routes/logs.ts'
 import { providerDeleteRoute } from './routes/provider-delete.ts'
 import { registerRoute } from './routes/register.ts'
 import { saveRoute } from './routes/save.ts'
@@ -253,7 +254,7 @@ export function defineRoute(spec: RouteSpec): LocalInferRoute {
 
 /**
  * registerLocalInferRoute registers the summary, save, provider-delete, deps,
- * install, download, chat-template, get, launch, stop, register, and
+ * install, download, chat-template, get, launch, stop, logs, register, and
  * unregister routes on the web server and holds them by an effect, so a
  * bundle switch off removes them before the next switch on re-registers. The
  * scoped context carries the webServer; the localInfer service is passed in
@@ -280,6 +281,7 @@ export function registerLocalInferRoute(
     getRoute(localInfer, getHost),
     launchRoute(localInfer, launchHost),
     stopRoute(localInfer),
+    logsRoute(localInfer),
     registerRoute(localInfer),
     unregisterRoute(localInfer),
   ]
