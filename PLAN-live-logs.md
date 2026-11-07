@@ -117,7 +117,7 @@ must always match the provider process actually running.
   while deps install runs; build on clone/build; download on model/template
   download) and update the machine per the Q4 answer so the button leaves
   "Prereqs..." while the hf CLI downloads.
-- [ ] [TASK-010-displaytext-mapping](docs/PLAN-live-logs-TASK-010-displaytext-mapping.md)
+- [x] [TASK-010-displaytext-mapping](docs/PLAN-live-logs-TASK-010-displaytext-mapping.md)
   Move the state-to-label mapping into the machine as a `displayText` table
   (logical machine names, short user-friendly labels); `phaseLabelFor`,
   ProviderList, and the title-bar control consume it; no renderer hardcodes

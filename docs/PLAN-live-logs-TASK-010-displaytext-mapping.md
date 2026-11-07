@@ -24,8 +24,8 @@ names stay logical and the button shows a short user-friendly version:
 
 Definition of Done:
 
-- [ ] One exported mapping in the machine; `phaseLabelFor` delegates; no
+- [x] One exported mapping in the machine; `phaseLabelFor` delegates; no
       renderer hardcodes a phase label.
-- [ ] `launch.spec.ts` / `derive.spec.ts` / `providerlist.spec.ts` updated;
+- [x] `launch.spec.ts` / `derive.spec.ts` / `providerlist.spec.ts` updated;
       en and zh tables carry a label for every in-flight state.
-- [ ] `pnpm build` and `pnpm test` green.
+- [x] `pnpm build` and `pnpm test` green.
