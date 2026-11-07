@@ -25,6 +25,17 @@ Focus areas from this phase:
   download never interrupts the hf child. Add parity with tests.
 - `packages/ui/src/routes/stop.ts` sits at ~33% line coverage (tests call
   `stopEngine` directly): add route-level stop POST tests.
+- Route-list triplication (shotgun edit): adding a route needs coordinated
+  edits in `registerLocalInferRoute`, the exact-paths array in
+  `packages/ui/tests/route.spec.ts`, and the paths array + count title in
+  `packages/ui/tests/bootstrap.spec.ts`. Introduce one shared expected-list
+  the tests derive from.
+- Log-stream lifecycle on bundle toggle-off: open `/local-infer/logs`
+  connections keep their hub subscription until the socket closes (no
+  route-side registry tears them down when the effect disposes). Same shape
+  as the existing get/launch streams; decide to fix (track open
+  subscriptions per registration and dispose them) or record the reason it
+  stays.
 - The run-key rule (provider id / engine+model match / engine fallback) must
   live in exactly one exported helper that every route and op calls.
 - `persistProcessLog`, `finishRunSection`, `persistStoredLogs`,
