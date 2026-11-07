@@ -14,6 +14,17 @@ Then address and resolve each risk.
 
 Focus areas from this phase:
 
+- Sudo observer single global slot (`localInfer.setSudoObserver` in
+  `packages/service/src/index.ts`, used by `registerSudoObserver` in
+  `packages/ui/src/ops/engine.ts`): concurrent provider runs clobber each
+  other's observer and the first settle clears the other's note routing.
+  Make notification per-run-key (the hub already keys by provider) or
+  reference-counted, with tests for two concurrent runs.
+- Download / chat-template routes lack the `abortOnResponseClose` cancel
+  wiring the get and launch routes have, so a card Cancel on a standalone
+  download never interrupts the hf child. Add parity with tests.
+- `packages/ui/src/routes/stop.ts` sits at ~33% line coverage (tests call
+  `stopEngine` directly): add route-level stop POST tests.
 - The run-key rule (provider id / engine+model match / engine fallback) must
   live in exactly one exported helper that every route and op calls.
 - `persistProcessLog`, `finishRunSection`, `persistStoredLogs`,
