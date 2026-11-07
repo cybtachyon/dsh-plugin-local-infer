@@ -32,9 +32,9 @@ Client machine (`packages/client/src/machine/launch.ts`) per the Q4 answer
 
 Definition of Done:
 
-- [ ] `packages/service` / `packages/ui` tests: a launch that runs the model
+- [x] `packages/service` / `packages/ui` tests: a launch that runs the model
       download step emits prereqs? -> build? -> download -> launch step
       events in real order for a stubbed Get-steps sequence.
-- [ ] `packages/client/tests/launch.spec.ts`: step events set states in the
+- [x] `packages/client/tests/launch.spec.ts`: step events set states in the
       real order (build then download), stop supersede, unknown names no-op.
-- [ ] `pnpm build` and `pnpm test` green.
+- [x] `pnpm build` and `pnpm test` green.
