@@ -7,7 +7,7 @@
  * @module dsh-plugin-local-infer/providers/engines/hyperqwen/hyperqwenAdapter
  */
 import { EngineAdapter, formatLaunchCommand } from '../../../../core/lib/index.js';
-import { customArgEnv, envFromSpecs, nodeLifecycleHost, pollHealth } from "../../adapters.js";
+import { auditRun, customArgEnv, envFromSpecs, nodeLifecycleHost, pollHealth } from "../../adapters.js";
 import { HYPERQWEN_PARAMETERS } from "./hyperqwen.js";
 /**
  * HyperQwenAdapter is the docker-compose engine. `renderLaunch` renders a
@@ -60,7 +60,7 @@ export class HyperQwenAdapter extends EngineAdapter {
             healthUrl: `http://127.0.0.1:${port}/health`,
         };
     }
-    async deploy(plan, platform, onProgress, _options) {
+    async deploy(plan, platform, onProgress, options) {
         // The card's docker-tag field carries the compose arguments (the profile
         // the up step selects); the deploy step applies it to the plan so the up
         // line and the card's Logs section agree.
@@ -74,9 +74,10 @@ export class HyperQwenAdapter extends EngineAdapter {
             return { ok: false, detail: 'compose plan carries no command' };
         }
         // The compose up is the docker build step: the card's button reads
-        // "Building..." for it.
+        // "Building..." for it. The `$ <command>` line reaches the launch run's
+        // log sink before the child spawns, so the run reads the command first.
         onProgress?.('build');
-        const up = await this.host.run(command);
+        const up = await auditRun(this.host, command, options?.onLog);
         if (!up.ok) {
             return { ok: false, detail: `compose up failed: ${up.detail ?? 'unknown'}` };
         }
@@ -85,15 +86,16 @@ export class HyperQwenAdapter extends EngineAdapter {
     async healthCheck(plan, options) {
         return pollHealth(this.host, plan, options);
     }
-    async stop(plan) {
+    async stop(plan, log) {
         // The down step brings down the containers the up step started, so it
         // runs the same compose arguments (the profile the up selected); an
-        // absent composeArgs falls back to the engine's default profile.
+        // absent composeArgs falls back to the engine's default profile. The
+        // `$ <command>` line reaches the stop run's log sink before the child.
         const composeArgs = plan.composeArgs?.split(/\s+/).filter((token) => token !== '');
         const args = composeArgs !== undefined && composeArgs.length > 0
             ? composeArgs.join(' ')
             : `--profile ${plan.profile ?? 'single'}`;
-        await this.host.run(`docker compose -f ${plan.composeFile ?? 'docker-compose.yml'} ${args} down`);
+        await auditRun(this.host, `docker compose -f ${plan.composeFile ?? 'docker-compose.yml'} ${args} down`, log);
     }
     port(config) {
         return typeof config.port === 'number' ? config.port : 18020;

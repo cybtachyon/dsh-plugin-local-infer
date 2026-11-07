@@ -182,6 +182,14 @@ export type LaunchStep = 'prereqs' | 'download' | 'build' | 'launch';
  */
 export type LaunchProgress = (step: LaunchStep) => void;
 /**
+ * CommandLogger receives the `$ <command>` line of each mutating command the
+ * deploy and stop steps run, before the child spawns, so the run's log reads
+ * command first and the CLI's output after. The launch and stop run paths
+ * thread their run-log sink through this seam; a caller with no run log (a
+ * headless service call) passes none and the steps run as they did before.
+ */
+export type CommandLogger = (line: string) => void;
+/**
  * EngineLaunchState is the phase of an engine start the health poll reports:
  * downloading (the engine is fetching its engine or model files, the health
  * endpoint is not up yet), starting (the files are in place and the engine is
@@ -210,11 +218,16 @@ export interface HealthResult {
  * written to the card's Logs section for the user to run (off). `autoRebuild`
  * is the card's "Auto Rebuild" checkbox: when false, the git sync (fetch,
  * rebase, and the conditional rebuild) is skipped and the checkout launches
- * as-is. Absent reads as true (the rebuild runs).
+ * as-is. Absent reads as true (the rebuild runs). `onLog` is the launch run's
+ * log sink: a deploy that runs a mutating command (an image pull, a model
+ * download) writes its `$ <command>` line through it before the child spawns,
+ * so the launch's live run reads the command first. Absent (a headless
+ * launch) and the deploy runs without logging them.
  */
 export interface DeployOptions {
     allowRunDeps?: boolean;
     autoRebuild?: boolean;
+    onLog?: CommandLogger;
 }
 /**
  * DeployResult reports whether a build-or-pull succeeded, with a detail for the
@@ -254,7 +267,14 @@ export declare abstract class EngineAdapter {
     abstract renderLaunch(config: Config, hw: HardwareProfile): LaunchPlan;
     abstract healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;
     abstract deploy(plan: LaunchPlan, platform?: EnginePlatformConfig, onProgress?: LaunchProgress, options?: DeployOptions): Promise<DeployResult>;
-    abstract stop(plan: LaunchPlan): Promise<void>;
+    /**
+     * stop signals the engine the plan names. The optional `log` is the stop
+     * run's log sink: an adapter that stops through a command (compose down,
+     * docker stop, a pid signal) writes its `$ <command>` line through it
+     * before the child runs, so the stop's live run reads the command first.
+     * An adapter that only signals a tracked handle logs nothing.
+     */
+    abstract stop(plan: LaunchPlan, log?: CommandLogger): Promise<void>;
     /**
      * Optional: the host deps this engine's deploy step needs for a build mode,
      * declared by the adapter that knows its own toolchain. The service asks a

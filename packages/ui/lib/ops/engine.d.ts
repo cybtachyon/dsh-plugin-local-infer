@@ -54,6 +54,24 @@ export declare function resolveStoredRequest(request: {
     config: Config;
 };
 /**
+ * registerSudoObserver registers the run's sudo hook on the service under
+ * the run's key (the hub's own keying) and returns the disposer that removes
+ * only this hook: concurrent runs each keep their own slot, a re-launch
+ * under the same key takes the slot from the older run, and the first settle
+ * never clears another run's note routing. The service hands every guarded
+ * announcement to every registered hook (the shared CLI password wait can
+ * block any run, and the announce seam does not name the triggering run), so
+ * one wait notes every run in flight. launchEngine and getEngine share the
+ * helper so the sudo-note rule has one home: the hook appends noteLine to
+ * the run's own sink (the note rides the streamed run and the run text
+ * persisted when the step settles) and through persistProcessLog (so a run
+ * still hung on the prompt reads the note in the Logs section and the log
+ * file before it settles), then calls onSudo, the route's stream event; a
+ * Get passes none because its control keeps its throbber. The caller invokes
+ * the disposer in a finally so a failed run leaves no hook behind.
+ */
+export declare function registerSudoObserver(localInfer: LocalInferService, runKey: string, noteLine: string, noteTo: (text: string) => void, onSudo?: () => void): () => void;
+/**
  * launchEngine runs the shared Get-steps routine (idempotent: deps, git sync,
  * build, model download, chat-template download, each skipped when already
  * satisfied) and then renders the plan the registered adapter produces for

@@ -921,6 +921,27 @@ describe('NInferAdapter.deploy', () => {
     expect(state.spawn).toHaveLength(1)
   })
 
+  it('writes the docker pull command line to the deploy log before the child runs', async () => {
+    const { host, state } = stubHost()
+    const adapter = new NInferAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'docker',
+      argv: ['docker', 'run', NINFER_DOCKER_IMAGE, 'serve', 'x.ninfer'],
+      env: {},
+      containerName: 'ninfer-18020',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    // The exec audit rule: the `$ docker pull` line reaches the launch run's
+    // log sink before the pull child spawns.
+    const audit: { line: string; runCount: number }[] = []
+    await adapter.deploy(plan, undefined, undefined, {
+      onLog: (line) => audit.push({ line, runCount: state.run.length }),
+    })
+    expect(audit).toEqual([{ line: `$ docker pull ${NINFER_DOCKER_IMAGE}\n`, runCount: 0 }])
+  })
+
   it('reports a failed build as not-ok with the detail', async () => {
     const { host, state } = stubHost()
     // The checkout is behind (so the build runs), and only the build step fails.
@@ -1042,6 +1063,43 @@ describe('NInferAdapter.healthCheck and stop', () => {
     await adapter.stop(plan)
     expect(state.run).toEqual(['kill 4321'])
     expect(state.killed).toEqual([])
+  })
+
+  it('writes the signal command to the stop log before the host runs it', async () => {
+    const { host, state } = stubHost()
+    const adapter = new NInferAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      pid: 4321,
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    // The exec audit rule: the `$ kill` line reaches the stop run's log sink
+    // while the host has run nothing yet, so the run reads the signal ahead
+    // of its outcome.
+    const audit: { line: string; runCount: number }[] = []
+    await adapter.stop(plan, (line) => audit.push({ line, runCount: state.run.length }))
+    expect(audit).toEqual([{ line: '$ kill 4321\n', runCount: 0 }])
+    expect(state.run).toEqual(['kill 4321'])
+  })
+
+  it('writes the docker stop command line to the stop log before the host runs it', async () => {
+    const { host, state } = stubHost()
+    const adapter = new NInferAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'docker',
+      argv: ['docker', 'run', NINFER_DOCKER_IMAGE, 'serve', 'x.ninfer'],
+      env: {},
+      containerName: 'ninfer-18020',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    const audit: { line: string; runCount: number }[] = []
+    await adapter.stop(plan, (line) => audit.push({ line, runCount: state.run.length }))
+    expect(audit).toEqual([{ line: '$ docker stop ninfer-18020\n', runCount: 0 }])
+    expect(state.run).toEqual(['docker stop ninfer-18020'])
   })
 
   it('uses taskkill for a Windows plan pid', async () => {
@@ -1199,6 +1257,40 @@ describe('HyperQwenAdapter', () => {
     expect(state.run[0]).toBe('docker compose -f docker-compose.yml --profile single up --pull always -d')
     await adapter.stop(plan)
     expect(state.run[1]).toBe('docker compose -f docker-compose.yml --profile single down')
+  })
+
+  it('writes the compose up and down command lines to the log before the child runs', async () => {
+    const { host, state } = stubHost()
+    const adapter = new HyperQwenAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'hyperqwen',
+      kind: 'compose',
+      env: {},
+      composeFile: 'docker-compose.yml',
+      profile: 'single',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    // The exec audit rule: each command's `$ <command>` line reaches the log
+    // sink while no command has run yet (the deploy) or while only the up has
+    // (the stop), so the run reads the command ahead of its child.
+    const audit: { line: string; runCount: number }[] = []
+    const log = (line: string): void => {
+      audit.push({ line, runCount: state.run.length })
+    }
+    const result = await adapter.deploy(plan, undefined, undefined, { onLog: log })
+    expect(result.ok).toBe(true)
+    await adapter.stop(plan, log)
+    expect(audit).toEqual([
+      {
+        line: '$ docker compose -f docker-compose.yml --profile single up --pull always -d\n',
+        runCount: 0,
+      },
+      {
+        line: '$ docker compose -f docker-compose.yml --profile single down\n',
+        runCount: 1,
+      },
+    ])
   })
 
   it('applies the platform docker-tag compose arguments to the up and down lines', async () => {

@@ -18,7 +18,7 @@
  */
 import { basename, join } from 'node:path';
 import { EngineAdapter, dshConfigCacheDirectory, hfDownloadCommand, hubCacheSnapshotFilePath, modelArtifactPresent, modelDownloadTarget, repoIdFromUrl, } from '../../../../core/lib/index.js';
-import { configFileFromSpecs, nodeLifecycleHost, pollHealth, resolveLaunchArgv, stopProcessPlan, trackChild, } from "../../adapters.js";
+import { auditRun, configFileFromSpecs, nodeLifecycleHost, pollHealth, resolveLaunchArgv, stopProcessPlan, trackChild, } from "../../adapters.js";
 import { engineBuildDir, syncEngineForDeploy } from "../../acquire.js";
 import { defaultModelFor, defaultModelsForEngine } from "../../model-defaults.js";
 import { BASALT_CONFIG_VERSION, BASALT_DEFAULT_MODEL_ID, BASALT_DEFAULT_PORT, BASALT_MODEL_FILE, BASALT_MODEL_REPO, BASALT_PARAMETERS, basaltModelKey, basaltServedName, } from "./basalt.js";
@@ -306,7 +306,7 @@ export class BasaltAdapter extends EngineAdapter {
         // The repo rides the default model list entry the plan resolves to (the
         // modelId key or the artifact file), so each artifact downloads from its
         // own repo.
-        const artifact = await this.ensureModelArtifact(basaltDownloadEntry(plan.modelId ?? '', modelFile), baseDir, useHubCache, onProgress);
+        const artifact = await this.ensureModelArtifact(basaltDownloadEntry(plan.modelId ?? '', modelFile), baseDir, useHubCache, onProgress, options?.onLog);
         if (!artifact.ok) {
             return withLogs({ ok: false, detail: artifact.detail });
         }
@@ -353,11 +353,11 @@ export class BasaltAdapter extends EngineAdapter {
      * is the flat join. Returns the path, or a detail when the download fails
      * or leaves no snapshot.
      */
-    async ensureModelArtifact(entry, baseDir, useHubCache, onProgress) {
+    async ensureModelArtifact(entry, baseDir, useHubCache, onProgress, log) {
         const modelFile = entry.file;
         if (!modelArtifactPresent(entry, baseDir, useHubCache)) {
             onProgress?.('download');
-            const download = await this.host.run(hfDownloadCommand(entry, baseDir, useHubCache));
+            const download = await auditRun(this.host, hfDownloadCommand(entry, baseDir, useHubCache), log);
             if (!download.ok) {
                 return { ok: false, detail: `model download failed: ${download.detail ?? 'unknown'}` };
             }
@@ -416,7 +416,7 @@ export class BasaltAdapter extends EngineAdapter {
         const state = handle !== undefined && (handle.logs ?? '') !== '' ? 'starting' : 'failed';
         return { ...result, state };
     }
-    async stop(plan) {
+    async stop(plan, log) {
         // The serve process is the tracked child: signal it and drop the entry,
         // so a later stop never signals a pid a recycled process has taken over.
         const handle = this.children.get(this.planKey(plan));
@@ -428,7 +428,7 @@ export class BasaltAdapter extends EngineAdapter {
         // No tracked child (an engine a DSH restart re-adopted): signal the pid
         // the stored launch record stamped on the plan, so the stop reaches a
         // process this adapter instance did not spawn.
-        await stopProcessPlan(this.host, plan);
+        await stopProcessPlan(this.host, plan, log);
     }
     port(config) {
         // The port the basalt serve CLI binds by default, so a bare config

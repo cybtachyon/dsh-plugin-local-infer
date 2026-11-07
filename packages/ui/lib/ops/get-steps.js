@@ -16,7 +16,7 @@
  * sync failure.
  * @module dsh-plugin-local-infer/ui/ops/get-steps
  */
-import { chatTemplatePresent, checkDeps, dshEngineCacheDirectory, hfChatTemplateCommand, hfDownloadCommand, modelArtifactPresent, resolveModelDirectory, } from '../../../core/lib/index.js';
+import { chatTemplatePresent, checkDeps, dshEngineCacheDirectory, modelArtifactPresent, resolveModelDirectory, } from '../../../core/lib/index.js';
 import { buildEngineRepo, defaultModelFor, ENGINES, infernixGetDownloads, syncEngineRepo, } from '../../../providers/lib/index.js';
 import { isHfRepoReference } from "../viewmodels/summaryHelpers.js";
 import { resolveBuildMode } from "../viewmodels/deps.js";
@@ -44,14 +44,17 @@ const SYNC_FAILED = { kind: 'syncFailed' };
 /**
  * downloadOptions builds the exactOptionalPropertyTypes-safe download options
  * a Get step's hf download runs with: the hub-cache layout flag, the run's
- * cancel signal, and the onChunk progress sink, each present only when the
+ * cancel signal, the onChunk progress sink, and the run's log sink (emit) so
+ * the service writes the `$ <hf command>` line into the same log text the step
+ * streams, ahead of the download's output. Each field is present only when the
  * run carries it, so an absent field never writes `undefined`. The model and
- * chat-template steps share it, so the option group (the directory layout,
- * the cancel, the progress sink) is built in one place.
+ * chat-template steps share it, so the option group (the directory layout, the
+ * cancel, the progress sink, the log sink) is built in one place.
  */
 function downloadOptions(ctx) {
     return {
         useHubCache: ctx.target.useHubCache,
+        onLog: ctx.emit,
         ...(ctx.request.signal !== undefined ? { signal: ctx.request.signal } : {}),
         ...(ctx.onChunk !== undefined ? { onChunk: ctx.onChunk } : {}),
     };
@@ -67,7 +70,13 @@ async function runDepsStep(ctx) {
     const buildMode = resolveBuildMode(engine, request.config);
     emit(`system dependencies (${buildMode})\n`);
     if (request.allowRunDeps === true) {
-        const install = await localInfer.runInstall(request.engineId, buildMode, hardware);
+        // The install run's log sink is this step's emit, so the service writes
+        // each dependency install command's `$ <command>` line into the same run
+        // text (ahead of the per-dep results below) before the guarded runner
+        // spawns the child.
+        const install = await localInfer.runInstall(request.engineId, buildMode, hardware, {
+            onLog: emit,
+        });
         for (const entry of install.results) {
             emit(`  ${entry.id}: ${entry.status}${entry.detail !== undefined ? ` (${entry.detail})` : ''}\n`);
         }
@@ -186,7 +195,9 @@ async function runModelDownloadStep(ctx) {
                 emit(`model download: ${modelId} is already present, skipped\n`);
             }
             else {
-                emit(`$ ${hfDownloadCommand(entry, target.directory, target.useHubCache)}\n`);
+                // The `$ <hf download ...>` line is written by the service's download
+                // exec site (through downloadOptions' onLog), so the command logs
+                // exactly once per run, from wherever the child actually spawns.
                 const download = await localInfer.downloadModel(entry, target.directory, downloadOptions(ctx));
                 if (!download.ok) {
                     emit(`!! ${download.detail ?? 'model download failed'}\n`);
@@ -238,7 +249,8 @@ async function runChatTemplateStep(ctx) {
             emit(`chat template: ${template} is already present, skipped\n`);
         }
         else {
-            emit(`$ ${hfChatTemplateCommand(template, target.directory, target.useHubCache)}\n`);
+            // The `$ <hf chat-template ...>` line is written by the service's
+            // download exec site (through downloadOptions' onLog), logging once.
             const download = await localInfer.downloadChatTemplate(template, target.directory, downloadOptions(ctx));
             if (!download.ok) {
                 emit(`!! ${download.detail ?? 'chat template download failed'}\n`);

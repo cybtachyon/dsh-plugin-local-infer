@@ -1,4 +1,4 @@
-import type { BuildMode, CommandOutcome, Config, DefaultModel, ModelCacheEntry, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EngineLaunchState, EnginePlatformConfig, Guideline, GuidelineResult, GpuUsageProbe, HardwareProfile, InstallResult, LaunchPlan, LaunchProgress, ModelRow, Preset, PresetSource, ProcessLine, ProviderLaunchRecord, ProviderRef, ProviderStatus, ReLinkOutcome, RegisterResult, ReserveResolution, ReserveSource, ResolvedDefaults, SettingsOp, SystemDep, VramBreakdown, VramModel, VramVerdict } from 'dsh-plugin-local-infer/core';
+import type { BuildMode, CommandLogger, CommandOutcome, CommandRunner, Config, DefaultModel, ModelCacheEntry, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EngineLaunchState, EnginePlatformConfig, Guideline, GuidelineResult, GpuUsageProbe, HardwareProfile, InstallResult, LaunchPlan, LaunchProgress, ModelRow, Preset, PresetSource, ProcessLine, ProviderLaunchRecord, ProviderRef, ProviderStatus, ReLinkOutcome, RegisterResult, ReserveResolution, ReserveSource, ResolvedDefaults, SettingsOp, SystemDep, VramBreakdown, VramModel, VramVerdict } from 'dsh-plugin-local-infer/core';
 /**
  * EstimateResult is the answer to an estimate call: the full VRAM breakdown,
  * the one-word verdict the meter renders, the source the numbers came from,
@@ -93,7 +93,9 @@ export interface LaunchResult {
  * (on) or is written to the card's Logs section (off). `autoRebuild` is the
  * card's "Auto Rebuild" checkbox: when false, the deploy step skips the git
  * sync (fetch, rebase, rebuild) and launches the checkout as-is. Absent reads
- * as true (the rebuild runs).
+ * as true (the rebuild runs). `onLog` is the launch run's log sink: the
+ * deploy step writes the `$ <command>` line of every mutating command it runs
+ * (image pull, model download) through it before the child spawns.
  */
 export interface LaunchOptions {
     pollMs?: number;
@@ -101,6 +103,7 @@ export interface LaunchOptions {
     onProgress?: LaunchProgress;
     allowRunDeps?: boolean;
     autoRebuild?: boolean;
+    onLog?: CommandLogger;
 }
 /**
  * RegisterModelOptions tunes the model registration: agentDefault points the
@@ -109,6 +112,18 @@ export interface LaunchOptions {
  */
 export interface RegisterModelOptions {
     agentDefault?: boolean;
+}
+/**
+ * RunInstallOptions tunes the Play/Run install: `onLog` is the install run's
+ * log sink, and the service writes each command the runner is about to
+ * execute as a `$ <command>` line through it before the child spawns, so the
+ * run reads command first and per-dep results after. `runner` injects the
+ * command runner, so a test captures the command lines without spawning a
+ * real shell (the way downloadModel injects its download runner).
+ */
+export interface RunInstallOptions {
+    onLog?: CommandLogger;
+    runner?: CommandRunner;
 }
 /**
  * FetchPresetResult is the answer to a mod-search preset fetch: the tagged
@@ -159,10 +174,15 @@ export interface DownloadResult {
  * (the hf CLI resumes a network blip via HTTP Range inside one run); a killed
  * run re-downloads from zero on the re-run, and the orphaned `.incomplete`
  * blob lingers until `hf cache prune`.
+ * onLog is the run's log-text sink: the service writes the rendered command's
+ * `$ <hf download ...>` line through it before the runner spawns the child,
+ * so every download path (Get step, launch, download route) logs the command
+ * exactly once, from the exec site, ahead of its output.
  */
 export interface DownloadModelOptions {
     runner?: (command: string, signal?: AbortSignal, onChunk?: (chunk: string) => void) => Promise<CommandOutcome>;
     onChunk?: (chunk: string) => void;
+    onLog?: CommandLogger;
     useHubCache?: boolean;
     signal?: AbortSignal;
 }
@@ -320,9 +340,9 @@ export interface LocalInferService {
     guidelines(config: Config, hw: HardwareProfile, engineId?: string): Promise<GuidelineResult[]>;
     deps(engineId: string, buildMode: BuildMode, hw: HardwareProfile): Promise<readonly SystemDep[]>;
     installString(engineId: string, buildMode: BuildMode, hw: HardwareProfile): Promise<string>;
-    runInstall(engineId: string, buildMode: BuildMode, hw: HardwareProfile): Promise<InstallResult>;
+    runInstall(engineId: string, buildMode: BuildMode, hw: HardwareProfile, options?: RunInstallOptions): Promise<InstallResult>;
     launch(plan: LaunchPlan, options?: LaunchOptions): Promise<LaunchResult>;
-    stop(plan: LaunchPlan): Promise<void>;
+    stop(plan: LaunchPlan, log?: CommandLogger): Promise<void>;
     reLinkProviders(entries: readonly {
         id: string;
         record: ProviderLaunchRecord;

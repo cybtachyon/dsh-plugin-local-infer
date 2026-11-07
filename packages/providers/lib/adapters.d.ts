@@ -8,7 +8,7 @@
  * service wires in on a live host.
  * @module dsh-plugin-local-infer/providers/adapters
  */
-import type { Config, DebugLogger, HealthCheckOptions, HealthResult, LaunchPlan, LifecycleHost, ParameterDeploy, ParameterSpec, ProcessHandle } from '../../core/lib/index.js';
+import type { CommandLogger, CommandOutcome, Config, DebugLogger, HealthCheckOptions, HealthResult, LaunchPlan, LifecycleHost, ParameterDeploy, ParameterSpec, ProcessHandle, RunOptions } from '../../core/lib/index.js';
 /**
  * deployTargets normalizes a spec's `deploy` declaration into a target list: a
  * single target wraps in a one-element list, a list passes through, and an
@@ -139,15 +139,26 @@ export declare function trackChild(children: Map<string, ProcessHandle>, key: st
  */
 export declare function resolveLaunchArgv(engineDir: string | undefined, argv: readonly string[] | undefined): string[];
 /**
+ * auditRun runs one mutating host command through the run's log sink: the
+ * `$ <command>` line reaches the sink before the child spawns, so the launch
+ * or stop run reads the command ahead of its outcome. No sink (a headless
+ * call) and the command runs as before. The deploy and stop steps share this
+ * one audit rule for their direct `host.run` calls; the git and build steps
+ * run through the acquire step's own command-first echo.
+ */
+export declare function auditRun(host: LifecycleHost, command: string, log?: CommandLogger, options?: RunOptions): Promise<CommandOutcome>;
+/**
  * stopProcessPlan signals the engine process a stop targets when the adapter
  * tracks no child handle for it: an engine a DSH restart re-adopted from a
  * stored launch record carries no in-memory handle, so the stop signals the
  * pid the record stamped on the plan (kill on Linux and macOS, taskkill on a
- * Windows plan). A plan that names no pid is a no-op (nothing to signal), and
- * a kill the host reports as failed throws with the host's detail, so the
- * stop route names the broken step in the card's Logs section.
+ * Windows plan). The optional `log` is the stop run's log sink: the signal
+ * command's `$ <command>` line reaches it before the child runs. A plan that
+ * names no pid is a no-op (nothing to signal), and a kill the host reports as
+ * failed throws with the host's detail, so the stop route names the broken
+ * step in the card's Logs section.
  */
-export declare function stopProcessPlan(host: LifecycleHost, plan: LaunchPlan): Promise<void>;
+export declare function stopProcessPlan(host: LifecycleHost, plan: LaunchPlan, log?: CommandLogger): Promise<void>;
 /**
  * The health poll's defaults: the interval between attempts in ms and the
  * attempt cap. The service passes the config's healthPollMs and

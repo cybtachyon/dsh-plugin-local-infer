@@ -16,7 +16,7 @@
  * @module dsh-plugin-local-infer/providers/engines/strata/strataAdapter
  */
 import { EngineAdapter } from '../../../../core/lib/index.js';
-import type { Config, DeployOptions, DeployResult, EngineLaunchSignature, EngineLaunchState, EnginePlatformConfig, HealthCheckOptions, HealthResult, HardwareProfile, LaunchPlan, LaunchProgress, LifecycleHost, ParameterSpec } from '../../../../core/lib/index.js';
+import type { CommandLogger, Config, DeployOptions, DeployResult, EngineLaunchSignature, EngineLaunchState, EnginePlatformConfig, HealthCheckOptions, HealthResult, HardwareProfile, LaunchPlan, LaunchProgress, LifecycleHost, ParameterSpec } from '../../../../core/lib/index.js';
 /**
  * The Strata docker image the adapter pulls and runs. The image is the
  * upstream GitHub Container Registry artifact for the newest release's CUDA 13
@@ -90,7 +90,7 @@ export declare class StrataAdapter extends EngineAdapter {
     renderLaunch(config: Config, _hw: HardwareProfile): LaunchPlan;
     deploy(plan: LaunchPlan, platform?: EnginePlatformConfig, onProgress?: LaunchProgress, options?: DeployOptions): Promise<DeployResult>;
     healthCheck(plan: LaunchPlan, options?: HealthCheckOptions): Promise<HealthResult>;
-    stop(plan: LaunchPlan): Promise<void>;
+    stop(plan: LaunchPlan, log?: CommandLogger): Promise<void>;
     private buildMode;
     private port;
 }

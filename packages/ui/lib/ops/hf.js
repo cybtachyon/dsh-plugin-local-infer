@@ -63,12 +63,21 @@ export async function downloadFor(localInfer, request, signal) {
         ...(modelId === '' ? {} : { model: modelId }),
     });
     localInfer.beginRun(runKey, DOWNLOAD_RUN_SEED);
+    // The service writes the rendered hf command's `$ <command>` line through
+    // onLog before it spawns the child: it streams into the live hub right away
+    // and rides the persisted section below, so the command line reads exactly
+    // once per run in both readers, ahead of the CLI's output.
+    let commandLine = '';
     try {
         const result = await localInfer.downloadModel(entry, baseDir, {
             useHubCache,
             ...(signal !== undefined ? { signal } : {}),
             onChunk: (chunk) => {
                 localInfer.appendRunLog(runKey, chunk);
+            },
+            onLog: (line) => {
+                commandLine += line;
+                localInfer.appendRunLog(runKey, line);
             },
         });
         // The settle line reads the same in the live run and the persisted one:
@@ -81,7 +90,7 @@ export async function downloadFor(localInfer, request, signal) {
             : `!! download failed${result.detail !== undefined ? `: ${result.detail}` : ''}\n`;
         const settled = signal?.aborted === true ? `${line}${CANCELED_LINE}` : line;
         localInfer.appendRunLog(runKey, settled);
-        persistProcessLog(`${DOWNLOAD_RUN_SEED}${settled}`);
+        persistProcessLog(`${DOWNLOAD_RUN_SEED}${commandLine}${settled}`);
         return result;
     }
     finally {
@@ -119,6 +128,12 @@ export async function chatTemplateDownloadFor(localInfer, request, signal) {
             ...(signal !== undefined ? { signal } : {}),
             onChunk: (chunk) => {
                 localInfer.appendRunLog(runKey, chunk);
+            },
+            // The service writes the rendered chat-template pull's `$ <command>`
+            // line through onLog before it spawns the child, so the live run reads
+            // the command ahead of the CLI's output, exactly once.
+            onLog: (line) => {
+                localInfer.appendRunLog(runKey, line);
             },
         });
         // A cancel marks the live run canceled; the template pull's outcome
