@@ -1300,6 +1300,44 @@ describe('HyperQwenAdapter', () => {
     expect(state.run[1]).toBe('docker compose -f docker-compose.yml --profile single down')
   })
 
+  it('skips the image re-pull and the build phase when autoRebuild is off', async () => {
+    const { host, state } = stubHost()
+    const adapter = new HyperQwenAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'hyperqwen',
+      kind: 'compose',
+      env: {},
+      composeFile: 'docker-compose.yml',
+      profile: 'single',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    // Auto Rebuild off (the card's checkbox): the up line starts the
+    // already-present image with `--pull missing`, and the build phase is not
+    // announced (a spawn-only launch reads no build step).
+    const skippedPhases: string[] = []
+    const result = await adapter.deploy(
+      plan,
+      undefined,
+      (phase) => skippedPhases.push(phase),
+      { autoRebuild: false },
+    )
+    expect(result.ok).toBe(true)
+    expect(state.run).toEqual([
+      'docker compose -f docker-compose.yml --profile single up --pull missing -d',
+    ])
+    expect(skippedPhases).toEqual([])
+    // The flag absent (a CLI or legacy client launch): the legacy line with
+    // the re-pull and its build announcement still runs.
+    const phases: string[] = []
+    const legacy = await adapter.deploy(plan, undefined, (phase) => phases.push(phase))
+    expect(legacy.ok).toBe(true)
+    expect(state.run[1]).toBe(
+      'docker compose -f docker-compose.yml --profile single up --pull always -d',
+    )
+    expect(phases).toEqual(['build'])
+  })
+
   it('writes the compose up and down command lines to the log before the child runs', async () => {
     const { host, state } = stubHost()
     const adapter = new HyperQwenAdapter(host)

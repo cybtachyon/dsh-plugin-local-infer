@@ -76,7 +76,7 @@ Depends: 002, 003 -> 001.
   guard `docker pull` (ninfer, llamacpp, strata) and the Strata binary installer
   with `options?.autoRebuild !== false`; spawn proceeds with the plan's argv.
   DoD: per-adapter tests (pull/install skipped, spawn still runs expected argv).
-- [ ] [TASK-011-compose-pull-skip](docs/PLAN-AUTOREBUILD-PERSIST-TASK-011-compose-pull-skip.md) -
+- [x] [TASK-011-compose-pull-skip](docs/PLAN-AUTOREBUILD-PERSIST-TASK-011-compose-pull-skip.md) -
   (added from TASK-004's report: the compose `up` line hardcodes `--pull
   always`, so the Hyper-Qwen engine cannot skip the image pull) thread the flag
   into `formatLaunchCommand`, use `--pull missing` when off, skip the build-phase

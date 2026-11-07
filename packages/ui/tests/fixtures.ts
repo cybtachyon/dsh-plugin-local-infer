@@ -135,6 +135,26 @@ export function argvAdapter(id: string, argv: string[]): EngineAdapter {
   } as unknown as EngineAdapter
 }
 
+/**
+ * composeAdapter stands in for a docker-compose engine (Hyper-Qwen): its
+ * plan carries the compose file and profile with no compose arguments, so
+ * the launch route's compose up note runs the engine's default profile.
+ */
+export function composeAdapter(id: string): EngineAdapter {
+  return {
+    ...fakeAdapter(id),
+    renderLaunch: (): LaunchPlan => ({
+      engineId: id,
+      kind: 'compose',
+      env: {},
+      composeFile: 'docker-compose.yml',
+      profile: 'single',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }),
+  } as unknown as EngineAdapter
+}
+
 export function stubService(
   guidelines: GuidelineResult[],
   extras: {

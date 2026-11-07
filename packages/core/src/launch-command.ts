@@ -7,10 +7,17 @@ import type { LaunchPlan } from './adapter.ts'
  * card's Logs section shows the line above the engine's own output, so a
  * user can read and copy the exact binary and arguments a launch started
  * with. The Hyper-Qwen deploy runs this same string, so the printed line and
- * the host command cannot drift. Returns undefined when the plan names no
- * command (a non-compose plan with no argv).
+ * the host command cannot drift. The optional autoRebuild is the card's Auto
+ * Rebuild checkbox as the deploy reads it: absent or true renders the
+ * default `--pull always` (the up step re-pulls the image), false renders
+ * `--pull missing` (the up step starts the already-present image), the same
+ * skip rule the pull-guarded docker adapters follow. Returns undefined when
+ * the plan names no command (a non-compose plan with no argv).
  */
-export function formatLaunchCommand(plan: LaunchPlan): string | undefined {
+export function formatLaunchCommand(
+  plan: LaunchPlan,
+  autoRebuild?: boolean,
+): string | undefined {
   if (plan.kind === 'compose') {
     // The user's compose arguments (the card's docker-tag field) override the
     // default profile: the flags the up step runs before the required `up -d`.
@@ -31,7 +38,9 @@ export function formatLaunchCommand(plan: LaunchPlan): string | undefined {
         .join(' ')
     }
     // The compose defaults match the adapter's renderLaunch fallbacks, so a
-    // plan built from a bare config still spells a runnable command.
+    // plan built from a bare config still spells a runnable command. Auto
+    // Rebuild off keeps the image acquisition out of the up step: compose
+    // starts the already-present image with the plan's parameters.
     return [
       'docker',
       'compose',
@@ -41,7 +50,7 @@ export function formatLaunchCommand(plan: LaunchPlan): string | undefined {
       plan.profile ?? 'single',
       'up',
       '--pull',
-      'always',
+      autoRebuild === false ? 'missing' : 'always',
       '-d',
     ]
       .map(quoteArg)

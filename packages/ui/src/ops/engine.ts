@@ -86,11 +86,15 @@ export function resolveAdapter(localInfer: LocalInferService, engineId: string) 
 /**
  * launchCommandNote renders the plan's child-process launch line for the
  * card's Logs section: the core formatter's command under a [local-infer]
- * launch prefix, newline-terminated. A plan that names no command (a bare
- * docker plan with no argv) has no note, and the run logs stay as they are.
+ * launch prefix, newline-terminated. The optional autoRebuild is the
+ * effective deploy flag (the syncFailed override included), so a compose
+ * plan's note carries the same pull policy the deploy's up command runs and
+ * the printed line stays the exact string the host executed. A plan that
+ * names no command (a bare docker plan with no argv) has no note, and the
+ * run logs stay as they are.
  */
-function launchCommandNote(plan: LaunchPlan): string | undefined {
-  const command = formatLaunchCommand(plan)
+function launchCommandNote(plan: LaunchPlan, autoRebuild?: boolean): string | undefined {
+  const command = formatLaunchCommand(plan, autoRebuild)
   if (command === undefined) return undefined
   return `[local-infer] launch: ${command}\n`
 }
@@ -391,7 +395,18 @@ export async function launchEngine(
       )
     }
     applyComposeArgs(plan, localInfer, engineId)
-    const commandNote = launchCommandNote(plan)
+    // The effective auto-rebuild flag for the deploy step. A Get sync that
+    // failed under the override threads autoRebuild: false into the deploy,
+    // which skips its own git sync (it would hit the same rebase conflict)
+    // and launches the checkout's current version; a Get run whose sync
+    // passed keeps the request's autoRebuild. It is computed before the
+    // command note so the persisted Logs line renders the same pull policy
+    // the deploy's compose up runs, and the deploy reads the flag to decide
+    // whether a rebuild's missing-binary symlink into /usr/local/bin runs
+    // (on) or is written to the card's Logs section (off), and whether its
+    // acquisition steps (git sync, image pull, installer) run at all.
+    const launchAutoRebuild = get.syncFailed === true ? false : request.autoRebuild
+    const commandNote = launchCommandNote(plan, launchAutoRebuild)
     if (commandNote !== undefined) {
       // Persist before the deploy starts: a slow or hung launch keeps the Get
       // steps and the command readable in the Logs section across a card
@@ -399,19 +414,11 @@ export async function launchEngine(
       persistStoredLogs(`${run.text()}${commandNote}`)
       localInfer.appendRunLog(runKey, commandNote)
     }
-    // The trust gate and the auto-rebuild flag ride into the deploy step,
-    // which reads them to decide whether a rebuild's missing-binary symlink
-    // into /usr/local/bin runs (on) or is written to the card's Logs section
-    // (off), and whether the deploy's own git sync (fetch, rebase, rebuild)
-    // runs at all. A Get sync that failed under the override threads
-    // autoRebuild: false into the deploy, which skips its own git sync (it
-    // would hit the same rebase conflict) and launches the checkout's
-    // current version; a Get run whose sync passed keeps the request's
-    // autoRebuild. onLog is the deploy's run-log sink: the deploy's mutating
-    // commands (image pull, model download) write their `$ <command>` lines
-    // through it before their children spawn, so the live launch run reads
-    // each command ahead of its output.
-    const launchAutoRebuild = get.syncFailed === true ? false : request.autoRebuild
+    // The trust gate and the auto-rebuild flag ride into the deploy step.
+    // onLog is the deploy's run-log sink: the deploy's mutating commands
+    // (image pull, model download) write their `$ <command>` lines through
+    // it before their children spawn, so the live launch run reads each
+    // command ahead of its output.
     const result = await localInfer.launch(
       plan,
       {

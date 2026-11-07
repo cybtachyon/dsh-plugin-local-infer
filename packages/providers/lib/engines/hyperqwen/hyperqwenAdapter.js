@@ -68,15 +68,23 @@ export class HyperQwenAdapter extends EngineAdapter {
             plan.composeArgs = platform.dockerTag;
         }
         // The core formatter is the single source of the compose up line: the
-        // card's Logs section prints the same string this run gets.
-        const command = formatLaunchCommand(plan);
+        // card's Logs section prints the same string this run gets. Auto Rebuild
+        // off (the card's checkbox) renders the `--pull missing` line, so the up
+        // step starts the already-present image with the plan's parameters.
+        const autoRebuild = options?.autoRebuild !== false;
+        const command = formatLaunchCommand(plan, autoRebuild);
         if (command === undefined) {
             return { ok: false, detail: 'compose plan carries no command' };
         }
-        // The compose up is the docker build step: the card's button reads
-        // "Building..." for it. The `$ <command>` line reaches the launch run's
-        // log sink before the child spawns, so the run reads the command first.
-        onProgress?.('build');
+        if (autoRebuild) {
+            // The compose up is the docker build step: the card's button reads
+            // "Building..." for it. A spawn-only launch (Auto Rebuild off) acquires
+            // nothing, so it announces no build phase, the same rule the
+            // pull-guarded docker adapters follow. The `$ <command>` line reaches
+            // the launch run's log sink before the child spawns, so the run reads
+            // the command first.
+            onProgress?.('build');
+        }
         const up = await auditRun(this.host, command, options?.onLog);
         if (!up.ok) {
             return { ok: false, detail: `compose up failed: ${up.detail ?? 'unknown'}` };

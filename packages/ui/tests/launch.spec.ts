@@ -11,13 +11,18 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { DefaultModel, EnginePlatformConfig, LaunchPlan } from 'dsh-plugin-local-infer/core'
-import { DEFAULT_LOG_PATH_TEMPLATE, dshEngineCacheDirectory, resolveLogPath } from 'dsh-plugin-local-infer/core'
+import {
+  DEFAULT_LOG_PATH_TEMPLATE,
+  dshEngineCacheDirectory,
+  formatLaunchCommand,
+  resolveLogPath,
+} from 'dsh-plugin-local-infer/core'
 import type { LaunchResult } from 'dsh-plugin-local-infer/service'
 import { localInferConfigPath, readConfig, writeConfig } from '../src/config.ts'
 import { launchEngine, stopEngine } from '../src/ops/engine.ts'
 import { RouteError } from '../src/route.ts'
 import { buildSummary } from '../src/viewmodels/summary.ts'
-import { MODEL_DIR, argvAdapter, fakeAdapter, pointHomeAt, stubGetHost, stubService } from './fixtures.ts'
+import { MODEL_DIR, argvAdapter, composeAdapter, fakeAdapter, pointHomeAt, stubGetHost, stubService } from './fixtures.ts'
 
 describe('launch and stop route helpers', () => {
   let home: string
@@ -484,6 +489,36 @@ describe('launch and stop route helpers', () => {
     expect(lastLogs.startsWith('--- Launching...\n')).toBe(true)
     expect(lastLogs).toContain('get complete')
     expect(lastLogs.endsWith('[local-infer] launch: infernix-serve --port 18080\n')).toBe(true)
+  })
+
+  it('persists the compose up line with the pull policy the deploy runs', async () => {
+    writeConfig('hyperqwen', {}, false) // Pinned: the trust gate is off, no platform, no providers.
+    // The compose engine (Hyper-Qwen): Auto Rebuild off makes the deploy run
+    // the up line with `--pull missing`, and the persisted Logs line must be
+    // that same command string, not the default `--pull always` line.
+    let seenPlan: LaunchPlan | undefined
+    let seenOptions: { autoRebuild?: boolean } | undefined
+    const service = stubService([], { engines: [composeAdapter('hyperqwen')] })
+    service.launch = async (plan: LaunchPlan, options?: { autoRebuild?: boolean }): Promise<LaunchResult> => {
+      seenPlan = plan
+      seenOptions = options
+      return { plan, healthy: true }
+    }
+    await launchEngine(
+      service,
+      { engine: 'hyperqwen', config: {}, autoRebuild: false },
+      undefined,
+      stubGetHost().host,
+    )
+    expect(seenOptions?.autoRebuild).toBe(false)
+    // The persisted note is the core formatter's string over the very plan
+    // and flag the deploy received (the formatter is what the Hyper-Qwen
+    // deploy runs), so the Logs line and the host command cannot drift.
+    const deployLine = formatLaunchCommand(seenPlan!, seenOptions?.autoRebuild)
+    expect(deployLine).toBe(
+      'docker compose -f docker-compose.yml --profile single up --pull missing -d',
+    )
+    expect(readConfig().lastLogs.endsWith(`[local-infer] launch: ${deployLine}\n`)).toBe(true)
   })
 
   it('renders the plan and calls the service stop entry point with it', async () => {
