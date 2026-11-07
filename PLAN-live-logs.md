@@ -104,7 +104,7 @@ must always match the provider process actually running.
   `$ <command>` to the log first and appends output after; move the
   `$ hfDownloadCommand(...)` lines from `get-steps.ts` to the exec sites so
   all callers log once and never twice.
-- [ ] [TASK-008-url-audit](docs/PLAN-live-logs-TASK-008-url-audit.md)
+- [x] [TASK-008-url-audit](docs/PLAN-live-logs-TASK-008-url-audit.md)
   Audit URL queries (health-poll `host.fetch(plan.healthUrl)` in
   adapters.ts + strataAdapter.ts, and any other host fetch): write the URL
   to the log before the first request, append the settled outcome; document
