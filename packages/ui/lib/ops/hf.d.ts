@@ -18,9 +18,13 @@ import type { ChatTemplateDownloadRequest, DownloadRequest } from '../request.ts
  * engine and model (a draft falls back to the engine id): the seed is the
  * "Downloading..." separator, the hf CLI's streamed chunks append as they
  * land, and the settled completion or failure line reaches the hub and the
- * persisted run from one text before the run ends.
+ * persisted run from one text before the run ends. The optional signal is
+ * the card's cancel (the download route's response-close abort, the Get and
+ * launch routes' rule): an abort interrupts the in-flight hf child (SIGINT,
+ * then SIGTERM) and the run carries the shared "Canceled" line, live and
+ * persisted.
  */
-export declare function downloadFor(localInfer: LocalInferService, request: DownloadRequest): Promise<DownloadResult>;
+export declare function downloadFor(localInfer: LocalInferService, request: DownloadRequest, signal?: AbortSignal): Promise<DownloadResult>;
 /**
  * chatTemplateDownloadFor runs the hf CLI download for the request's chat
  * template: it resolves the template repo reference from the request or the
@@ -29,7 +33,10 @@ export declare function downloadFor(localInfer: LocalInferService, request: Down
  * runs the download through the service. The run brackets one live hub run
  * under the "Downloading..." seed and the runLogKey rule (the stored entry
  * matching the engine and model, else the engine id): the hf CLI's streamed
- * chunks append as they land, and the run ends at settle.
+ * chunks append as they land, and the run ends at settle. The optional
+ * signal is the card's cancel (the chat-template route's response-close
+ * abort, the Get and launch routes' rule): an abort interrupts the in-flight
+ * hf child and the live run carries the shared "Canceled" line.
  */
-export declare function chatTemplateDownloadFor(localInfer: LocalInferService, request: ChatTemplateDownloadRequest): Promise<DownloadResult>;
+export declare function chatTemplateDownloadFor(localInfer: LocalInferService, request: ChatTemplateDownloadRequest, signal?: AbortSignal): Promise<DownloadResult>;
 //# sourceMappingURL=hf.d.ts.map

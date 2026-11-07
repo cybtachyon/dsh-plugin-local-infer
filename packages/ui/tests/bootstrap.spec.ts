@@ -17,6 +17,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 import { beforeAll, describe, expect, it } from 'vitest'
+import { EXPECTED_ROUTE_PATHS } from './route-paths.ts'
 import * as ts from 'typescript'
 import type { Context } from '@deepseek-ai/cordis'
 
@@ -85,7 +86,7 @@ describe('ui entry bootstrap', () => {
     execFileSync(process.execPath, ['-e', script], { encoding: 'utf8' })
   })
 
-  it('apply bootstraps the plugin: all 13 routes register and dispose', async () => {
+  it(`apply bootstraps the plugin: all ${EXPECTED_ROUTE_PATHS.length} routes register and dispose`, async () => {
     const mod = await import('../lib/index.js')
     expect(mod.name).toBe('local-infer-ui')
     expect(mod.inject).toEqual(['localInfer'])
@@ -98,7 +99,7 @@ describe('ui entry bootstrap', () => {
     const stubService = {
       registerEnginePlatformConfig: (): (() => void) => () => undefined,
       setEngineDeathObserver: (): void => undefined,
-      setSudoObserver: (): void => undefined,
+      registerSudoObserver: (): (() => void) => () => undefined,
       notifySudoNeeded: (): void => undefined,
       reLinkProviders: async (): Promise<Record<string, string>> => ({}),
     }
@@ -124,23 +125,9 @@ describe('ui entry bootstrap', () => {
       },
     }
     mod.apply(ctx as unknown as Context)
-    expect(registered).toEqual([
-      '/local-infer/summary',
-      '/local-infer/save',
-      '/local-infer/provider-delete',
-      '/local-infer/deps',
-      '/local-infer/install',
-      '/local-infer/download',
-      '/local-infer/chat-template',
-      '/local-infer/get',
-      '/local-infer/launch',
-      '/local-infer/stop',
-      '/local-infer/logs',
-      '/local-infer/register',
-      '/local-infer/unregister',
-    ])
+    expect(registered).toEqual(EXPECTED_ROUTE_PATHS)
     // The effect disposer unregisters every route it registered.
-    expect(disposed).toBe(13)
+    expect(disposed).toBe(EXPECTED_ROUTE_PATHS.length)
   })
 })
 

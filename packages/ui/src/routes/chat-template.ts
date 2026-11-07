@@ -10,6 +10,7 @@ import { defineRoute } from '../route.ts'
 import type { LocalInferRoute } from '../route.ts'
 import type { ChatTemplateDownloadRequest } from '../request.ts'
 import { chatTemplateDownloadFor } from '../ops/hf.ts'
+import { abortOnResponseClose } from './stream.ts'
 
 /**
  * chatTemplateRoute builds the POST /local-infer/chat-template route
@@ -35,7 +36,16 @@ export function chatTemplateRoute(localInfer: LocalInferService): LocalInferRout
       if (typeof body.directory === 'string') {
         request.directory = body.directory
       }
-      res.json(200, await chatTemplateDownloadFor(localInfer, request))
+      // The card's Cancel aborts the fetch, which closes the response: the
+      // abort interrupts the in-flight hf child (SIGINT, then SIGTERM) and
+      // the live run carries the "Canceled" line, the Get and launch
+      // routes' rule. A close after the download settled is the normal end.
+      const { signal, markFinished } = abortOnResponseClose(res)
+      try {
+        res.json(200, await chatTemplateDownloadFor(localInfer, request, signal))
+      } finally {
+        markFinished()
+      }
     },
   })
 }

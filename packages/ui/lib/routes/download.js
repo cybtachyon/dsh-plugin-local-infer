@@ -10,6 +10,7 @@
  */
 import { defineRoute } from "../route.js";
 import { downloadFor } from "../ops/hf.js";
+import { abortOnResponseClose } from "./stream.js";
 /**
  * downloadRoute builds the POST /local-infer/download route definition the
  * register step holds by an effect.
@@ -34,7 +35,17 @@ export function downloadRoute(localInfer) {
             if (typeof body.directory === 'string') {
                 request.directory = body.directory;
             }
-            res.json(200, await downloadFor(localInfer, request));
+            // The card's Cancel aborts the fetch, which closes the response: the
+            // abort interrupts the in-flight hf child (SIGINT, then SIGTERM) and
+            // the run carries the "Canceled" line, the Get and launch routes'
+            // rule. A close after the download settled is the normal end.
+            const { signal, markFinished } = abortOnResponseClose(res);
+            try {
+                res.json(200, await downloadFor(localInfer, request, signal));
+            }
+            finally {
+                markFinished();
+            }
         },
     });
 }

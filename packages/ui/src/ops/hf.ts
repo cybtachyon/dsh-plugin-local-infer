@@ -15,7 +15,7 @@ import { runLogKey } from '../../../service/lib/index.js'
 import { defaultModelFor } from '../../../providers/lib/index.js'
 import { readConfig } from '../config.ts'
 import type { StoredConfig } from '../config.ts'
-import { DOWNLOAD_RUN_SEED, persistProcessLog } from './logs.ts'
+import { CANCELED_LINE, DOWNLOAD_RUN_SEED, persistProcessLog } from './logs.ts'
 import { RouteError } from '../route.ts'
 import type { ChatTemplateDownloadRequest, DownloadRequest } from '../request.ts'
 import { isHfRepoReference } from '../viewmodels/summaryHelpers.ts'
@@ -52,11 +52,16 @@ function resolveDownloadTarget(
  * engine and model (a draft falls back to the engine id): the seed is the
  * "Downloading..." separator, the hf CLI's streamed chunks append as they
  * land, and the settled completion or failure line reaches the hub and the
- * persisted run from one text before the run ends.
+ * persisted run from one text before the run ends. The optional signal is
+ * the card's cancel (the download route's response-close abort, the Get and
+ * launch routes' rule): an abort interrupts the in-flight hf child (SIGINT,
+ * then SIGTERM) and the run carries the shared "Canceled" line, live and
+ * persisted.
  */
 export async function downloadFor(
   localInfer: LocalInferService,
   request: DownloadRequest,
+  signal?: AbortSignal,
 ): Promise<DownloadResult> {
   const stored = readConfig()
   const engineId = request.engine ?? stored.engine
@@ -77,6 +82,7 @@ export async function downloadFor(
   try {
     const result = await localInfer.downloadModel(entry, baseDir, {
       useHubCache,
+      ...(signal !== undefined ? { signal } : {}),
       onChunk: (chunk) => {
         localInfer.appendRunLog(runKey, chunk)
       },
@@ -84,11 +90,14 @@ export async function downloadFor(
     // The settle line reads the same in the live run and the persisted one:
     // the "Downloading..." separator leads the stored run so the Logs
     // section and the log file read the download as a fresh process section.
+    // A cancel appends the shared "Canceled" line, the Get and launch
+    // routes' mark, so the run reads as canceled wherever it is read.
     const line = result.ok
       ? 'download complete\n'
       : `!! download failed${result.detail !== undefined ? `: ${result.detail}` : ''}\n`
-    localInfer.appendRunLog(runKey, line)
-    persistProcessLog(`${DOWNLOAD_RUN_SEED}${line}`)
+    const settled = signal?.aborted === true ? `${line}${CANCELED_LINE}` : line
+    localInfer.appendRunLog(runKey, settled)
+    persistProcessLog(`${DOWNLOAD_RUN_SEED}${settled}`)
     return result
   } finally {
     localInfer.endRun(runKey)
@@ -103,11 +112,15 @@ export async function downloadFor(
  * runs the download through the service. The run brackets one live hub run
  * under the "Downloading..." seed and the runLogKey rule (the stored entry
  * matching the engine and model, else the engine id): the hf CLI's streamed
- * chunks append as they land, and the run ends at settle.
+ * chunks append as they land, and the run ends at settle. The optional
+ * signal is the card's cancel (the chat-template route's response-close
+ * abort, the Get and launch routes' rule): an abort interrupts the in-flight
+ * hf child and the live run carries the shared "Canceled" line.
  */
 export async function chatTemplateDownloadFor(
   localInfer: LocalInferService,
   request: ChatTemplateDownloadRequest,
+  signal?: AbortSignal,
 ): Promise<DownloadResult> {
   const stored = readConfig()
   let template = typeof request.template === 'string' ? request.template : ''
@@ -129,12 +142,19 @@ export async function chatTemplateDownloadFor(
   )
   localInfer.beginRun(runKey, DOWNLOAD_RUN_SEED)
   try {
-    return await localInfer.downloadChatTemplate(template, baseDir, {
+    const result = await localInfer.downloadChatTemplate(template, baseDir, {
       useHubCache,
+      ...(signal !== undefined ? { signal } : {}),
       onChunk: (chunk) => {
         localInfer.appendRunLog(runKey, chunk)
       },
     })
+    // A cancel marks the live run canceled; the template pull's outcome
+    // rides the card's template cell, not the persisted run, so no persist.
+    if (signal?.aborted === true) {
+      localInfer.appendRunLog(runKey, CANCELED_LINE)
+    }
+    return result
   } finally {
     localInfer.endRun(runKey)
   }

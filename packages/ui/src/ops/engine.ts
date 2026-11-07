@@ -18,9 +18,6 @@
  * @module dsh-plugin-local-infer/ui/ops/engine
  */
 
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { dirname } from 'node:path'
 import type {
   Config,
   EnginePlatformConfig,
@@ -29,11 +26,9 @@ import type {
   LifecycleHost,
 } from 'dsh-plugin-local-infer/core'
 import {
-  LOG_TAIL_BYTES,
   SUDO_CLI_NOTE,
   formatLaunchCommand,
   launchRecordFromPlan,
-  resolveLogPath,
 } from '../../../core/lib/index.js'
 import type {
   EngineDeathEvent,
@@ -49,9 +44,12 @@ import type {
 } from '../config.ts'
 import { readConfig, writeStored } from '../config.ts'
 import {
+  CANCELED_LINE,
   LAUNCH_RUN_SEED,
-  persistProcessLog,
   STOP_RUN_SEED,
+  capRunLogs,
+  persistProcessLog,
+  writeRunFile,
 } from './logs.ts'
 import { resolveEngineDirectory, runGetSteps } from './get-steps.ts'
 import type { GetStepsRequest, GetStepsResult } from './get-steps.ts'
@@ -59,11 +57,11 @@ import { RouteError } from '../route.ts'
 import type { GetRequest, LaunchRequest } from '../request.ts'
 
 /**
- * CANCELED_LINE is the "Canceled" line a client-disconnect cancel appends to
- * the persisted run, so the Logs section and the log file read the run as
- * canceled, the same line the card writes to its Logs buffer on the Cancel.
+ * CANCELED_LINE names the shared "Canceled" run line; it lives with the other
+ * run-line constants in ops/logs.ts and is re-exported here for the launch
+ * persisters' import surface.
  */
-export const CANCELED_LINE = '--- Canceled\n'
+export { CANCELED_LINE } from './logs.ts'
 
 /**
  * GET_EVENT_PREFIX leads a Get run's event lines in the streamed and
@@ -124,7 +122,7 @@ function applyComposeArgs(
  */
 function persistStoredLogs(logs: string): void {
   const stored = readConfig()
-  writeStored(stored, { lastLogs: logs })
+  writeStored(stored, { lastLogs: capRunLogs(logs) })
 }
 
 /**
@@ -209,31 +207,34 @@ function getStepsRequest(
 }
 
 /**
- * registerSudoObserver registers the run's sudo observer with the service and
- * returns its disposer. launchEngine and getEngine share it so the sudo-note
- * rule has one home: a guarded command waiting for the user's password on the
- * launching CLI writes noteLine through the run's own log sink (the note rides
- * the streamed run and the run text persisted when the step settles) and
- * through persistProcessLog (so a run still hung on the prompt reads the note
- * in the Logs section and the log file before it settles), then calls onSudo,
- * the route's stream event; a Get passes none because its control keeps its
- * throbber. The caller invokes the disposer in a finally so a failed run
- * leaves no observer behind, and a second run never observes another's sudo.
+ * registerSudoObserver registers the run's sudo hook on the service under
+ * the run's key (the hub's own keying) and returns the disposer that removes
+ * only this hook: concurrent runs each keep their own slot, a re-launch
+ * under the same key takes the slot from the older run, and the first settle
+ * never clears another run's note routing. The service hands every guarded
+ * announcement to every registered hook (the shared CLI password wait can
+ * block any run, and the announce seam does not name the triggering run), so
+ * one wait notes every run in flight. launchEngine and getEngine share the
+ * helper so the sudo-note rule has one home: the hook appends noteLine to
+ * the run's own sink (the note rides the streamed run and the run text
+ * persisted when the step settles) and through persistProcessLog (so a run
+ * still hung on the prompt reads the note in the Logs section and the log
+ * file before it settles), then calls onSudo, the route's stream event; a
+ * Get passes none because its control keeps its throbber. The caller invokes
+ * the disposer in a finally so a failed run leaves no hook behind.
  */
 function registerSudoObserver(
   localInfer: LocalInferService,
+  runKey: string,
   noteLine: string,
   noteTo: (text: string) => void,
   onSudo?: () => void,
 ): () => void {
-  localInfer.setSudoObserver(() => {
+  return localInfer.registerSudoObserver(runKey, () => {
     noteTo(noteLine)
     persistProcessLog(noteLine.replace(/\n$/, ''))
     onSudo?.()
   })
-  return () => {
-    localInfer.setSudoObserver(undefined)
-  }
 }
 
 /**
@@ -287,9 +288,9 @@ export async function launchEngine(
   // the streaming logs route resolves the same way. The seed resets the
   // key's buffer, so a mid-run re-launch replaces the previous run's text.
   const runKey = runLogKey(stored.providers, engineId, request.providerId, config)
-  let getLogs = ''
-  const appendGetLogs = (chunk: string): void => {
-    getLogs += chunk
+  let runText = ''
+  const appendRunText = (chunk: string): void => {
+    runText += chunk
     // One chunk, two readers: the persisted run and the live hub, no third
     // copy of the text.
     localInfer.appendRunLog(runKey, chunk)
@@ -302,8 +303,9 @@ export async function launchEngine(
   // waiting on the prompt, and tells the route's stream writer.
   const clearSudoObserver = registerSudoObserver(
     localInfer,
+    runKey,
     `${SUDO_CLI_NOTE}\n`,
-    appendGetLogs,
+    appendRunText,
     onSudo,
   )
   localInfer.beginRun(runKey, LAUNCH_RUN_SEED)
@@ -334,7 +336,7 @@ export async function launchEngine(
         ...(request.autoRebuild !== undefined ? { autoRebuild: request.autoRebuild } : {}),
         continueOnSyncFailure: true,
       },
-      appendGetLogs,
+      appendRunText,
     )
     const plan = adapter.renderLaunch(config, hardware)
     if (!get.ok) {
@@ -347,7 +349,7 @@ export async function launchEngine(
         engineId,
         config,
         request.providerId,
-        getLogs,
+        runText,
         signal?.aborted === true,
       )
     }
@@ -357,7 +359,7 @@ export async function launchEngine(
       // Persist before the deploy starts: a slow or hung launch keeps the Get
       // steps and the command readable in the Logs section across a card
       // reload, where the engine output has not landed yet.
-      persistStoredLogs(getLogs + commandNote)
+      persistStoredLogs(runText + commandNote)
       localInfer.appendRunLog(runKey, commandNote)
     }
     // The trust gate and the auto-rebuild flag ride into the deploy step,
@@ -393,13 +395,13 @@ export async function launchEngine(
     // closed the stream during the deploy or health poll) adds the "Canceled"
     // line, so the persisted run reads as canceled.
     const canceled = signal?.aborted === true
-    composeLaunchLogs(result, getLogs, commandNote, canceled)
+    composeLaunchLogs(result, runText, commandNote, canceled)
     if (canceled) {
       localInfer.appendRunLog(runKey, CANCELED_LINE)
     }
     // The result's logs field already carries the Get-step output via
-    // composeLaunchLogs, so the persisted run leads with no getLogs. Passing
-    // getLogs again would include the Get steps twice in the persisted run.
+    // composeLaunchLogs, so the persisted run leads with no runText. Passing
+    // runText again would include the Get steps twice in the persisted run.
     persistLaunchOutcome(result, engineId, config, request.providerId, '')
     return result
   } finally {
@@ -422,13 +424,13 @@ export async function launchEngine(
  */
 function composeLaunchLogs(
   result: LaunchResult,
-  getLogs: string,
+  runText: string,
   commandNote: string | undefined,
   canceled: boolean,
 ): void {
   const buildLogs = result.buildLogs ?? ''
   const engineLogs = result.logs ?? ''
-  result.logs = getLogs + buildLogs + (commandNote ?? '') + engineLogs
+  result.logs = runText + buildLogs + (commandNote ?? '') + engineLogs
   if (result.buildLogs !== undefined) {
     delete result.buildLogs
   }
@@ -441,7 +443,7 @@ function composeLaunchLogs(
  * persistLaunchOutcome persists a settled launch: the run logs to the stored
  * last-run logs and the log file, and the launch record on the target
  * provider entry, so a DSH restart can re-link a surviving engine to its
- * config. The getLogs argument leads the persisted run only when the result
+ * config. The runText argument leads the persisted run only when the result
  * carries no logs of its own (the get-failed path, where the deploy never
  * ran). The success path passes an empty string, because composeLaunchLogs
  * already folded the Get-step output into the result's logs, and leading it
@@ -452,9 +454,9 @@ function persistLaunchOutcome(
   engineId: string,
   config: Config,
   providerId: string | undefined,
-  getLogs: string,
+  runText: string,
 ): void {
-  persistLaunchLogs(result, engineId, config, getLogs)
+  persistLaunchLogs(result, engineId, config, runText)
   persistLaunchRecord(result, engineId, config, providerId)
 }
 
@@ -471,7 +473,7 @@ function settleGetFailure(
   engineId: string,
   config: Config,
   providerId: string | undefined,
-  getLogs: string,
+  runText: string,
   canceled: boolean,
 ): LaunchResult {
   const result: LaunchResult = {
@@ -484,7 +486,7 @@ function settleGetFailure(
     engineId,
     config,
     providerId,
-    canceled ? getLogs + CANCELED_LINE : getLogs,
+    canceled ? runText + CANCELED_LINE : runText,
   )
   return result
 }
@@ -603,7 +605,7 @@ export function handleEngineDeath(event: EngineDeathEvent, runLogs?: RunLogWrite
   writeStored(stored, {
     providers,
     // Keep the last-run tail bounded, the same rule the launch logs cap uses.
-    lastLogs: (stored.lastLogs + note).slice(-LOG_TAIL_BYTES),
+    lastLogs: capRunLogs(stored.lastLogs + note),
   })
   if (runLogs === undefined) return
   // The death's run key follows the runLogKey rule over the matched entry
@@ -620,38 +622,33 @@ export function handleEngineDeath(event: EngineDeathEvent, runLogs?: RunLogWrite
 /**
  * persistLaunchLogs stores a launch's captured output as the last run and
  * writes it to the configured log file. The Get-step output the launch ran
- * (the optional getLogs) leads the persisted run, so the Logs section and the
+ * (the optional runText) leads the persisted run, so the Logs section and the
  * log file show the Get steps followed by the launch, not the launch wiping
- * the Get logs. The log file is only written when the run produced output and
- * the log location is set; the last-run logs are always persisted (an empty
- * string clears a stale run) so the card's Logs section shows the previous
- * run after a reload.
+ * the Get logs. The stored last-run logs ride the shared capRunLogs tail rule
+ * (ops/logs.ts), the same cap the append paths and the live hub apply. The
+ * log file is only written when the run produced output and the log location
+ * is set; the last-run logs are always persisted (an empty string clears a
+ * stale run) so the card's Logs section shows the previous run after a
+ * reload.
  */
 export function persistLaunchLogs(
   result: LaunchResult,
   engineId: string,
   config: Config,
-  getLogs = '',
+  runText = '',
 ): void {
   const stored = readConfig()
   // The "Launching..." separator leads the persisted run, so the Logs
   // section and the log file read the launch as a fresh process section, the
   // same line the launch's live hub run seeds with (LAUNCH_RUN_SEED).
-  const body = getLogs + (result.logs === undefined ? '' : result.logs)
+  const body = runText + (result.logs === undefined ? '' : result.logs)
   const logs = body === '' ? '' : `${LAUNCH_RUN_SEED}${body}`
-  writeStored(stored, { lastLogs: logs })
+  writeStored(stored, { lastLogs: capRunLogs(logs) })
   if (logs === '') {
     return
   }
   const modelId = typeof config.model === 'string' ? config.model : undefined
-  const logPath = resolveLogPath(stored.logPath, engineId, modelId, new Date(), homedir())
-  try {
-    mkdirSync(dirname(logPath), { recursive: true })
-    writeFileSync(logPath, logs)
-  } catch {
-    // A log file that cannot be written (a read-only dir, a bad path) must not
-    // fail the launch; the in-memory last-run logs still reach the card.
-  }
+  writeRunFile(stored, logs, engineId, modelId)
 }
 
 /**
@@ -794,10 +791,12 @@ export async function getEngine(
   // Register the request's platform override the same way launchEngine does,
   // so the next launch reads the Engine Directory / Engine Fork the Get used.
   const platform = registerLaunchPlatform(localInfer, request, stored, engineId)
-  // The Get run owns the sudo observer for the run's duration (see
-  // registerSudoObserver); the finally leaves none behind a failed run.
+  // The Get run owns the sudo hook for the run's duration, registered under
+  // the same runLogKey rule the route brackets the live hub run with (see
+  // registerSudoObserver); the finally leaves only this run's slot cleared.
   const clearSudoObserver = registerSudoObserver(
     localInfer,
+    runLogKey(stored.providers, engineId, undefined, config),
     `${GET_EVENT_PREFIX}${SUDO_CLI_NOTE}\n`,
     log,
   )

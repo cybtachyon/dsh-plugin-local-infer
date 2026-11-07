@@ -270,6 +270,7 @@ export function registerLocalInferRoute(
   getHost?: LifecycleHost,
   launchHost?: LifecycleHost,
 ): void {
+  const logsStreamRoute = logsRoute(localInfer)
   const routes: LocalInferRoute[] = [
     summaryRoute(localInfer),
     saveRoute(localInfer),
@@ -281,7 +282,7 @@ export function registerLocalInferRoute(
     getRoute(localInfer, getHost),
     launchRoute(localInfer, launchHost),
     stopRoute(localInfer),
-    logsRoute(localInfer),
+    logsStreamRoute,
     registerRoute(localInfer),
     unregisterRoute(localInfer),
   ]
@@ -310,6 +311,11 @@ export function registerLocalInferRoute(
       const disposers = routes.map((route) => scope.webServer.register(route))
       return () => {
         localInfer.setEngineDeathObserver(undefined)
+        // Browser panes still streaming hold hub subscriptions that
+        // unregistering the route does not touch: close every open stream
+        // first, so a bundle switch off leaves no listener forwarding into a
+        // response no route owns any more.
+        logsStreamRoute.closeOpenStreams()
         for (const dispose of disposers) {
           dispose()
         }
