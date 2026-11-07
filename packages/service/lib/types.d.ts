@@ -95,7 +95,9 @@ export interface LaunchResult {
  * sync (fetch, rebase, rebuild) and launches the checkout as-is. Absent reads
  * as true (the rebuild runs). `onLog` is the launch run's log sink: the
  * deploy step writes the `$ <command>` line of every mutating command it runs
- * (image pull, model download) through it before the child spawns.
+ * (image pull, model download) through it before the child spawns, and the
+ * health poll (these options ride straight into the adapter's HealthCheckOptions)
+ * writes its `> GET <healthUrl>` line and settled verdict through it.
  */
 export interface LaunchOptions {
     pollMs?: number;

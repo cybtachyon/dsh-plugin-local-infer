@@ -3801,6 +3801,54 @@ describe('get route (git sync, deps, build)', () => {
     expect(logged).toContain('get complete')
   })
 
+  it('lands the extras success output when the host has no runStream', async () => {
+    writeConfig('infernix', {}, true)
+    // A host without a streaming surface: the extras fall back to the plain
+    // run, whose clean-exit outcome carries the output tail. The step must
+    // still land that output after its `$ <command>` line (the append-results
+    // half of the exec rule), not discard it.
+    const plainHost: LifecycleHost = {
+      async run(command: string) {
+        if (command.includes('rev-parse --is-inside-work-tree')) {
+          return { ok: false }
+        }
+        if (command.includes('hf download')) {
+          return { ok: true, stdout: 'extra artifact downloaded' }
+        }
+        return { ok: true }
+      },
+      spawn: () => ({ pid: 1, kill: (): void => {} }),
+      async fetch() {
+        return { status: 0, ok: false }
+      },
+    }
+    let logged = ''
+    const result = await getEngine(
+      stubService([]),
+      {
+        engine: 'infernix',
+        config: {
+          spec: 'dflash2',
+          model: 'qwen38-flash-next',
+          draftModelPreset: 'Qwen3.8-Flash-Next-DFlash2-Infernix.infernix',
+          modelDirectory: MODEL_DIR,
+        },
+      },
+      (chunk) => {
+        logged += chunk
+      },
+      plainHost,
+    )
+    expect(result.ok).toBe(true)
+    const commandAt = logged.indexOf(
+      '$ hf download Wallawalla47/Qwen3.8-Flash-Next-DFlash2-Infernix',
+    )
+    const outputAt = logged.indexOf('extra artifact downloaded\n')
+    expect(commandAt).toBeGreaterThanOrEqual(0)
+    expect(outputAt).toBeGreaterThan(commandAt)
+    expect(logged.match(/extra artifact downloaded/g)).toHaveLength(2)
+  })
+
   it('pulls no model artifacts for a non-Infernix Get', async () => {
     writeConfig('ninfer', {}, true)
     const { host } = stubGetHost({ exists: false })
@@ -4993,6 +5041,21 @@ describe('run-log hub wiring', () => {
       `${INSTALL_RUN_SEED}$ sudo apt install cmake\n  cmake: satisfied\n`,
     )
     expect(snapshot.running).toBe(false)
+  })
+
+  it('persists the install settle text so a reload shows the last install run', async () => {
+    writeConfig('ninfer', {}, true)
+    const service = stubService([], { deps: [TEST_DEP] })
+    const route = hubRoutes(service)('/local-infer/install')
+    const res = hubRes()
+    await route.handler(hubPost('/local-infer/install', { engine: 'ninfer' }), res)
+    expect(res.status).toBe(200)
+    // The settle fold: the run's text (seed, the install command line, the
+    // per-dep result) lands in the stored last-run logs, the same reload read
+    // model the other provider processes write, in the same section order.
+    expect(readConfig().lastLogs).toBe(
+      `${INSTALL_RUN_SEED}$ sudo apt install cmake\n  cmake: satisfied\n`,
+    )
   })
 
   it('starts no hub run for a refused (409) install', async () => {

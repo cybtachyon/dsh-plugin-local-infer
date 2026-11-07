@@ -196,10 +196,16 @@ export interface LifecycleHost {
  * HealthCheckOptions tunes the poll: the interval between attempts and the
  * attempt cap. The service passes the config's healthPollMs and
  * healthMaxAttempts through; the adapter's defaults keep a bare call working.
+ * `onLog` is the launch run's log sink (the same sink LaunchOptions and
+ * DeployOptions carry): the health poll writes its `> GET <healthUrl>` line
+ * through it once before the first request and the settled verdict after, so
+ * the live run reads what the poll is waiting for. Absent (a headless poll)
+ * and the poll runs without logging.
  */
 export interface HealthCheckOptions {
   pollMs?: number
   maxAttempts?: number
+  onLog?: CommandLogger
 }
 
 /**

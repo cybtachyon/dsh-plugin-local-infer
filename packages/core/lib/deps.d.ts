@@ -88,11 +88,17 @@ export interface DepCheck {
 }
 /**
  * CommandOutcome is the answer to one install command: whether it exited
- * clean and a detail the UI shows when it did not.
+ * clean and a detail the UI shows when it did not. `stdout`, when the host
+ * captures the child's streams, is the tail of the captured output of a clean
+ * exit (stdout then stderr, capped by the host's tail rule so success output
+ * can follow its `$ <command>` log line without regurgitating a huge blob).
+ * A failed run carries the output in `detail` instead, and a host that does
+ * not capture output (a test stub) omits `stdout`.
  */
 export interface CommandOutcome {
     ok: boolean;
     detail?: string;
+    stdout?: string;
 }
 /**
  * CommandRunner runs one shell command line and reports the exit. The
