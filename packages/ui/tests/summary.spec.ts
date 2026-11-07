@@ -7,18 +7,17 @@
  * @module dsh-plugin-local-infer/ui/tests/
  */
 
-import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import type { Config, DefaultModel, ProviderStatus, VramModel } from 'dsh-plugin-local-infer/core'
+import type { Config, DefaultModel, ProviderStatus } from 'dsh-plugin-local-infer/core'
 import { DEFAULT_LOG_PATH_TEMPLATE } from 'dsh-plugin-local-infer/core'
 import { LocalInfer } from 'dsh-plugin-local-infer/service'
 import type { LocalInferService } from 'dsh-plugin-local-infer/service'
 import { apply as applyProviders } from 'dsh-plugin-local-infer/providers'
 import { localInferConfigPath, readConfig, writeConfig } from '../src/config.ts'
-import type { StoredProviderConfig } from '../src/config.ts'
 import { downloadFor } from '../src/ops/hf.ts'
 import { registerLocalInferRoute, RouteError } from '../src/route.ts'
 import { buildSummary } from '../src/viewmodels/summary.ts'

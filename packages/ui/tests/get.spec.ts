@@ -9,7 +9,6 @@ import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
 import type { DefaultModel, LifecycleHost, ProviderRef } from 'dsh-plugin-local-infer/core'
 import { DEFAULT_LOG_PATH_TEMPLATE, SUDO_CLI_NOTE, dshEngineCacheDirectory, hfDownloadCommand } from 'dsh-plugin-local-infer/core'
 import type { DownloadResult, EngineDeathEvent, LocalInferService } from 'dsh-plugin-local-infer/service'

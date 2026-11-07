@@ -318,7 +318,7 @@ describe('client launch machine (machine/launch.ts)', () => {
       // The engine died after the verdict: the confirmed-down landing the
       // stop rule gives an in-flight control, so the entry offers a fresh
       // Launch instead of a throbber that never ends.
-      let entry = launchNextState({ status: 'downloading' }, { type: 'summaryStatus', status: 'stopped' })
+      const entry = launchNextState({ status: 'downloading' }, { type: 'summaryStatus', status: 'stopped' })
       expect(entry).toEqual({ status: 'idle' })
     })
 
