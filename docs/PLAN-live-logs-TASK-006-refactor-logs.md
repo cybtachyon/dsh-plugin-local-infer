@@ -36,6 +36,19 @@ Focus areas from this phase:
   as the existing get/launch streams; decide to fix (track open
   subscriptions per registration and dispose them) or record the reason it
   stays.
+- `ACTION_TIMEOUTS.get` equals `GET_IDLE_MS` (120 s each,
+  `packages/client/src/store/`): with a Get streaming progress past 120 s
+  the performAction deadline settles the cell error('timeout') while the
+  run continues in the background. Reconcile the two (deadline just past
+  the idle cap, or a progress-aware deadline) with a test.
+- `launchEngine` in `packages/ui/src/ops/engine.ts` still keeps its
+  server-side run text in a closure named `getLogs` (old client-buffer
+  name); rename to a run-text name to kill the confusion magnet.
+- Accepted impurity (record the reason it stays): `cardReducer` reads the
+  `run-markers.ts` registry to decide whether summary/ack keeps `liveLogs`
+  (documented, in the spirit of the `abort.ts` registry and the
+  `Date.now` precedent); a purist fix threads the flag through the action
+  payload.
 - The run-key rule (provider id / engine+model match / engine fallback) must
   live in exactly one exported helper that every route and op calls.
 - `persistProcessLog`, `finishRunSection`, `persistStoredLogs`,
