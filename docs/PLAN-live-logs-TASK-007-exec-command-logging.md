@@ -35,6 +35,21 @@ planning (extend as the audit discovers more):
 - The Infernix extras in `get-steps.ts` already emit `$ command`; verify the
   `host.run` fallback path (no `runStream`) still appends the outcome text.
 
+Carried in from TASK-006's ledger (install-path logging parity, same files):
+
+- `packages/ui/src/viewmodels/depsHelpers.ts` `runInstallFor` brackets a
+  hub run but registers no sudo hook, while the service's `runInstall`
+  announces guarded installs through the fan-out (`registerSudoObserver(key,
+  observer)` from TASK-006): a sudo-hung dependency install shows no CLI
+  note on the card. Register the run's hook under the install run key,
+  writing the same `SUDO_CLI_NOTE` line the launch/get paths write.
+- `handleEngineDeath` (`packages/ui/src/ops/engine.ts`) still writes its
+  note to the stored `lastLogs` via `writeStored` directly: verify it
+  reaches the hub's live side through `appendRunLog` (per the TASK-002
+  snapshot/append/conditional-end contract already wired in route.ts) and
+  that the persisted side goes through the shared `persistProcessLog` /
+  `capRunLogs` fold instead of a bespoke `writeStored` tail-join.
+
 Definition of Done:
 
 - [ ] An audit table appended to this file: site -> change made or
