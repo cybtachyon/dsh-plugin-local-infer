@@ -27,6 +27,12 @@ Checklist to audit (extend as found):
 - [ ] The red Logs (`failed`) and Stop states after a stop timeout: the
       cause-aware reset keeps Stop on a still-up engine (already priced in
       the machine); confirm in the UI.
+- [ ] From TASK-009: 'build' is announced at the start of the sync/build
+      step, so the button can read "Building..." while a git clone/fetch
+      runs, and a non-fatal rebase failure keeps the build label even
+      though the build is skipped. Decide per this task: accept the
+      clone-under-Building grouping (with the label wording checked), or
+      give the phase a more accurate displayText.
 
 Definition of Done:
 
