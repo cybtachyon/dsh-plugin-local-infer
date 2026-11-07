@@ -311,25 +311,66 @@ describe('ctx.localInfer notifySudoNeeded', () => {
   it('hands the command to the observer registered through the seam', async () => {
     const ctx = await seam()
     const observer = vi.fn()
-    ctx.localInfer.setSudoObserver(observer)
+    ctx.localInfer.registerSudoObserver('provider-a', observer)
     const command = 'sudo ln -sf /usr/local/bin/llama-server /usr/bin/llama-server'
     ctx.localInfer.notifySudoNeeded(command)
     expect(observer).toHaveBeenCalledTimes(1)
     expect(observer).toHaveBeenCalledWith(command)
   })
 
+  it('keeps two concurrent runs\' observers independent: both hear, one dispose keeps the other', async () => {
+    const ctx = await seam()
+    // Two runs in flight register under their own keys (the runLogKey rule).
+    const runA = vi.fn()
+    const runB = vi.fn()
+    const disposeA = ctx.localInfer.registerSudoObserver('provider-a', runA)
+    ctx.localInfer.registerSudoObserver('provider-b', runB)
+    const command = 'sudo ln -sf /usr/local/bin/llama-server /usr/bin/llama-server'
+    ctx.localInfer.notifySudoNeeded(command)
+    // The shared CLI password wait is announced to every run in flight.
+    expect(runA).toHaveBeenCalledTimes(1)
+    expect(runB).toHaveBeenCalledTimes(1)
+    // The first settle clears only its own slot: the second run's note
+    // routing survives and keeps hearing later announcements.
+    disposeA()
+    ctx.localInfer.notifySudoNeeded(command)
+    expect(runA).toHaveBeenCalledTimes(1)
+    expect(runB).toHaveBeenCalledTimes(2)
+  })
+
+  it('lets a re-launch take the key\'s slot, and the stale disposer keeps the live hook', async () => {
+    const ctx = await seam()
+    const first = vi.fn()
+    const disposeFirst = ctx.localInfer.registerSudoObserver('provider-a', first)
+    const second = vi.fn()
+    ctx.localInfer.registerSudoObserver('provider-a', second)
+    // The newer run owns the key's slot: the older hook hears nothing.
+    ctx.localInfer.notifySudoNeeded('sudo apt-get install -y cmake')
+    expect(first).not.toHaveBeenCalled()
+    expect(second).toHaveBeenCalledTimes(1)
+    // The older run's finally firing late must not clear the live hook.
+    disposeFirst()
+    ctx.localInfer.notifySudoNeeded('sudo apt-get install -y cmake')
+    expect(second).toHaveBeenCalledTimes(2)
+  })
+
   it('swallows a throwing observer so the caller is never broken', async () => {
     const ctx = await seam()
-    ctx.localInfer.setSudoObserver(() => {
+    const listener = vi.fn()
+    ctx.localInfer.registerSudoObserver('broken', () => {
       throw new Error('the route is gone')
     })
+    // The throwing observer shares the announce with a healthy one, whose
+    // delivery the throw must not short-circuit.
+    ctx.localInfer.registerSudoObserver('healthy', listener)
     expect(() => ctx.localInfer.notifySudoNeeded('sudo apt-get install -y cmake')).not.toThrow()
+    expect(listener).toHaveBeenCalledTimes(1)
   })
 
   it('reads as a no-op when nobody is listening', async () => {
     const ctx = await seam()
-    // No setSudoObserver call: the announce stays quiet, so a runner outside
-    // this package can call the seam against a headless profile.
+    // No registerSudoObserver call: the announce stays quiet, so a runner
+    // outside this package can call the seam against a headless profile.
     expect(() => ctx.localInfer.notifySudoNeeded('sudo apt-get install -y cmake')).not.toThrow()
   })
 })
@@ -341,7 +382,7 @@ describe('ctx.localInfer runInstall sudo seam', () => {
     const command = 'sudo apt-get install -y cmake'
     ctx.localInfer.registerDepPlan('sudoengine', depPlan(sudoDep('cmake', command)))
     const observer = vi.fn()
-    ctx.localInfer.setSudoObserver(observer)
+    ctx.localInfer.registerSudoObserver('install-engine', observer)
     probePrompts()
     const child = fakeChild()
     const pending = ctx.localInfer.runInstall('sudoengine', 'local', HW)
@@ -373,7 +414,7 @@ describe('ctx.localInfer runInstall sudo seam', () => {
       'sudoengine',
       depPlan(sudoDep('cuda', command, async () => ++probed > 1)),
     )
-    ctx.localInfer.setSudoObserver(() => {
+    ctx.localInfer.registerSudoObserver('install-engine', () => {
       throw new Error('the route is gone')
     })
     probePrompts()
@@ -391,7 +432,8 @@ describe('ctx.localInfer runInstall sudo seam', () => {
     vi.useFakeTimers()
     const command = 'sudo apt-get install -y cmake'
     ctx.localInfer.registerDepPlan('sudoengine', depPlan(sudoDep('cmake', command)))
-    // No setSudoObserver call: the headless profile still guards and kills.
+    // No registerSudoObserver call: the headless profile still guards and
+    // kills.
     probePrompts()
     const child = fakeChild()
     const pending = ctx.localInfer.runInstall('sudoengine', 'local', HW)

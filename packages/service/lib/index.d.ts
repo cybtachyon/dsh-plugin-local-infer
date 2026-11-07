@@ -59,7 +59,7 @@ export declare class LocalInfer extends Service implements LocalInferService {
     private readonly launchingEngines;
     private readonly stoppingEngines;
     private deathObserver;
-    private sudoObserver;
+    private readonly sudoObservers;
     private readonly runLogs;
     constructor(ctx: Context);
     registerEngine(adapter: EngineAdapter): () => void;
@@ -238,19 +238,25 @@ export declare class LocalInfer extends Service implements LocalInferService {
      */
     setEngineDeathObserver(observer: ((event: EngineDeathEvent) => void) | undefined): void;
     /**
-     * setSudoObserver registers the route's hook for commands the sudo guard
-     * found waiting for a password on the launching CLI: the observer lands
-     * core's SUDO_CLI_NOTE line while the command waits. Passing undefined
-     * clears it, which the route's effect does on dispose.
+     * registerSudoObserver reserves `key`'s slot (the runLogKey rule every run
+     * path shares) for one run's hook for commands the sudo guard found
+     * waiting for a password on the launching CLI: the observer lands core's
+     * SUDO_CLI_NOTE line while the command waits. Registering a key that is
+     * taken replaces the old hook (a re-launch under the same key owns the
+     * note), and the disposer removes only its own hook, so a stale run's
+     * settle never clears a live one's routing. The run calls the disposer in
+     * a finally.
      */
-    setSudoObserver(observer: ((command: string) => void) | undefined): void;
+    registerSudoObserver(key: string, observer: (command: string) => void): () => void;
     /**
-     * notifySudoNeeded announces one guarded command to the registered sudo
-     * observer, if any. A throwing observer is swallowed: the note is a log
-     * courtesy, and a broken route must not fail the install that is already
-     * racing the sudo deadline. Published on the service surface so a command
-     * runner outside this package (the providers' lifecycle host) reports
-     * through the same seam.
+     * notifySudoNeeded announces one guarded command to every registered sudo
+     * observer (the shared CLI password wait can block any run, and the
+     * announce seam does not name the run that triggered it). A throwing
+     * observer is isolated per announce: the note is a log courtesy, and a
+     * broken route must not fail the install that is already racing the sudo
+     * deadline. Published on the service surface so a command runner outside
+     * this package (the providers' lifecycle host) reports through the same
+     * seam.
      */
     notifySudoNeeded(command: string): void;
     /**

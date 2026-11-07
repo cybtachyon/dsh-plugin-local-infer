@@ -338,19 +338,24 @@ export interface LocalInferService {
      */
     setEngineDeathObserver(observer: ((event: EngineDeathEvent) => void) | undefined): void;
     /**
-     * setSudoObserver registers the callback the route uses to announce that a
-     * sudo command is waiting for the user's password on the CLI: the observer
-     * writes the note line into the run's Logs so the card user learns where
-     * the prompt landed. Passing undefined clears it, which the route's effect
-     * does on dispose.
+     * registerSudoObserver reserves `key`'s slot (the runLogKey rule every run
+     * path shares) for the callback one run registers to hear that a sudo
+     * command is waiting for the user's password on the CLI: the observer
+     * writes the note line into its own run's Logs so the card user learns
+     * where the prompt landed. Registering a key that is taken replaces the
+     * old hook, and the returned disposer removes only its own hook, so
+     * concurrent runs never clobber each other's note routing and a settle
+     * never clears another run's slot.
      */
-    setSudoObserver(observer: ((command: string) => void) | undefined): void;
+    registerSudoObserver(key: string, observer: (command: string) => void): () => void;
     /**
      * notifySudoNeeded is the seam a command runner reports a waiting sudo
      * prompt through: a guarded runner calls it when its probe finds no cached
-     * credentials, and the service forwards the command to the observer
-     * setSudoObserver registered. No observer, or a throwing one, never fails
-     * the run that is already racing the sudo deadline.
+     * credentials, and the service forwards the command to every observer the
+     * runs registered (the shared CLI password wait can block any run, and
+     * the announce seam does not name the triggering run). No observer, or a
+     * throwing one, never fails the run that is already racing the sudo
+     * deadline.
      */
     notifySudoNeeded(command: string): void;
     /**
