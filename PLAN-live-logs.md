@@ -91,7 +91,7 @@ must always match the provider process actually running.
   stream carries them), the Get stream keeps carrying progress/result, and
   the duplicated client-side seeds the server now owns are dropped;
   preserve auto-scroll, chips, and the Cancel pill.
-- [ ] [TASK-006-refactor-logs](docs/PLAN-live-logs-TASK-006-refactor-logs.md)
+- [x] [TASK-006-refactor-logs](docs/PLAN-live-logs-TASK-006-refactor-logs.md)
   Refactor: review the files touched by the previous 5 tasks and resolve the
   smells checklist.
 
