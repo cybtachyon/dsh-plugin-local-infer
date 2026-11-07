@@ -1,0 +1,33 @@
+# TASK-006 (Refactor): Review logs-phase commits for code risks
+
+Dependencies: TASK-001 through TASK-005.
+
+Review the files touched by the previous 5 commits and identify the following code risks:
+ - **Multiple Sources of Truth**: Same calculations done in multiple places.
+ - **Duplicate Code**: Nearly-identical code in multiple methods.
+ - **Bloaters**: Too many things done in a single method or class.
+ - **Data Clumps**: Single variables that travel in a group for multiple methods.
+ - **Shotgun Edits**: Commits with singular changes that touch multiple files.
+ - **Feature Envy**: Method where over 50% of the code manipulates a different class.
+ - **Magic Numbers**: Literals without context in method bodies.
+Then address and resolve each risk.
+
+Focus areas from this phase:
+
+- The run-key rule (provider id / engine+model match / engine fallback) must
+  live in exactly one exported helper that every route and op calls.
+- `persistProcessLog`, `finishRunSection`, `persistStoredLogs`,
+  `persistLaunchLogs` (`packages/ui/src/ops/logs.ts`, `ops/engine.ts`) and
+  the new `appendRunLog` appends: fold the shared join/cap/tail rule into
+  one place; no run should hand-assemble the same separator lines twice.
+- The poll interval, tail cap, and reset semantics: named constants with
+  doc comments, no inline literals.
+- The poller in `logs-poll.ts` and the stop-poll loop in
+  `providers.ts performEntryStop` are both "setTimeout chain keyed by
+  provider"; note (and resolve or record) whether they share a helper.
+
+Definition of Done:
+
+- [ ] Each risk above: resolved with a commit, or recorded in this file with
+      the reason it stays.
+- [ ] `pnpm build`, `pnpm test`, `pnpm lint` green after the refactor.
