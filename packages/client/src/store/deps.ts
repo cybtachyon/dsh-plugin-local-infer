@@ -33,9 +33,13 @@ import { ProgressThrottle } from './progress-throttle.ts'
 import { performAction, ACTION_TIMEOUTS, type CardStore } from './sync.ts'
 
 /**
- * GET_IDLE_MS is the Get run's output-idle cap in ms. Two minutes without a
- * streamed line reads as a stalled build: the card settles the get cell (the
- * control re-enables) while the run keeps streaming in the background.
+ * GET_IDLE_MS is the Get run's output-idle cap in ms and the get cell's
+ * only deadline (performAction arms no fixed timer for get, the
+ * NO_FIXED_DEADLINE rule in sync.ts). Two minutes without a streamed line
+ * reads as a stalled build: the card settles the get cell (the control
+ * re-enables) while the run keeps streaming in the background. Each
+ * progress event re-arms it, so an actively streaming run holds the cell
+ * pending for as long as it runs.
  */
 export const GET_IDLE_MS = 120_000
 
@@ -301,9 +305,9 @@ export function performGet(store: CardStore, t: TextTable): Promise<void> {
       resolveDetail('idle')
     }, GET_IDLE_MS)
   }
-  // The idle cap arms before performAction's deadline, so at the shared 120 s
-  // cap the idle settle (the control re-enables, the run keeps streaming)
-  // fires first and the deadline's timeout reads as a no-op.
+  // The idle cap is the get cell's only deadline (get arms no fixed
+  // performAction timer, the NO_FIXED_DEADLINE rule): re-armed on every
+  // progress event, it settles the control only when the stream goes quiet.
   armIdle()
   // The run's abort: the provider form's Cancel closes the stream through it,
   // and the route's response close interrupts the in-flight hf child.

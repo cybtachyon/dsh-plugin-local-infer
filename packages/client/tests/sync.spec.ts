@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ACTION_TIMEOUT_DETAIL, cardReducer } from '../src/store/reducer.ts'
 import {
   ACTION_TIMEOUTS,
+  NO_FIXED_DEADLINE,
   performAction,
   performTemplateAction,
   TEMPLATE_DOWNLOAD_TIMEOUT,
@@ -60,9 +61,25 @@ describe('client store sync (store/sync.ts)', () => {
       unregister: 30_000,
       launch: 150_000,
       stop: 10_000,
-      get: 120_000,
+      get: NO_FIXED_DEADLINE,
       download: 120_000,
     })
+  })
+
+  it('arms no timer for a NO_FIXED_DEADLINE action: only the run settles the cell', async () => {
+    const { store, dispatched } = makeStore()
+    const round = deferred()
+    const done = performAction(store, 'get', () => round.promise, ACTION_TIMEOUTS.get)
+    // A run far past every other action's cap: the cell stays pending
+    // because the get deadline is the caller's progress-aware idle cap, not
+    // a timer here.
+    vi.advanceTimersByTime(600_000)
+    expect(store.getSnapshot().actions.get.status).toBe('pending')
+    expect(dispatched.filter((action) => action.type === 'action/timeout')).toEqual([])
+    // The run's own settle is the only path that closes the cell.
+    round.resolve('idle')
+    await done
+    expect(store.getSnapshot().actions.get).toEqual({ status: 'ok', detail: 'idle' })
   })
 
   it('an ack clears pending and the deadline timer', async () => {

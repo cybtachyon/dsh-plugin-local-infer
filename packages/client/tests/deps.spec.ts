@@ -581,6 +581,53 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       expect(state().ui.getProgress).toBeNull()
     })
 
+    it("holds the get cell pending past every fixed cap while the stream keeps streaming, then idles after the last progress", async () => {
+      const { store, state } = makeStore()
+      prime(store, depsWith())
+      const stream = streamResponse()
+      const fetchMock = vi.fn(async (url: string) => {
+        if (url === '/local-infer/get') {
+          return stream.response()
+        }
+        return new Response('{}', { status: 200 })
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const progressLine = (percent: number): string =>
+        JSON.stringify({
+          progress: {
+            step: 'Downloading x.safetensors',
+            percent,
+            doneBytes: percent * 0.5e9,
+            totalBytes: 50.0e9,
+            etaSeconds: 30,
+            unit: 'bytes',
+          },
+        }) + '\n'
+      const promise = performGet(store, t)
+      // One progress event a minute for six minutes, past the 120 s the fixed
+      // get deadline used to arm and past the idle cap itself: the
+      // progress-aware idle cap owns the settle (get arms no fixed timer),
+      // so the cell stays pending and no action/timeout ever dispatches.
+      for (const percent of [10, 20, 30, 40, 50, 60]) {
+        await vi.advanceTimersByTimeAsync(60_000)
+        stream.enqueue(progressLine(percent))
+        await vi.advanceTimersByTimeAsync(0)
+        expect(state().actions.get).toEqual({ status: 'pending', detail: '' })
+      }
+      // The stream goes quiet: the idle cap, last re-armed by the 60% event,
+      // settles the control (ok 'idle', the control re-enables) a full cap
+      // after the last progress line, not one second earlier.
+      await vi.advanceTimersByTimeAsync(GET_IDLE_MS - 1)
+      expect(state().actions.get).toEqual({ status: 'pending', detail: '' })
+      await vi.advanceTimersByTimeAsync(1)
+      expect(state().actions.get).toEqual({ status: 'ok', detail: 'idle' })
+      stream.close()
+      await vi.advanceTimersByTimeAsync(0)
+      await promise
+      // The late stream-end resolve no-ops: the cell keeps the idle detail.
+      expect(state().actions.get).toEqual({ status: 'ok', detail: 'idle' })
+    })
+
     it('re-enables the control at the idle cap while the run keeps streaming', async () => {
       const { store, state } = makeStore()
       prime(store, depsWith())
@@ -594,7 +641,7 @@ describe('the deps panel drivers (store/deps.ts)', () => {
       vi.stubGlobal('fetch', fetchMock)
       const promise = performGet(store, t)
       // A silent stream: no progress event re-arms the cap, so the idle
-      // settle (armed before the action deadline) fires at the cap and
+      // settle (the get cell's only deadline) fires at the cap and
       // re-enables the control while the run keeps streaming in the
       // background.
       await vi.advanceTimersByTimeAsync(GET_IDLE_MS)
