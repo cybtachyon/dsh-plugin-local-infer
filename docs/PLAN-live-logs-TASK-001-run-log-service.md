@@ -40,9 +40,9 @@ Design:
 
 Definition of Done:
 
-- [ ] New module with the five operations, typed via `service/src/types.ts`.
-- [ ] Unit tests in `packages/service/tests/` cover: append/read snapshot,
+- [x] New module with the five operations, typed via `service/src/types.ts`.
+- [x] Unit tests in `packages/service/tests/` cover: append/read snapshot,
       tail cap at `LOG_TAIL_BYTES`, begin resets seq/text and notifies
       subscribers with reset, subscriber add/remove, end event, a throwing
       or removed subscriber never breaks the writer.
-- [ ] `pnpm build` and `pnpm test` green.
+- [x] `pnpm build` and `pnpm test` green.
