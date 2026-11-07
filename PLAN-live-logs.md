@@ -70,7 +70,7 @@ must always match the provider process actually running.
   download, chat-template, install, stop) through the run-log service; keep
   the stored `lastLogs` and log-file persistence as the after-reload read
   model with one source of truth for the text.
-- [ ] [TASK-003-logs-route](docs/PLAN-live-logs-TASK-003-logs-route.md)
+- [x] [TASK-003-logs-route](docs/PLAN-live-logs-TASK-003-logs-route.md)
   Add `GET /local-infer/logs?provider=<key>` as an NDJSON **stream** (per
   Q2: streaming, not polling): a first `{ snapshot, seq, running }` catch-up
   event, then one `{ log }` event per append; register it with the other
