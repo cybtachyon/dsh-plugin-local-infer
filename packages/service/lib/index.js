@@ -123,11 +123,14 @@ export class LocalInfer extends Service {
     // provider entry's cleared state; a headless profile registers none and the
     // service still settles its own live state.
     deathObserver;
-    // The route-registered hook for sudo commands the guard found waiting for a
-    // password on the CLI. The observer writes the note line into the run's
-    // Logs; a headless profile registers none and the guard still announces
-    // internally and caps the wait.
-    sudoObserver;
+    // The run-registered hooks for sudo commands the guard found waiting for a
+    // password on the CLI, one slot per run key (the runLogKey rule every run
+    // path shares). A guarded command announces through notifySudoNeeded to
+    // every registered observer (one CLI password wait blocks every plugin
+    // run), so concurrent runs keep their own note routing and a settle
+    // clears only its own slot. A headless profile registers none and the
+    // guard still announces internally and caps the wait.
+    sudoObservers = new Map();
     // The shared per-run live log hub every provider process writes its output
     // to, keyed by the runLogKey rule so the run paths and the streaming logs
     // route predict one key per provider.
@@ -516,8 +519,8 @@ export class LocalInfer extends Service {
      */
     async runInstall(engineId, buildMode, hw) {
         const deps = await this.deps(engineId, buildMode, hw);
-        // The guarded runner is built per call so every sudo announcement reads
-        // the observer registered when this call runs.
+        // The guarded runner is built per call so every sudo announcement
+        // reaches the observers registered when this call runs.
         return runInstall(deps, hw, guardedShellRunner((command) => this.notifySudoNeeded(command)));
     }
     /**
@@ -708,31 +711,41 @@ export class LocalInfer extends Service {
         this.deathObserver = observer;
     }
     /**
-     * setSudoObserver registers the route's hook for commands the sudo guard
-     * found waiting for a password on the launching CLI: the observer lands
-     * core's SUDO_CLI_NOTE line while the command waits. Passing undefined
-     * clears it, which the route's effect does on dispose.
+     * registerSudoObserver reserves `key`'s slot (the runLogKey rule every run
+     * path shares) for one run's hook for commands the sudo guard found
+     * waiting for a password on the launching CLI: the observer lands core's
+     * SUDO_CLI_NOTE line while the command waits. Registering a key that is
+     * taken replaces the old hook (a re-launch under the same key owns the
+     * note), and the disposer removes only its own hook, so a stale run's
+     * settle never clears a live one's routing. The run calls the disposer in
+     * a finally.
      */
-    setSudoObserver(observer) {
-        this.sudoObserver = observer;
+    registerSudoObserver(key, observer) {
+        this.sudoObservers.set(key, observer);
+        return () => {
+            if (this.sudoObservers.get(key) === observer) {
+                this.sudoObservers.delete(key);
+            }
+        };
     }
     /**
-     * notifySudoNeeded announces one guarded command to the registered sudo
-     * observer, if any. A throwing observer is swallowed: the note is a log
-     * courtesy, and a broken route must not fail the install that is already
-     * racing the sudo deadline. Published on the service surface so a command
-     * runner outside this package (the providers' lifecycle host) reports
-     * through the same seam.
+     * notifySudoNeeded announces one guarded command to every registered sudo
+     * observer (the shared CLI password wait can block any run, and the
+     * announce seam does not name the run that triggered it). A throwing
+     * observer is isolated per announce: the note is a log courtesy, and a
+     * broken route must not fail the install that is already racing the sudo
+     * deadline. Published on the service surface so a command runner outside
+     * this package (the providers' lifecycle host) reports through the same
+     * seam.
      */
     notifySudoNeeded(command) {
-        const observer = this.sudoObserver;
-        if (observer === undefined)
-            return;
-        try {
-            observer(command);
-        }
-        catch {
-            // The sudo deadline still settles a passwordless wait.
+        for (const observer of [...this.sudoObservers.values()]) {
+            try {
+                observer(command);
+            }
+            catch {
+                // The sudo deadline still settles a passwordless wait.
+            }
         }
     }
     /**
