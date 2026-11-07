@@ -224,6 +224,71 @@ export interface SettingsForms {
     mutate(ns: string, ops: readonly SettingsOp[], expectedRevision?: number): Promise<SettingsRemoteResponse<unknown> | undefined>;
 }
 /**
+ * LaunchTargetEntry is the stored provider entry shape findLaunchTarget
+ * reads: the entry id, the engine id, and the config whose model field the
+ * engine-and-model match prices. The ui store's StoredProviderConfig
+ * satisfies it structurally, so the matcher stays free of the store shape.
+ */
+export interface LaunchTargetEntry {
+    id: string;
+    engine: string;
+    config: Config;
+}
+/**
+ * RunLogSnapshot is the catch-up read of one run key's live log: the append
+ * count reached (the `seq` every later stream event continues), the bounded
+ * tail text (LOG_TAIL_BYTES), and whether a run is still writing. A mid-run
+ * page refresh or a late-opened Logs pane renders from this snapshot and
+ * then follows the live events, so it shows the same text a continuously
+ * attached reader has.
+ */
+export interface RunLogSnapshot {
+    seq: number;
+    text: string;
+    running: boolean;
+}
+/**
+ * RunLogResetEvent announces a beginRun for the subscribed key: the buffer
+ * restarted at the seed text with seq 0, so a reader replaces its display
+ * instead of appending onto the previous run's text.
+ */
+export interface RunLogResetEvent {
+    kind: 'reset';
+    seq: number;
+    text: string;
+}
+/**
+ * RunLogAppendEvent carries one live log append: `text` is the appended
+ * chunk (not the buffer), and `seq` is the buffer's append count after the
+ * chunk landed, so a reader that caught up from a snapshot can drop events
+ * it already holds.
+ */
+export interface RunLogAppendEvent {
+    kind: 'log';
+    seq: number;
+    text: string;
+}
+/**
+ * RunLogEndEvent announces endRun for the subscribed key: the run stopped
+ * writing at `seq`. The text stays readable (readRunLog) until the next
+ * beginRun for that key.
+ */
+export interface RunLogEndEvent {
+    kind: 'end';
+    seq: number;
+}
+/**
+ * RunLogEvent is one live update on a subscribed run key: the buffer reset
+ * by a begin, one appended chunk, or the run's end.
+ */
+export type RunLogEvent = RunLogResetEvent | RunLogAppendEvent | RunLogEndEvent;
+/**
+ * RunLogListener receives a subscribed key's RunLogEvents. Listeners are
+ * independent per connection: a throwing or removed listener never blocks
+ * the writer or another subscriber.
+ */
+export type RunLogListener = (event: RunLogEvent) => void;
+/**
  * LocalInferService is the surface the service publishes on ctx.localInfer.
  * Providers register engines, presets, and guidelines against the registries;
  * consumers (the tool package, the UI) call the orchestration entry points.
@@ -288,6 +353,40 @@ export interface LocalInferService {
      * the run that is already racing the sudo deadline.
      */
     notifySudoNeeded(command: string): void;
+    /**
+     * beginRun starts one provider process's run under `key` (the runLogKey
+     * rule every run path shares): the live buffer resets to the `seed` line
+     * (the `--- <process>...` separator), the running flag goes true, the
+     * monotone seq restarts, and subscribers get a reset notice so a mid-run
+     * attached reader replaces rather than appends.
+     */
+    beginRun(key: string, seed: string): void;
+    /**
+     * appendRunLog appends one chunk to `key`'s live buffer (tail-capped to
+     * LOG_TAIL_BYTES) and notifies subscribers with the chunk. Appending with
+     * no open run opens one lazily without a seed, so a note that lands after
+     * a settled run (an engine-death line, for example) still reaches the
+     * Logs.
+     */
+    appendRunLog(key: string, text: string): void;
+    /**
+     * readRunLog answers `key`'s catch-up snapshot (mid-run page refresh,
+     * late pane open): the seq reached, the bounded tail text, and the
+     * running flag. A key that never ran reads as an empty stopped snapshot.
+     */
+    readRunLog(key: string): RunLogSnapshot;
+    /**
+     * subscribeRunLog registers a listener for `key`'s RunLogEvents (appends,
+     * run begin, run end) and returns the disposer. Listeners are independent
+     * per connection; a slow or closed connection never blocks a writer.
+     */
+    subscribeRunLog(key: string, listener: RunLogListener): () => void;
+    /**
+     * endRun clears `key`'s running flag and emits the end event. The text
+     * stays readable (readRunLog) until the next beginRun for that key. An
+     * end on a key with no open run is a no-op.
+     */
+    endRun(key: string): void;
     registerModel(plan: LaunchPlan, model: ModelRow, options?: RegisterModelOptions): Promise<RegisterResult>;
     removeModel(providerId: string, modelId: string): Promise<void>;
     resolveDefaults(engineId: string, modelId: string, hw: HardwareProfile, explicit?: Config): Promise<ResolvedDefaults>;

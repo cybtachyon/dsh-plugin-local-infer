@@ -21,6 +21,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname } from 'node:path';
 import { LOG_TAIL_BYTES, SUDO_CLI_NOTE, formatLaunchCommand, launchRecordFromPlan, resolveLogPath, } from '../../../core/lib/index.js';
+import { findLaunchTarget } from '../../../service/lib/index.js';
 import { nodeLifecycleHost } from '../../../providers/lib/index.js';
 import { readConfig, writeStored } from "../config.js";
 import { persistProcessLog } from "./logs.js";
@@ -334,25 +335,6 @@ function settleGetFailure(plan, get, engineId, config, providerId, getLogs, canc
     return result;
 }
 /**
- * findLaunchTarget resolves the stored provider entry a launch or stop
- * targets: the entry the request names by id, or (an id the card does not
- * send, a launch of the active config) the stored entry with the same engine
- * and model. A launch with no resolvable entry persists no record, which
- * reads as "no provider config to re-link" after a restart.
- */
-function findLaunchTarget(stored, engineId, providerId, config) {
-    if (providerId !== undefined) {
-        const byId = stored.providers.find((entry) => entry.id === providerId);
-        if (byId !== undefined)
-            return byId;
-    }
-    const model = typeof config.model === 'string' ? config.model : undefined;
-    if (model === undefined)
-        return undefined;
-    return stored.providers.find((entry) => entry.engine === engineId &&
-        (typeof entry.config.model === 'string' ? entry.config.model : undefined) === model);
-}
-/**
  * withoutLaunchRecord returns a provider entry with its launch record (the
  * engine pid and the previous-pid list) removed, so the record is gone from
  * the file, not just ignored, and a recycled pid cannot re-link to a config
@@ -375,7 +357,7 @@ function persistLaunchRecord(result, engineId, config, providerId) {
     if (result.pid === undefined)
         return;
     const stored = readConfig();
-    const target = findLaunchTarget(stored, engineId, providerId, config);
+    const target = findLaunchTarget(stored.providers, engineId, providerId, config);
     if (target === undefined)
         return;
     const record = launchRecordFromPlan(result.plan, result.pid, result.parentPid, target.launch?.previousPids ?? []);
@@ -390,7 +372,7 @@ function persistLaunchRecord(result, engineId, config, providerId) {
  */
 function clearLaunchRecord(engineId, config, providerId) {
     const stored = readConfig();
-    const target = findLaunchTarget(stored, engineId, providerId, config);
+    const target = findLaunchTarget(stored.providers, engineId, providerId, config);
     if (target === undefined || target.launch === undefined)
         return;
     const providers = stored.providers.map((entry) => entry.id === target.id ? withoutLaunchRecord(entry) : entry);
@@ -491,7 +473,7 @@ export async function stopEngine(localInfer, request) {
     // The re-adopted engine's pid: without it the adapter's stop is a no-op for
     // a process it did not spawn, and the engine the user just clicked Stop on
     // keeps running.
-    const target = findLaunchTarget(stored, engineId, request.providerId, config);
+    const target = findLaunchTarget(stored.providers, engineId, request.providerId, config);
     if (target?.launch?.pid !== undefined) {
         plan.pid = target.launch.pid;
     }

@@ -1,0 +1,19 @@
+/**
+ * The stored provider entry a launch, stop, or run-log write targets. The
+ * rule the ui's launch-record paths carried privately moves here so the
+ * record persistence and the run-log key rule share one matcher.
+ * @module dsh-plugin-local-infer/service/launch-target
+ */
+import type { Config } from 'dsh-plugin-local-infer/core';
+import type { LaunchTargetEntry } from './types.ts';
+/**
+ * findLaunchTarget resolves the stored provider entry a launch, stop, or
+ * run targets: the entry the request names by id, or (an id the card does
+ * not send, a launch of the active config) the stored entry with the same
+ * engine and model. A request with no resolvable entry reads as undefined,
+ * which the launch-record paths take as "no provider config to re-link" and
+ * the run-log key rule takes as "key on the engine id". The entry type
+ * stays generic so each caller keeps its own stored entry shape.
+ */
+export declare function findLaunchTarget<T extends LaunchTargetEntry>(providers: readonly T[], engineId: string, providerId: string | undefined, config: Config): T | undefined;
+//# sourceMappingURL=launch-target.d.ts.map

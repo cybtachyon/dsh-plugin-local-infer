@@ -19,8 +19,11 @@
  */
 import { Context, Service } from '@deepseek-ai/cordis';
 import type { BuildMode, CommandOutcome, CommandRunner, Config, DefaultModel, ModelCacheEntry, ModelDirectoryEntry, EngineAdapter, EngineDepPlan, EnginePlatformConfig, GpuUsageProbe, Guideline, GuidelineResult, HardwareProfile, HardwareProbes, InstallResult, LaunchPlan, ModelRow, Preset, PresetSource, ProcessLine, ProviderLaunchRecord, ProviderRef, ProviderStatus, ReLinkOutcome, RegisterResult, ReserveResolution, ResolvedDefaults, SudoGuard, SystemDep, VramModel } from 'dsh-plugin-local-infer/core';
-import type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EngineDeathEvent, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, ProviderStatusOptions, RegisterModelOptions } from './types.ts';
-export type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EngineDeathEvent, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, ProviderStatusOptions, RegisterModelOptions, SettingsDescribeResult, SettingsForms, SettingsNamespaceDescriptor, } from './types.ts';
+import type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EngineDeathEvent, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LocalInferService, ProviderStatusOptions, RegisterModelOptions, RunLogListener, RunLogSnapshot } from './types.ts';
+import { runLogKey } from './run-logs.ts';
+import { findLaunchTarget } from './launch-target.ts';
+export { runLogKey, findLaunchTarget };
+export type { DetectOsReserveOptions, DownloadModelOptions, DownloadResult, EngineDeathEvent, EstimateResult, FetchPresetOptions, FetchPresetResult, HfCliOptions, LaunchOptions, LaunchResult, LaunchTargetEntry, LocalInferService, ProviderStatusOptions, RegisterModelOptions, RunLogAppendEvent, RunLogEndEvent, RunLogEvent, RunLogListener, RunLogResetEvent, RunLogSnapshot, SettingsDescribeResult, SettingsForms, SettingsNamespaceDescriptor, } from './types.ts';
 declare module '@deepseek-ai/cordis' {
     interface Context {
         localInfer: LocalInferService;
@@ -57,6 +60,7 @@ export declare class LocalInfer extends Service implements LocalInferService {
     private readonly stoppingEngines;
     private deathObserver;
     private sudoObserver;
+    private readonly runLogs;
     constructor(ctx: Context);
     registerEngine(adapter: EngineAdapter): () => void;
     registerPreset(preset: Preset): () => void;
@@ -249,6 +253,38 @@ export declare class LocalInfer extends Service implements LocalInferService {
      * through the same seam.
      */
     notifySudoNeeded(command: string): void;
+    /**
+     * beginRun starts one provider process's live run-log run under the key
+     * runLogKey names: the buffer resets to the seed separator line, the
+     * running flag goes true, the seq restarts, and subscribers get the reset
+     * notice a mid-run attached reader needs to replace its display.
+     */
+    beginRun(key: string, seed: string): void;
+    /**
+     * appendRunLog appends one chunk to the key's live log (tail-capped to
+     * LOG_TAIL_BYTES) and notifies subscribers. Appending with no open run
+     * opens one lazily without a seed, so a late note (an engine-death line)
+     * still lands.
+     */
+    appendRunLog(key: string, text: string): void;
+    /**
+     * readRunLog answers the key's catch-up snapshot: the seq reached, the
+     * bounded tail text, and the running flag, the data a mid-run page
+     * refresh or a late-opened Logs pane renders from.
+     */
+    readRunLog(key: string): RunLogSnapshot;
+    /**
+     * subscribeRunLog registers a listener for the key's run-log events and
+     * returns the disposer (the route calls it when its stream closes).
+     * Listeners are independent per connection; none can block a writer.
+     */
+    subscribeRunLog(key: string, listener: RunLogListener): () => void;
+    /**
+     * endRun settles the key's run: the running flag clears and subscribers
+     * get the end event. The text stays readable until the next beginRun, so
+     * a late Logs pane still shows the finished run.
+     */
+    endRun(key: string): void;
     /**
      * watchLaunchedHandle ties a launched child's one-shot exit to the live
      * state: the host's close/error event (a crash, a pkill, or the stop kill)

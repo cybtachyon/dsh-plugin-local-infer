@@ -117,12 +117,17 @@ import type {
   LocalInferService,
   ProviderStatusOptions,
   RegisterModelOptions,
+  RunLogListener,
+  RunLogSnapshot,
   SettingsDescribeResult,
   SettingsForms,
   SettingsNamespaceDescriptor,
   SettingsRemoteResponse,
 } from './types.ts'
+import { RunLogStore, runLogKey } from './run-logs.ts'
+import { findLaunchTarget } from './launch-target.ts'
 
+export { runLogKey, findLaunchTarget }
 export type {
   DetectOsReserveOptions,
   DownloadModelOptions,
@@ -134,9 +139,16 @@ export type {
   HfCliOptions,
   LaunchOptions,
   LaunchResult,
+  LaunchTargetEntry,
   LocalInferService,
   ProviderStatusOptions,
   RegisterModelOptions,
+  RunLogAppendEvent,
+  RunLogEndEvent,
+  RunLogEvent,
+  RunLogListener,
+  RunLogResetEvent,
+  RunLogSnapshot,
   SettingsDescribeResult,
   SettingsForms,
   SettingsNamespaceDescriptor,
@@ -252,6 +264,10 @@ export class LocalInfer extends Service implements LocalInferService {
   // Logs; a headless profile registers none and the guard still announces
   // internally and caps the wait.
   private sudoObserver: ((command: string) => void) | undefined
+  // The shared per-run live log hub every provider process writes its output
+  // to, keyed by the runLogKey rule so the run paths and the streaming logs
+  // route predict one key per provider.
+  private readonly runLogs = new RunLogStore()
 
   constructor(ctx: Context) {
     super(ctx, 'localInfer')
@@ -909,6 +925,53 @@ export class LocalInfer extends Service implements LocalInferService {
     } catch {
       // The sudo deadline still settles a passwordless wait.
     }
+  }
+
+  /**
+   * beginRun starts one provider process's live run-log run under the key
+   * runLogKey names: the buffer resets to the seed separator line, the
+   * running flag goes true, the seq restarts, and subscribers get the reset
+   * notice a mid-run attached reader needs to replace its display.
+   */
+  beginRun(key: string, seed: string): void {
+    this.runLogs.begin(key, seed)
+  }
+
+  /**
+   * appendRunLog appends one chunk to the key's live log (tail-capped to
+   * LOG_TAIL_BYTES) and notifies subscribers. Appending with no open run
+   * opens one lazily without a seed, so a late note (an engine-death line)
+   * still lands.
+   */
+  appendRunLog(key: string, text: string): void {
+    this.runLogs.append(key, text)
+  }
+
+  /**
+   * readRunLog answers the key's catch-up snapshot: the seq reached, the
+   * bounded tail text, and the running flag, the data a mid-run page
+   * refresh or a late-opened Logs pane renders from.
+   */
+  readRunLog(key: string): RunLogSnapshot {
+    return this.runLogs.read(key)
+  }
+
+  /**
+   * subscribeRunLog registers a listener for the key's run-log events and
+   * returns the disposer (the route calls it when its stream closes).
+   * Listeners are independent per connection; none can block a writer.
+   */
+  subscribeRunLog(key: string, listener: RunLogListener): () => void {
+    return this.runLogs.subscribe(key, listener)
+  }
+
+  /**
+   * endRun settles the key's run: the running flag clears and subscribers
+   * get the end event. The text stays readable until the next beginRun, so
+   * a late Logs pane still shows the finished run.
+   */
+  endRun(key: string): void {
+    this.runLogs.end(key)
   }
 
   /**
