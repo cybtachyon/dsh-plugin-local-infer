@@ -256,6 +256,7 @@ describe('route handlers over a fake web server', () => {
   })
 
   it('settles a launch that breaks before a plan renders to a result event (RouteError)', async () => {
+    writeConfig('ninfer', {}, false) // Pinned: the trust gate is off, no platform, no providers.
     // A card that names an engine no adapter serves: the RouteError the
     // plan render throws still lands as a result event (the card's control
     // settles to the red Logs), not a bare 500 on an opened NDJSON stream.
@@ -275,6 +276,7 @@ describe('route handlers over a fake web server', () => {
   })
 
   it('settles a non-RouteError launch failure to a result event naming the detail', async () => {
+    writeConfig('ninfer', {}, false) // Pinned: the trust gate is off, no platform, no providers.
     // A hardware probe failure (no plan, no RouteError) still settles the
     // card: the catch reads the Error's message into the result detail.
     const service = stubService([])
@@ -449,6 +451,7 @@ describe('route handlers over a fake web server', () => {
   })
 
   it('reads the auto-rebuild flag from the launch body and threads it to the service', async () => {
+    writeConfig('ninfer', {}, false) // Pinned: the trust gate is off, no platform, no providers.
     let seenAutoRebuild: boolean | undefined
     const service = stubService([], {
       launchResult: { plan: { engineId: 'ninfer', kind: 'process', port: 18020, healthUrl: 'http://127.0.0.1:18020/health' }, healthy: true },
