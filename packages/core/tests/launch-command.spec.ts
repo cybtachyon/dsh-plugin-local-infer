@@ -94,6 +94,38 @@ describe('formatLaunchCommand', () => {
     expect(command).toBe('docker compose -f compose.yml --profile two up --pull always -d')
   })
 
+  it('renders the missing pull policy when autoRebuild is off', () => {
+    const command = formatLaunchCommand(
+      plan({ engineId: 'hyperqwen', kind: 'compose', composeFile: 'compose.yml', profile: 'two' }),
+      false,
+    )
+    // Auto Rebuild off: the up step starts the already-present image.
+    expect(command).toBe('docker compose -f compose.yml --profile two up --pull missing -d')
+  })
+
+  it('keeps the always pull policy when the autoRebuild flag is absent or true', () => {
+    const compose = plan({ engineId: 'hyperqwen', kind: 'compose', composeFile: 'compose.yml' })
+    expect(formatLaunchCommand(compose, true)).toBe(
+      'docker compose -f compose.yml --profile single up --pull always -d',
+    )
+    expect(formatLaunchCommand(compose)).toBe(
+      'docker compose -f compose.yml --profile single up --pull always -d',
+    )
+  })
+
+  it('leaves the user compose arguments branch untouched when autoRebuild is off', () => {
+    const command = formatLaunchCommand(
+      plan({
+        engineId: 'hyperqwen',
+        kind: 'compose',
+        composeFile: 'compose.yml',
+        composeArgs: '--profile batch --some-flag',
+      }),
+      false,
+    )
+    expect(command).toBe('docker compose -f compose.yml --profile batch --some-flag up -d')
+  })
+
   it('reads a plan with no argv as no command', () => {
     expect(formatLaunchCommand(plan({}))).toBeUndefined()
     expect(formatLaunchCommand(plan({ argv: [] }))).toBeUndefined()
