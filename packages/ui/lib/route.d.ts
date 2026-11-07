@@ -144,7 +144,7 @@ export type RouteSpec = {
 export declare function defineRoute(spec: RouteSpec): LocalInferRoute;
 /**
  * registerLocalInferRoute registers the summary, save, provider-delete, deps,
- * install, download, chat-template, get, launch, stop, register, and
+ * install, download, chat-template, get, launch, stop, logs, register, and
  * unregister routes on the web server and holds them by an effect, so a
  * bundle switch off removes them before the next switch on re-registers. The
  * scoped context carries the webServer; the localInfer service is passed in

@@ -30,6 +30,7 @@ export type { InstallResponse } from './viewmodels/depsHelpers.ts';
 export type { ChatTemplateStatusModel, LocalInferSummary, ProviderSummaryEntry, } from './viewmodels/summary.ts';
 export type { Config, CustomArg, RegisterResult } from 'dsh-plugin-local-infer/core';
 export type { DownloadResult, LaunchResult } from 'dsh-plugin-local-infer/service';
+export type { LogsStreamEvent } from './routes/logs.ts';
 /**
  * Mount the Web UI. The browser card (dsh/client.js) registers into the
  * Plugins page's `plugins.bundle.config` slot and talks to the settings route
