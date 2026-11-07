@@ -126,7 +126,7 @@ must always match the provider process actually running.
   Audit the remaining process-vs-button mismatches (entry row of a second
   running entry, download / chat-template / install cells, the `downloading`
   re-poll path, `stopping`); fix each or record the reason it stays.
-- [ ] [TASK-012-refactor-state](docs/PLAN-live-logs-TASK-012-refactor-state.md)
+- [x] [TASK-012-refactor-state](docs/PLAN-live-logs-TASK-012-refactor-state.md)
   Refactor: review the files touched by the previous 5 tasks and resolve the
   smells checklist.
 
