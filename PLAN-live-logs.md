@@ -112,7 +112,7 @@ must always match the provider process actually running.
 
 ### Phase 4: Launch-button / process alignment
 
-- [ ] [TASK-009-step-events-real-order](docs/PLAN-live-logs-TASK-009-step-events-real-order.md)
+- [x] [TASK-009-step-events-real-order](docs/PLAN-live-logs-TASK-009-step-events-real-order.md)
   Emit launch step events for the real phases in real order (prereqs only
   while deps install runs; build on clone/build; download on model/template
   download) and update the machine per the Q4 answer so the button leaves
