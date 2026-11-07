@@ -51,8 +51,85 @@ Focus areas from this phase:
   no-ops. Price `provider.status === 'running'` into the launchStop
   branch, with a test for the no-machine running case.
 
+Resolutions (commit, or recorded reason it stays):
+
+- `$ ` / `> GET ` prefixes: resolved. `LAUNCH_STEPS`, `COMMAND_LOG_PREFIX`,
+  `commandLogLine`, `URL_LOG_PREFIX`, `urlLogLine` joined core's
+  `CommandLogger`; every host exec site (service install/download/
+  chat-template, adapters audit + health poll, acquire echo, infernix
+  extras), the test stub mirrors, and `strataAdapter` read the formatters
+  (commit 8568401). The `!! ` settle-failure marker stays a per-site literal:
+  each line names its own subject and no two sites share a sentence.
+- Step-name strings: resolved. One host-side tuple (`core` `LAUNCH_STEPS`,
+  the `LaunchStep` union derived from it) and one client-side tuple
+  (`LAUNCH_PHASE_STATES`), pinned equal by a machine test; the machine order
+  map keys derive from the client tuple.
+- `launchEngine` bloater: partially resolved. The run-log begin/append/end
+  bracket became `openRunLog` (commit bda5a2d); the sudo observer stays
+  extracted as is. Recorded: the remaining ~100 lines are one linear
+  narrative (plan render, Get steps, deploy, settle) over per-phase
+  closures; slicing it further would scatter the run-log ordering contract
+  the tests pin across more seams than it saves.
+- `runGetSteps` and the positional parameter lists (`launchEngine`'s
+  host/signal/onChunk/onSudo, `runGetSteps`' ctx fields): recorded. Each
+  call site passes a distinct mix and every parameter is read at a
+  different phase; grouping them into a context object would move the
+  parameters into a type whose field order is the only information left.
+  Left as is.
+- Health-poll loops (`adapters.ts` `pollHealth` vs `strataAdapter`
+  healthCheck): the URL-log line was already shared through
+  `logHealthPoll`/`urlLogLine` (no copy-paste). Recorded: the surrounding
+  loops differ in verdict vocabulary (ready/still downloading vs healthy/
+  unhealthy), poll sources, and failure text; merging them into one loop
+  would trade two readable loops for a parameterized one whose knobs all
+  differ. Left as is.
+- `routes/launch.ts` coverage: resolved. Two route-level tests settle the
+  pre-plan failures (unknown engine RouteError; failed hardware probe,
+  Error and non-Error detail) to a result event; the route file is at
+  100% statements and branches (commit 50c75b2).
+- `route.spec.ts` split: resolved (commit 5426dce). Seventeen describes
+  into `summary/launch/model/handlers/get/logs/deps.spec.ts` with the
+  shared fixtures in `packages/ui/tests/fixtures.ts` (the one real
+  `RunLogStore`-backed stub service, the fake adapters, `pointHomeAt`,
+  `stubGetHost`); 174 tests moved byte-identical in names, per-describe
+  scratch HOMEs kept, vitest include already covered the new files.
+- Shared-config hygiene: resolved for the leak class (commit 1e9801e).
+  The launch/stop helper describe and the launch-body handler tests that
+  never wrote config now pin the stored state (gate off, clean platform
+  map, no providers). Recorded: the 413 payload tests fail body parsing
+  before `readConfig`, the summary download cases pass every config field
+  in the request, and the `provider list round trip` describe is an
+  intentional provider-state chain; none read hidden state.
+- `client.spec.ts` bundle pins: partially resolved (commit 3973890). The
+  route-contract pin now derives the route literals from
+  `packages/client/src/api/routes.ts`. Recorded: the identifier pins
+  (`deriveLifecycleControl`, `launchNextState`, `performAction`, ...) are
+  the tree-shake and wiring contract of the artifact, and the
+  expression-shape pins carry the store-driven wiring through the bundle
+  transform; the behavior behind each is unit-pinned in
+  `packages/client/tests/`, so a contract rename deliberately costs one
+  conscious re-pin. TASK-010's two re-pins were that review, not drift.
+- Machine `downloading` settle: resolved (commit 2720268). The machine
+  takes a `summaryStatus` event; the store folds it on every summary/ack
+  (running -> running, stopped or vanished -> idle, unsure holds; a
+  no-op for every other machine state). Limitation recorded in the code
+  comments: the settle lands with the next summary read (the card has no
+  periodic summary poll, only stop fast-poll and action-triggered
+  reprice), and an `unsure` engine (model never tied, e.g. a strata
+  config without `model`) holds the throbber. Q4's server-authoritative
+  step semantics are unchanged.
+- Title-bar Stop fallback: resolved (commit 2720268).
+  `deriveLifecycleControl` prices `provider.status === 'running'` into
+  the launchStop branch for both the idle-entry and no-entry edited
+  provider, matching the provider row's rule; tests cover the fresh-card
+  running case and the running-status-over-idle-machine read.
+- Shotgun edits / feature envy / magic numbers over the five audited
+  commits: no instance beyond the ones above. The run-log wire format
+  (snapshot/log/runBegin/runEnd seq), the hub contract, and the client
+  `RunLogsEvent` mirror were left untouched by design.
+
 Definition of Done:
 
-- [ ] Each risk above: resolved with a commit, or recorded in this file with
+- [x] Each risk above: resolved with a commit, or recorded in this file with
       the reason it stays.
-- [ ] `pnpm build`, `pnpm test`, `pnpm lint` green after the refactor.
+- [x] `pnpm build`, `pnpm test`, `pnpm lint` green after the refactor.
