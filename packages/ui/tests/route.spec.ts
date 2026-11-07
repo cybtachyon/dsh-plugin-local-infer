@@ -708,9 +708,11 @@ describe('launch and stop route helpers', () => {
     expect(result.plan.engineId).toBe('ninfer')
   })
 
-  it('reports the prereqs phase and threads the progress sink to the service launch', async () => {
-    // The trust gate is on, so the route runs the system-dependency install as
-    // the prereqs phase and reports it.
+  it('reports the real phase sequence and threads the progress sink to the service launch', async () => {
+    // The trust gate is on, so the Get-steps dep install reports prereqs as it
+    // starts; the sync/build step reports build as it runs; the route then
+    // threads the same sink to the service launch, which reports the deploy
+    // sub-steps.
     writeConfig('ninfer', { port: 18020 }, true)
     const service = stubService([], {
       launchResult: { plan: { engineId: 'ninfer', kind: 'process', port: 18020, healthUrl: 'http://127.0.0.1:18020/health' }, healthy: true },
@@ -735,14 +737,16 @@ describe('launch and stop route helpers', () => {
       stubGetHost().host,
     )
     expect(typeof seenSink).toBe('function')
-    // The route reports the prereqs phase, then threads the sink to the service,
-    // which reports the deploy sub-steps.
-    expect(steps).toEqual(['prereqs', 'download', 'build'])
+    // The Get-steps phases land first (the dep install's prereqs, then the
+    // sync/build's build), then the sink rides to the service launch, which
+    // reports the deploy sub-steps.
+    expect(steps).toEqual(['prereqs', 'build', 'download', 'build'])
   })
 
   it('skips the prereqs phase when the trust gate is off', async () => {
     // The trust gate is off, so no system-dependency install runs and the
-    // prereqs phase is not reported; the sequence starts at the deploy steps.
+    // prereqs phase is not reported; the sequence starts at the sync/build
+    // step and continues with the deploy steps.
     writeConfig('ninfer', { port: 18020 }, false)
     const service = stubService([], {
       launchResult: { plan: { engineId: 'ninfer', kind: 'process', port: 18020, healthUrl: 'http://127.0.0.1:18020/health' }, healthy: true },
@@ -761,7 +765,66 @@ describe('launch and stop route helpers', () => {
       },
       stubGetHost().host,
     )
-    expect(steps).toEqual(['download', 'build'])
+    expect(steps).toEqual(['build', 'download', 'build'])
+  })
+
+  it('reports the real step order when the checkout and the model must be fetched', async () => {
+    // The gate is on and the model artifact and the checkout are absent, so
+    // the dep install, the sync/build, and the model download all actually
+    // run: the steps announce their phases as their work starts, in the real
+    // sequence prereqs -> build -> download, and the deploy reports launch.
+    writeConfig('ninfer', { model: 'qwen3-27b', modelDirectory: MODEL_DIR }, true)
+    mkdirSync(MODEL_DIR, { recursive: true })
+    rmSync(join(MODEL_DIR, 'qwen3_8_27b_nvfp4.ninfer'), { force: true })
+    const service = stubService([], {
+      launchResult: { plan: { engineId: 'ninfer', kind: 'process', port: 18020, healthUrl: 'http://127.0.0.1:18020/health' }, healthy: true },
+    })
+    service.launch = async (plan: LaunchPlan, options?: { onProgress?: (step: 'prereqs' | 'download' | 'build' | 'launch') => void }): Promise<LaunchResult> => {
+      // The deploy reports the health-poll phase as the real service does.
+      options?.onProgress?.('launch')
+      return { plan, healthy: true }
+    }
+    const steps: string[] = []
+    await launchEngine(
+      service,
+      { engine: 'ninfer', config: { model: 'qwen3-27b', modelDirectory: MODEL_DIR } },
+      (step) => {
+        steps.push(step)
+      },
+      stubGetHost({ exists: false }).host,
+    )
+    expect(steps).toEqual(['prereqs', 'build', 'download', 'launch'])
+  })
+
+  it('reports only the launch step when every Get step is already satisfied', async () => {
+    // The gate is off (no install runs, the satisfied re-check announces
+    // nothing), Auto Rebuild is off (no sync/build), and the model artifact
+    // is on disk (no download): the only phase the run reports is the
+    // deploy's health poll.
+    writeConfig('ninfer', { model: 'qwen3-27b', modelDirectory: MODEL_DIR }, false)
+    mkdirSync(MODEL_DIR, { recursive: true })
+    writeFileSync(join(MODEL_DIR, 'qwen3_8_27b_nvfp4.ninfer'), 'present')
+    const service = stubService([], {
+      launchResult: { plan: { engineId: 'ninfer', kind: 'process', port: 18020, healthUrl: 'http://127.0.0.1:18020/health' }, healthy: true },
+    })
+    service.launch = async (plan: LaunchPlan, options?: { onProgress?: (step: 'prereqs' | 'download' | 'build' | 'launch') => void }): Promise<LaunchResult> => {
+      options?.onProgress?.('launch')
+      return { plan, healthy: true }
+    }
+    const steps: string[] = []
+    await launchEngine(
+      service,
+      {
+        engine: 'ninfer',
+        config: { model: 'qwen3-27b', modelDirectory: MODEL_DIR },
+        autoRebuild: false,
+      },
+      (step) => {
+        steps.push(step)
+      },
+      stubGetHost().host,
+    )
+    expect(steps).toEqual(['launch'])
   })
 
   it('threads the auto-rebuild flag to the service launch', async () => {
@@ -1951,6 +2014,9 @@ describe('route handlers over a fake web server', () => {
   })
 
   it('streams the launch as NDJSON step events then a result event', async () => {
+    // The trust gate is on, so the Get-steps dep install reports prereqs and
+    // the sync/build step reports build as their work starts.
+    writeConfig('ninfer', {}, true)
     const service = stubService([], {
       launchResult: { plan: { engineId: 'ninfer', kind: 'process', port: 18020, healthUrl: 'http://127.0.0.1:18020/health' }, healthy: true },
     })
@@ -1974,12 +2040,14 @@ describe('route handlers over a fake web server', () => {
       res,
     )
     expect(res.status).toBe(200)
-    // The stream is NDJSON: a step event as each phase begins, then a final
-    // result event. The card's button reads the step that is running.
+    // The stream is NDJSON: a step event as each phase's work begins (the
+    // Get-steps phases in real order, then the deploy's), then a final result
+    // event. The card's button reads the step that is running.
     const lines = res.body.split('\n').filter((line) => line !== '')
     const events = lines.map((line) => JSON.parse(line))
     expect(events.map((event) => (event.step !== undefined ? event.step : 'result'))).toEqual([
       'prereqs',
+      'build',
       'download',
       'build',
       'launch',
@@ -2032,9 +2100,11 @@ describe('route handlers over a fake web server', () => {
               ? 'sudo'
               : 'result',
       )
-    // The sudo event lands between the phases and the result, while the
-    // command is still waiting on the prompt.
-    expect(kinds).toEqual(['prereqs', 'sudo', 'result'])
+    // The prereqs and build phases land first (the dep install and the
+    // sudo build command, reported by the Get steps as their work starts),
+    // then the sudo event while the command is still waiting on the prompt,
+    // then the result.
+    expect(kinds).toEqual(['prereqs', 'build', 'sudo', 'result'])
     // The note line lands in the persisted last-run logs exactly once: the
     // run's log sink carries it into the composed run.
     const lastLogs = readConfig().lastLogs
@@ -2101,14 +2171,17 @@ describe('route handlers over a fake web server', () => {
       res,
     )
     expect(res.status).toBe(200)
-    // The stream carries the step event, the progress event the download's
-    // tqdm chunk folded into, and the result event, in order.
+    // The stream carries the Get-steps step events in real order (prereqs,
+    // build, download; the model download's step lands just before its
+    // child), the progress event the download's tqdm chunk folded into, and
+    // the result event, in order.
     const events = res.body.split('\n').filter((line) => line !== '').map((line) => JSON.parse(line))
     const kinds = events.map((event) =>
       event.step !== undefined ? 'step' : event.progress !== undefined ? 'progress' : 'result',
     )
-    expect(kinds).toEqual(['step', 'progress', 'result'])
-    expect(events[1].progress).toEqual({
+    expect(kinds).toEqual(['step', 'step', 'step', 'progress', 'result'])
+    expect(events[2].step).toBe('download')
+    expect(events[3].progress).toEqual({
       step: 'Downloading x.safetensors',
       percent: 12,
       doneBytes: 5.2e9,

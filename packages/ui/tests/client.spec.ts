@@ -199,12 +199,12 @@ describe('dsh/client.js artifact source pins', () => {
 
   it('pins the per-entry launch state machine and its phase labels', () => {
     const source = readFileSync(fileURLToPath(clientPath), 'utf8')
-    // The per-entry Launch control is a hardened state machine: the rebuild
-    // phases (prereqs, download, build, launch) advance forward, a healthy
-    // result settles to running, a failed result settles to failed, and a
-    // stop or a break resets to idle.
+    // The per-entry Launch control is a hardened state machine: a step event
+    // from the live run stream sets the reported phase directly (the server
+    // stream is authoritative; the phases are prereqs, download, build,
+    // launch), a healthy result settles to running, a failed result settles
+    // to failed, and a stop or a break resets to idle.
     expect(source).toContain('launchNextState')
-    expect(source).toContain('LAUNCH_STEP_ORDER')
     expect(source).toContain('LAUNCH_PHASE_STATES')
     // The button reads the phase that is running, not a single "Launching...".
     expect(source).toContain('entryPrereqs')

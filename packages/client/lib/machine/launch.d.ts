@@ -10,33 +10,31 @@
  * the user typed the password or with the host's 60-second timeout
  * settling to failed), running (a Stop), stopping (a disabled throbber
  * while the stop is in flight), and failed (a red Logs). launchNextState
- * is the hardened transition: a step event only advances forward through
- * the rebuild phases (a stale or out-of-order step is a no-op), a healthy
- * result settles to running, a failed result settles to failed, a stop
- * moves a running (or idle, a provider running per the summary with no
- * machine entry) engine to stopping, a confirmed stop settles to idle, a
- * stop that is still running at the deadline settles to failed with the
- * cause 'stop', a sudoNeeded moves any in-flight state to sudo (where a
- * step resumes the run at the reported step, healthy and failed settle as
- * they do from a phase, a stop moves to stopping, and a reset settles to
- * idle), and a break (the Logs control, a navigation away) resets: a
- * launch failure reads as Launch (idle), a stop timeout reads as Stop
- * (running), because the engine is probably still up. The machine takes
- * the entry ({status, cause}) and returns the next entry, so the
- * cause-aware reset stays in one place. An event that names no legal next
- * state leaves the control where it is, so a late event never corrupts
- * it.
+ * is the hardened transition: a step event from the live run stream is
+ * authoritative for the run's reported phase and sets it directly (the
+ * host reports each phase as its work actually starts, and the real
+ * sequences are not one fixed order), so the only guarded cases are the
+ * in-flight states: a stop in flight supersedes a late step, the
+ * downloading re-poll state ignores steps, and an unknown step name is a
+ * no-op. A healthy result settles to running, a failed result settles to
+ * failed, a stop moves a running (or idle, a provider running per the
+ * summary with no machine entry) engine to stopping, a confirmed stop
+ * settles to idle, a stop that is still running at the deadline settles
+ * to failed with the cause 'stop', a sudoNeeded moves any in-flight state
+ * to sudo (where a step resumes the run at the reported step, healthy and
+ * failed settle as they do from a phase, a stop moves to stopping, and a
+ * reset settles to idle), and a break (the Logs control, a navigation
+ * away) resets: a launch failure reads as Launch (idle), a stop timeout
+ * reads as Stop (running), because the engine is probably still up. The
+ * machine takes the entry ({status, cause}) and returns the next entry,
+ * so the cause-aware reset stays in one place. An event that names no
+ * legal next state leaves the control where it is, so a late event never
+ * corrupts it.
  * @module dsh-plugin-local-infer/client/machine/launch
  */
-export declare const LAUNCH_STEP_ORDER: {
-    readonly prereqs: 0;
-    readonly download: 1;
-    readonly build: 2;
-    readonly launch: 3;
-};
 /** The rebuild phase a launch step event names. */
-export type LaunchStep = keyof typeof LAUNCH_STEP_ORDER;
-/** The four rebuild phase states, in step order. */
+export type LaunchStep = 'prereqs' | 'download' | 'build' | 'launch';
+/** The four rebuild phase states. The step names the stream can carry. */
 export declare const LAUNCH_PHASE_STATES: readonly LaunchStep[];
 export declare const LAUNCH_HEALTH_DEADLINE_MS = 150000;
 export declare const STOP_POLL_MS = 1000;
