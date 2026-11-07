@@ -26,6 +26,11 @@ Focus areas from this phase:
   machine order map, the core `LaunchStep` union, and the displayText
   mapping must derive from one source per side (host union, client machine
   table).
+- `packages/ui/tests/route.spec.ts` is a single ~5.5k-line spec: split by
+  describe into per-route spec files (shared fixtures into a helper
+  module), and pin the hidden shared-config state (a `writeConfig` in one
+  describe leaking `allowRunDeps` into another; one test was pinned
+  locally in TASK-009, sweep the rest).
 
 Definition of Done:
 
