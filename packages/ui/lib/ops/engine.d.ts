@@ -22,11 +22,11 @@ import type { EngineDeathEvent, LaunchResult, LocalInferService } from 'dsh-plug
 import type { StoredConfig, StoredProviderConfig } from '../config.ts';
 import type { GetRequest, LaunchRequest } from '../request.ts';
 /**
- * CANCELED_LINE is the "Canceled" line a client-disconnect cancel appends to
- * the persisted run, so the Logs section and the log file read the run as
- * canceled, the same line the card writes to its Logs buffer on the Cancel.
+ * CANCELED_LINE names the shared "Canceled" run line; it lives with the other
+ * run-line constants in ops/logs.ts and is re-exported here for the launch
+ * persisters' import surface.
  */
-export declare const CANCELED_LINE = "--- Canceled\n";
+export { CANCELED_LINE } from './logs.ts';
 /**
  * GET_EVENT_PREFIX leads a Get run's event lines in the streamed and
  * persisted run (the route's `get failed` line and getEngine's sudo CLI
@@ -116,14 +116,16 @@ export declare function handleEngineDeath(event: EngineDeathEvent, runLogs?: Run
 /**
  * persistLaunchLogs stores a launch's captured output as the last run and
  * writes it to the configured log file. The Get-step output the launch ran
- * (the optional getLogs) leads the persisted run, so the Logs section and the
+ * (the optional runText) leads the persisted run, so the Logs section and the
  * log file show the Get steps followed by the launch, not the launch wiping
- * the Get logs. The log file is only written when the run produced output and
- * the log location is set; the last-run logs are always persisted (an empty
- * string clears a stale run) so the card's Logs section shows the previous
- * run after a reload.
+ * the Get logs. The stored last-run logs ride the shared capRunLogs tail rule
+ * (ops/logs.ts), the same cap the append paths and the live hub apply. The
+ * log file is only written when the run produced output and the log location
+ * is set; the last-run logs are always persisted (an empty string clears a
+ * stale run) so the card's Logs section shows the previous run after a
+ * reload.
  */
-export declare function persistLaunchLogs(result: LaunchResult, engineId: string, config: Config, getLogs?: string): void;
+export declare function persistLaunchLogs(result: LaunchResult, engineId: string, config: Config, runText?: string): void;
 /**
  * stopEngine renders the same plan and runs the service's stop entry point, so
  * the stop step targets the exact container or process the launch started. The

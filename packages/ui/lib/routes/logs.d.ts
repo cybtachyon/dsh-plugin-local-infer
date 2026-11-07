@@ -38,10 +38,20 @@ export type LogsStreamEvent = {
     seq: number;
 };
 /**
+ * LogsStreamRoute is the logs route's definition plus the open-stream
+ * registry the route effect's disposer drains. A bundle switch off
+ * unregisters the route, but browser panes that still hold a stream open
+ * leave their hub subscriptions behind unless something closes them; the
+ * effect disposer calls closeOpenStreams for that.
+ */
+export interface LogsStreamRoute extends LocalInferRoute {
+    closeOpenStreams(): void;
+}
+/**
  * logsRoute builds the GET /local-infer/logs?provider=<key> route definition
  * the register step holds by an effect. The `provider` query is the run key
  * every run path shares (the runLogKey rule the card's requests mirror); a
  * missing or unknown key is a live stream of nothing until someone runs it.
  */
-export declare function logsRoute(localInfer: LocalInferService): LocalInferRoute;
+export declare function logsRoute(localInfer: LocalInferService): LogsStreamRoute;
 //# sourceMappingURL=logs.d.ts.map

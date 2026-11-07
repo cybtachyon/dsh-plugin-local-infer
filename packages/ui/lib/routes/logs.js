@@ -22,7 +22,10 @@ import { ndjsonLine } from "./stream.js";
  * missing or unknown key is a live stream of nothing until someone runs it.
  */
 export function logsRoute(localInfer) {
-    return defineRoute({
+    // One closer per attached connection, so the effect disposer can detach
+    // every stream still open when the bundle switches off.
+    const openConnections = new Set();
+    const route = defineRoute({
         name: 'local-infer-logs',
         path: '/local-infer/logs',
         method: 'GET',
@@ -83,13 +86,32 @@ export function logsRoute(localInfer) {
             for (const event of queued) {
                 forward(event);
             }
+            // The bundle switching off while this pane still streams: end the
+            // response and drop the hub subscription, so no listener outlives the
+            // route it was opened by (the effect disposer runs closeOpenStreams).
+            const closeConnection = () => {
+                closed = true;
+                dispose();
+                openConnections.delete(closeConnection);
+                res.end();
+            };
+            openConnections.add(closeConnection);
             // The card unmounting or refreshing closes the response: dispose the
             // subscription so a gone pane never leaves a listener behind.
             res.onClose(() => {
                 closed = true;
                 dispose();
+                openConnections.delete(closeConnection);
             });
         },
     });
+    return {
+        ...route,
+        closeOpenStreams() {
+            for (const closeConnection of [...openConnections]) {
+                closeConnection();
+            }
+        },
+    };
 }
 //# sourceMappingURL=logs.js.map

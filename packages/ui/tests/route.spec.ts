@@ -56,6 +56,7 @@ import { runGetSteps } from '../src/ops/get-steps.ts'
 import { downloadFor } from '../src/ops/hf.ts'
 import { registerFor, resolveContextWindow, unregisterFor } from '../src/ops/model.ts'
 import { registerLocalInferRoute, RouteError } from '../src/route.ts'
+import { EXPECTED_ROUTE_PATHS, wrongMethodFor } from './route-paths.ts'
 import { buildDeps, resolveBuildMode } from '../src/viewmodels/deps.ts'
 import { runInstallFor } from '../src/viewmodels/depsHelpers.ts'
 import { buildSummary } from '../src/viewmodels/summary.ts'
@@ -187,15 +188,22 @@ function stubService(
     onSetDeathObserver?: (
       observer: ((event: EngineDeathEvent) => void) | undefined,
     ) => void
-    onSetSudoObserver?: (
-      observer: ((command: string) => void) | undefined,
+    onSudoObservers?: (
+      hooks: ReadonlyArray<{ key: string; observer: (command: string) => void }>,
     ) => void
   } = {},
 ): LocalInferService {
-  // The sudo seam: the stub keeps the observer setSudoObserver registers and
-  // notifySudoNeeded dispatches the command to it, mirroring the real
-  // service, so a test can drive a guarded announcement end to end.
-  let sudoObserver: ((command: string) => void) | undefined
+  // The sudo seam: the stub keeps one hook per run key, exactly like the
+  // real service's registry (registering a key takes its slot, the disposer
+  // clears only its own hook, notifySudoNeeded fans out), and reports the
+  // live hook list after every change, so a test can watch a run register
+  // and clear its hook end to end.
+  const sudoObservers = new Map<string, (command: string) => void>()
+  const reportSudoObservers = (): void => {
+    extras.onSudoObservers?.(
+      [...sudoObservers.entries()].map(([key, observer]) => ({ key, observer })),
+    )
+  }
   // The run-log seam: the stub keeps one real RunLogStore (the service
   // package's own hub) so the launch, get, download, install, and stop paths
   // write live buffers the tests read back through readRunLog.
@@ -296,15 +304,24 @@ function stubService(
     ): void => {
       extras.onSetDeathObserver?.(observer)
     },
-    // The sudo seam: setSudoObserver stores (or clears) the observer the
-    // launch run registers, and notifySudoNeeded dispatches to it, the way
-    // the real service forwards a guarded command to the route's hook.
-    setSudoObserver: (observer: ((command: string) => void) | undefined): void => {
-      sudoObserver = observer
-      extras.onSetSudoObserver?.(observer)
+    // The sudo seam: registerSudoObserver takes the key's slot and returns
+    // the disposer that clears only that hook; notifySudoNeeded fans the
+    // guarded command out to every live hook, the way the real service
+    // announces a waiting password prompt to every run in flight.
+    registerSudoObserver: (key: string, observer: (command: string) => void): (() => void) => {
+      sudoObservers.set(key, observer)
+      reportSudoObservers()
+      return () => {
+        if (sudoObservers.get(key) === observer) {
+          sudoObservers.delete(key)
+          reportSudoObservers()
+        }
+      }
     },
     notifySudoNeeded: (command: string): void => {
-      sudoObserver?.(command)
+      for (const observer of [...sudoObservers.values()]) {
+        observer(command)
+      }
     },
     // The run-log seam: the hub operations the route run paths bracket with
     // (beginRun, appendRunLog, readRunLog, subscribeRunLog, endRun), on the
@@ -1819,21 +1836,7 @@ describe('route handlers over a fake web server', () => {
     writeConfig('ninfer', { buildMode: 'local' }, false)
     const routes = registeredRoutes(stubService([], { deps: [TEST_DEP] }))
     const paths = routes.map((route) => route.path)
-    expect(paths).toEqual([
-      '/local-infer/summary',
-      '/local-infer/save',
-      '/local-infer/provider-delete',
-      '/local-infer/deps',
-      '/local-infer/install',
-      '/local-infer/download',
-      '/local-infer/chat-template',
-      '/local-infer/get',
-      '/local-infer/launch',
-      '/local-infer/stop',
-      '/local-infer/logs',
-      '/local-infer/register',
-      '/local-infer/unregister',
-    ])
+    expect(paths).toEqual(EXPECTED_ROUTE_PATHS)
 
     const depsRoute = routes.find((route) => route.path === '/local-infer/deps')
     const depsRes = fakeRes()
@@ -1912,28 +1915,17 @@ describe('route handlers over a fake web server', () => {
 
   it('answers 405 for the wrong method on every route', async () => {
     const routes = registeredRoutes(stubService([]))
+    expect(routes.map((route) => route.path)).toEqual(EXPECTED_ROUTE_PATHS)
     for (const route of routes) {
       const res = fakeRes()
-      // Each route takes one method; the wrong one is its complement. The
-      // save, provider-delete, install, download, chat-template, get,
-      // launch, stop, register, and unregister routes take a POST, so a GET
-      // is wrong; the summary and deps routes take a GET, so a POST is wrong.
-      if (
-        route.path === '/local-infer/save' ||
-        route.path === '/local-infer/provider-delete' ||
-        route.path === '/local-infer/install' ||
-        route.path === '/local-infer/download' ||
-        route.path === '/local-infer/chat-template' ||
-        route.path === '/local-infer/get' ||
-        route.path === '/local-infer/launch' ||
-        route.path === '/local-infer/stop' ||
-        route.path === '/local-infer/register' ||
-        route.path === '/local-infer/unregister'
-      ) {
-        await route.handler(fakeReq('GET', route.path), res)
-      } else {
-        await route.handler(fakeReq('POST', route.path, '{}'), res)
-      }
+      // Each route takes one method; the wrong one is its complement, read
+      // from the shared route table (the GET routes take a POST, the POST
+      // routes a GET).
+      const method = wrongMethodFor(route.path)
+      await route.handler(
+        method === 'POST' ? fakeReq('POST', route.path, '{}') : fakeReq('GET', route.path),
+        res,
+      )
       expect(res.status).toBe(405)
     }
   })
@@ -1978,10 +1970,10 @@ describe('route handlers over a fake web server', () => {
 
   it('streams a sudo event and persists the CLI note when the host announces a waiting sudo', async () => {
     writeConfig('ninfer', {}, true)
-    const observerSets: Array<((command: string) => void) | undefined> = []
+    const sudoHooks: Array<Array<{ key: string }>> = []
     const service = stubService([], {
-      onSetSudoObserver: (observer) => {
-        observerSets.push(observer)
+      onSudoObservers: (hooks) => {
+        sudoHooks.push(hooks.map((hook) => ({ key: hook.key })))
       },
     })
     // The stub host plays the guarded node host: the body's sudo build
@@ -2028,19 +2020,20 @@ describe('route handlers over a fake web server', () => {
     const lastLogs = readConfig().lastLogs
     expect(lastLogs).toContain(`${SUDO_CLI_NOTE}\n`)
     expect(lastLogs.split(SUDO_CLI_NOTE).length - 1).toBe(1)
-    // The run registered its observer and cleared it when it settled:
-    // registered, then cleared.
-    expect(observerSets).toHaveLength(2)
-    expect(observerSets[0]).toBeTypeOf('function')
-    expect(observerSets[1]).toBeUndefined()
+    // The note also reaches the live hub buffer the logs route streams,
+    // under the draft launch's engine-id key.
+    expect(service.readRunLog('ninfer').text).toContain(SUDO_CLI_NOTE)
+    // The run registered its hook under the draft's key and cleared it when
+    // it settled: one live hook at register, none at dispose.
+    expect(sudoHooks).toEqual([[{ key: 'ninfer' }], []])
   })
 
   it('leaves no sudo observer registered after a failing launch run', async () => {
     writeConfig('ninfer', {}, false)
-    const observerSets: Array<((command: string) => void) | undefined> = []
+    const sudoHooks: Array<Array<{ key: string }>> = []
     const service = stubService([], {
-      onSetSudoObserver: (observer) => {
-        observerSets.push(observer)
+      onSudoObservers: (hooks) => {
+        sudoHooks.push(hooks.map((hook) => ({ key: hook.key })))
       },
     })
     service.launch = async (): Promise<LaunchResult> => {
@@ -2057,11 +2050,9 @@ describe('route handlers over a fake web server', () => {
     const events = res.body.split('\n').filter((line) => line !== '').map((line) => JSON.parse(line))
     expect(events[events.length - 1].result.healthy).toBe(false)
     expect(events[events.length - 1].result.detail).toContain('deploy exploded')
-    // The failed run unregistered its observer too, so a second launch
-    // never announces through the dead run's stream writer.
-    expect(observerSets).toHaveLength(2)
-    expect(observerSets[0]).toBeTypeOf('function')
-    expect(observerSets[1]).toBeUndefined()
+    // The failed run unregistered its hook too, so a second launch never
+    // announces through the dead run's stream writer.
+    expect(sudoHooks).toEqual([[{ key: 'ninfer' }], []])
   })
 
   it('streams a progress event between the step and result events', async () => {
@@ -2171,6 +2162,139 @@ describe('route handlers over a fake web server', () => {
     // The persisted run carries the "Canceled" line, so the Logs section and
     // the log file read the launch as canceled.
     expect(readConfig().lastLogs).toContain('--- Canceled')
+  })
+
+  it('aborts the in-flight model download on a client disconnect and marks the run canceled', async () => {
+    writeConfig('ninfer', { model: 'qwen3-27b', modelDirectory: MODEL_DIR }, true)
+    const service = stubService([])
+    // A download that hangs until the route's cancel aborts the signal: the
+    // in-flight hf child the cancel interrupts, the launch route's rule.
+    service.downloadModel = (_entry: DefaultModel, _directory: string, options?: DownloadModelOptions) =>
+      new Promise<DownloadResult>((resolve) => {
+        options?.signal?.addEventListener(
+          'abort',
+          () => {
+            resolve({ ok: false, detail: 'download canceled' })
+          },
+          { once: true },
+        )
+      })
+    const routes = registeredRoutes(service, stubGetHost().host)
+    const downloadRoute = routes.find((route) => route.path === '/local-infer/download')
+    const res = fakeRes()
+    const pending = downloadRoute?.handler(
+      fakeReq('POST', '/local-infer/download', JSON.stringify({ engine: 'ninfer', model: 'qwen3-27b' })),
+      res,
+    )
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    res.closeListeners[0]?.()
+    await pending
+    // The live run ends on the "Canceled" line and settles (running false):
+    // the download card's Logs tail reads the cancel the launch reads.
+    const snapshot = service.readRunLog('ninfer')
+    expect(snapshot.text.endsWith(CANCELED_LINE)).toBe(true)
+    expect(snapshot.running).toBe(false)
+    // The persisted section carries the seed, the failure, and the cancel.
+    expect(readConfig().lastLogs).toContain('--- Downloading...')
+    expect(readConfig().lastLogs).toContain('--- Canceled')
+  })
+
+  it('aborts the in-flight chat-template download on a client disconnect and marks the run canceled', async () => {
+    writeConfig('ninfer', { model: 'qwen3-27b', modelDirectory: MODEL_DIR }, true)
+    const service = stubService([])
+    service.downloadChatTemplate = (
+      _repo: string,
+      _directory: string,
+      options?: DownloadModelOptions,
+    ) =>
+      new Promise<DownloadResult>((resolve) => {
+        options?.signal?.addEventListener(
+          'abort',
+          () => {
+            resolve({ ok: false, detail: 'download canceled' })
+          },
+          { once: true },
+        )
+      })
+    const routes = registeredRoutes(service, stubGetHost().host)
+    const templateRoute = routes.find((route) => route.path === '/local-infer/chat-template')
+    const res = fakeRes()
+    const pending = templateRoute?.handler(
+      fakeReq(
+        'POST',
+        '/local-infer/chat-template',
+        JSON.stringify({ engine: 'ninfer', template: 'neroued/Qwen3.8-27B/chat_template.jinja' }),
+      ),
+      res,
+    )
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    res.closeListeners[0]?.()
+    await pending
+    const snapshot = service.readRunLog('ninfer')
+    expect(snapshot.text.endsWith(CANCELED_LINE)).toBe(true)
+    expect(snapshot.running).toBe(false)
+  })
+
+  it('stops the entry through the stop route and clears its launch record', async () => {
+    writeConfig('ninfer', { model: 'qwen3-27b' }, true, undefined, true, [
+      {
+        id: 'stop-route',
+        engine: 'ninfer',
+        config: { model: 'qwen3-27b' },
+        platform: {},
+        launch: {
+          pid: 4242,
+          startedAt: '2026-01-01T00:00:00.000Z',
+          engineId: 'ninfer',
+          argv: ['ninfer-serve'],
+          previousPids: [],
+        },
+      },
+    ])
+    let stoppedPlan: LaunchPlan | undefined
+    const service = stubService([])
+    service.stop = async (plan: LaunchPlan): Promise<void> => {
+      stoppedPlan = plan
+    }
+    const routes = registeredRoutes(service, stubGetHost().host)
+    const stopRoute = routes.find((route) => route.path === '/local-infer/stop')
+    const res = fakeRes()
+    await stopRoute?.handler(
+      fakeReq('POST', '/local-infer/stop', JSON.stringify({ engine: 'ninfer', providerId: 'stop-route' })),
+      res,
+    )
+    expect(res.status).toBe(200)
+    expect(JSON.parse(res.body)).toEqual({ stopped: true })
+    // The stop plan carries the record's pid, so a re-adopted engine's stop
+    // signals the process the host did not spawn.
+    expect(stoppedPlan?.pid).toBe(4242)
+    // The cleared record is gone from the file, so a recycled pid cannot
+    // re-link the engine the user just stopped.
+    const entry = readConfig().providers.find((provider) => provider.id === 'stop-route')
+    expect(entry?.launch).toBeUndefined()
+  })
+
+  it("answers 500 and persists the note when the stop route's stop fails", async () => {
+    writeConfig('ninfer', { model: 'qwen3-27b' }, true, undefined, true, [
+      { id: 'stop-fail', engine: 'ninfer', config: { model: 'qwen3-27b' }, platform: {} },
+    ])
+    const service = stubService([])
+    service.stop = async (): Promise<void> => {
+      throw new Error('container still running')
+    }
+    const routes = registeredRoutes(service, stubGetHost().host)
+    const stopRoute = routes.find((route) => route.path === '/local-infer/stop')
+    const res = fakeRes()
+    await stopRoute?.handler(
+      fakeReq('POST', '/local-infer/stop', JSON.stringify({ engine: 'ninfer', providerId: 'stop-fail' })),
+      res,
+    )
+    // The failure answers 500 so the card's stop deadline settles the entry
+    // to the red Logs state, and the live run carries the failure note.
+    expect(res.status).toBe(500)
+    expect(JSON.parse(res.body).error).toContain('container still running')
+    expect(service.readRunLog('stop-fail').text).toContain('container still running')
+    expect(service.readRunLog('stop-fail').running).toBe(false)
   })
 })
 
@@ -3496,10 +3620,10 @@ describe('get route (git sync, deps, build)', () => {
 
   it('persists and feeds the hub the CLI sudo note when the host announces a waiting sudo', async () => {
     writeConfig('ninfer', {}, true)
-    const observerSets: Array<((command: string) => void) | undefined> = []
+    const sudoHooks: Array<Array<{ key: string }>> = []
     const service = stubService([], {
-      onSetSudoObserver: (observer) => {
-        observerSets.push(observer)
+      onSudoObservers: (hooks) => {
+        sudoHooks.push(hooks.map((hook) => ({ key: hook.key })))
       },
     })
     // The stub host plays the guarded node host: the body's sudo build
@@ -3539,11 +3663,9 @@ describe('get route (git sync, deps, build)', () => {
     // the answer carries only progress events.
     const events = ndjsonEvents(res.chunks)
     expect(events.every((event) => event.progress !== undefined)).toBe(true)
-    // The run registered its observer and cleared it when it settled:
-    // registered, then cleared.
-    expect(observerSets).toHaveLength(2)
-    expect(observerSets[0]).toBeTypeOf('function')
-    expect(observerSets[1]).toBeUndefined()
+    // The run registered its hook under the draft's key and cleared it when
+    // it settled: one live hook at register, none at dispose.
+    expect(sudoHooks).toEqual([[{ key: 'ninfer' }], []])
   })
 
   it('writes the Get run (commands and output) to the configured log file', async () => {
@@ -4431,6 +4553,16 @@ describe('run-log hub wiring', () => {
     }
   }
 
+  /**
+   * untilTrue waits on the timer queue until the predicate holds, so a test
+   * can wait for a handler to reach its gate without a fixed sleep.
+   */
+  async function untilTrue(predicate: () => boolean): Promise<void> {
+    while (!predicate()) {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+  }
+
   function providerWithLaunchRecord(id: string): StoredProviderConfig {
     return {
       id,
@@ -4531,6 +4663,68 @@ describe('run-log hub wiring', () => {
     expect(b.text).not.toContain('Qwen3.8-27B')
     expect(a.running).toBe(false)
     expect(b.running).toBe(false)
+  })
+
+  it("keeps two concurrent runs' sudo note routing independent: both hear, one settle keeps the other", async () => {
+    writeConfig('ninfer', { modelDirectory: MODEL_DIR }, true, undefined, true, [
+      {
+        id: 'hub-sudo-a',
+        engine: 'ninfer',
+        config: { model: 'qwen3-27b', modelDirectory: MODEL_DIR },
+        platform: {},
+      },
+      {
+        id: 'hub-sudo-b',
+        engine: 'ninfer',
+        config: { model: 'qwen36-35b', modelDirectory: MODEL_DIR },
+        platform: {},
+      },
+    ])
+    rmSync(join(MODEL_DIR, 'qwen3_8_27b_nvfp4.ninfer'), { force: true })
+    rmSync(join(MODEL_DIR, 'qwen3_6_35b_a3b.ninfer'), { force: true })
+    const service = stubService([])
+    // Gate each run at its model download: both Get runs sit in flight with
+    // their sudo hooks registered, so the first run can settle while the
+    // second is still open (the case the single observer slot got wrong).
+    const gates = new Map<string, () => void>()
+    service.downloadModel = (entry) =>
+      new Promise<DownloadResult>((resolve) => {
+        gates.set(entry.modelId, () => resolve({ ok: true }))
+      })
+    const route = hubRoutes(service, stubGetHost({ exists: true }).host)('/local-infer/get')
+    const settleA = route.handler(
+      hubPost('/local-infer/get', {
+        engine: 'ninfer',
+        config: { model: 'qwen3-27b', modelDirectory: MODEL_DIR },
+      }),
+      hubRes(),
+    )
+    await untilTrue(() => gates.has('qwen3-27b'))
+    const settleB = route.handler(
+      hubPost('/local-infer/get', {
+        engine: 'ninfer',
+        config: { model: 'qwen36-35b', modelDirectory: MODEL_DIR },
+      }),
+      hubRes(),
+    )
+    await untilTrue(() => gates.has('qwen36-35b'))
+    const command = 'sudo ln -sf ./build/engine /usr/local/bin/engine'
+    service.notifySudoNeeded(command)
+    // The shared CLI password wait notes both runs: each key's live buffer
+    // carries its own `!!` note line.
+    expect(service.readRunLog('hub-sudo-a').text).toContain(`!! ${SUDO_CLI_NOTE}\n`)
+    expect(service.readRunLog('hub-sudo-b').text).toContain(`!! ${SUDO_CLI_NOTE}\n`)
+    // Settle run A only: run B keeps its hook slot (the first settle no
+    // longer clears another run's note routing).
+    gates.get('qwen3-27b')?.()
+    await settleA
+    service.notifySudoNeeded(command)
+    expect(service.readRunLog('hub-sudo-a').text.split(SUDO_CLI_NOTE).length - 1).toBe(1)
+    expect(service.readRunLog('hub-sudo-b').text.split(SUDO_CLI_NOTE).length - 1).toBe(2)
+    gates.get('qwen36-35b')?.()
+    await settleB
+    expect(service.readRunLog('hub-sudo-a').running).toBe(false)
+    expect(service.readRunLog('hub-sudo-b').running).toBe(false)
   })
 
   it('brackets the launch run with the seed, Get steps, command note, build, and engine output in order', async () => {
@@ -4875,6 +5069,7 @@ describe('logs route (GET /local-infer/logs stream)', () => {
   function logsRes() {
     const res = {
       status: 0,
+      ended: false,
       headers: {} as Record<string, string>,
       chunks: [] as string[],
       closeListeners: [] as Array<() => void>,
@@ -4888,6 +5083,7 @@ describe('logs route (GET /local-infer/logs stream)', () => {
         return true
       },
       end() {
+        res.ended = true
         return res
       },
       // The logs route watches the response's client disconnect to dispose
@@ -5017,6 +5213,45 @@ describe('logs route (GET /local-infer/logs stream)', () => {
     // The dead connection stops receiving hub events.
     service.beginRun('gone', 'seed\n')
     expect(logsEvents(res.chunks)).toEqual([{ snapshot: '', seq: 0, running: false }])
+  })
+
+  it('closes open stream connections when the route effect disposes', async () => {
+    const service = stubService([])
+    // A bundle switch off runs the route effect's disposer: it must detach
+    // the streams still open, so no hub listener outlives the registration.
+    const routes: { path: string; handler: (req: unknown, res: unknown) => Promise<void> }[] = []
+    let disposeEffect: (() => void) | undefined
+    const scope = {
+      webServer: {
+        register(route: { path: string; handler: (req: unknown, res: unknown) => Promise<void> }) {
+          routes.push(route)
+          return () => undefined
+        },
+      },
+      effect(fn: () => unknown): void {
+        disposeEffect = fn() as (() => void) | undefined
+      },
+    }
+    registerLocalInferRoute(
+      scope as unknown as import('@deepseek-ai/cordis').Context & {
+        webServer: import('../src/route.ts').WebServerService
+      },
+      service,
+    )
+    const route = routes.find((entry) => entry.path === '/local-infer/logs')!
+    service.beginRun('card-live', '--- Launching...\n')
+    const res = logsRes()
+    await route.handler(fakeGet('/local-infer/logs?provider=card-live'), res)
+    service.appendRunLog('card-live', 'live line\n')
+    const streamed = res.chunks.length
+    expect(logsEvents(res.chunks).at(-1)).toEqual({ log: 'live line\n', seq: 1 })
+    disposeEffect?.()
+    // The still-open connection is ended on the wire...
+    expect(res.ended).toBe(true)
+    // ...and detached from the hub: later run events reach nothing.
+    service.appendRunLog('card-live', 'after dispose\n')
+    service.beginRun('card-live', '--- Launching...\n')
+    expect(res.chunks).toHaveLength(streamed)
   })
 
   it('streams the empty snapshot and stays attached for a blank or unknown key', async () => {

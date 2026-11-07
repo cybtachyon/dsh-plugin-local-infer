@@ -26,6 +26,14 @@ export const DOWNLOAD_RUN_SEED = '--- Downloading...\n';
 export const INSTALL_RUN_SEED = '--- Installing deps...\n';
 export const STOP_RUN_SEED = '--- Stopping...\n';
 /**
+ * CANCELED_LINE is the "Canceled" line a client-disconnect cancel appends to
+ * the persisted run, so the Logs section and the log file read the run as
+ * canceled, the same line the card writes to its Logs buffer on the Cancel.
+ * Every canceled run (Get, launch, download, chat template) writes it from
+ * here.
+ */
+export const CANCELED_LINE = '--- Canceled\n';
+/**
  * persistProcessLog appends one process run's output to the stored last-run
  * logs (capped to the launch logs' tail, so a long build cannot grow the
  * config without bound) and writes the run to the configured log file. A
@@ -70,24 +78,35 @@ export function finishRunSection(baseline, section) {
     writeRunFile(stored, section);
 }
 /**
+ * capRunLogs keeps one stored run's text within the shared LOG_TAIL_BYTES
+ * tail, the same bound the live hub buffer and every lastLogs writer apply.
+ * joinRunLogs and the wholesale launch persisters (ops/engine.ts
+ * persistStoredLogs, persistLaunchLogs) share this one cap rule.
+ */
+export function capRunLogs(logs) {
+    return logs.slice(-LOG_TAIL_BYTES);
+}
+/**
  * joinRunLogs appends one run's text under the stored last-run logs (or the
  * finished run's baseline), newline-separated, capped to the launch logs'
  * tail so a long build cannot grow the config without bound. persistProcessLog
  * and finishRunSection share the join and cap rule.
  */
 function joinRunLogs(base, output) {
-    return `${base}${base === '' ? '' : '\n'}${output}`.slice(-LOG_TAIL_BYTES);
+    return capRunLogs(`${base}${base === '' ? '' : '\n'}${output}`);
 }
 /**
- * writeRunFile writes one run's output to the configured log file. A missing
- * log location skips the file; a file that cannot be written must not fail
- * the run, since the in-memory last-run logs still reach the card.
+ * writeRunFile writes one run's text to the configured log file named for
+ * its engine and model. The launch persisters pass the launch's own engine
+ * and config; the append paths pass the stored ones (the defaults). A
+ * missing log location (the field is optional) skips the file; a file that
+ * cannot be written must not fail the run, since the in-memory last-run logs
+ * still reach the card. Every run writer shares this one file rule.
  */
-function writeRunFile(stored, output) {
+export function writeRunFile(stored, output, engineId = stored.engine, modelId = typeof stored.config.model === 'string' ? stored.config.model : undefined) {
     if (stored.logPath === undefined || stored.logPath === '')
         return;
-    const modelId = typeof stored.config.model === 'string' ? stored.config.model : undefined;
-    const logPath = resolveLogPath(stored.logPath, stored.engine, modelId, new Date(), homedir());
+    const logPath = resolveLogPath(stored.logPath, engineId, modelId, new Date(), homedir());
     try {
         mkdirSync(dirname(logPath), { recursive: true });
         writeFileSync(logPath, output);

@@ -6,6 +6,7 @@
  */
 import { defineRoute } from "../route.js";
 import { chatTemplateDownloadFor } from "../ops/hf.js";
+import { abortOnResponseClose } from "./stream.js";
 /**
  * chatTemplateRoute builds the POST /local-infer/chat-template route
  * definition the register step holds by an effect.
@@ -30,7 +31,17 @@ export function chatTemplateRoute(localInfer) {
             if (typeof body.directory === 'string') {
                 request.directory = body.directory;
             }
-            res.json(200, await chatTemplateDownloadFor(localInfer, request));
+            // The card's Cancel aborts the fetch, which closes the response: the
+            // abort interrupts the in-flight hf child (SIGINT, then SIGTERM) and
+            // the live run carries the "Canceled" line, the Get and launch
+            // routes' rule. A close after the download settled is the normal end.
+            const { signal, markFinished } = abortOnResponseClose(res);
+            try {
+                res.json(200, await chatTemplateDownloadFor(localInfer, request, signal));
+            }
+            finally {
+                markFinished();
+            }
         },
     });
 }
