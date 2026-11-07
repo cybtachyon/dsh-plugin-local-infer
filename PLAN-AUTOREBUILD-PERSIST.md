@@ -56,7 +56,7 @@ keep their current behavior.
 
 ### Phase 1 - Server: per-provider persistence
 
-- [ ] [TASK-001-provider-schema](docs/PLAN-AUTOREBUILD-PERSIST-TASK-001-provider-schema.md) -
+- [x] [TASK-001-provider-schema](docs/PLAN-AUTOREBUILD-PERSIST-TASK-001-provider-schema.md) -
   `StoredProviderConfig.autoRebuild?: boolean` in `packages/ui/src/config.ts` with
   boolean-sanitizing parse in `parseProviders`. DoD: round-trip read/write tests
   in `packages/ui/tests` (absent stays absent, non-boolean dropped).
