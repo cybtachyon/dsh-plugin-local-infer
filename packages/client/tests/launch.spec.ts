@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { LAUNCH_STEPS } from 'dsh-plugin-local-infer/core'
 import {
   LAUNCH_HEALTH_DEADLINE_MS,
   LAUNCH_PHASE_STATES,
@@ -175,8 +176,11 @@ const RESET: Record<LaunchStatus, LaunchStatus> = {
 }
 
 describe('client launch machine (machine/launch.ts)', () => {
-  it('pins the phase states and the deadline constants', () => {
-    expect(LAUNCH_PHASE_STATES).toEqual(['prereqs', 'download', 'build', 'launch'])
+  it('pins the phase states to the host LaunchStep tuple and the deadline constants', () => {
+    // The two sides of the step-name contract (core LAUNCH_STEPS, the machine
+    // LAUNCH_PHASE_STATES) stay equal or this fails; each side keeps one
+    // table, neither imports the other at runtime.
+    expect([...LAUNCH_PHASE_STATES]).toEqual([...LAUNCH_STEPS])
     expect(LAUNCH_HEALTH_DEADLINE_MS).toBe(150000)
     expect(STOP_POLL_MS).toBe(1000)
     expect(STOP_HEALTH_DEADLINE_MS).toBe(10000)

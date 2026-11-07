@@ -218,7 +218,17 @@ export interface HealthCheckOptions {
  * rebuild. The card times out only the launch step; the rebuild steps (prereqs,
  * download, build) run as long as they need to.
  */
-export type LaunchStep = 'prereqs' | 'download' | 'build' | 'launch'
+/**
+ * LAUNCH_STEPS is the step-name tuple the LaunchStep union derives from: the
+ * one runtime home of the four phase names. The client machine mirrors the
+ * tuple as its LAUNCH_PHASE_STATES (the card bundle carries no core code); the
+ * ui suite pins the two sides equal so a name added on one side without the
+ * other fails a test, not the button.
+ */
+export const LAUNCH_STEPS = ['prereqs', 'download', 'build', 'launch'] as const
+
+/** The LaunchStep union, derived from the LAUNCH_STEPS tuple. */
+export type LaunchStep = (typeof LAUNCH_STEPS)[number]
 
 /**
  * LaunchProgress is the callback the launch flow calls as each phase begins.
@@ -235,6 +245,43 @@ export type LaunchProgress = (step: LaunchStep) => void
  * headless service call) passes none and the steps run as they did before.
  */
 export type CommandLogger = (line: string) => void
+
+/**
+ * COMMAND_LOG_PREFIX leads the exec audit rule's command line in every run
+ * log: `$ ` then the command, newline-terminated. Every exec site (the service
+ * runners, the adapters' auditRun, the acquire step's echo, the Get steps'
+ * extra-command emit) formats through commandLogLine, so the marker has one
+ * home. The marker is also exported for the test stubs that replay a real
+ * service or runner's writes.
+ */
+export const COMMAND_LOG_PREFIX = '$ '
+
+/**
+ * commandLogLine formats one exec audit rule line: the COMMAND_LOG_PREFIX, the
+ * command, and the newline. The `$ <command>` line reaches the run's log sink
+ * before the child spawns.
+ */
+export function commandLogLine(command: string): string {
+  return `${COMMAND_LOG_PREFIX}${command}\n`
+}
+
+/**
+ * URL_LOG_PREFIX leads the URL audit rule's request line in every run log:
+ * `> GET ` then the URL. The health polls format through urlLogLine, so the
+ * marker has one home (the exec rule's URL twin).
+ */
+export const URL_LOG_PREFIX = '> GET '
+
+/**
+ * urlLogLine formats one URL audit rule line: the URL_LOG_PREFIX, the URL, an
+ * optional settled verdict word the poll appends after a space (`ready`,
+ * `still downloading: ...`), and the newline. The bare line reaches the run's
+ * log sink before the first request; the verdict line lands after the poll
+ * returns.
+ */
+export function urlLogLine(url: string, verdict?: string): string {
+  return `${URL_LOG_PREFIX}${url}${verdict === undefined ? '' : ` ${verdict}`}\n`
+}
 
 /**
  * EngineLaunchState is the phase of an engine start the health poll reports:

@@ -19,7 +19,7 @@
  * sync failure.
  * @module dsh-plugin-local-infer/ui/ops/get-steps
  */
-import { chatTemplatePresent, checkDeps, dshEngineCacheDirectory, modelArtifactPresent, resolveModelDirectory, } from '../../../core/lib/index.js';
+import { chatTemplatePresent, checkDeps, commandLogLine, dshEngineCacheDirectory, modelArtifactPresent, resolveModelDirectory, } from '../../../core/lib/index.js';
 import { buildEngineRepo, defaultModelFor, ENGINES, infernixGetDownloads, syncEngineRepo, } from '../../../providers/lib/index.js';
 import { isHfRepoReference } from "../viewmodels/summaryHelpers.js";
 import { resolveBuildMode } from "../viewmodels/deps.js";
@@ -231,7 +231,7 @@ async function runModelDownloadStep(ctx) {
             request.onStep?.('download');
         }
         for (const command of extras) {
-            emit(`$ ${command}\n`);
+            emit(commandLogLine(command));
             // The Infernix extra downloads stream through the host, so their tqdm
             // lines reach the log sink and the onChunk progress sink together, the
             // way the model and template downloads do. A caller that does not

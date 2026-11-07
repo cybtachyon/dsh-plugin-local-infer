@@ -25,7 +25,7 @@ import { Service } from '@deepseek-ai/cordis';
 // Relative, not the root package subpath: a self-referencing bare specifier
 // only resolves when the package sits inside a node_modules tree, so a
 // local-path or pnpm-linked install of this repo would fail the import.
-import { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, buildModelEntry, detectHardware as detectHardwareFromProbes, detectPackageManager, evaluateGuidelines, estimateVram, guardSudoCommand, hfChatTemplateCommand, hfDatasetsCacheDirectory, hfDownloadCommand, hfHubCacheDirectory, isGpuBusy, LLM_PI_AI_NAMESPACE, matchLaunchSignature, modelGuidelines, reLinkRecord, computeProviderStatuses, modelRowsFrom, parseNvidiaSmiGpu, parseNvidiaSmiGpuUsage, presetFromFetch, providerRegistrationOps, providerRemovalOps, removeModelRow, renderInstallString, resolveDefaults as resolveDefaultsFromPresets, resolveOsReserve, runInstall, SUDO_PROBE_COMMAND, sudoFailureDetail, } from '../../core/lib/index.js';
+import { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, buildModelEntry, commandLogLine, detectHardware as detectHardwareFromProbes, detectPackageManager, evaluateGuidelines, estimateVram, guardSudoCommand, hfChatTemplateCommand, hfDatasetsCacheDirectory, hfDownloadCommand, hfHubCacheDirectory, isGpuBusy, LLM_PI_AI_NAMESPACE, matchLaunchSignature, modelGuidelines, reLinkRecord, computeProviderStatuses, modelRowsFrom, parseNvidiaSmiGpu, parseNvidiaSmiGpuUsage, presetFromFetch, providerRegistrationOps, providerRemovalOps, removeModelRow, renderInstallString, resolveDefaults as resolveDefaultsFromPresets, resolveOsReserve, runInstall, SUDO_PROBE_COMMAND, sudoFailureDetail, } from '../../core/lib/index.js';
 import { RunLogStore, runLogKey } from "./run-logs.js";
 import { findLaunchTarget } from "./launch-target.js";
 export { RunLogStore, runLogKey, findLaunchTarget };
@@ -530,7 +530,7 @@ export class LocalInfer extends Service {
         // (a satisfied dep never runs, so it never logs) before delegating to the
         // runner. Keeping the wrapper here leaves the core provisioner pure.
         const loggedRunner = (command, runOptions) => {
-            options?.onLog?.(`$ ${command}\n`);
+            options?.onLog?.(commandLogLine(command));
             return runner(command, runOptions);
         };
         return runInstall(deps, hw, loggedRunner);
@@ -1131,7 +1131,7 @@ export class LocalInfer extends Service {
         mkdirSync(directory, { recursive: true });
         const runner = options?.runner ?? downloadRunner;
         const command = hfDownloadCommand(entry, directory, options?.useHubCache === true);
-        options?.onLog?.(`$ ${command}\n`);
+        options?.onLog?.(commandLogLine(command));
         const result = await runner(command, options?.signal, options?.onChunk);
         if (result.ok)
             return { ok: true };
@@ -1149,7 +1149,7 @@ export class LocalInfer extends Service {
         mkdirSync(directory, { recursive: true });
         const runner = options?.runner ?? downloadRunner;
         const command = hfChatTemplateCommand(repo, directory, options?.useHubCache === true);
-        options?.onLog?.(`$ ${command}\n`);
+        options?.onLog?.(commandLogLine(command));
         const result = await runner(command, options?.signal, options?.onChunk);
         if (result.ok)
             return { ok: true };

@@ -8,6 +8,7 @@
  * local changes aborts, because a rebase would eat the user's work.
  * @module dsh-plugin-local-infer/providers/acquire
  */
+import { commandLogLine } from '../../core/lib/index.js';
 import { NINFER_LINUX } from "./engines/ninfer/ninferLinux.js";
 import { NINFER_MACOS } from "./engines/ninfer/ninferMacOS.js";
 import { NINFER_WINDOWS } from "./engines/ninfer/ninferWindows.js";
@@ -168,7 +169,7 @@ async function runLogged(host, command, log, options) {
         log(chunk);
     };
     if (options?.echo !== false) {
-        log(`$ ${command}\n`);
+        log(commandLogLine(command));
     }
     // exactOptionalPropertyTypes: carry only the options the caller set, so an
     // absent shell or sudo declaration never passes `{ shell: undefined }`

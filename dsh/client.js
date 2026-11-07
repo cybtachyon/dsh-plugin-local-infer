@@ -518,12 +518,7 @@ function labels(active2) {
 }
 
 // packages/client/src/machine/launch.ts
-var LAUNCH_PHASE_STATES = [
-  "prereqs",
-  "download",
-  "build",
-  "launch"
-];
+var LAUNCH_PHASE_STATES = ["prereqs", "download", "build", "launch"];
 var LAUNCH_HEALTH_DEADLINE_MS = 15e4;
 var STOP_POLL_MS = 1e3;
 var STOP_HEALTH_DEADLINE_MS = 1e4;
