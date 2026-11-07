@@ -260,9 +260,11 @@ export interface HealthResult {
  * rebuilds the engine and leaves its binary out of the path links it into
  * /usr/local/bin; the gate decides whether that sudo link runs (on) or is
  * written to the card's Logs section for the user to run (off). `autoRebuild`
- * is the card's "Auto Rebuild" checkbox: when false, the git sync (fetch,
- * rebase, and the conditional rebuild) is skipped and the checkout launches
- * as-is. Absent reads as true (the rebuild runs). `onLog` is the launch run's
+ * is the card's "Auto Rebuild" checkbox: when false, the engine acquisition
+ * steps (the git sync with its fetch, rebase, and conditional rebuild, the
+ * docker image pull, and the Strata binary installer) are skipped and the
+ * already-present checkout, image, or binary launches as-is. Absent reads as
+ * true (the acquisition runs). `onLog` is the launch run's
  * log sink: a deploy that runs a mutating command (an image pull, a model
  * download) writes its `$ <command>` line through it before the child spawns,
  * so the launch's live run reads the command first. Absent (a headless

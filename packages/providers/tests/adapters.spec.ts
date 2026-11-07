@@ -19,6 +19,7 @@ import { InfernixAdapter } from '../src/engines/infernix/infernixAdapter.ts'
 import { LLAMACPP_DOCKER_IMAGE, LlamaCppAdapter } from '../src/engines/llamacpp/llamacppAdapter.ts'
 import { NINFER_DOCKER_IMAGE, NINFER_MODEL_ARTIFACTS, NInferAdapter } from '../src/engines/ninfer/ninferAdapter.ts'
 import {
+  STRATA_BINARY_INSTALL,
   STRATA_DOCKER_IMAGE,
   StrataAdapter,
   strataPreReadyState,
@@ -946,6 +947,40 @@ describe('NInferAdapter.deploy', () => {
       onLog: (line) => audit.push({ line, runCount: state.run.length }),
     })
     expect(audit).toEqual([{ line: `$ docker pull ${NINFER_DOCKER_IMAGE}\n`, runCount: 0 }])
+  })
+
+  it('skips the docker pull when autoRebuild is off', async () => {
+    const { host, state } = stubHost()
+    const adapter = new NInferAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'docker',
+      argv: ['docker', 'run', NINFER_DOCKER_IMAGE, 'serve', 'x.ninfer'],
+      env: {},
+      containerName: 'ninfer-18020',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    // Auto Rebuild off (the card's checkbox): no image acquisition runs, the
+    // build phase is not announced, and the already-present image spawns
+    // with the plan's argv.
+    const skippedPhases: string[] = []
+    const result = await adapter.deploy(
+      plan,
+      undefined,
+      (phase) => skippedPhases.push(phase),
+      { autoRebuild: false },
+    )
+    expect(result.ok).toBe(true)
+    expect(state.run).toEqual([])
+    expect(skippedPhases).toEqual([])
+    expect(state.spawn).toHaveLength(1)
+    expect(state.spawn[0]?.argv).toEqual(plan.argv)
+    // The flag absent (a CLI or legacy client launch): the pull still runs.
+    const legacy = await adapter.deploy(plan)
+    expect(legacy.ok).toBe(true)
+    expect(state.run).toEqual([`docker pull ${NINFER_DOCKER_IMAGE}`])
+    expect(state.spawn).toHaveLength(2)
   })
 
   it('reports a failed build as not-ok with the detail', async () => {
@@ -2131,6 +2166,40 @@ describe('LlamaCppAdapter', () => {
     expect(state.spawn).toHaveLength(1)
   })
 
+  it('skips the docker pull when autoRebuild is off', async () => {
+    const { host, state } = stubHost()
+    const adapter = new LlamaCppAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'llamacpp',
+      kind: 'docker',
+      argv: ['docker', 'run', LLAMACPP_DOCKER_IMAGE, '--model', 'x.gguf'],
+      env: {},
+      containerName: 'llamacpp-8080',
+      port: 8080,
+      healthUrl: 'http://127.0.0.1:8080/health',
+    }
+    // Auto Rebuild off (the card's checkbox): no image acquisition runs, the
+    // build phase is not announced, and the already-present image spawns
+    // with the plan's argv.
+    const skippedPhases: string[] = []
+    const result = await adapter.deploy(
+      plan,
+      undefined,
+      (phase) => skippedPhases.push(phase),
+      { autoRebuild: false },
+    )
+    expect(result.ok).toBe(true)
+    expect(state.run).toEqual([])
+    expect(skippedPhases).toEqual([])
+    expect(state.spawn).toHaveLength(1)
+    expect(state.spawn[0]?.argv).toEqual(plan.argv)
+    // The flag absent (a CLI or legacy client launch): the pull still runs.
+    const legacy = await adapter.deploy(plan)
+    expect(legacy.ok).toBe(true)
+    expect(state.run).toEqual([`docker pull ${LLAMACPP_DOCKER_IMAGE}`])
+    expect(state.spawn).toHaveLength(2)
+  })
+
   it('polls the health URL and stops the named container and tracked process', async () => {
     const { host, state } = stubHost()
     state.fetchSequence = [503, 200]
@@ -2485,6 +2554,78 @@ describe('StrataAdapter', () => {
     await adapter.stop(plan)
     expect(state.run[1]).toBe('docker stop strata-8080')
     expect(state.killed).toContain(1234)
+  })
+
+  it('skips the docker pull when autoRebuild is off', async () => {
+    const { host, state } = stubHost()
+    const adapter = new StrataAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'strata',
+      kind: 'docker',
+      argv: ['docker', 'run', STRATA_DOCKER_IMAGE],
+      env: {},
+      containerName: 'strata-8080',
+      port: 8080,
+      healthUrl: 'http://127.0.0.1:8080/health',
+    }
+    // Auto Rebuild off (the card's checkbox): no image acquisition runs, the
+    // build phase is not announced, and the already-present image spawns
+    // with the plan's argv.
+    const skippedPhases: string[] = []
+    const result = await adapter.deploy(
+      plan,
+      undefined,
+      (phase) => skippedPhases.push(phase),
+      { autoRebuild: false },
+    )
+    expect(result.ok).toBe(true)
+    expect(state.run).toEqual([])
+    expect(skippedPhases).toEqual([])
+    expect(state.spawn).toHaveLength(1)
+    expect(state.spawn[0]?.argv).toEqual(plan.argv)
+    // The flag absent (a CLI or legacy client launch): the pull still runs.
+    const legacy = await adapter.deploy(plan)
+    expect(legacy.ok).toBe(true)
+    expect(state.run).toEqual([`docker pull ${STRATA_DOCKER_IMAGE}`])
+    expect(state.spawn).toHaveLength(2)
+  })
+
+  it('skips the binary installer when autoRebuild is off', async () => {
+    const { host, state } = stubHost()
+    const adapter = new StrataAdapter(host)
+    // The binary plan runs the strata command (argv[0] 'strata'); its build
+    // step is the one-line installer.
+    const plan: LaunchPlan = {
+      engineId: 'strata',
+      kind: 'process',
+      argv: ['strata', 'launch'],
+      env: {},
+      port: 8090,
+      healthUrl: 'http://127.0.0.1:8090/health',
+    }
+    // Auto Rebuild off (the card's checkbox): no installer command runs, the
+    // download phase is not announced, and the already-installed command
+    // spawns with the plan's argv.
+    const skippedPhases: string[] = []
+    const result = await adapter.deploy(
+      plan,
+      undefined,
+      (phase) => skippedPhases.push(phase),
+      { autoRebuild: false },
+    )
+    expect(result.ok).toBe(true)
+    expect(state.run).toEqual([])
+    expect(skippedPhases).toEqual([])
+    expect(state.spawn).toHaveLength(1)
+    expect(state.spawn[0]?.argv).toEqual(plan.argv)
+    // The flag absent (a CLI or legacy client launch): the installer and its
+    // download announcement still run.
+    const legacyPhases: string[] = []
+    const legacy = await adapter.deploy(plan, undefined, (phase) => legacyPhases.push(phase))
+    expect(legacy.ok).toBe(true)
+    expect(state.run).toEqual([STRATA_BINARY_INSTALL])
+    expect(legacyPhases).toEqual(['download'])
+    expect(state.spawn).toHaveLength(2)
   })
 
   it('signals the plan pid when no tracked child exists (a re-adopted engine)', async () => {
