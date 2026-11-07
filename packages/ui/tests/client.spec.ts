@@ -25,18 +25,23 @@ const clientPath = new URL('../../../dsh/client.js', import.meta.url)
 describe('dsh/client.js artifact source pins', () => {
   it('pins the route contract the card calls', () => {
     const source = readFileSync(fileURLToPath(clientPath), 'utf8')
-    for (const route of [
-      '/local-infer/summary',
-      '/local-infer/save',
-      '/local-infer/deps',
-      '/local-infer/install',
-      '/local-infer/launch',
-      '/local-infer/stop',
-      '/local-infer/register',
-      '/local-infer/unregister',
-      '/local-infer/orchestrator',
-      '/local-infer/orchestrator/save',
-    ]) {
+    // The route literals live in the card's api layer (the single source the
+    // bundle is built from): the pin reads them out of that module and
+    // asserts the artifact carries every one, so a route rename only breaks
+    // this test by dropping out of the bundle, never by drifting here.
+    const api = readFileSync(
+      fileURLToPath(new URL('../../client/src/api/routes.ts', import.meta.url)),
+      'utf8',
+    )
+    const routes = [
+      ...new Set(
+        [...api.matchAll(/'(\/local-infer\/[a-z-]+)(?:\?)?'/g)].map((match) => match[1]!),
+      ),
+    ]
+    // Guard the extraction itself: an api layer that stopped naming its
+    // routes as literals would silently shrink the pin below the real set.
+    expect(routes.length).toBeGreaterThanOrEqual(12)
+    for (const route of routes) {
       expect(source).toContain(route)
     }
   })
