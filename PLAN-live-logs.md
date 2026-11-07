@@ -122,7 +122,7 @@ must always match the provider process actually running.
   (logical machine names, short user-friendly labels); `phaseLabelFor`,
   ProviderList, and the title-bar control consume it; no renderer hardcodes
   a phase label.
-- [ ] [TASK-011-button-audit](docs/PLAN-live-logs-TASK-011-button-audit.md)
+- [x] [TASK-011-button-audit](docs/PLAN-live-logs-TASK-011-button-audit.md)
   Audit the remaining process-vs-button mismatches (entry row of a second
   running entry, download / chat-template / install cells, the `downloading`
   re-poll path, `stopping`); fix each or record the reason it stays.
