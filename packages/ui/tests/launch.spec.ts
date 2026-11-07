@@ -12,6 +12,7 @@ import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { DefaultModel, EnginePlatformConfig, LaunchPlan } from 'dsh-plugin-local-infer/core'
 import {
+  CHAT_TEMPLATE_FILE,
   DEFAULT_LOG_PATH_TEMPLATE,
   dshEngineCacheDirectory,
   formatLaunchCommand,
@@ -200,6 +201,177 @@ describe('launch and stop route helpers', () => {
       stubGetHost().host,
     )
     expect(seenOptions?.autoRebuild).toBeUndefined()
+  })
+
+  it('skips sync and build but still downloads absent artifacts when autoRebuild is false', async () => {
+    // Q3: the idempotent model and chat-template fetches are not part of the
+    // Auto Rebuild skip. The trust gate is off, so the only Get steps that
+    // could run are the sync/build (skipped) and the two artifact downloads
+    // (absent here, so they run).
+    writeConfig('ninfer', { model: 'qwen3-27b', modelDirectory: MODEL_DIR }, false)
+    rmSync(join(MODEL_DIR, 'qwen3_8_27b_nvfp4.ninfer'), { force: true })
+    rmSync(join(MODEL_DIR, CHAT_TEMPLATE_FILE), { force: true })
+    const downloads: string[] = []
+    const templateDownloads: string[] = []
+    let seenOptions: { autoRebuild?: boolean } | undefined
+    const service = stubService([], {
+      onDownload: ({ entry }) => {
+        downloads.push(entry.modelId)
+      },
+      onDownloadChatTemplate: ({ repo }) => {
+        templateDownloads.push(repo)
+      },
+    })
+    service.launch = async (plan: LaunchPlan, options?: { autoRebuild?: boolean }): Promise<LaunchResult> => {
+      seenOptions = options
+      return { plan, healthy: true }
+    }
+    const getHost = stubGetHost()
+    const steps: string[] = []
+    await launchEngine(
+      service,
+      {
+        engine: 'ninfer',
+        config: { model: 'qwen3-27b', modelDirectory: MODEL_DIR, chatTemplate: 'test/template-repo' },
+        autoRebuild: false,
+      },
+      (step) => {
+        steps.push(step)
+      },
+      getHost.host,
+    )
+    // The deploy receives the explicit false, so its own acquisition steps
+    // (git sync, image pull, installer) skip too.
+    expect(seenOptions?.autoRebuild).toBe(false)
+    // The Get run logs carry the skip line, and no git or build command
+    // reached the host at all.
+    const lastLogs = readConfig().lastLogs
+    expect(lastLogs).toContain('engine sync and build: auto rebuild off, skipped')
+    expect(getHost.state.run).toEqual([])
+    expect(getHost.state.streamed).toEqual([])
+    // The absent model artifact and chat template still fetch (Q3), each
+    // announcing its download phase as it starts; the skipped sync/build
+    // announces nothing.
+    expect(downloads).toEqual(['qwen3-27b'])
+    expect(templateDownloads).toEqual(['test/template-repo'])
+    expect(steps).toEqual(['download', 'download'])
+    expect(lastLogs).not.toContain('is already present, skipped')
+  })
+
+  it('skips the artifact downloads with their lines when autoRebuild is false and the artifacts are present', async () => {
+    writeConfig('ninfer', { model: 'qwen3-27b', modelDirectory: MODEL_DIR }, false)
+    writeFileSync(join(MODEL_DIR, 'qwen3_8_27b_nvfp4.ninfer'), 'present')
+    writeFileSync(join(MODEL_DIR, CHAT_TEMPLATE_FILE), 'present')
+    const downloads: string[] = []
+    const templateDownloads: string[] = []
+    let seenOptions: { autoRebuild?: boolean } | undefined
+    const service = stubService([], {
+      onDownload: ({ entry }) => {
+        downloads.push(entry.modelId)
+      },
+      onDownloadChatTemplate: ({ repo }) => {
+        templateDownloads.push(repo)
+      },
+    })
+    service.launch = async (plan: LaunchPlan, options?: { autoRebuild?: boolean }): Promise<LaunchResult> => {
+      seenOptions = options
+      return { plan, healthy: true }
+    }
+    const getHost = stubGetHost()
+    await launchEngine(
+      service,
+      {
+        engine: 'ninfer',
+        config: { model: 'qwen3-27b', modelDirectory: MODEL_DIR, chatTemplate: 'test/template-repo' },
+        autoRebuild: false,
+      },
+      undefined,
+      getHost.host,
+    )
+    expect(seenOptions?.autoRebuild).toBe(false)
+    // The whole Get run touches no host command: sync/build skipped, both
+    // artifacts present.
+    expect(getHost.state.run).toEqual([])
+    expect(getHost.state.streamed).toEqual([])
+    const lastLogs = readConfig().lastLogs
+    expect(lastLogs).toContain('engine sync and build: auto rebuild off, skipped')
+    expect(lastLogs).toContain('model download: qwen3-27b is already present, skipped')
+    expect(lastLogs).toContain('chat template: test/template-repo is already present, skipped')
+    expect(downloads).toEqual([])
+    expect(templateDownloads).toEqual([])
+  })
+
+  it('runs the Get sync and build and announces the build phase when autoRebuild is true', async () => {
+    writeConfig('ninfer', {}, false) // Pinned: the trust gate is off, no platform, no providers.
+    let seenOptions: { autoRebuild?: boolean } | undefined
+    const service = stubService([])
+    service.launch = async (plan: LaunchPlan, options?: { autoRebuild?: boolean }): Promise<LaunchResult> => {
+      seenOptions = options
+      return { plan, healthy: true }
+    }
+    // A clean existing checkout: the sync runs status, fetch, and rebase
+    // through the host, then the build runs the engine's Linux cmake step.
+    const getHost = stubGetHost({ exists: true })
+    const steps: string[] = []
+    await launchEngine(
+      service,
+      { engine: 'ninfer', config: {}, autoRebuild: true },
+      (step) => {
+        steps.push(step)
+      },
+      getHost.host,
+    )
+    expect(seenOptions?.autoRebuild).toBe(true)
+    // The sync/build phase announces 'build' as its work starts (the deploy
+    // stub reports nothing, so it is the run's only phase).
+    expect(steps).toEqual(['build'])
+    const directory = dshEngineCacheDirectory('ninfer')
+    expect(getHost.state.run).toEqual([`git -C ${directory} rev-parse --is-inside-work-tree`])
+    expect(getHost.state.streamed).toEqual([
+      `git -C ${directory} status --short`,
+      `git -C ${directory} fetch origin`,
+      `git -C ${directory} rebase origin/master || { git -C ${directory} rebase --abort; exit 1; }`,
+      `cmake -S ${directory} -B ${directory}/build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build ${directory}/build -j`,
+    ])
+    const lastLogs = readConfig().lastLogs
+    expect(lastLogs).toContain('engine clone: ninfer')
+    expect(lastLogs).toContain('engine build: ninfer')
+    expect(lastLogs).not.toContain('auto rebuild off, skipped')
+  })
+
+  it('keeps the full Get run for a launch request with no autoRebuild key', async () => {
+    // Server note: a request with no key (CLI, legacy client) keeps today's
+    // full run; only an explicit false skips. The absent checkout takes the
+    // clone path, then the build step runs.
+    writeConfig('ninfer', {}, false) // Pinned: the trust gate is off, no platform, no providers.
+    let seenOptions: { autoRebuild?: boolean } | undefined
+    const service = stubService([])
+    service.launch = async (plan: LaunchPlan, options?: { autoRebuild?: boolean }): Promise<LaunchResult> => {
+      seenOptions = options
+      return { plan, healthy: true }
+    }
+    const getHost = stubGetHost({ exists: false })
+    const steps: string[] = []
+    await launchEngine(
+      service,
+      { engine: 'ninfer', config: {} },
+      (step) => {
+        steps.push(step)
+      },
+      getHost.host,
+    )
+    // The deploy receives no flag, so its own rebuild runs, as always.
+    expect(seenOptions?.autoRebuild).toBeUndefined()
+    expect(steps).toEqual(['build'])
+    const directory = dshEngineCacheDirectory('ninfer')
+    expect(getHost.state.run).toEqual([`git -C ${directory} rev-parse --is-inside-work-tree`])
+    expect(getHost.state.streamed).toEqual([
+      `git clone https://github.com/Neroued/ninfer ${directory}`,
+      `cmake -S ${directory} -B ${directory}/build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build ${directory}/build -j`,
+    ])
+    const lastLogs = readConfig().lastLogs
+    expect(lastLogs).toContain('engine clone: ninfer')
+    expect(lastLogs).toContain('engine build: ninfer')
   })
 
   it('launches the current version and skips the deploy git sync after a Get rebase failure', async () => {
