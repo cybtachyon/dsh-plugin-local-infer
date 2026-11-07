@@ -20,6 +20,10 @@ import {
   SUDO_DEADLINE_MS,
 } from '../src/store/providers.ts'
 import { cardReducer } from '../src/store/reducer.ts'
+import {
+  clearRunLogStreams,
+  setLogsPaneMounted,
+} from '../src/store/logs-stream.ts'
 import type { CardStore } from '../src/store/sync.ts'
 import { initialCardState, type CardState } from '../src/store/types.ts'
 import { TEXT } from '../src/text.ts'
@@ -126,9 +130,44 @@ async function flush(times = 20): Promise<void> {
   }
 }
 
+// logsStreams stubs the run-logs route: every call records the url and the
+// request signal and answers with a hand-driven NDJSON stream (the run's
+// hub-side lines). The signal abort errors the body, the way a live fetch
+// ends a read.
+function logsStreams() {
+  const calls: Array<{ url: string; signal: AbortSignal | null }> = []
+  const streams: Array<{
+    enqueue: (line: string) => void
+    close: () => void
+    fail: (message: string) => void
+  }> = []
+  const answer = (url: string, init?: RequestInit): Response => {
+    calls.push({ url, signal: init?.signal ?? null })
+    let controller!: ReadableStreamDefaultController<Uint8Array>
+    const body = new ReadableStream<Uint8Array>({
+      start(c) {
+        controller = c
+      },
+    })
+    const encoder = new TextEncoder()
+    const stream = {
+      enqueue: (line: string) => controller.enqueue(encoder.encode(line + '\n')),
+      close: () => controller.close(),
+      fail: (message: string) => controller.error(new Error(message)),
+    }
+    streams.push(stream)
+    init?.signal?.addEventListener('abort', () => stream.fail('aborted'), { once: true })
+    return new Response(body, { status: 200 })
+  }
+  return { calls, streams, answer }
+}
+
 describe('the provider list drivers (store/providers.ts)', () => {
   beforeEach(() => {
     vi.useFakeTimers()
+    // The run-log stream attach is module-level; start each test from an
+    // empty slate.
+    clearRunLogStreams()
   })
 
   afterEach(() => {
@@ -539,6 +578,48 @@ describe('the provider list drivers (store/providers.ts)', () => {
       // The launch re-fetched the summary to repaint the status dot.
       const summary = calls.find((call) => call.url.startsWith('/local-infer/summary'))
       expect(summary).toBeDefined()
+    })
+
+    it('brackets one run-log stream for the provider key, detached at settle', async () => {
+      const { store, state } = makeStore()
+      const provider = providerWith()
+      const stream = launchStream()
+      const logs = logsStreams()
+      const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+        if (url === '/local-infer/launch') {
+          return stream.response()
+        }
+        if (url.startsWith('/local-infer/logs')) {
+          return logs.answer(url, init)
+        }
+        return jsonAnswer(summaryWith([provider]))
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      // A mounted Logs pane is what lets the run start attach its stream
+      // (Q3: the latest started run is the pane target). Mounted before the
+      // summary arrives, so no catch-up probe competes with the run's attach.
+      setLogsPaneMounted(store, true)
+      store.dispatch({
+        type: 'summary/ack',
+        summary: summaryWith([provider], 'old logs'),
+      })
+      performEntryLaunch(store, provider, t)
+      await flush()
+      // The key rule names the provider: the launch request carries its id.
+      expect(logs.calls.map((call) => call.url)).toEqual(['/local-infer/logs?provider=p1'])
+      logs.streams[0].enqueue(
+        '{"snapshot":"engine output streaming\\n","seq":1,"running":true}',
+      )
+      await flush()
+      // The run's live text reaches the Logs buffer through the stream,
+      // replacing the client's seed with the host's own buffer.
+      expect(state().ui.logs.getLogs).toBe('engine output streaming\n')
+      stream.enqueue('{"result":{"healthy":true}}')
+      stream.close()
+      await flush(50)
+      expect(state().launch['p1']?.status).toBe('running')
+      // The run settled: the driver detached its stream.
+      expect(logs.calls[0].signal?.aborted).toBe(true)
     })
 
     it('settles a downloading result to downloading', async () => {

@@ -66,6 +66,7 @@ import {
   type LifecycleControl,
 } from './store/derive.ts'
 import { repriceAll } from './store/deps.ts'
+import { retargetRunLogs } from './store/logs-stream.ts'
 import {
   openEntryLogs,
   performDraftLaunch,
@@ -474,6 +475,15 @@ export function card(
       // The mount effect runs once; the store binding re-renders on a
       // dispatch, so the load guard reads the live snapshot.
     }, [])
+
+    // The run-log stream's pane target (Q3): the edited provider, else the
+    // latest locally started run. An editing switch retargets the single
+    // attached stream, and a summary ack refreshes the page-refresh mount's
+    // catch-up guess. The pane's own mount effect drives the attach; this
+    // only keeps the target current.
+    react.useEffect(() => {
+      retargetRunLogs(store)
+    }, [state.ui.editingProviderId, state.summary])
 
     // The chat-template auto-download: fires once when the summary reports an
     // absent template the CLI can pull.

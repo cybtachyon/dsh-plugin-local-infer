@@ -18,7 +18,10 @@ import { type CardStore } from './sync.ts';
  * It no-ops while the draft is absent, the repo is empty, or a download is
  * already in flight. The ack detail stays neutral ('ok'): the component
  * maps the cell to the localized note, the way the action cells map
- * ACTION_TIMEOUT_DETAIL.
+ * ACTION_TIMEOUT_DETAIL. The pull brackets one run-log stream: the host keys
+ * it on the request's engine and the STORED config's model (the route reads
+ * the stored pair, not the draft's), per the mirrored runLogKey rule, and
+ * the stream detaches when the round trip settles.
  */
 export declare function downloadTemplate(store: CardStore, repo: string): Promise<void>;
 //# sourceMappingURL=template.d.ts.map

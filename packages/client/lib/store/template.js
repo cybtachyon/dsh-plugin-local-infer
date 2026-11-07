@@ -13,13 +13,17 @@
  * @module dsh-plugin-local-infer/client/store/template
  */
 import { postChatTemplate } from "../api/routes.js";
+import { beginRun, clientRunLogKey, endRun } from "./logs-stream.js";
 import { performTemplateAction, TEMPLATE_DOWNLOAD_TIMEOUT } from "./sync.js";
 /**
  * downloadTemplate pulls the named template repo into the model directory.
  * It no-ops while the draft is absent, the repo is empty, or a download is
  * already in flight. The ack detail stays neutral ('ok'): the component
  * maps the cell to the localized note, the way the action cells map
- * ACTION_TIMEOUT_DETAIL.
+ * ACTION_TIMEOUT_DETAIL. The pull brackets one run-log stream: the host keys
+ * it on the request's engine and the STORED config's model (the route reads
+ * the stored pair, not the draft's), per the mirrored runLogKey rule, and
+ * the stream detaches when the round trip settles.
  */
 export function downloadTemplate(store, repo) {
     const state = store.getSnapshot();
@@ -30,6 +34,8 @@ export function downloadTemplate(store, repo) {
         return Promise.resolve();
     }
     const draft = state.draft;
+    const runKey = clientRunLogKey(state.summary?.providers ?? [], draft.engine, state.summary?.config ?? {});
+    beginRun(store, runKey);
     // The directory key is omitted, not undefined: the route reads an absent
     // key as "the host's model directory".
     const directory = typeof draft.config.modelDirectory === 'string' ? draft.config.modelDirectory : undefined;
@@ -39,6 +45,8 @@ export function downloadTemplate(store, repo) {
         ...(directory !== undefined ? { directory } : {}),
     }).then(() => 'ok', (error) => {
         throw new Error(error instanceof Error ? error.message : String(error));
-    }), TEMPLATE_DOWNLOAD_TIMEOUT);
+    }), TEMPLATE_DOWNLOAD_TIMEOUT).then(() => {
+        endRun(store, runKey);
+    });
 }
 //# sourceMappingURL=template.js.map

@@ -33,6 +33,7 @@ import { LogsPanel } from "./render/LogsPanel.js";
 import { useCardStore } from "./store/useCardStore.js";
 import { deriveLifecycleControl, deriveProviderFormMode, } from "./store/derive.js";
 import { repriceAll } from "./store/deps.js";
+import { retargetRunLogs } from "./store/logs-stream.js";
 import { openEntryLogs, performDraftLaunch, performDraftStop, performEntryLaunch, performEntryStop, } from "./store/providers.js";
 import { performDiscard, performDownload, performRegister, performSave, performUnregister, } from "./store/actions.js";
 import { performGetCancel } from "./store/deps.js";
@@ -290,6 +291,14 @@ export function card(_react, localeRef, _primitives) {
             // The mount effect runs once; the store binding re-renders on a
             // dispatch, so the load guard reads the live snapshot.
         }, []);
+        // The run-log stream's pane target (Q3): the edited provider, else the
+        // latest locally started run. An editing switch retargets the single
+        // attached stream, and a summary ack refreshes the page-refresh mount's
+        // catch-up guess. The pane's own mount effect drives the attach; this
+        // only keeps the target current.
+        react.useEffect(() => {
+            retargetRunLogs(store);
+        }, [state.ui.editingProviderId, state.summary]);
         // The chat-template auto-download: fires once when the summary reports an
         // absent template the CLI can pull.
         useChatTemplateAutoDownload(store);

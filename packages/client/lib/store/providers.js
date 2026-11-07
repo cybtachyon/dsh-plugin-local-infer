@@ -20,6 +20,7 @@ import { LAUNCH_HEALTH_DEADLINE_MS, STOP_HEALTH_DEADLINE_MS, STOP_POLL_MS, } fro
 import { cancelInFlightRuns, forgetLaunchAbort, trackLaunchAbort, } from "./abort.js";
 import { repriceAll, repriceSummary } from "./deps.js";
 import { appendCanceledLog, appendProcessLog, seedProcessLog, separatorLine, SUDO_NOTE_LINE, } from "./logs.js";
+import { beginRun, clientRunLogKey, endRun } from "./logs-stream.js";
 import { ACTION_TIMEOUTS, performAction } from "./sync.js";
 /**
  * SUDO_DEADLINE_MS caps the card's wait after a launch stream announces a
@@ -189,7 +190,10 @@ export function openEntryLogs(store, provider) {
  * without a result, or a fetch failure settles to failed (the control becomes
  * a red Logs). A result re-fetches the summary and deps read models, so the
  * provider's status dot repaints from red to green and the deps panel
- * re-prices.
+ * re-prices. The run's live output reaches the Logs buffer through the
+ * attached run-log stream: beginRun names the run key (the host keys this
+ * launch on the provider id, per the mirrored runLogKey rule) and the run's
+ * settle detaches it.
  */
 export function performEntryLaunch(store, provider, t) {
     const prior = store.getSnapshot().launch[provider.id];
@@ -200,6 +204,8 @@ export function performEntryLaunch(store, provider, t) {
         return noHandle;
     }
     seedProcessLog(store, t.entryLaunching);
+    const runKey = clientRunLogKey(store.getSnapshot().summary?.providers ?? [], provider.engine, provider.config, provider.id);
+    beginRun(store, runKey);
     move(store, provider.id, { type: 'start' });
     let settled = false;
     let deadline = null;
@@ -231,6 +237,7 @@ export function performEntryLaunch(store, provider, t) {
         settled = true;
         clearDeadline();
         forgetLaunchAbort(provider.id);
+        endRun(store, runKey);
         return true;
     };
     const handle = {
@@ -333,7 +340,9 @@ export function performEntryLaunch(store, provider, t) {
  * settle each) instead of riding the launch driver's armDeadline slot: the
  * launch deadline serves two owners (health and sudo) of one run, while the
  * stop settles through the machine's cause-aware stopFailed event, so the two
- * paths share no timer state to drift apart.
+ * paths share no timer state to drift apart. The stop brackets one run-log
+ * stream (the host keys the stop on the provider id), detached at whichever
+ * settle path lands first.
  */
 export function performEntryStop(store, provider) {
     const prior = store.getSnapshot().launch[provider.id];
@@ -343,6 +352,8 @@ export function performEntryStop(store, provider) {
     if (priorStatus === 'failed') {
         return noHandle;
     }
+    const runKey = clientRunLogKey(store.getSnapshot().summary?.providers ?? [], provider.engine, provider.config, provider.id);
+    beginRun(store, runKey);
     move(store, provider.id, { type: 'stop' });
     let poll = null;
     let deadline = null;
@@ -359,9 +370,15 @@ export function performEntryStop(store, provider) {
     };
     const handle = {
         cancel() {
-            settled = true;
-            clearTimers();
+            settleStop();
         },
+    };
+    // settleStop ends the run once (its timers and its run-log stream), the
+    // single settle the poll, the deadline, and the unmount cancel share.
+    const settleStop = () => {
+        settled = true;
+        clearTimers();
+        endRun(store, runKey);
     };
     const pollFn = () => {
         if (settled) {
@@ -373,8 +390,7 @@ export function performEntryStop(store, provider) {
         if (entry !== undefined && entry.status !== 'running') {
             // The provider is no longer running: the stop succeeded.
             move(store, provider.id, { type: 'stopped' });
-            settled = true;
-            clearTimers();
+            settleStop();
             return;
         }
         // Summary only: stopping an engine does not change the deps the panel prices.
@@ -388,8 +404,7 @@ export function performEntryStop(store, provider) {
         if (settled) {
             return;
         }
-        settled = true;
-        clearTimers();
+        settleStop();
         move(store, provider.id, { type: 'stopFailed' });
     }, STOP_HEALTH_DEADLINE_MS);
     void postStop({
@@ -447,6 +462,11 @@ export function performDraftLaunch(store, t) {
     }
     const draft = state.draft;
     const abortKey = state.ui.editingProviderId ?? 'draft';
+    // The run key follows the request body: draftLaunchBody names the edited
+    // provider id when the form is one, so the mirrored key rule picks the same
+    // key the host's launch path does (engine+model match, else engine id).
+    const runKey = clientRunLogKey(state.summary?.providers ?? [], draft.engine, draft.config, state.ui.editingProviderId ?? undefined);
+    beginRun(store, runKey);
     const controller = new AbortController();
     trackLaunchAbort(abortKey, controller);
     return performAction(store, 'launch', () => postLaunch(draftLaunchBody(store), undefined, controller.signal,
@@ -472,7 +492,9 @@ export function performDraftLaunch(store, t) {
     })
         .finally(() => {
         store.dispatch({ type: 'ui/patch', patch: { sudoPending: false } });
-    }), ACTION_TIMEOUTS.launch);
+    }), ACTION_TIMEOUTS.launch).then(() => {
+        endRun(store, runKey);
+    });
 }
 /**
  * performDraftStop runs the form's own Stop control (the title-bar control's

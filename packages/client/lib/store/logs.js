@@ -1,7 +1,8 @@
 /**
  * The shared Logs buffer helpers the provider and deps store modules both
  * write through: the run separator seed, the line append, the raw streamed
- * chunk append, and the "Canceled" line the abort paths write.
+ * chunk append, the whole-buffer replace, and the "Canceled" line the abort
+ * paths write.
  *
  * The helpers live in a leaf module so deps.ts and providers.ts import them
  * from one place without an import edge between the two modules.
@@ -60,6 +61,16 @@ export function appendLogChunk(store, chunk) {
     store.dispatch({
         type: 'ui/patch',
         patch: { logs: { ...logs, getLogs: (logs.getLogs ?? '') + chunk } },
+    });
+}
+// replaceLogBuffer overwrites the Logs buffer with the host's own text (the
+// run-log stream's snapshot and runBegin catch-up), keeping the pane's
+// height and scroll mode through the merge-patch.
+export function replaceLogBuffer(store, text) {
+    const logs = store.getSnapshot().ui.logs;
+    store.dispatch({
+        type: 'ui/patch',
+        patch: { logs: { ...logs, getLogs: text } },
     });
 }
 // appendCanceledLog appends the "Canceled" line to the Logs buffer when a

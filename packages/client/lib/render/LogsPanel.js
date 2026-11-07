@@ -13,12 +13,15 @@
  * summary's lastLogs), and the auto-scroll effect pins the view to the bottom
  * while the mode is fresh or scrolling; a manual scroll up parks the mode at
  * manual, so content updates leave the view where the user put it. The
- * chevron drag clamps the height to the 96-480 px readable range.
+ * chevron drag clamps the height to the 96-480 px readable range. The pane's
+ * mount registers the live run-log stream with the store module: mounted, the
+ * pane target's stream attaches for the catch-up read; unmounted, it detaches.
  * @module dsh-plugin-local-infer/client/render/LogsPanel
  */
 import { INPUT_STYLE, LABEL_STYLE, ROW_STYLE } from "../styles.js";
 import { deriveDisplayedLogs, isGettingInFlight } from "../store/derive.js";
 import { performGetCancel } from "../store/deps.js";
+import { setLogsPaneMounted } from "../store/logs-stream.js";
 import { deriveGetStepTones } from "../store/progress.js";
 import { getPrimitivesModule, renderPill, renderTag, renderTextShimmer } from "./primitives.js";
 import { react } from "./react.js";
@@ -56,6 +59,17 @@ export function LogsPanel(props) {
     const displayedLogs = deriveDisplayedLogs(state);
     const textareaRef = react.useRef(null);
     const dragRef = react.useRef(null);
+    // The pane's ownership of the live run-log stream: mounting registers the
+    // Logs section (the pane target's stream attaches for the catch-up read),
+    // and unmounting detaches, so a collapsed form never holds an open NDJSON
+    // connection. Declared first so the auto-scroll effect below stays the
+    // component's last hook.
+    react.useEffect(() => {
+        setLogsPaneMounted(store, true);
+        return () => {
+            setLogsPaneMounted(store, false);
+        };
+    }, [store]);
     // The step chips render only while a Get run is in flight (the streamed
     // buffer is active and the get cell or the in-flight registry reads in
     // flight, the isGettingInFlight detection), or while the run has just settled

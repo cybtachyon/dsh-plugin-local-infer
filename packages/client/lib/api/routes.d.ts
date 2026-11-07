@@ -11,9 +11,11 @@
  * the host's own message. The launch route streams NDJSON (a step event as
  * each phase begins, a sudo event when a sudo command waits for the password
  * on the host's CLI, a progress event when the Get-steps hf download's tqdm
- * output folds into a structured state, then a final result event), and the
+ * output folds into a structured state, then a final result event), the
  * get route streams NDJSON too (a log event per log line, a progress event
- * per folded download state), so the two readers live here. readNdjsonLines buffers
+ * per folded download state), and the logs route streams NDJSON per run key
+ * (a catch-up snapshot, then log, runBegin, or runEnd events), which
+ * subscribeRunLogs holds open. readNdjsonLines buffers
  * chunks into whole lines: a line split across chunks completes on the
  * next chunk, a partial final line (a stream that ends without a trailing
  * newline) is still parsed, and a line that is not JSON is skipped, so one
@@ -134,6 +136,35 @@ export type GetStreamEvent = {
     log?: undefined;
     progress: HfProgressShape;
 };
+export type RunLogsEvent = {
+    snapshot: string;
+    running: boolean;
+    seq: number;
+    log?: undefined;
+    runBegin?: undefined;
+    runEnd?: undefined;
+} | {
+    snapshot?: undefined;
+    running?: undefined;
+    seq: number;
+    log: string;
+    runBegin?: undefined;
+    runEnd?: undefined;
+} | {
+    snapshot?: undefined;
+    running?: undefined;
+    seq: number;
+    log?: undefined;
+    runBegin: string;
+    runEnd?: undefined;
+} | {
+    snapshot?: undefined;
+    running?: undefined;
+    seq: number;
+    log?: undefined;
+    runBegin?: undefined;
+    runEnd: true;
+};
 export type LaunchResultEvent = Omit<LaunchResult, 'plan'> & {
     plan?: LaunchResult['plan'];
 };
@@ -165,6 +196,19 @@ export declare function readLaunchStream(response: Response, onStep?: (step: str
  * stream) reads the whole body as one log chunk.
  */
 export declare function readGetStream(response: Response, onChunk: (text: string) => void, onProgress?: (progress: HfProgressShape) => void): Promise<void>;
+/**
+ * subscribeRunLogs holds the per-provider run-log NDJSON stream open (the
+ * GET /local-infer/logs?provider=<key> route) and hands each event to
+ * onEvent until the stream ends or the caller's signal aborts (its detach).
+ * The key is the run-log key every run path shares; clientRunLogKey mirrors
+ * the host's runLogKey rule so the card always names the buffer its own
+ * requests write. A non-OK answer throws with the body text, and a body that
+ * broke mid-stream rejects through readNdjsonLines' read; the store module
+ * decides whether that break deserves its one reconnect (the stream may be
+ * held across runs, so a clean end just resolves). The optional signal is the
+ * pane's detach: the abort ends the in-flight body read.
+ */
+export declare function subscribeRunLogs(key: string, onEvent: (event: RunLogsEvent) => void, signal?: AbortSignal): Promise<void>;
 /**
  * routeExists probes whether the host route is mounted (see probeRoute).
  * The bootstrap uses it to decide whether to mount the card, so a headless
