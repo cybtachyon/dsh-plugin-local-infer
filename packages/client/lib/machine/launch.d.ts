@@ -35,10 +35,17 @@
  * in the text tables.
  * @module dsh-plugin-local-infer/client/machine/launch
  */
-/** The rebuild phase a launch step event names. */
-export type LaunchStep = 'prereqs' | 'download' | 'build' | 'launch';
-/** The four rebuild phase states. The step names the stream can carry. */
-export declare const LAUNCH_PHASE_STATES: readonly LaunchStep[];
+/**
+ * LAUNCH_PHASE_STATES is the card-side step-name tuple: the four rebuild
+ * phases the launch step stream can carry, as the one machine-local source the
+ * LaunchStep union derives from. The host side is core's LAUNCH_STEPS tuple
+ * (the card bundle carries no core code); the ui suite pins the two tuples
+ * equal so a name added on one side without the other fails a test, not the
+ * button.
+ */
+export declare const LAUNCH_PHASE_STATES: readonly ["prereqs", "download", "build", "launch"];
+/** The rebuild phase a launch step event names, derived from the tuple. */
+export type LaunchStep = (typeof LAUNCH_PHASE_STATES)[number];
 export declare const LAUNCH_HEALTH_DEADLINE_MS = 150000;
 export declare const STOP_POLL_MS = 1000;
 export declare const STOP_HEALTH_DEADLINE_MS = 10000;

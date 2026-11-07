@@ -88,7 +88,14 @@ export {
   resolveLogPath,
   slugifyModelName,
 } from './logs.ts'
-export { EngineAdapter } from './adapter.ts'
+export {
+  COMMAND_LOG_PREFIX,
+  EngineAdapter,
+  LAUNCH_STEPS,
+  URL_LOG_PREFIX,
+  commandLogLine,
+  urlLogLine,
+} from './adapter.ts'
 export type {
   BuildMode,
   CommandLogger,

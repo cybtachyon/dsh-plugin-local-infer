@@ -12,7 +12,7 @@ import { exec, execFile, spawn as nodeSpawn } from 'node:child_process';
 import { mkdir, writeFile as fsWriteFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { dirname, isAbsolute, join } from 'node:path';
-import { guardSudoCommand, LOG_TAIL_BYTES, SUDO_PROBE_COMMAND, sudoFailureDetail, } from '../../core/lib/index.js';
+import { commandLogLine, guardSudoCommand, LOG_TAIL_BYTES, SUDO_PROBE_COMMAND, sudoFailureDetail, urlLogLine, } from '../../core/lib/index.js';
 /**
  * deployTargets normalizes a spec's `deploy` declaration into a target list: a
  * single target wraps in a one-element list, a list passes through, and an
@@ -726,7 +726,7 @@ export function resolveLaunchArgv(engineDir, argv) {
  * own command-first echo.
  */
 export async function auditRun(host, command, log, options) {
-    log?.(`$ ${command}\n`);
+    log?.(commandLogLine(command));
     const outcome = await host.run(command, options);
     if (log !== undefined && outcome.ok && outcome.stdout !== undefined && outcome.stdout !== '') {
         // The host capped the tail (COMMAND_DETAIL_TAIL), so a docker pull or an
@@ -773,13 +773,13 @@ export const HEALTH_POLL_MAX_ATTEMPTS = 120;
  * has one home. `log` absent (a headless poll) runs the poll unlogged.
  */
 export async function logHealthPoll(log, url, poll) {
-    log?.(`> GET ${url}\n`);
+    log?.(urlLogLine(url));
     const result = await poll();
     if (log !== undefined) {
         log(result.healthy
-            ? `> GET ${url} ready\n`
+            ? urlLogLine(url, 'ready')
             : result.state === 'downloading'
-                ? `> GET ${url} still downloading${result.detail !== undefined ? `: ${result.detail}` : ''}\n`
+                ? urlLogLine(url, `still downloading${result.detail !== undefined ? `: ${result.detail}` : ''}`)
                 : `!! health check failed for ${url}: ${result.detail ?? `last status ${result.status ?? 'unknown'}`}\n`);
     }
     return result;

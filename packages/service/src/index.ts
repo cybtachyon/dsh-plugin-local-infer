@@ -34,6 +34,7 @@ import {
   agentDefaultPointsAt,
   agentDefaultUnsetOps,
   buildModelEntry,
+  commandLogLine,
   detectHardware as detectHardwareFromProbes,
   detectPackageManager,
   evaluateGuidelines,
@@ -716,7 +717,7 @@ export class LocalInfer extends Service implements LocalInferService {
     // (a satisfied dep never runs, so it never logs) before delegating to the
     // runner. Keeping the wrapper here leaves the core provisioner pure.
     const loggedRunner: CommandRunner = (command, runOptions) => {
-      options?.onLog?.(`$ ${command}\n`)
+      options?.onLog?.(commandLogLine(command))
       return runner(command, runOptions)
     }
     return runInstall(deps, hw, loggedRunner)
@@ -1368,7 +1369,7 @@ export class LocalInfer extends Service implements LocalInferService {
     mkdirSync(directory, { recursive: true })
     const runner = options?.runner ?? downloadRunner
     const command = hfDownloadCommand(entry, directory, options?.useHubCache === true)
-    options?.onLog?.(`$ ${command}\n`)
+    options?.onLog?.(commandLogLine(command))
     const result = await runner(command, options?.signal, options?.onChunk)
     if (result.ok) return { ok: true }
     return { ok: false, detail: `model download failed: ${result.detail ?? 'unknown'}` }
@@ -1390,7 +1391,7 @@ export class LocalInfer extends Service implements LocalInferService {
     mkdirSync(directory, { recursive: true })
     const runner = options?.runner ?? downloadRunner
     const command = hfChatTemplateCommand(repo, directory, options?.useHubCache === true)
-    options?.onLog?.(`$ ${command}\n`)
+    options?.onLog?.(commandLogLine(command))
     const result = await runner(command, options?.signal, options?.onChunk)
     if (result.ok) return { ok: true }
     return { ok: false, detail: `chat template download failed: ${result.detail ?? 'unknown'}` }

@@ -17,6 +17,7 @@ import type {
   LifecycleHost,
   RunOptions,
 } from '../../core/lib/index.js'
+import { commandLogLine } from '../../core/lib/index.js'
 import type { EngineOsProfile } from './engines/engineOs.ts'
 import { NINFER_LINUX } from './engines/ninfer/ninferLinux.ts'
 import { NINFER_MACOS } from './engines/ninfer/ninferMacOS.ts'
@@ -251,7 +252,7 @@ async function runLogged(
     log(chunk)
   }
   if (options?.echo !== false) {
-    log(`$ ${command}\n`)
+    log(commandLogLine(command))
   }
   // exactOptionalPropertyTypes: carry only the options the caller set, so an
   // absent shell or sudo declaration never passes `{ shell: undefined }`

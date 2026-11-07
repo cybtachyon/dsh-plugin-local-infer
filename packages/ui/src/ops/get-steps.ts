@@ -31,6 +31,7 @@ import type {
 import {
   chatTemplatePresent,
   checkDeps,
+  commandLogLine,
   dshEngineCacheDirectory,
   modelArtifactPresent,
   resolveModelDirectory,
@@ -365,7 +366,7 @@ async function runModelDownloadStep(ctx: GetStepContext): Promise<GetStepFailure
       request.onStep?.('download')
     }
     for (const command of extras) {
-      emit(`$ ${command}\n`)
+      emit(commandLogLine(command))
       // The Infernix extra downloads stream through the host, so their tqdm
       // lines reach the log sink and the onChunk progress sink together, the
       // way the model and template downloads do. A caller that does not

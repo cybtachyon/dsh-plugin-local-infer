@@ -35,13 +35,15 @@
  * in the text tables.
  * @module dsh-plugin-local-infer/client/machine/launch
  */
-/** The four rebuild phase states. The step names the stream can carry. */
-export const LAUNCH_PHASE_STATES = [
-    'prereqs',
-    'download',
-    'build',
-    'launch',
-];
+/**
+ * LAUNCH_PHASE_STATES is the card-side step-name tuple: the four rebuild
+ * phases the launch step stream can carry, as the one machine-local source the
+ * LaunchStep union derives from. The host side is core's LAUNCH_STEPS tuple
+ * (the card bundle carries no core code); the ui suite pins the two tuples
+ * equal so a name added on one side without the other fails a test, not the
+ * button.
+ */
+export const LAUNCH_PHASE_STATES = ['prereqs', 'download', 'build', 'launch'];
 // The health-poll deadline: the route's poll runs up to two minutes, so a
 // client-side deadline just past that cap forces a hung launch to the red
 // Logs state. It arms only for the launch phase; the rebuild phases
