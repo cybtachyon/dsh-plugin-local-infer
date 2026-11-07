@@ -1,3 +1,4 @@
+import { autoRebuildEnabled } from './adapter.ts'
 import type { LaunchPlan } from './adapter.ts'
 
 /**
@@ -50,7 +51,7 @@ export function formatLaunchCommand(
       plan.profile ?? 'single',
       'up',
       '--pull',
-      autoRebuild === false ? 'missing' : 'always',
+      autoRebuildEnabled(autoRebuild) ? 'always' : 'missing',
       '-d',
     ]
       .map(quoteArg)

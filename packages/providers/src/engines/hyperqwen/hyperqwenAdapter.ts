@@ -7,7 +7,7 @@
  * @module dsh-plugin-local-infer/providers/engines/hyperqwen/hyperqwenAdapter
  */
 
-import { EngineAdapter, formatLaunchCommand } from '../../../../core/lib/index.js'
+import { EngineAdapter, autoRebuildEnabled, formatLaunchCommand } from '../../../../core/lib/index.js'
 import type {
   CommandLogger,
   Config,
@@ -100,7 +100,7 @@ export class HyperQwenAdapter extends EngineAdapter {
     // card's Logs section prints the same string this run gets. Auto Rebuild
     // off (the card's checkbox) renders the `--pull missing` line, so the up
     // step starts the already-present image with the plan's parameters.
-    const autoRebuild = options?.autoRebuild !== false
+    const autoRebuild = autoRebuildEnabled(options?.autoRebuild)
     const command = formatLaunchCommand(plan, autoRebuild)
     if (command === undefined) {
       return { ok: false, detail: 'compose plan carries no command' }

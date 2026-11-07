@@ -16,6 +16,7 @@
 import { join } from 'node:path'
 import {
   EngineAdapter,
+  autoRebuildEnabled,
   hfDownloadCommand,
   hfHubCacheDirectory,
   hubCacheSnapshotFilePath,
@@ -193,7 +194,7 @@ export class InfernixAdapter extends EngineAdapter {
     let buildLogs = ''
     // Auto Rebuild off (the card's checkbox): the git sync (fetch, rebase,
     // rebuild) is skipped and the checkout launches as-is.
-    if (engineDir !== undefined && options?.autoRebuild !== false) {
+    if (engineDir !== undefined && autoRebuildEnabled(options?.autoRebuild)) {
       // The conditional rebuild fetches the checkout, prices it against the
       // remote branch, and rebuilds only when it is behind (or a fresh
       // clone). The engine's own quick start (the cmake preset, then the

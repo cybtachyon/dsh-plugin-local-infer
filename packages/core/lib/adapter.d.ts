@@ -264,7 +264,8 @@ export interface HealthResult {
  * steps (the git sync with its fetch, rebase, and conditional rebuild, the
  * docker image pull, and the Strata binary installer) are skipped and the
  * already-present checkout, image, or binary launches as-is. Absent reads as
- * true (the acquisition runs). `onLog` is the launch run's
+ * true (the acquisition runs), the rule every guard prices through
+ * autoRebuildEnabled. `onLog` is the launch run's
  * log sink: a deploy that runs a mutating command (an image pull, a model
  * download) writes its `$ <command>` line through it before the child spawns,
  * so the launch's live run reads the command first. Absent (a headless
@@ -275,6 +276,17 @@ export interface DeployOptions {
     autoRebuild?: boolean;
     onLog?: CommandLogger;
 }
+/**
+ * autoRebuildEnabled reports whether a launch's engine acquisition steps
+ * (the git sync with its conditional rebuild, the docker image pull, the
+ * Strata binary installer, the compose `--pull` mode, the Get steps'
+ * sync/build skip) run: the card's Auto Rebuild flag, with only an explicit
+ * false disabling them so the already-present checkout, image, or binary
+ * launches as-is. An absent flag (a CLI launch, a legacy caller) reads as
+ * enabled. Every guard prices the flag through this one predicate, so the
+ * absent-means-enabled rule cannot drift between adapters.
+ */
+export declare function autoRebuildEnabled(autoRebuild?: boolean): boolean;
 /**
  * DeployResult reports whether a build-or-pull succeeded, with a detail for the
  * UI. `handle` is the spawned engine process when the deploy step started one

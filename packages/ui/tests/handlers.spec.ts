@@ -9,7 +9,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { DefaultModel, LaunchPlan, LifecycleHost } from 'dsh-plugin-local-infer/core'
 import { SUDO_CLI_NOTE } from 'dsh-plugin-local-infer/core'
 import type { DownloadModelOptions, DownloadResult, LaunchResult, LocalInferService } from 'dsh-plugin-local-infer/service'
@@ -29,6 +29,13 @@ describe('route handlers over a fake web server', () => {
 
   afterAll(() => {
     rmSync(home, { recursive: true, force: true })
+  })
+
+  // Wipe the scratch home's stored config before every test: each test seeds
+  // its own config (or reads the scaffold default), so a route's write never
+  // leaks into the next test's readConfig assertions.
+  beforeEach(() => {
+    rmSync(join(home, '.dsh'), { recursive: true, force: true })
   })
 
   interface FakeRes {
@@ -659,6 +666,12 @@ describe('route handler error branches', () => {
 
   afterAll(() => {
     rmSync(home, { recursive: true, force: true })
+  })
+
+  // The same per-test stored-config wipe as the handlers describe: the save
+  // route tests here read whatever the previous save left unless reset.
+  beforeEach(() => {
+    rmSync(join(home, '.dsh'), { recursive: true, force: true })
   })
 
   function fakeRes() {

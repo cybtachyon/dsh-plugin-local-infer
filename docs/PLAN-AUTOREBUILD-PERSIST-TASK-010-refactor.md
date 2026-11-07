@@ -28,3 +28,38 @@ copy-pasted where a shared deploy helper fits; and doc comments still describing
 - handlers.spec.ts save tests share the scratch HOME config without a per-test
   reset (order-sensitive).
 - writeConfig's eight positional parameters are a data clump behind writeStored.
+
+## Resolutions (2026-11-06)
+
+Applied:
+- The per-adapter acquisition guard `options?.autoRebuild !== false` (10 restatements across
+  the NInfer, llama.cpp, Strata, Basalt, Infernix, and Hyper-Qwen deploys, the compose
+  `--pull` mapping, and the Get steps' sync/build skip) now prices the flag through the
+  core-exported `autoRebuildEnabled(autoRebuild?)` predicate (`packages/core/src/adapter.ts`),
+  the single source for "an absent flag keeps the acquisition" (the CLI-legacy rule). The
+  client-side reads stay `?? false` (an entry with no stored key draws unchecked) and were
+  deliberately not unified with the server predicate.
+- The save route's three Auto Rebuild carry blocks (body wins, else stored, else no key)
+  consolidated onto the `carryAutoRebuild` helper in `saveRoute`.
+- card.spec.ts: the four loose deps fixtures plus the full one now share the
+  `depsAnswer()` helper (a full satisfied-empty `DepsModel`).
+- card.spec.ts: the three `findAll(checkbox)[0]` field edits now locate the Flag field
+  through the `fieldCheckbox` label-text helper (renderField's sibling-label row shape;
+  `autoRebuildBox` keeps the label-nested `renderCheckbox` shape). The
+  renders-the-full-form presence sweep stays a generic count.
+- handlers.spec.ts: both describes wipe the scratch home's `.dsh` tree in a `beforeEach`,
+  so each test reads the scaffold default or its own seeded config.
+
+Considered, not applied:
+- Client shared spec-helpers module: the copies are not compatible (makeStore: 9 identical
+  of 12, 3 divergent; summaryWith: 4 variants across 8 files; routeFetch/launchStream/
+  providerWith: 2 variants each; flush's signature varies). A faithful lift is a per-file
+  behavior audit, not a mechanical extraction; kept as a follow-up.
+- `writeConfig`'s positional parameters: about 120 call sites (mostly ui tests); an
+  object-parameter change is high churn with no behavior win.
+- A client-side `?? false` named helper: the five reads (card checkbox, editProvider,
+  performEntryLaunch, draftLaunchBody, performSave) are the language idiom already; the
+  rule is documented on `CardDraft.autoRebuild`. A wrapper would add indirection, not
+  clarity.
+- The save route's two upsert blocks stay separate: folding the id-path and the
+  match-path would change the (pinned) id-not-found drop behavior.

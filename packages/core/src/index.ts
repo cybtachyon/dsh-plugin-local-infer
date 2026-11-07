@@ -93,6 +93,7 @@ export {
   EngineAdapter,
   LAUNCH_STEPS,
   URL_LOG_PREFIX,
+  autoRebuildEnabled,
   commandLogLine,
   urlLogLine,
 } from './adapter.ts'

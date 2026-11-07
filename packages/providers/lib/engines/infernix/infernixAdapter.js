@@ -13,7 +13,7 @@
  * @module dsh-plugin-local-infer/providers/engines/infernix/infernixAdapter
  */
 import { join } from 'node:path';
-import { EngineAdapter, hfDownloadCommand, hfHubCacheDirectory, hubCacheSnapshotFilePath, modelArtifactPresent, modelDownloadTarget, } from '../../../../core/lib/index.js';
+import { EngineAdapter, autoRebuildEnabled, hfDownloadCommand, hfHubCacheDirectory, hubCacheSnapshotFilePath, modelArtifactPresent, modelDownloadTarget, } from '../../../../core/lib/index.js';
 import { auditRun, customArgFlags, flagsFromSpecs, nodeLifecycleHost, pollHealth, stopProcessPlan, } from "../../adapters.js";
 import { syncEngineForDeploy } from "../../acquire.js";
 import { INFERNIX_MODEL_ARTIFACTS, INFERNIX_PARAMETERS, infernixArtifactFor, infernixDraftModelPath, infernixModelKey, } from "./infernix.js";
@@ -140,7 +140,7 @@ export class InfernixAdapter extends EngineAdapter {
         let buildLogs = '';
         // Auto Rebuild off (the card's checkbox): the git sync (fetch, rebase,
         // rebuild) is skipped and the checkout launches as-is.
-        if (engineDir !== undefined && options?.autoRebuild !== false) {
+        if (engineDir !== undefined && autoRebuildEnabled(options?.autoRebuild)) {
             // The conditional rebuild fetches the checkout, prices it against the
             // remote branch, and rebuilds only when it is behind (or a fresh
             // clone). The engine's own quick start (the cmake preset, then the

@@ -19,7 +19,7 @@ export type { EngineLaunchSignature, GpuUsageProbe, ProcessLine, ReserveResoluti
 export { computeProviderStatuses, isGpuBusy, } from './status.ts';
 export type { ProviderRef, ProviderStatus, ProviderStatusInput, RunningEngineRef, } from './status.ts';
 export { DEFAULT_LOG_PATH_TEMPLATE, LOG_FILE_NAME_TEMPLATE, LOG_TAIL_BYTES, LOG_TEMPLATE_ENGINE, LOG_TEMPLATE_HOME, LOG_TEMPLATE_MODEL, LOG_TEMPLATE_TIMESTAMP, formatLogTimestamp, resolveLogPath, slugifyModelName, } from './logs.ts';
-export { COMMAND_LOG_PREFIX, EngineAdapter, LAUNCH_STEPS, URL_LOG_PREFIX, commandLogLine, urlLogLine, } from './adapter.ts';
+export { COMMAND_LOG_PREFIX, EngineAdapter, LAUNCH_STEPS, URL_LOG_PREFIX, autoRebuildEnabled, commandLogLine, urlLogLine, } from './adapter.ts';
 export type { BuildMode, CommandLogger, DeployOptions, DeployResult, EngineLaunchState, EnginePlatformConfig, FetchResult, HealthCheckOptions, HealthResult, LaunchPlan, LaunchProgress, LaunchStep, LifecycleHost, ProcessExitInfo, ProcessHandle, RunOptions, } from './adapter.ts';
 export { NOOP_DEBUG_LOGGER, createCommandDebugLogger, isHarnessLogDebug, } from './debug.ts';
 export type { CreateCommandDebugLoggerArgs, DebugLogger, } from './debug.ts';

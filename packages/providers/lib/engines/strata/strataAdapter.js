@@ -16,7 +16,7 @@
  * @module dsh-plugin-local-infer/providers/engines/strata/strataAdapter
  */
 import { join } from 'node:path';
-import { EngineAdapter } from '../../../../core/lib/index.js';
+import { EngineAdapter, autoRebuildEnabled } from '../../../../core/lib/index.js';
 import { HEALTH_POLL_DEFAULT_MS, HEALTH_POLL_MAX_ATTEMPTS, auditRun, customArgEnv, customArgFlags, delay, envFromSpecs, flagsFromSpecs, logHealthPoll, nodeLifecycleHost, stopProcessPlan, trackChild, } from "../../adapters.js";
 import { syncEngineForDeploy } from "../../acquire.js";
 import { STRATA_PARAMETERS, strataDefaults, strataModelKey, } from "./strata.js";
@@ -276,7 +276,7 @@ export class StrataAdapter extends EngineAdapter {
             // step: the card's button reads "Building..." for it, and its
             // `$ <command>` line reaches the launch run's log sink before the child
             // spawns.
-            if (options?.autoRebuild !== false) {
+            if (autoRebuildEnabled(options?.autoRebuild)) {
                 onProgress?.('build');
                 const pull = await auditRun(this.host, `docker pull ${STRATA_DOCKER_IMAGE}`, options?.onLog);
                 if (!pull.ok) {
@@ -302,7 +302,7 @@ export class StrataAdapter extends EngineAdapter {
                 // downloads the Terminal: the card's button reads "Downloading..."
                 // for it, and its `$ <command>` line reaches the launch run's log
                 // sink before the child spawns.
-                if (options?.autoRebuild !== false) {
+                if (autoRebuildEnabled(options?.autoRebuild)) {
                     onProgress?.('download');
                     const install = await auditRun(this.host, STRATA_BINARY_INSTALL, options?.onLog);
                     if (!install.ok) {
@@ -319,7 +319,7 @@ export class StrataAdapter extends EngineAdapter {
                         detail: 'the source build needs an engine directory (the Get step checkout) to run the OS wrapper',
                     };
                 }
-                if (options?.autoRebuild !== false) {
+                if (autoRebuildEnabled(options?.autoRebuild)) {
                     // The conditional rebuild fetches the checkout, prices it against the
                     // remote branch, and rebuilds only when it is behind (or a fresh
                     // clone). The decision, the build command, and its output are

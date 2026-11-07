@@ -50,6 +50,19 @@ export function urlLogLine(url, verdict) {
     return `${URL_LOG_PREFIX}${url}${verdict === undefined ? '' : ` ${verdict}`}\n`;
 }
 /**
+ * autoRebuildEnabled reports whether a launch's engine acquisition steps
+ * (the git sync with its conditional rebuild, the docker image pull, the
+ * Strata binary installer, the compose `--pull` mode, the Get steps'
+ * sync/build skip) run: the card's Auto Rebuild flag, with only an explicit
+ * false disabling them so the already-present checkout, image, or binary
+ * launches as-is. An absent flag (a CLI launch, a legacy caller) reads as
+ * enabled. Every guard prices the flag through this one predicate, so the
+ * absent-means-enabled rule cannot drift between adapters.
+ */
+export function autoRebuildEnabled(autoRebuild) {
+    return autoRebuild !== false;
+}
+/**
  * EngineAdapter is the abstract base one subclass implements per engine. It
  * owns the engine's parameter surface and turns a config into a launch plan,
  * deploys it, health-checks it, and stops it. NInfer is the canonical adapter

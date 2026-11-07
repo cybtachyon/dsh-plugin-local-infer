@@ -1,5 +1,5 @@
 import * as reactModule from 'react'
-import type { LocalInferSummary } from 'dsh-plugin-local-infer/ui'
+import type { DepsModel, LocalInferSummary } from 'dsh-plugin-local-infer/ui'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import { card, type LocaleRef } from '../src/Card.tsx'
 import {
@@ -311,6 +311,21 @@ function fullDraft(): CardDraft {
   }
 }
 
+// depsAnswer builds the /local-infer/deps answer the card's re-prices ack:
+// the full satisfied-empty DepsModel shape. The DepsPanel renders the acked
+// model on every later re-render, so a partial stub would crash it.
+function depsAnswer(): DepsModel {
+  return {
+    engineId: 'ninfer',
+    buildMode: 'local',
+    packageManager: null,
+    deps: [],
+    allSatisfied: true,
+    installString: '',
+    runAllowed: false,
+  }
+}
+
 // autoRebuildBox locates the Auto Rebuild checkbox's input. The control-row
 // checkboxes (Auto Rebuild, the agent-default box next to Register) and the
 // form's checkbox fields all render the same input[type=checkbox], so
@@ -331,6 +346,26 @@ function clickBox(box: El, next: boolean): void {
   ;(box.props?.onChange as (ev: { target: { checked: boolean } }) => void)({
     target: { checked: next },
   })
+}
+
+// fieldCheckbox locates a checkbox form field's input by its field label.
+// renderField draws the row as a label element plus the bare native input
+// (unlike renderCheckbox's label-nested control that autoRebuildBox walks),
+// so this walks from the row div holding the one label whose whole text is
+// the field label to the checkbox in that row. Same pin-travels-with-the-
+// control rule as autoRebuildBox: indexing the checkbox tree would shift
+// with any field change.
+function fieldCheckbox(tree: unknown, fieldLabel: string): El {
+  const row = find(
+    tree,
+    (e) =>
+      e.type === 'div' &&
+      children(e).some((c) => c.type === 'label' && text(c) === fieldLabel),
+  )
+  expect(row).toBeDefined()
+  const box = find(row, (e) => e.type === 'input' && e.props?.type === 'checkbox')
+  expect(box).toBeDefined()
+  return box as El
 }
 
 // renderCard renders the card over a seeded store: the first render creates
@@ -476,7 +511,7 @@ describe('the card composer (src/Card.tsx)', () => {
 
   it('edits a field through onValue, dispatching a draft edit', () => {
     const { tree, store } = renderCard({ summary: fullSummary(), draft: fullDraft() })
-    const checkbox = findAll(tree, (e) => e.type === 'input' && e.props?.type === 'checkbox')[0]
+    const checkbox = fieldCheckbox(tree, 'Flag')
     ;(checkbox.props?.onChange as (ev: { target: { checked: boolean } }) => void)({
       target: { checked: false },
     })
@@ -533,17 +568,8 @@ describe('the card composer (src/Card.tsx)', () => {
       const { fetchMock } = routeFetch({
         '/local-infer/summary': () => jsonAnswer(summary),
         // A satisfied empty deps plan: the edit's reprice acks it, and this
-        // test re-renders after the ack, so the model must be a full DepsModel.
-        '/local-infer/deps': () =>
-          jsonAnswer({
-            engineId: 'ninfer',
-            buildMode: 'local',
-            packageManager: null,
-            deps: [],
-            allSatisfied: true,
-            installString: '',
-            runAllowed: false,
-          }),
+        // test re-renders after the ack.
+        '/local-infer/deps': () => jsonAnswer(depsAnswer()),
       })
       vi.stubGlobal('fetch', fetchMock)
       const { tree, store, rerender } = renderCard({ summary, draft: fullDraft() })
@@ -660,7 +686,7 @@ describe('the card composer (src/Card.tsx)', () => {
             headers: { 'content-type': 'application/x-ndjson' },
           }),
         '/local-infer/summary': () => jsonAnswer(summary),
-        '/local-infer/deps': () => jsonAnswer({ engineId: 'ninfer' }),
+        '/local-infer/deps': () => jsonAnswer(depsAnswer()),
       })
       vi.stubGlobal('fetch', fetchMock)
       const { tree, store } = renderCard({
@@ -970,12 +996,12 @@ describe('the card composer (src/Card.tsx)', () => {
       const summary = fullSummary()
       const { calls, fetchMock } = routeFetch({
         '/local-infer/summary': () => jsonAnswer(summary),
-        '/local-infer/deps': () => jsonAnswer({ engineId: 'ninfer' }),
+        '/local-infer/deps': () => jsonAnswer(depsAnswer()),
       })
       vi.stubGlobal('fetch', fetchMock)
       const { tree, store } = renderCard({ summary, draft: fullDraft() })
       // A field edit schedules the 300 ms re-price.
-      const checkbox = findAll(tree, (e) => e.type === 'input' && e.props?.type === 'checkbox')[0]
+      const checkbox = fieldCheckbox(tree, 'Flag')
       ;(checkbox.props?.onChange as (ev: { target: { checked: boolean } }) => void)({
         target: { checked: false },
       })
@@ -999,7 +1025,7 @@ describe('the card composer (src/Card.tsx)', () => {
       const summary = fullSummary()
       const { calls, fetchMock } = routeFetch({
         '/local-infer/summary': () => jsonAnswer(summary),
-        '/local-infer/deps': () => jsonAnswer({ engineId: 'ninfer' }),
+        '/local-infer/deps': () => jsonAnswer(depsAnswer()),
       })
       vi.stubGlobal('fetch', fetchMock)
       // No summary and no draft: the mount effect fetches on the first render.
@@ -1024,12 +1050,12 @@ describe('the card composer (src/Card.tsx)', () => {
       const summary = fullSummary()
       const { calls, fetchMock } = routeFetch({
         '/local-infer/summary': () => jsonAnswer(summary),
-        '/local-infer/deps': () => jsonAnswer({ engineId: 'ninfer' }),
+        '/local-infer/deps': () => jsonAnswer(depsAnswer()),
       })
       vi.stubGlobal('fetch', fetchMock)
       const { tree, runCleanups } = renderCard({ summary, draft: fullDraft() })
       // A field edit schedules the re-price, then the card unmounts.
-      const checkbox = findAll(tree, (e) => e.type === 'input' && e.props?.type === 'checkbox')[0]
+      const checkbox = fieldCheckbox(tree, 'Flag')
       ;(checkbox.props?.onChange as (ev: { target: { checked: boolean } }) => void)({
         target: { checked: false },
       })
