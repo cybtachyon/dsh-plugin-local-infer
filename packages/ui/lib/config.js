@@ -77,7 +77,9 @@ export function readConfig() {
  * non-blank string id. A non-object entry or an entry with no id is dropped,
  * so a by-hand edit never poisons the card's provider list. The per-engine
  * platform config is read through the same string-field rule the platform map
- * uses, so a provider never carries a platform field it cannot price.
+ * uses, so a provider never carries a platform field it cannot price. A
+ * non-boolean autoRebuild is dropped by the same by-hand-edit rule, so only
+ * a stored true or false reaches the launch skip.
  */
 function parseProviders(raw) {
     if (raw === null || typeof raw !== 'object' || !Array.isArray(raw)) {
@@ -94,6 +96,9 @@ function parseProviders(raw) {
         const config = fields.config && typeof fields.config === 'object' ? fields.config : {};
         const platform = parseStoredPlatformConfig(fields.platform) ?? {};
         const provider = { id: fields.id, engine, config, platform };
+        if (typeof fields.autoRebuild === 'boolean') {
+            provider.autoRebuild = fields.autoRebuild;
+        }
         const launch = parseLaunchRecord(fields.launch);
         if (launch !== undefined) {
             provider.launch = launch;

@@ -28,7 +28,8 @@ export interface StoredPlatformConfig {
  * StoredProviderConfig is one saved provider model+engine config the card
  * lists: a stable id the card edits and deletes against, the engine and the
  * full parameter config it serves, the per-engine platform config the deploy
- * step consumes, and the launch record the launch step persists when it
+ * step consumes, the per-provider Auto Rebuild flag the card's checkbox
+ * stores, and the launch record the launch step persists when it
  * starts the entry's engine (the engine pid, start time, launch arguments,
  * and the DSH process pid that launched it). The record is what a DSH
  * restart re-links a surviving engine to its config; a stop clears it.
@@ -38,6 +39,7 @@ export interface StoredProviderConfig {
     engine: string;
     config: Config;
     platform: StoredPlatformConfig;
+    autoRebuild?: boolean;
     launch?: ProviderLaunchRecord;
 }
 export interface StoredConfig {

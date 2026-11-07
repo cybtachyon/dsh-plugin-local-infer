@@ -125,6 +125,34 @@ describe('local-infer route read model', () => {
     expect(readConfig().showHelp).toBe(true)
   })
 
+  it('round-trips the per-provider autoRebuild flag and drops a non-boolean', () => {
+    // The card's Auto Rebuild checkbox persists per provider, so a written
+    // false must survive the file read and keep the launch's skip honest.
+    writeConfig('ninfer', {}, false, {}, true, [
+      { id: 'on', engine: 'ninfer', config: {}, platform: {}, autoRebuild: true },
+      { id: 'off', engine: 'ninfer', config: {}, platform: {}, autoRebuild: false },
+    ])
+    expect(readConfig().providers.map((provider) => provider.autoRebuild)).toEqual([true, false])
+    // An entry saved before the key existed stays absent (the card draws the
+    // box unchecked), and a by-hand non-boolean edit is dropped the way the
+    // other stored fields are.
+    writeFileSync(
+      localInferConfigPath(),
+      JSON.stringify({
+        engine: 'ninfer',
+        config: {},
+        allowRunDeps: false,
+        providers: [
+          { id: 'p1', engine: 'ninfer', config: {}, platform: {} },
+          { id: 'p2', engine: 'ninfer', config: {}, platform: {}, autoRebuild: 'yes' },
+        ],
+      }),
+    )
+    const stored = readConfig().providers
+    expect(stored.map((provider) => provider.id)).toEqual(['p1', 'p2'])
+    expect(stored.every((provider) => !('autoRebuild' in provider))).toBe(true)
+  })
+
   it('exposes the stored help toggle in the summary', async () => {
     writeConfig('ninfer', {}, false, undefined, false)
     const summary = await buildSummary(stubService([]), { engine: 'ninfer', config: {} })

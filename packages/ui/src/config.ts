@@ -41,7 +41,8 @@ export interface StoredPlatformConfig {
  * StoredProviderConfig is one saved provider model+engine config the card
  * lists: a stable id the card edits and deletes against, the engine and the
  * full parameter config it serves, the per-engine platform config the deploy
- * step consumes, and the launch record the launch step persists when it
+ * step consumes, the per-provider Auto Rebuild flag the card's checkbox
+ * stores, and the launch record the launch step persists when it
  * starts the entry's engine (the engine pid, start time, launch arguments,
  * and the DSH process pid that launched it). The record is what a DSH
  * restart re-links a surviving engine to its config; a stop clears it.
@@ -51,6 +52,11 @@ export interface StoredProviderConfig {
   engine: string
   config: Config
   platform: StoredPlatformConfig
+  // The card's Auto Rebuild checkbox, stored per provider: true keeps the
+  // sync, build, image pull, and installer acquisition steps in a launch,
+  // false spawns the already-present engine only. An entry saved before the
+  // key existed carries none, so the card draws the box unchecked.
+  autoRebuild?: boolean
   launch?: ProviderLaunchRecord
 }
 
@@ -147,7 +153,9 @@ export function readConfig(): StoredConfig {
  * non-blank string id. A non-object entry or an entry with no id is dropped,
  * so a by-hand edit never poisons the card's provider list. The per-engine
  * platform config is read through the same string-field rule the platform map
- * uses, so a provider never carries a platform field it cannot price.
+ * uses, so a provider never carries a platform field it cannot price. A
+ * non-boolean autoRebuild is dropped by the same by-hand-edit rule, so only
+ * a stored true or false reaches the launch skip.
  */
 function parseProviders(raw: unknown): StoredProviderConfig[] {
   if (raw === null || typeof raw !== 'object' || !Array.isArray(raw)) {
@@ -162,6 +170,9 @@ function parseProviders(raw: unknown): StoredProviderConfig[] {
     const config = fields.config && typeof fields.config === 'object' ? (fields.config as Config) : {}
     const platform = parseStoredPlatformConfig(fields.platform) ?? {}
     const provider: StoredProviderConfig = { id: fields.id, engine, config, platform }
+    if (typeof fields.autoRebuild === 'boolean') {
+      provider.autoRebuild = fields.autoRebuild
+    }
     const launch = parseLaunchRecord(fields.launch)
     if (launch !== undefined) {
       provider.launch = launch
