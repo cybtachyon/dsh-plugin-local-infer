@@ -340,17 +340,21 @@ export class StrataAdapter extends EngineAdapter {
     options?: DeployOptions,
   ): Promise<DeployResult> {
     if (plan.kind === 'docker') {
-      // The image pull is the docker build step: the card's button reads
-      // "Building..." for it, and its `$ <command>` line reaches the launch
-      // run's log sink before the child spawns.
-      onProgress?.('build')
-      const pull = await auditRun(
-        this.host,
-        `docker pull ${STRATA_DOCKER_IMAGE}`,
-        options?.onLog,
-      )
-      if (!pull.ok) {
-        return { ok: false, detail: `docker pull failed: ${pull.detail ?? 'unknown'}` }
+      // Auto Rebuild off (the card's checkbox): the image pull is skipped and
+      // the already-present image starts. The image pull is the docker build
+      // step: the card's button reads "Building..." for it, and its
+      // `$ <command>` line reaches the launch run's log sink before the child
+      // spawns.
+      if (options?.autoRebuild !== false) {
+        onProgress?.('build')
+        const pull = await auditRun(
+          this.host,
+          `docker pull ${STRATA_DOCKER_IMAGE}`,
+          options?.onLog,
+        )
+        if (!pull.ok) {
+          return { ok: false, detail: `docker pull failed: ${pull.detail ?? 'unknown'}` }
+        }
       }
       const handle = this.host.spawn(plan.argv ?? [], plan.env ?? {})
       trackChild(this.children, this.planKey(plan), handle)
@@ -366,13 +370,17 @@ export class StrataAdapter extends EngineAdapter {
       const isBinary = plan.argv?.[0] === 'strata'
       let buildLogs = ''
       if (isBinary) {
-        // The install script downloads the Terminal: the card's button reads
-        // "Downloading..." for it, and its `$ <command>` line reaches the
-        // launch run's log sink before the child spawns.
-        onProgress?.('download')
-        const install = await auditRun(this.host, STRATA_BINARY_INSTALL, options?.onLog)
-        if (!install.ok) {
-          return { ok: false, detail: `strata install failed: ${install.detail ?? 'unknown'}` }
+        // Auto Rebuild off (the card's checkbox): the install is skipped and
+        // the already-installed strata command starts. The install script
+        // downloads the Terminal: the card's button reads "Downloading..."
+        // for it, and its `$ <command>` line reaches the launch run's log
+        // sink before the child spawns.
+        if (options?.autoRebuild !== false) {
+          onProgress?.('download')
+          const install = await auditRun(this.host, STRATA_BINARY_INSTALL, options?.onLog)
+          if (!install.ok) {
+            return { ok: false, detail: `strata install failed: ${install.detail ?? 'unknown'}` }
+          }
         }
       } else {
         // The source build needs the checkout directory to resolve the OS

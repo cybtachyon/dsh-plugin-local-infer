@@ -324,13 +324,21 @@ export class NInferAdapter extends EngineAdapter {
       return withLogs({ ok: true, handle })
     }
     if (plan.kind === 'docker') {
-      // The image pull is the docker build step: the card's button reads
-      // "Building..." for it, and its `$ <command>` line reaches the launch
-      // run's log sink before the child spawns.
-      onProgress?.('build')
-      const pull = await auditRun(this.host, `docker pull ${NINFER_DOCKER_IMAGE}`, options?.onLog)
-      if (!pull.ok) {
-        return { ok: false, detail: `docker pull failed: ${pull.detail ?? 'unknown'}` }
+      // Auto Rebuild off (the card's checkbox): the image pull is skipped and
+      // the already-present image starts. The image pull is the docker build
+      // step: the card's button reads "Building..." for it, and its
+      // `$ <command>` line reaches the launch run's log sink before the child
+      // spawns.
+      if (options?.autoRebuild !== false) {
+        onProgress?.('build')
+        const pull = await auditRun(
+          this.host,
+          `docker pull ${NINFER_DOCKER_IMAGE}`,
+          options?.onLog,
+        )
+        if (!pull.ok) {
+          return { ok: false, detail: `docker pull failed: ${pull.detail ?? 'unknown'}` }
+        }
       }
       const handle = this.host.spawn(plan.argv ?? [], plan.env ?? {})
       trackChild(this.children, this.planKey(plan), handle)

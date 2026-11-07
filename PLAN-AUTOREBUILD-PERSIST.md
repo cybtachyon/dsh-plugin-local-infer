@@ -72,7 +72,7 @@ Depends: 002, 003 -> 001.
 
 ### Phase 2 - Server: launch-time skip completeness
 
-- [ ] [TASK-004-deploy-acquisition-skip](docs/PLAN-AUTOREBUILD-PERSIST-TASK-004-deploy-acquisition-skip.md) -
+- [x] [TASK-004-deploy-acquisition-skip](docs/PLAN-AUTOREBUILD-PERSIST-TASK-004-deploy-acquisition-skip.md) -
   guard `docker pull` (ninfer, llamacpp, strata) and the Strata binary installer
   with `options?.autoRebuild !== false`; spawn proceeds with the plan's argv.
   DoD: per-adapter tests (pull/install skipped, spawn still runs expected argv).
