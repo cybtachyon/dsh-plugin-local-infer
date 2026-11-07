@@ -17,7 +17,7 @@
  */
 import { join } from 'node:path';
 import { EngineAdapter } from '../../../../core/lib/index.js';
-import { HEALTH_POLL_DEFAULT_MS, HEALTH_POLL_MAX_ATTEMPTS, auditRun, customArgEnv, customArgFlags, delay, envFromSpecs, flagsFromSpecs, nodeLifecycleHost, stopProcessPlan, trackChild, } from "../../adapters.js";
+import { HEALTH_POLL_DEFAULT_MS, HEALTH_POLL_MAX_ATTEMPTS, auditRun, customArgEnv, customArgFlags, delay, envFromSpecs, flagsFromSpecs, logHealthPoll, nodeLifecycleHost, stopProcessPlan, trackChild, } from "../../adapters.js";
 import { syncEngineForDeploy } from "../../acquire.js";
 import { STRATA_PARAMETERS, strataDefaults, strataModelKey, } from "./strata.js";
 import { strataLinuxSourceLaunch } from "./strataLinux.js";
@@ -357,61 +357,65 @@ export class StrataAdapter extends EngineAdapter {
         // reports the start phase: a 200 is ready, a process that ended before
         // readiness is failed, and a process still fetching its files after the
         // attempt cap is downloading (in progress, not a failure) so the card
-        // re-polls instead of showing a broken launch.
-        const pollMs = options?.pollMs ?? HEALTH_POLL_DEFAULT_MS;
-        const maxAttempts = options?.maxAttempts ?? HEALTH_POLL_MAX_ATTEMPTS;
-        // The tracked handle is read before the loop: trackChild drops the map
-        // entry when the child ends, so a late read would miss the exit state
-        // the early-exit check needs.
-        const handle = this.children.get(this.planKey(plan));
-        let last = { status: 0, ok: false };
-        let lastPreReady = null;
-        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-            // The state read runs before the fetch: a child that settled (a crash,
-            // a pkill, or a spawn failure) will never report 200, so the poll
-            // ends here with a failed result instead of the full attempt cap.
-            if (handle?.hasExited?.() === true) {
+        // re-polls instead of showing a broken launch. The shared logHealthPoll
+        // wrap carries the URL-query rule (one `> GET` line ahead of the settled
+        // verdict, retries silent).
+        return logHealthPoll(options?.onLog, plan.healthUrl, async () => {
+            const pollMs = options?.pollMs ?? HEALTH_POLL_DEFAULT_MS;
+            const maxAttempts = options?.maxAttempts ?? HEALTH_POLL_MAX_ATTEMPTS;
+            // The tracked handle is read before the loop: trackChild drops the map
+            // entry when the child ends, so a late read would miss the exit state
+            // the early-exit check needs.
+            const handle = this.children.get(this.planKey(plan));
+            let last = { status: 0, ok: false };
+            let lastPreReady = null;
+            for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                // The state read runs before the fetch: a child that settled (a crash,
+                // a pkill, or a spawn failure) will never report 200, so the poll
+                // ends here with a failed result instead of the full attempt cap.
+                if (handle?.hasExited?.() === true) {
+                    return {
+                        healthy: false,
+                        status: last.status,
+                        state: 'failed',
+                        detail: 'the engine process exited before it reported ready',
+                    };
+                }
+                last = await this.host.fetch(plan.healthUrl);
+                if (last.status === 200) {
+                    return { healthy: true, status: 200, state: 'ready' };
+                }
+                // A running tracked process reports its start phase from its output. A
+                // missing handle (no deploy tracked one, or the process already ended)
+                // falls through to the plain poll: the health URL stays down, so the
+                // loop times out and reads the start as failed.
+                if (handle !== undefined) {
+                    lastPreReady = strataPreReadyState(handle.logs ?? '');
+                }
+                if (pollMs > 0 && attempt < maxAttempts) {
+                    await delay(pollMs);
+                }
+            }
+            // The engine did not report ready within the attempt cap. If it was still
+            // downloading its files, read the start as in progress (downloading): the
+            // download is not a broken launch, and the card re-polls until the engine
+            // reports ready. If the download was done and the engine was starting,
+            // read the start as failed (a stuck start timed out).
+            if (lastPreReady === 'downloading') {
                 return {
                     healthy: false,
                     status: last.status,
-                    state: 'failed',
-                    detail: 'the engine process exited before it reported ready',
+                    state: 'downloading',
+                    detail: 'the engine is still downloading its model files',
                 };
             }
-            last = await this.host.fetch(plan.healthUrl);
-            if (last.status === 200) {
-                return { healthy: true, status: 200, state: 'ready' };
-            }
-            // A running tracked process reports its start phase from its output. A
-            // missing handle (no deploy tracked one, or the process already ended)
-            // falls through to the plain poll: the health URL stays down, so the
-            // loop times out and reads the start as failed.
-            if (handle !== undefined) {
-                lastPreReady = strataPreReadyState(handle.logs ?? '');
-            }
-            if (pollMs > 0 && attempt < maxAttempts) {
-                await delay(pollMs);
-            }
-        }
-        // The engine did not report ready within the attempt cap. If it was still
-        // downloading its files, read the start as in progress (downloading): the
-        // download is not a broken launch, and the card re-polls until the engine
-        // reports ready. If the download was done and the engine was starting,
-        // read the start as failed (a stuck start timed out).
-        if (lastPreReady === 'downloading') {
             return {
                 healthy: false,
                 status: last.status,
-                state: 'downloading',
-                detail: 'the engine is still downloading its model files',
+                state: 'failed',
+                detail: `health check did not return 200 within ${maxAttempts} attempts`,
             };
-        }
-        return {
-            healthy: false,
-            status: last.status,
-            state: 'failed',
-            detail: `health check did not return 200 within ${maxAttempts} attempts`,
-        };
+        });
     }
     async stop(plan, log) {
         if (plan.kind === 'docker' && plan.containerName !== undefined) {

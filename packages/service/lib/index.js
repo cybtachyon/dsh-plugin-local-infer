@@ -1063,7 +1063,10 @@ export class LocalInfer extends Service {
                 preset: undefined,
                 stored: false,
                 degraded: true,
-                detail: `the modsearch fetch failed: ${detail}; the built-in presets apply`,
+                // The URL rides the caller-visible detail: fetchPreset is not a
+                // provider process (no run-log key to write a `> GET` line into), so
+                // the audited rule is served by naming the queried URL here instead.
+                detail: `the modsearch fetch failed for ${source.url}: ${detail}; the built-in presets apply`,
             };
         }
         const preset = presetFromFetch(source, content, todayIso());

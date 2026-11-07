@@ -273,9 +273,10 @@ const RUN_ABORT_GRACE_MS = 5_000;
  */
 const RUN_TIMEOUT_MS = 600_000;
 /**
- * The tail kept of a failed command's combined output: the detail a
- * CommandOutcome carries is the last KiB of stdout plus stderr, so a chatty
- * failure stays readable without growing the host's memory.
+ * The tail kept of a command's combined output: the detail a failed
+ * CommandOutcome carries, and the stdout tail a clean-exit CommandOutcome
+ * carries, are each the last KiB of stdout plus stderr, so a chatty run
+ * stays readable without growing the host's memory or the log sink.
  */
 const COMMAND_DETAIL_TAIL = 1_024;
 /**
@@ -444,7 +445,14 @@ export function createNodeLifecycleHost(debug, sudo) {
                     // command line in that shell; absent keeps the system default.
                     const started = exec(command, { timeout: RUN_TIMEOUT_MS, shell: options?.shell }, (error, stdout, stderr) => {
                         if (error === null) {
-                            resolve({ ok: true });
+                            // A clean exit still carries its output tail: the run's log
+                            // sink (auditRun, the Get extras fallback) appends it after
+                            // the `$ <command>` line, so success output reaches the Logs
+                            // section the way streamed output does.
+                            const output = `${stdout ?? ''}${stderr ?? ''}`.trim();
+                            resolve(output === ''
+                                ? { ok: true }
+                                : { ok: true, stdout: output.slice(-COMMAND_DETAIL_TAIL) });
                             return;
                         }
                         const detail = `${stderr ?? ''}${stdout ?? ''}${String(error)}`.trim().slice(-COMMAND_DETAIL_TAIL);
@@ -509,7 +517,11 @@ export function createNodeLifecycleHost(debug, sudo) {
                     });
                     started.on('close', code => {
                         if (code === 0) {
-                            resolve({ ok: true });
+                            // The stdout tail of a clean exit (see the plain run's rule); a
+                            // streaming caller has already seen the chunks live, so only a
+                            // sink-less reader needs the collected tail.
+                            const tail = output.trim();
+                            resolve(tail === '' ? { ok: true } : { ok: true, stdout: tail.slice(-COMMAND_DETAIL_TAIL) });
                             return;
                         }
                         resolve({
@@ -703,15 +715,25 @@ export function resolveLaunchArgv(engineDir, argv) {
 }
 /**
  * auditRun runs one mutating host command through the run's log sink: the
- * `$ <command>` line reaches the sink before the child spawns, so the launch
- * or stop run reads the command ahead of its outcome. No sink (a headless
- * call) and the command runs as before. The deploy and stop steps share this
- * one audit rule for their direct `host.run` calls; the git and build steps
- * run through the acquire step's own command-first echo.
+ * `$ <command>` line reaches the sink before the child spawns, and the
+ * outcome's success output tail reaches it after the child settles, so the
+ * launch or stop run reads the command ahead of its result (the URL-query
+ * rule applied to execs: line first, settled outcome after). No sink (a
+ * headless call) and the command runs as before. A failed outcome lands no
+ * output here: the caller's own failure line carries the detail's output
+ * tail. The deploy and stop steps share this one audit rule for their direct
+ * `host.run` calls; the git and build steps run through the acquire step's
+ * own command-first echo.
  */
 export async function auditRun(host, command, log, options) {
     log?.(`$ ${command}\n`);
-    return host.run(command, options);
+    const outcome = await host.run(command, options);
+    if (log !== undefined && outcome.ok && outcome.stdout !== undefined && outcome.stdout !== '') {
+        // The host capped the tail (COMMAND_DETAIL_TAIL), so a docker pull or an
+        // hf download lands its closing lines without refilling the run.
+        log(outcome.stdout.endsWith('\n') ? outcome.stdout : `${outcome.stdout}\n`);
+    }
+    return outcome;
 }
 /**
  * stopProcessPlan signals the engine process a stop targets when the adapter
@@ -742,6 +764,27 @@ export async function stopProcessPlan(host, plan, log) {
 export const HEALTH_POLL_DEFAULT_MS = 1_000;
 export const HEALTH_POLL_MAX_ATTEMPTS = 120;
 /**
+ * logHealthPoll brackets a health poll with the URL-query logging rule (the
+ * exec rule's URL twin): the one `> GET <url>` line reaches the run's log
+ * sink before the first request, the retries stay silent, and the settled
+ * verdict line (`> GET <url> ready`, Strata's still-downloading line, or the
+ * `!!` failure with the last detail) lands after the poll returns. The
+ * shared poll and the Strata poll both wrap their loop in this, so the rule
+ * has one home. `log` absent (a headless poll) runs the poll unlogged.
+ */
+export async function logHealthPoll(log, url, poll) {
+    log?.(`> GET ${url}\n`);
+    const result = await poll();
+    if (log !== undefined) {
+        log(result.healthy
+            ? `> GET ${url} ready\n`
+            : result.state === 'downloading'
+                ? `> GET ${url} still downloading${result.detail !== undefined ? `: ${result.detail}` : ''}\n`
+                : `!! health check failed for ${url}: ${result.detail ?? `last status ${result.status ?? 'unknown'}`}\n`);
+    }
+    return result;
+}
+/**
  * pollHealth polls a plan's health URL until a 200 or the attempt cap, the
  * same loop the qwen-ninfer launcher runs. A poll interval of 0 skips the
  * delay, which the tests use to run the loop without a real sleep. `handle`
@@ -749,35 +792,40 @@ export const HEALTH_POLL_MAX_ATTEMPTS = 120;
  * exited (hasExited true), the poll ends immediately with a failed result
  * instead of running the full attempt cap, so a crash reports at once. A
  * handle that cannot report its exit state (a stub) keeps the full poll.
+ * The poll's URL logging (the one `> GET` line ahead of the settled verdict)
+ * rides the shared logHealthPoll wrap when options.onLog carries the run's
+ * log sink.
  */
 export async function pollHealth(host, plan, options, handle) {
-    const pollMs = options?.pollMs ?? HEALTH_POLL_DEFAULT_MS;
-    const maxAttempts = options?.maxAttempts ?? HEALTH_POLL_MAX_ATTEMPTS;
-    let last = { status: 0, ok: false };
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        // The state read runs before the fetch: a child that settled (a crash,
-        // a pkill, or a spawn failure) will never report 200, so the poll ends
-        // here with a failed result naming the exit.
-        if (handle?.hasExited?.() === true) {
-            return {
-                healthy: false,
-                state: 'failed',
-                detail: 'the engine process exited before it reported ready',
-            };
+    return logHealthPoll(options?.onLog, plan.healthUrl, async () => {
+        const pollMs = options?.pollMs ?? HEALTH_POLL_DEFAULT_MS;
+        const maxAttempts = options?.maxAttempts ?? HEALTH_POLL_MAX_ATTEMPTS;
+        let last = { status: 0, ok: false };
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            // The state read runs before the fetch: a child that settled (a crash,
+            // a pkill, or a spawn failure) will never report 200, so the poll ends
+            // here with a failed result naming the exit.
+            if (handle?.hasExited?.() === true) {
+                return {
+                    healthy: false,
+                    state: 'failed',
+                    detail: 'the engine process exited before it reported ready',
+                };
+            }
+            last = await host.fetch(plan.healthUrl);
+            if (last.status === 200) {
+                return { healthy: true, status: 200 };
+            }
+            if (pollMs > 0 && attempt < maxAttempts) {
+                await delay(pollMs);
+            }
         }
-        last = await host.fetch(plan.healthUrl);
-        if (last.status === 200) {
-            return { healthy: true, status: 200 };
-        }
-        if (pollMs > 0 && attempt < maxAttempts) {
-            await delay(pollMs);
-        }
-    }
-    return {
-        healthy: false,
-        status: last.status,
-        detail: `health check did not return 200 within ${maxAttempts} attempts`,
-    };
+        return {
+            healthy: false,
+            status: last.status,
+            detail: `health check did not return 200 within ${maxAttempts} attempts`,
+        };
+    });
 }
 /**
  * delay waits `ms` milliseconds. The health polls use it between attempts; a

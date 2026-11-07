@@ -140,11 +140,15 @@ export declare function trackChild(children: Map<string, ProcessHandle>, key: st
 export declare function resolveLaunchArgv(engineDir: string | undefined, argv: readonly string[] | undefined): string[];
 /**
  * auditRun runs one mutating host command through the run's log sink: the
- * `$ <command>` line reaches the sink before the child spawns, so the launch
- * or stop run reads the command ahead of its outcome. No sink (a headless
- * call) and the command runs as before. The deploy and stop steps share this
- * one audit rule for their direct `host.run` calls; the git and build steps
- * run through the acquire step's own command-first echo.
+ * `$ <command>` line reaches the sink before the child spawns, and the
+ * outcome's success output tail reaches it after the child settles, so the
+ * launch or stop run reads the command ahead of its result (the URL-query
+ * rule applied to execs: line first, settled outcome after). No sink (a
+ * headless call) and the command runs as before. A failed outcome lands no
+ * output here: the caller's own failure line carries the detail's output
+ * tail. The deploy and stop steps share this one audit rule for their direct
+ * `host.run` calls; the git and build steps run through the acquire step's
+ * own command-first echo.
  */
 export declare function auditRun(host: LifecycleHost, command: string, log?: CommandLogger, options?: RunOptions): Promise<CommandOutcome>;
 /**
@@ -168,6 +172,16 @@ export declare function stopProcessPlan(host: LifecycleHost, plan: LaunchPlan, l
 export declare const HEALTH_POLL_DEFAULT_MS = 1000;
 export declare const HEALTH_POLL_MAX_ATTEMPTS = 120;
 /**
+ * logHealthPoll brackets a health poll with the URL-query logging rule (the
+ * exec rule's URL twin): the one `> GET <url>` line reaches the run's log
+ * sink before the first request, the retries stay silent, and the settled
+ * verdict line (`> GET <url> ready`, Strata's still-downloading line, or the
+ * `!!` failure with the last detail) lands after the poll returns. The
+ * shared poll and the Strata poll both wrap their loop in this, so the rule
+ * has one home. `log` absent (a headless poll) runs the poll unlogged.
+ */
+export declare function logHealthPoll(log: CommandLogger | undefined, url: string, poll: () => Promise<HealthResult>): Promise<HealthResult>;
+/**
  * pollHealth polls a plan's health URL until a 200 or the attempt cap, the
  * same loop the qwen-ninfer launcher runs. A poll interval of 0 skips the
  * delay, which the tests use to run the loop without a real sleep. `handle`
@@ -175,6 +189,9 @@ export declare const HEALTH_POLL_MAX_ATTEMPTS = 120;
  * exited (hasExited true), the poll ends immediately with a failed result
  * instead of running the full attempt cap, so a crash reports at once. A
  * handle that cannot report its exit state (a stub) keeps the full poll.
+ * The poll's URL logging (the one `> GET` line ahead of the settled verdict)
+ * rides the shared logHealthPoll wrap when options.onLog carries the run's
+ * log sink.
  */
 export declare function pollHealth(host: LifecycleHost, plan: LaunchPlan, options?: HealthCheckOptions, handle?: ProcessHandle): Promise<HealthResult>;
 /**

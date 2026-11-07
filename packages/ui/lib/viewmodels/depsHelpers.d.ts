@@ -29,10 +29,14 @@ export interface InstallResponse {
  * command's `$ <command>` line into the run (through onLog) before its child
  * spawns, each per-dep install result appends in the Get step's
  * `  <id>: <status>` shape, and the run ends at settle, a throwing install
- * included. The run registers the sudo hook the launch and Get paths
- * register, so a guarded dependency install waiting for a password on the CLI
- * lands the shared SUDO_CLI_NOTE line in the live run and the persisted run.
- * A 409 refusal starts no run.
+ * included. The settle text also folds through the shared run-section persister
+ * (finishRunSection over the pre-run baseline), so the last install run
+ * survives a card reload in the stored last-run logs and the log file, like
+ * the other provider processes; the baseline close keeps the sudo note the
+ * observer persists mid-run from landing twice. The run registers the sudo
+ * hook the launch and Get paths register, so a guarded dependency install
+ * waiting for a password on the CLI lands the shared SUDO_CLI_NOTE line in
+ * the live run and the persisted run. A 409 refusal starts no run.
  */
 export declare function runInstallFor(localInfer: LocalInferService, request: DepsRequest): Promise<InstallResponse>;
 //# sourceMappingURL=depsHelpers.d.ts.map

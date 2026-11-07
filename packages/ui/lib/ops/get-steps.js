@@ -217,8 +217,9 @@ async function runModelDownloadStep(ctx) {
             // way the model and template downloads do. A caller that does not
             // stream progress (onChunk absent) still lands the chunk in the log
             // sink only.
-            const outcome = request.host.runStream !== undefined
-                ? await request.host.runStream(command, (chunk) => {
+            const stream = request.host.runStream;
+            const outcome = stream !== undefined
+                ? await stream.call(request.host, command, (chunk) => {
                     emit(chunk);
                     ctx.onChunk?.(chunk);
                 }, {
@@ -228,6 +229,14 @@ async function runModelDownloadStep(ctx) {
             if (!outcome.ok) {
                 emit(`!! ${command} failed: ${outcome.detail ?? 'unknown'}\n`);
                 return { ok: false, detail: 'a model artifact download failed' };
+            }
+            // The plain-run fallback cannot stream, so the outcome's capped success
+            // output tail lands after the `$ <command>` line: the exec rule's
+            // append-results half, the way the streaming path already does.
+            if (stream === undefined &&
+                outcome.stdout !== undefined &&
+                outcome.stdout !== '') {
+                emit(outcome.stdout.endsWith('\n') ? outcome.stdout : `${outcome.stdout}\n`);
             }
         }
     }

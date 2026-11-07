@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  auditRun,
   configFileFromSpecs,
   createNodeLifecycleHost,
   customArgEnv,
@@ -66,6 +67,10 @@ function stubHost() {
     fetchStatus: 200,
     fetchSequence: [] as number[],
     runOk: true,
+    // Success output a plain run reports in the outcome (the stdout tail a
+    // clean exit carries); undefined keeps the bare { ok: true } shape, so
+    // only the tests pricing append-results set it.
+    runStdout: undefined as string | undefined,
     // Per-command output the streaming surface feeds: a command substring maps
     // to the stdout the command prints, so a test prices a probe (the behind-
     // check count, the dirty status) without a real git repo.
@@ -75,7 +80,8 @@ function stubHost() {
     async run(command: string, options?: RunOptions): Promise<CommandOutcome> {
       state.run.push(command)
       state.runShells.push(options?.shell)
-      return state.runOk ? { ok: true } : { ok: false, detail: 'run failed' }
+      if (!state.runOk) return { ok: false, detail: 'run failed' }
+      return state.runStdout === undefined ? { ok: true } : { ok: true, stdout: state.runStdout }
     },
     async runStream(
       command: string,
@@ -1672,6 +1678,107 @@ describe('pollHealth', () => {
     expect(result.status).toBe(503)
     expect(state.fetch).toHaveLength(3)
   })
+
+  it('logs the URL line once before the first request and the ready verdict after', async () => {
+    const { host, state } = stubHost()
+    state.fetchSequence = [503, 503, 200]
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    const lines: string[] = []
+    const result = await pollHealth(host, plan, {
+      pollMs: 0,
+      maxAttempts: 5,
+      onLog: (line) => lines.push(line),
+    })
+    expect(result.healthy).toBe(true)
+    // The URL-query rule: one `> GET` line leads the run (the two retried
+    // 503s log nothing), the settled verdict follows the attempts.
+    expect(lines).toEqual([
+      '> GET http://127.0.0.1:18020/health\n',
+      '> GET http://127.0.0.1:18020/health ready\n',
+    ])
+  })
+
+  it('appends the failed verdict with the last detail and no per-retry URL lines', async () => {
+    const { host, state } = stubHost()
+    state.fetchStatus = 503
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    const lines: string[] = []
+    const result = await pollHealth(host, plan, {
+      pollMs: 0,
+      maxAttempts: 3,
+      onLog: (line) => lines.push(line),
+    })
+    expect(result.healthy).toBe(false)
+    // Three attempts, still one URL line: retries stay silent until the
+    // settled `!!` verdict names the last failure detail.
+    expect(lines).toEqual([
+      '> GET http://127.0.0.1:18020/health\n',
+      '!! health check failed for http://127.0.0.1:18020/health: health check did not return 200 within 3 attempts\n',
+    ])
+  })
+
+  it('logs nothing without a run log sink', async () => {
+    const { host, state } = stubHost()
+    const plan: LaunchPlan = {
+      engineId: 'ninfer',
+      kind: 'process',
+      port: 18020,
+      healthUrl: 'http://127.0.0.1:18020/health',
+    }
+    // The headless poll (no onLog): the loop runs unchanged, the URL rule
+    // writes nothing.
+    const result = await pollHealth(host, plan, { pollMs: 0, maxAttempts: 1 })
+    expect(result.healthy).toBe(true)
+    expect(state.fetch).toHaveLength(1)
+  })
+})
+
+describe('auditRun (the command-then-outcome exec audit)', () => {
+  it('lands the success output tail after the command line', async () => {
+    const { host, state } = stubHost()
+    state.runStdout = 'Status: Downloaded newer image'
+    const lines: string[] = []
+    const outcome = await auditRun(host, 'docker pull img', (line) => lines.push(line))
+    expect(outcome.ok).toBe(true)
+    // The append-results half of the rule: `$ <command>` first, the child's
+    // success output after, newline-normalized.
+    expect(lines).toEqual(['$ docker pull img\n', 'Status: Downloaded newer image\n'])
+  })
+
+  it('keeps a trailing newline as-is and stays silent on success with no output', async () => {
+    const { host, state } = stubHost()
+    state.runStdout = 'downloaded file\n'
+    const lines: string[] = []
+    await auditRun(host, 'hf download x', (line) => lines.push(line))
+    expect(lines).toEqual(['$ hf download x\n', 'downloaded file\n'])
+    state.runStdout = undefined
+    const quiet: string[] = []
+    await auditRun(host, 'kill 123', (line) => quiet.push(line))
+    expect(quiet).toEqual(['$ kill 123\n'])
+  })
+
+  it('lands no output on failure (the caller names the detail) and runs unlogged without a sink', async () => {
+    const { host, state } = stubHost()
+    state.runOk = false
+    state.runStdout = 'partial pull'
+    const lines: string[] = []
+    const failed = await auditRun(host, 'docker pull img', (line) => lines.push(line))
+    expect(failed.ok).toBe(false)
+    expect(lines).toEqual(['$ docker pull img\n'])
+    // No sink (a headless stop): the command still runs through the host.
+    const headless = await auditRun(host, 'docker stop c')
+    expect(headless.ok).toBe(false)
+  })
 })
 
 describe('LifecycleHost.writeFile', () => {
@@ -2433,6 +2540,109 @@ describe('StrataAdapter', () => {
     expect(state.fetch).toHaveLength(2)
   })
 
+  it('logs the URL line before the verdict and the still-downloading settle', async () => {
+    const { host, state } = stubHost()
+    state.fetchSequence = [503, 200]
+    const adapter = new StrataAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'strata', kind: 'docker', argv: ['docker', 'run', STRATA_DOCKER_IMAGE],
+      env: {}, containerName: 'strata-8080', port: 8080,
+      healthUrl: 'http://127.0.0.1:8080/health',
+    }
+    const lines: string[] = []
+    const result = await adapter.healthCheck(plan, {
+      pollMs: 0,
+      maxAttempts: 3,
+      onLog: (line) => lines.push(line),
+    })
+    expect(result.healthy).toBe(true)
+    // The shared URL-query rule reaches the Strata poll too: one `> GET`
+    // line, the ready verdict after the attempts.
+    expect(lines).toEqual([
+      '> GET http://127.0.0.1:8080/health\n',
+      '> GET http://127.0.0.1:8080/health ready\n',
+    ])
+  })
+
+  it('appends the still-downloading verdict when the start is fetching its files', async () => {
+    // The downloading fixture (a tracked handle whose logs name the download,
+    // the health URL stays down): the settle line reads as in progress, not
+    // as a failed poll.
+    const logs = 'Downloading the engine… 10%'
+    const host: LifecycleHost = {
+      async run(): Promise<CommandOutcome> {
+        return { ok: true }
+      },
+      spawn(): ProcessHandle {
+        return {
+          pid: 1234,
+          kill: (): void => {},
+          get logs(): string {
+            return logs
+          },
+        }
+      },
+      async fetch(): Promise<FetchResult> {
+        return { status: 503, ok: false }
+      },
+    }
+    const adapter = new StrataAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'strata', kind: 'process', argv: ['strata', 'launch'],
+      env: {}, port: 8080, healthUrl: 'http://127.0.0.1:8080/health',
+    }
+    await adapter.deploy(plan)
+    const lines: string[] = []
+    const result = await adapter.healthCheck(plan, {
+      pollMs: 0,
+      maxAttempts: 3,
+      onLog: (line) => lines.push(line),
+    })
+    expect(result.state).toBe('downloading')
+    expect(lines).toEqual([
+      '> GET http://127.0.0.1:8080/health\n',
+      '> GET http://127.0.0.1:8080/health still downloading: the engine is still downloading its model files\n',
+    ])
+  })
+
+  it('appends the failed verdict when a tracked start times out', async () => {
+    const logs = 'Engine 0.1.48 is installed and will be used on the next start'
+    const host: LifecycleHost = {
+      async run(): Promise<CommandOutcome> {
+        return { ok: true }
+      },
+      spawn(): ProcessHandle {
+        return {
+          pid: 1234,
+          kill: (): void => {},
+          get logs(): string {
+            return logs
+          },
+        }
+      },
+      async fetch(): Promise<FetchResult> {
+        return { status: 503, ok: false }
+      },
+    }
+    const adapter = new StrataAdapter(host)
+    const plan: LaunchPlan = {
+      engineId: 'strata', kind: 'process', argv: ['strata', 'launch'],
+      env: {}, port: 8080, healthUrl: 'http://127.0.0.1:8080/health',
+    }
+    await adapter.deploy(plan)
+    const lines: string[] = []
+    const result = await adapter.healthCheck(plan, {
+      pollMs: 0,
+      maxAttempts: 3,
+      onLog: (line) => lines.push(line),
+    })
+    expect(result.state).toBe('failed')
+    expect(lines).toEqual([
+      '> GET http://127.0.0.1:8080/health\n',
+      '!! health check failed for http://127.0.0.1:8080/health: health check did not return 200 within 3 attempts\n',
+    ])
+  })
+
   it('reports the downloading state while the process fetches its files', async () => {
     // A host whose spawned handle exposes a mutable logs buffer the test drives
     // to show the download in progress; the health URL stays down (503) for
@@ -2632,6 +2842,20 @@ describe('nodeLifecycleHost (the live host the service wires in)', () => {
     const { nodeLifecycleHost } = await import('../src/adapters.ts')
     const ok = await nodeLifecycleHost.run('echo local-infer-probe')
     expect(ok.ok).toBe(true)
+  })
+
+  it('carries the stdout tail of a clean run in the outcome', async () => {
+    const { nodeLifecycleHost } = await import('../src/adapters.ts')
+    // The append-results carrier: a clean exit hands its output tail to the
+    // caller (the run's log sink appends it after the command line). The
+    // trim drops the shell's trailing newline.
+    const ok = await nodeLifecycleHost.run('echo local-infer-stdout')
+    expect(ok.ok).toBe(true)
+    expect(ok.stdout).toBe('local-infer-stdout')
+    // A silent clean exit carries no stdout key at all.
+    const quiet = await nodeLifecycleHost.run('true')
+    expect(quiet.ok).toBe(true)
+    expect(quiet.stdout).toBeUndefined()
   })
 
   it('runs a command in the shell named by the options', async () => {

@@ -1,1 +1,1 @@
-{"version":3,"file":"adapter.js","sourceRoot":"","sources":["../src/adapter.ts"],"names":[],"mappings":"AAsSA;;;;;;;;GAQG;AACH,MAAM,OAAgB,aAAa;IAqEjC;;;;;OAKG;IACO,OAAO,CAAC,IAAgB;QAChC,OAAO,GAAG,IAAI,CAAC,QAAQ,IAAI,IAAI,CAAC,IAAI,EAAE,CAAA;IACxC,CAAC;CACF"}
+{"version":3,"file":"adapter.js","sourceRoot":"","sources":["../src/adapter.ts"],"names":[],"mappings":"AA4SA;;;;;;;;GAQG;AACH,MAAM,OAAgB,aAAa;IAqEjC;;;;;OAKG;IACO,OAAO,CAAC,IAAgB;QAChC,OAAO,GAAG,IAAI,CAAC,QAAQ,IAAI,IAAI,CAAC,IAAI,EAAE,CAAA;IACxC,CAAC;CACF"}
