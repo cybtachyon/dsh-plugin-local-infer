@@ -311,6 +311,28 @@ function fullDraft(): CardDraft {
   }
 }
 
+// autoRebuildBox locates the Auto Rebuild checkbox's input. The control-row
+// checkboxes (Auto Rebuild, the agent-default box next to Register) and the
+// form's checkbox fields all render the same input[type=checkbox], so
+// indexing the tree (the pattern the field-edit tests use) would shift with
+// any field change; this walks from the one label whose whole text is the
+// Auto Rebuild copy to its input, a pin that travels with the control.
+function autoRebuildBox(tree: unknown): El {
+  const label = find(tree, (e) => e.type === 'label' && text(e) === t.autoRebuild)
+  expect(label).toBeDefined()
+  const box = find(label, (e) => e.type === 'input' && e.props?.type === 'checkbox')
+  expect(box).toBeDefined()
+  return box as El
+}
+
+// clickBox fires a native checkbox input's onChange with the next checked
+// value (the card tests' existing checkbox-dispatch pattern).
+function clickBox(box: El, next: boolean): void {
+  ;(box.props?.onChange as (ev: { target: { checked: boolean } }) => void)({
+    target: { checked: next },
+  })
+}
+
 // renderCard renders the card over a seeded store: the first render creates
 // the per-mount store, the seed lands before the effects run (so the mount
 // effect reads the seeded state and skips the initial fetch), and the
@@ -460,6 +482,100 @@ describe('the card composer (src/Card.tsx)', () => {
     })
     expect(store.getSnapshot().draft?.config.flag).toBe(false)
     expect(store.getSnapshot().dirty).toBe(true)
+  })
+
+  it('toggles the Auto Rebuild checkbox into the draft, marking the form dirty', () => {
+    const { tree, store, rerender } = renderCard({ summary: fullSummary(), draft: fullDraft() })
+    // The draft carries no autoRebuild key: the checkbox draws unchecked.
+    expect('autoRebuild' in (store.getSnapshot().draft ?? {})).toBe(false)
+    expect(autoRebuildBox(tree).props?.checked).toBe(false)
+    // Checking it dispatches draft/edit with the draft plus autoRebuild: an
+    // unsaved change until Save writes it with the provider.
+    clickBox(autoRebuildBox(tree), true)
+    expect(store.getSnapshot().draft?.autoRebuild).toBe(true)
+    expect(store.getSnapshot().dirty).toBe(true)
+    const checked = rerender()
+    expect(autoRebuildBox(checked).props?.checked).toBe(true)
+    // Unchecking rides the same draft/edit path back to false.
+    clickBox(autoRebuildBox(checked), false)
+    expect(store.getSnapshot().draft?.autoRebuild).toBe(false)
+  })
+
+  it('shows each provider its own stored Auto Rebuild value when opened for editing', async () => {
+    vi.useFakeTimers()
+    try {
+      // One entry stored with autoRebuild true, one stored without the key
+      // (an entry saved before the key existed): each must show its own box.
+      const summary = fullSummary({
+        providers: [
+          {
+            id: 'p1',
+            engine: 'ninfer',
+            model: 'a-model',
+            status: 'stopped',
+            config: {},
+            platform: {},
+            autoRebuild: true,
+          },
+          {
+            id: 'p2',
+            engine: 'ninfer',
+            model: 'a-model',
+            status: 'stopped',
+            config: {},
+            platform: {},
+          },
+        ] as unknown as LocalInferSummary['providers'],
+      })
+      const { fetchMock } = routeFetch({
+        '/local-infer/summary': () => jsonAnswer(summary),
+        // A satisfied empty deps plan: the edit's reprice acks it, and this
+        // test re-renders after the ack, so the model must be a full DepsModel.
+        '/local-infer/deps': () =>
+          jsonAnswer({
+            engineId: 'ninfer',
+            buildMode: 'local',
+            packageManager: null,
+            deps: [],
+            allSatisfied: true,
+            installString: '',
+            runAllowed: false,
+          }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const { tree, store, rerender } = renderCard({ summary, draft: fullDraft() })
+      // Open the first entry: its row's Edit loads the stored true, and the
+      // checkbox renders from the loaded draft.
+      const editBtns = findAll(tree, (e) => e.type === 'button' && text(e) === t.edit)
+      expect(editBtns).toHaveLength(2)
+      ;(editBtns[0].props?.onClick as () => void)()
+      await flush()
+      expect(store.getSnapshot().ui.editingProviderId).toBe('p1')
+      expect(store.getSnapshot().draft?.autoRebuild).toBe(true)
+      expect(autoRebuildBox(rerender()).props?.checked).toBe(true)
+      // Open the second entry (the first row's control now reads Cancel, so
+      // the one Edit button left is p2's): its stored entry carries no key,
+      // so its box draws unchecked.
+      const p2Edit = findAll(rerender(), (e) => e.type === 'button' && text(e) === t.edit)
+      expect(p2Edit).toHaveLength(1)
+      ;(p2Edit[0].props?.onClick as () => void)()
+      await flush()
+      expect(store.getSnapshot().ui.editingProviderId).toBe('p2')
+      expect(store.getSnapshot().draft?.autoRebuild).toBe(false)
+      expect(autoRebuildBox(rerender()).props?.checked).toBe(false)
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('draws the Auto Rebuild checkbox unchecked on a fresh new-provider draft', () => {
+    // No draft is dispatched: the summary ack seeds the new-provider draft,
+    // which carries no autoRebuild key, and the box reads as unchecked.
+    const { tree, store } = renderCard({ summary: fullSummary() })
+    expect(store.getSnapshot().draft).not.toBe(null)
+    expect('autoRebuild' in (store.getSnapshot().draft ?? {})).toBe(false)
+    expect(autoRebuildBox(tree).props?.checked).toBe(false)
   })
 
   it('switches the engine through onEngine, resetting the config', () => {
