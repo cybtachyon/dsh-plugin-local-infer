@@ -28,8 +28,8 @@ Add the streaming route the client attaches to, per the existing
 
 Definition of Done:
 
-- [ ] Route file, registration, and typed event union exported.
-- [ ] `packages/ui/tests/` route tests (fake response with write/on):
+- [x] Route file, registration, and typed event union exported.
+- [x] `packages/ui/tests/` route tests (fake response with write/on):
       snapshot-first ordering, live appends streamed, runEnd streamed,
       disconnect disposes the subscription, unknown key stays attached.
-- [ ] `pnpm build` and `pnpm test` green.
+- [x] `pnpm build` and `pnpm test` green.
