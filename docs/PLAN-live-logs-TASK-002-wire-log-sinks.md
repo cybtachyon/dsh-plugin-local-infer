@@ -28,9 +28,9 @@ output into it, keyed per TASK-001's rule:
 
 Definition of Done:
 
-- [ ] Each route/op above begins, appends, and ends exactly one run per
+- [x] Each route/op above begins, appends, and ends exactly one run per
       process, including the cancel and failure paths (a `finally`).
-- [ ] Tests: each route test with a stub host asserts the buffer for the
+- [x] Tests: each route test with a stub host asserts the buffer for the
       right key holds the run's text in order and the running flag settles;
       a concurrent run under another key does not interleave.
-- [ ] `pnpm build` and `pnpm test` green.
+- [x] `pnpm build` and `pnpm test` green.

@@ -65,7 +65,7 @@ must always match the provider process actually running.
   Add the per-key run-log hub (begin/append/subscribe/read-snapshot/end,
   bounded tail, running flag, reset detection) to `LocalInferService`, keyed
   by provider id with an engine-id fallback rule shared by all run paths.
-- [ ] [TASK-002-wire-log-sinks](docs/PLAN-live-logs-TASK-002-wire-log-sinks.md)
+- [x] [TASK-002-wire-log-sinks](docs/PLAN-live-logs-TASK-002-wire-log-sinks.md)
   Route every provider-process output (get, launch Get-steps, deploy output,
   download, chat-template, install, stop) through the run-log service; keep
   the stored `lastLogs` and log-file persistence as the after-reload read
