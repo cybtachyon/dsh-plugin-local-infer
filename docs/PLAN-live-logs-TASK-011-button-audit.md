@@ -27,6 +27,11 @@ Checklist to audit (extend as found):
 - [ ] The red Logs (`failed`) and Stop states after a stop timeout: the
       cause-aware reset keeps Stop on a still-up engine (already priced in
       the machine); confirm in the UI.
+- [ ] From TASK-010: `deriveLifecycleControl`'s fresh-draft sudo branch
+      (t.entrySudo driven by ui.sudoPending, no machine entry) sits outside
+      the machine displayText mapping by design; route it through
+      `launchDisplayKeyFor('sudo')` for strict single-source, or record the
+      reason it stays draft-flag-driven.
 - [ ] From TASK-009: 'build' is announced at the start of the sync/build
       step, so the button can read "Building..." while a git clone/fetch
       runs, and a non-fatal rebase failure keeps the build label even

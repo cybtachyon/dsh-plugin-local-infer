@@ -31,6 +31,14 @@ Focus areas from this phase:
   module), and pin the hidden shared-config state (a `writeConfig` in one
   describe leaking `allowRunDeps` into another; one test was pinned
   locally in TASK-009, sweep the rest).
+- `packages/ui/tests/client.spec.ts` bundle-shape pins (source-shape
+  strings over the built `dsh/client.js`) are a recurring tax on client
+  refactors (TASK-010 had to re-pin two): derive the pins from the same
+  exports under test or replace them with behavior assertions on the
+  artifact where practical.
+- `packages/ui/src/routes/launch.ts` sits at ~60% branch coverage (the
+  broken-launch fallback lines 96-98): add route-level tests for the
+  pre-plan failure path.
 
 Definition of Done:
 
