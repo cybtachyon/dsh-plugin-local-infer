@@ -2056,6 +2056,63 @@ describe('route handlers over a fake web server', () => {
     expect(events[events.length - 1].result.healthy).toBe(true)
   })
 
+  it('settles a launch that breaks before a plan renders to a result event (RouteError)', async () => {
+    // A card that names an engine no adapter serves: the RouteError the
+    // plan render throws still lands as a result event (the card's control
+    // settles to the red Logs), not a bare 500 on an opened NDJSON stream.
+    const service = stubService([])
+    const routes = registeredRoutes(service, stubGetHost().host)
+    const launch = routes.find((route) => route.path === '/local-infer/launch')
+    const res = fakeRes()
+    await launch?.handler(
+      fakeReq('POST', '/local-infer/launch', JSON.stringify({ engine: 'ghost' })),
+      res,
+    )
+    const lines = res.body.split('\n').filter((line) => line !== '')
+    const events = lines.map((line) => JSON.parse(line))
+    expect(events).toEqual([
+      { result: { healthy: false, detail: 'no engine adapter is registered for "ghost"' } },
+    ])
+  })
+
+  it('settles a non-RouteError launch failure to a result event naming the detail', async () => {
+    // A hardware probe failure (no plan, no RouteError) still settles the
+    // card: the catch reads the Error's message into the result detail.
+    const service = stubService([])
+    service.detectHardware = async () => {
+      throw new Error('gpu probe exploded')
+    }
+    const routes = registeredRoutes(service, stubGetHost().host)
+    const launch = routes.find((route) => route.path === '/local-infer/launch')
+    const res = fakeRes()
+    await launch?.handler(
+      fakeReq('POST', '/local-infer/launch', JSON.stringify({ engine: 'ninfer' })),
+      res,
+    )
+    const lines = res.body.split('\n').filter((line) => line !== '')
+    const events = lines.map((line) => JSON.parse(line))
+    expect(events).toEqual([
+      { result: { healthy: false, detail: 'gpu probe exploded' } },
+    ])
+    // A host that throws a non-Error (a bare string) names the thrown value
+    // itself: the catch's `?? error` fallback keeps the detail non-empty.
+    service.detectHardware = async () => {
+      throw 'gpu probe exploded'
+    }
+    const strRes = fakeRes()
+    await launch?.handler(
+      fakeReq('POST', '/local-infer/launch', JSON.stringify({ engine: 'ninfer' })),
+      strRes,
+    )
+    const strEvents = strRes.body
+      .split('\n')
+      .filter((line) => line !== '')
+      .map((line) => JSON.parse(line))
+    expect(strEvents).toEqual([
+      { result: { healthy: false, detail: 'gpu probe exploded' } },
+    ])
+  })
+
   it('streams a sudo event and persists the CLI note when the host announces a waiting sudo', async () => {
     writeConfig('ninfer', {}, true)
     const sudoHooks: Array<Array<{ key: string }>> = []
