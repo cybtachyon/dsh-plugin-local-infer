@@ -26,6 +26,9 @@ import { Service } from '@deepseek-ai/cordis';
 // only resolves when the package sits inside a node_modules tree, so a
 // local-path or pnpm-linked install of this repo would fail the import.
 import { AGENT_DEFAULT_MODEL_NAMESPACE, agentDefaultOps, agentDefaultPointsAt, agentDefaultUnsetOps, buildModelEntry, detectHardware as detectHardwareFromProbes, detectPackageManager, evaluateGuidelines, estimateVram, guardSudoCommand, hfChatTemplateCommand, hfDatasetsCacheDirectory, hfDownloadCommand, hfHubCacheDirectory, isGpuBusy, LLM_PI_AI_NAMESPACE, matchLaunchSignature, modelGuidelines, reLinkRecord, computeProviderStatuses, modelRowsFrom, parseNvidiaSmiGpu, parseNvidiaSmiGpuUsage, presetFromFetch, providerRegistrationOps, providerRemovalOps, removeModelRow, renderInstallString, resolveDefaults as resolveDefaultsFromPresets, resolveOsReserve, runInstall, SUDO_PROBE_COMMAND, sudoFailureDetail, } from '../../core/lib/index.js';
+import { RunLogStore, runLogKey } from "./run-logs.js";
+import { findLaunchTarget } from "./launch-target.js";
+export { runLogKey, findLaunchTarget };
 /**
  * Local-inference failure. Extends Error with a stable `code`
  * (`LOCAL_INFER_CONFLICT`, `LOCAL_INFER_INVALID_ENGINE`,
@@ -125,6 +128,10 @@ export class LocalInfer extends Service {
     // Logs; a headless profile registers none and the guard still announces
     // internally and caps the wait.
     sudoObserver;
+    // The shared per-run live log hub every provider process writes its output
+    // to, keyed by the runLogKey rule so the run paths and the streaming logs
+    // route predict one key per provider.
+    runLogs = new RunLogStore();
     constructor(ctx) {
         super(ctx, 'localInfer');
     }
@@ -727,6 +734,48 @@ export class LocalInfer extends Service {
         catch {
             // The sudo deadline still settles a passwordless wait.
         }
+    }
+    /**
+     * beginRun starts one provider process's live run-log run under the key
+     * runLogKey names: the buffer resets to the seed separator line, the
+     * running flag goes true, the seq restarts, and subscribers get the reset
+     * notice a mid-run attached reader needs to replace its display.
+     */
+    beginRun(key, seed) {
+        this.runLogs.begin(key, seed);
+    }
+    /**
+     * appendRunLog appends one chunk to the key's live log (tail-capped to
+     * LOG_TAIL_BYTES) and notifies subscribers. Appending with no open run
+     * opens one lazily without a seed, so a late note (an engine-death line)
+     * still lands.
+     */
+    appendRunLog(key, text) {
+        this.runLogs.append(key, text);
+    }
+    /**
+     * readRunLog answers the key's catch-up snapshot: the seq reached, the
+     * bounded tail text, and the running flag, the data a mid-run page
+     * refresh or a late-opened Logs pane renders from.
+     */
+    readRunLog(key) {
+        return this.runLogs.read(key);
+    }
+    /**
+     * subscribeRunLog registers a listener for the key's run-log events and
+     * returns the disposer (the route calls it when its stream closes).
+     * Listeners are independent per connection; none can block a writer.
+     */
+    subscribeRunLog(key, listener) {
+        return this.runLogs.subscribe(key, listener);
+    }
+    /**
+     * endRun settles the key's run: the running flag clears and subscribers
+     * get the end event. The text stays readable until the next beginRun, so
+     * a late Logs pane still shows the finished run.
+     */
+    endRun(key) {
+        this.runLogs.end(key);
     }
     /**
      * watchLaunchedHandle ties a launched child's one-shot exit to the live
