@@ -53,6 +53,9 @@ export interface SaveRequest {
   platform?: Record<string, StoredPlatformConfig>
   showHelp?: boolean
   logPath?: string
+  // The card's Auto Rebuild checkbox, recorded on the upserted provider
+  // entry. Absent on a settings-only save, which never touches the list.
+  autoRebuild?: boolean
   // The provider entry the save upserts in place. Absent for a settings-only
   // save (the help and allow-run toggles), which never mints an entry.
   id?: string

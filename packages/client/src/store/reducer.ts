@@ -113,8 +113,16 @@ function summaryAck(state: CardState, summary: LocalInferSummary): CardState {
           engine: state.draft.engine,
           config: state.draft.config,
           platform: mergedPlatform,
+          // The Auto Rebuild checkbox is a draft-local edit, not a platform
+          // field: the live value rides through the merge (an absent value
+          // stays absent, which reads as unchecked).
+          ...(state.draft.autoRebuild === undefined
+            ? {}
+            : { autoRebuild: state.draft.autoRebuild }),
         }
       : {
+          // A null-draft seed leaves autoRebuild absent: a fresh form reads
+          // as unchecked.
           engine: summary.engineId,
           config: summary.config,
           platform: mergedPlatform,

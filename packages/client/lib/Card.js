@@ -664,9 +664,14 @@ export function card(_react, localeRef, _primitives) {
                 react.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 8 } },
                     renderTitleBarControl(control, onControlClick, () => performGetCancel(store), t.cancel),
                     renderCheckbox({
-                        checked: state.ui.autoRebuild,
+                        checked: currentDraft.autoRebuild ?? false,
                         onChange: (next) => {
-                            store.dispatch({ type: 'ui/patch', patch: { autoRebuild: next } });
+                            // The checkbox rides the draft (TASK-007 owns its tests):
+                            // it persists with the provider on the next Save.
+                            store.dispatch({
+                                type: 'draft/edit',
+                                draft: { ...currentDraft, autoRebuild: next },
+                            });
                         },
                         label: t.autoRebuild,
                     })),

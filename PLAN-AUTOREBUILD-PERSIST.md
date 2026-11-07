@@ -90,7 +90,7 @@ Depends: 011 -> 004; 005 -> 004, 011.
 
 ### Phase 3 - Client: per-provider checkbox
 
-- [ ] [TASK-006-store-move](docs/PLAN-AUTOREBUILD-PERSIST-TASK-006-store-move.md) -
+- [x] [TASK-006-store-move](docs/PLAN-AUTOREBUILD-PERSIST-TASK-006-store-move.md) -
   move the flag from `CardUiState` to `CardDraft` (rides `cachedDraft`, discard,
   and the summaryAck merge); `editProvider` loads `provider.autoRebuild ?? false`
   (a missing stored key reads as unchecked per Q1); new/seeded drafts read as

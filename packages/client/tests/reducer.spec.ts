@@ -187,6 +187,31 @@ describe('client store reducer (store/reducer.ts)', () => {
         config: { model: 'm' },
         platform: {},
       })
+      // A null-draft seed leaves autoRebuild absent: the checkbox reads unchecked.
+      expect('autoRebuild' in (next.draft ?? {})).toBe(false)
+    })
+
+    it('preserves the Auto Rebuild draft edit through the platform merge', () => {
+      const state = madeState()
+      const edited = cardReducer(state, {
+        type: 'draft/edit',
+        draft: makeDraft({ autoRebuild: true }),
+      })
+      const next = cardReducer(edited, {
+        type: 'summary/ack',
+        summary: makeSummary({
+          platformConfigs: { ninfer: { engineDirectory: '/persisted' } },
+        }),
+      })
+      // A re-price (a read) never clobbers the checkbox the user toggled.
+      expect(next.draft?.autoRebuild).toBe(true)
+      expect(next.draft?.platform?.ninfer).toEqual({ engineDirectory: '/persisted' })
+      // An explicit unchecked edit survives the same way.
+      const off = cardReducer(
+        cardReducer(state, { type: 'draft/edit', draft: makeDraft({ autoRebuild: false }) }),
+        { type: 'summary/ack', summary: makeSummary() },
+      )
+      expect(off.draft?.autoRebuild).toBe(false)
     })
 
     it('seeds help and logPath from the stored preference', () => {

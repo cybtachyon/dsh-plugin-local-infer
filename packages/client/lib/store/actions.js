@@ -41,6 +41,9 @@ export function performSave(store, t) {
         platform: draft.platform ?? {},
         showHelp: state.ui.help,
         logPath: state.ui.logPath,
+        // Every card save records the draft's Auto Rebuild checkbox with the
+        // provider entry (an absent draft value saves as unchecked).
+        autoRebuild: draft.autoRebuild ?? false,
     }).then((summary) => {
         store.dispatch({ type: 'summary/ack', summary });
         store.dispatch({
