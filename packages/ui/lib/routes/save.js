@@ -44,6 +44,10 @@ export function saveRoute(localInfer) {
             // A body that omits the log location (or sends a blank one) keeps the
             // stored template, so an unsaved edit never wipes a custom path.
             const logPath = typeof body.logPath === 'string' && body.logPath !== '' ? body.logPath : stored.logPath;
+            // The card's Auto Rebuild checkbox arrives as a body boolean; a body
+            // that omits the key (or carries a non-boolean) reads as absent so the
+            // upsert keeps the stored entry's flag instead of dropping it.
+            const autoRebuild = typeof body.autoRebuild === 'boolean' ? body.autoRebuild : undefined;
             // Save upserts a provider entry: an id updates the stored entry in
             // place, an absent id updates a stored entry that already matches the
             // engine, config, and platform in place, and only a save with no match
@@ -53,7 +57,9 @@ export function saveRoute(localInfer) {
             // per-engine entry the deploy step reads, so a provider never carries a
             // field it cannot price. A save that updates an entry in place carries
             // the entry's launch record over, so editing a running provider's config
-            // never drops the record the restart re-link prices. A settings-only
+            // never drops the record the restart re-link prices, and carries the
+            // entry's Auto Rebuild flag over when the body omits it, so an old save
+            // caller never drops a stored checkbox value. A settings-only
             // save skips the upsert: it persists the global fields the toggle edits
             // and keeps the stored list intact, so the help and allow-run toggles
             // never mint a duplicate entry.
@@ -72,6 +78,12 @@ export function saveRoute(localInfer) {
                     config,
                     platform: platform[engine] ?? {},
                 };
+                if (autoRebuild !== undefined) {
+                    provider.autoRebuild = autoRebuild;
+                }
+                else if (existing?.autoRebuild !== undefined) {
+                    provider.autoRebuild = existing.autoRebuild;
+                }
                 if (existing?.launch !== undefined) {
                     provider.launch = existing.launch;
                 }
@@ -94,6 +106,12 @@ export function saveRoute(localInfer) {
                         config,
                         platform: platformConfig,
                     };
+                    if (autoRebuild !== undefined) {
+                        provider.autoRebuild = autoRebuild;
+                    }
+                    else if (matching.autoRebuild !== undefined) {
+                        provider.autoRebuild = matching.autoRebuild;
+                    }
                     if (matching.launch !== undefined) {
                         provider.launch = matching.launch;
                     }
@@ -106,6 +124,11 @@ export function saveRoute(localInfer) {
                         config,
                         platform: platformConfig,
                     };
+                    // A brand-new entry with no body key stays without the key: the
+                    // card draws the box unchecked, so no migration is needed.
+                    if (autoRebuild !== undefined) {
+                        provider.autoRebuild = autoRebuild;
+                    }
                     providers = [provider, ...stored.providers];
                 }
             }

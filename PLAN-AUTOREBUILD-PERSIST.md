@@ -60,7 +60,7 @@ keep their current behavior.
   `StoredProviderConfig.autoRebuild?: boolean` in `packages/ui/src/config.ts` with
   boolean-sanitizing parse in `parseProviders`. DoD: round-trip read/write tests
   in `packages/ui/tests` (absent stays absent, non-boolean dropped).
-- [ ] [TASK-002-save-route](docs/PLAN-AUTOREBUILD-PERSIST-TASK-002-save-route.md) -
+- [x] [TASK-002-save-route](docs/PLAN-AUTOREBUILD-PERSIST-TASK-002-save-route.md) -
   save route persists the body's `autoRebuild` onto the upserted entry; absent
   body key carries the existing entry's value over; settings-only save untouched.
   DoD: save-route tests for the three upsert paths.
