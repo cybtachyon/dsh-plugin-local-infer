@@ -174,6 +174,28 @@ export function registerSudoObserver(localInfer, runKey, noteLine, noteTo, onSud
     });
 }
 /**
+ * openRunLog begins the run under runKey (the seed resets the key's buffer,
+ * so a mid-run re-launch replaces the previous run's text) and hands back the
+ * bracket. The caller closes it in a finally so every settle path clears the
+ * running flag.
+ */
+function openRunLog(localInfer, runKey, seed) {
+    localInfer.beginRun(runKey, seed);
+    let text = '';
+    return {
+        append(chunk) {
+            text += chunk;
+            localInfer.appendRunLog(runKey, chunk);
+        },
+        text() {
+            return text;
+        },
+        end() {
+            localInfer.endRun(runKey);
+        },
+    };
+}
+/**
  * launchEngine runs the shared Get-steps routine (idempotent: deps, git sync,
  * build, model download, chat-template download, each skipped when already
  * satisfied) and then renders the plan the registered adapter produces for
@@ -216,21 +238,17 @@ export async function launchEngine(localInfer, request, onProgress, host = nodeL
     // the streaming logs route resolves the same way. The seed resets the
     // key's buffer, so a mid-run re-launch replaces the previous run's text.
     const runKey = runLogKey(stored.providers, engineId, request.providerId, config);
-    let runText = '';
-    const appendRunText = (chunk) => {
-        runText += chunk;
-        // One chunk, two readers: the persisted run and the live hub, no third
-        // copy of the text.
-        localInfer.appendRunLog(runKey, chunk);
-    };
+    // The run's live-buffer bracket (see openRunLog): the Get-step sink and the
+    // sudo note append through it (one chunk, two readers: the persisted run
+    // text and the live hub), and the finally closes it on every settle path.
+    const run = openRunLog(localInfer, runKey, LAUNCH_RUN_SEED);
     // The run owns the sudo observer, not the route, so the note lands in the
     // persisted run and in the stream from one place (see
     // registerSudoObserver): the CLI note appends to the Get-step log sink
     // (composeLaunchLogs and persistLaunchOutcome carry it into the last-run
     // logs and the log file), persists to disk while the run is still hung
     // waiting on the prompt, and tells the route's stream writer.
-    const clearSudoObserver = registerSudoObserver(localInfer, runKey, `${SUDO_CLI_NOTE}\n`, appendRunText, onSudo);
-    localInfer.beginRun(runKey, LAUNCH_RUN_SEED);
+    const clearSudoObserver = registerSudoObserver(localInfer, runKey, `${SUDO_CLI_NOTE}\n`, run.append, onSudo);
     try {
         const hardware = await localInfer.detectHardware();
         const platform = registerLaunchPlatform(localInfer, request, stored, engineId);
@@ -251,13 +269,13 @@ export async function launchEngine(localInfer, request, onProgress, host = nodeL
             ...(request.autoRebuild !== undefined ? { autoRebuild: request.autoRebuild } : {}),
             ...(onProgress !== undefined ? { onStep: onProgress } : {}),
             continueOnSyncFailure: true,
-        }, appendRunText);
+        }, run.append);
         const plan = adapter.renderLaunch(config, hardware);
         if (!get.ok) {
             if (signal?.aborted === true) {
                 localInfer.appendRunLog(runKey, CANCELED_LINE);
             }
-            return settleGetFailure(plan, get, engineId, config, request.providerId, runText, signal?.aborted === true);
+            return settleGetFailure(plan, get, engineId, config, request.providerId, run.text(), signal?.aborted === true);
         }
         applyComposeArgs(plan, localInfer, engineId);
         const commandNote = launchCommandNote(plan);
@@ -265,7 +283,7 @@ export async function launchEngine(localInfer, request, onProgress, host = nodeL
             // Persist before the deploy starts: a slow or hung launch keeps the Get
             // steps and the command readable in the Logs section across a card
             // reload, where the engine output has not landed yet.
-            persistStoredLogs(runText + commandNote);
+            persistStoredLogs(`${run.text()}${commandNote}`);
             localInfer.appendRunLog(runKey, commandNote);
         }
         // The trust gate and the auto-rebuild flag ride into the deploy step,
@@ -285,12 +303,12 @@ export async function launchEngine(localInfer, request, onProgress, host = nodeL
             ...(onProgress !== undefined ? { onProgress } : {}),
             allowRunDeps: stored.allowRunDeps,
             ...(launchAutoRebuild !== undefined ? { autoRebuild: launchAutoRebuild } : {}),
-            onLog: appendRunText,
+            onLog: run.append,
         });
         // The deploy step's build output and the engine's runtime output reach
         // the live buffer at settle (they only exist once the launch returns;
-        // the Get-step sink and the command note already streamed through
-        // appendRunLog). composeLaunchLogs then folds every part into the
+        // the Get-step sink and the command note already streamed through the
+        // run bracket). composeLaunchLogs then folds every part into the
         // persisted order (Get steps, build, command, engine), where the hub
         // carries them in arrival order (Get steps, command, build, engine).
         const deployLogs = result.buildLogs ?? '';
@@ -302,7 +320,7 @@ export async function launchEngine(localInfer, request, onProgress, host = nodeL
         // closed the stream during the deploy or health poll) adds the "Canceled"
         // line, so the persisted run reads as canceled.
         const canceled = signal?.aborted === true;
-        composeLaunchLogs(result, runText, commandNote, canceled);
+        composeLaunchLogs(result, run.text(), commandNote, canceled);
         if (canceled) {
             localInfer.appendRunLog(runKey, CANCELED_LINE);
         }
@@ -316,7 +334,7 @@ export async function launchEngine(localInfer, request, onProgress, host = nodeL
         clearSudoObserver();
         // The bracket closes on every settle path: healthy, failed, and canceled
         // all clear the key's running flag.
-        localInfer.endRun(runKey);
+        run.end();
     }
 }
 /**
