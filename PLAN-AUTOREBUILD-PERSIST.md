@@ -111,7 +111,7 @@ Depends: 006 -> 003 (read model field), 007 -> 006, 008 -> 007.
 
 ### Phase 4 - Whole-repo gates
 
-- [ ] [TASK-009-gates](docs/PLAN-AUTOREBUILD-PERSIST-TASK-009-gates.md) -
+- [x] [TASK-009-gates](docs/PLAN-AUTOREBUILD-PERSIST-TASK-009-gates.md) -
   `pnpm build`, `pnpm test`, `pnpm test:coverage`, `pnpm lint` all green;
   tracked `lib/` + `dsh/client.js` emitted and committed. DoD: commands quoted
   with passing output.
