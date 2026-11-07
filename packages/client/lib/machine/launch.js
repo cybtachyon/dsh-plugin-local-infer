@@ -29,7 +29,10 @@
  * machine takes the entry ({status, cause}) and returns the next entry,
  * so the cause-aware reset stays in one place. An event that names no
  * legal next state leaves the control where it is, so a late event never
- * corrupts it.
+ * corrupts it. LAUNCH_STATE_DISPLAY is the machine's displayText mapping:
+ * it names the text.ts label key each in-flight state shows, so the
+ * state-to-label decision lives with the machine and the label copy lives
+ * in the text tables.
  * @module dsh-plugin-local-infer/client/machine/launch
  */
 /** The four rebuild phase states. The step names the stream can carry. */
@@ -54,6 +57,32 @@ export const STOP_POLL_MS = 1000;
 // click settles to the red Logs state (the same path a failed launch
 // takes), so the user can open the entry, fix the config, and retry.
 export const STOP_HEALTH_DEADLINE_MS = 10000;
+/**
+ * LAUNCH_STATE_DISPLAY is the machine's displayText mapping: it names, in
+ * one place, which label key each in-flight state shows on the control.
+ * The machine names stay logical (download names the rebuild download
+ * phase, downloading the model-fetch re-poll); both read the one download
+ * label so the title bar mirrors the entry's Launch button while the
+ * engine fetches files. Labels stay short and user-friendly in text.ts.
+ */
+export const LAUNCH_STATE_DISPLAY = {
+    prereqs: 'entryPrereqs',
+    download: 'entryDownloading',
+    downloading: 'entryDownloading',
+    build: 'entryBuilding',
+    launch: 'entryLaunching',
+    sudo: 'entrySudo',
+    stopping: 'stopping',
+};
+/**
+ * launchDisplayKeyFor names the label key an in-flight state displays, or
+ * undefined for a state that shows no busy label (idle, running, failed).
+ * phaseLabelFor (store/derive.ts) is its single consumer.
+ */
+export function launchDisplayKeyFor(status) {
+    const display = LAUNCH_STATE_DISPLAY;
+    return display[status];
+}
 /** launchIsPhase reports whether a state is one of the four rebuild phases. */
 export function launchIsPhase(state) {
     return LAUNCH_PHASE_STATES.includes(state);

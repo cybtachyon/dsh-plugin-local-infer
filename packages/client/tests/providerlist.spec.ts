@@ -4,7 +4,12 @@ import type {
   ProviderSummaryEntry,
 } from 'dsh-plugin-local-infer/ui'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
-import { LAUNCH_HEALTH_DEADLINE_MS } from '../src/machine/launch.ts'
+import {
+  LAUNCH_HEALTH_DEADLINE_MS,
+  LAUNCH_STATE_DISPLAY,
+  type LaunchEvent,
+  type LaunchInFlightStatus,
+} from '../src/machine/launch.ts'
 import {
   EntryLaunchButton,
   NewProviderControl,
@@ -483,6 +488,38 @@ describe('the per-entry Launch control (render/ProviderList.tsx EntryLaunchButto
     expect(el(throbber).props['aria-label']).toBe(t.entrySudo)
     expect(text(wrapped)).toBe(t.entrySudo)
   })
+
+  // One event path per in-flight state so the machine (not a hand-set
+  // entry) drives the control, and the expected label reads through the
+  // machine's LAUNCH_STATE_DISPLAY mapping: the entry button can only
+  // reach a phase label through phaseLabelFor, so this is the render-side
+  // completeness check for the displayText mapping.
+  const THROBBER_PATHS: Record<LaunchInFlightStatus, LaunchEvent[]> = {
+    prereqs: [{ type: 'start' }],
+    download: [{ type: 'start' }, { type: 'step', step: 'download' }],
+    downloading: [{ type: 'start' }, { type: 'downloading' }],
+    build: [{ type: 'start' }, { type: 'step', step: 'build' }],
+    launch: [{ type: 'start' }, { type: 'step', step: 'launch' }],
+    sudo: [{ type: 'start' }, { type: 'sudoNeeded' }],
+    stopping: [{ type: 'stop' }],
+  }
+  for (const [status, events] of Object.entries(THROBBER_PATHS) as Array<
+    [LaunchInFlightStatus, LaunchEvent[]]
+  >) {
+    it(`throbbers the ${status} state with its mapped label`, () => {
+      const { store } = makeStore()
+      store.dispatch({ type: 'summary/ack', summary: summaryWith([providerWith()]) })
+      for (const event of events) {
+        store.dispatch({ type: 'launch/move', providerId: 'p1', event })
+      }
+      expect(store.getSnapshot().launch['p1']?.status).toBe(status)
+      // The sudo throbber is wrapped in the warning span; buttons() reads
+      // the busy button through the wrapper either way.
+      const throbber = el(buttons(renderEntry(store))[0])
+      expect(throbber.props.disabled).toBe(true)
+      expect(throbber.props['aria-label']).toBe(t[LAUNCH_STATE_DISPLAY[status]])
+    })
+  }
 })
 
 describe('the provider list control handlers (render/ProviderList.tsx)', () => {

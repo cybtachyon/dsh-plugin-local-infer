@@ -227,14 +227,16 @@ describe('dsh/client.js artifact source pins', () => {
     // A launch that is still fetching its model files (the Strata download)
     // reads as a downloading throbber, not a failure: the result event's
     // downloading state drives the machine to the downloading state, and the
-    // button renders a busy throbber the card re-polls. The phase label is
-    // resolved through phaseLabelFor (the shared status-to-label map), so the
-    // title bar and the entry control read the same downloading label.
+    // button renders a busy throbber the card re-polls. The label key comes
+    // from the machine's LAUNCH_STATE_DISPLAY mapping (shared with the
+    // download phase), resolved through phaseLabelFor, so the title bar and
+    // the entry control read the same downloading label.
     expect(source).toContain('type: "downloading"')
     expect(source).toContain('case "downloading"')
     expect(source).toContain('result.state === "downloading"')
     expect(source).toContain('phaseLabelFor')
-    expect(source).toContain('t.entryDownloading')
+    expect(source).toContain('launchDisplayKeyFor')
+    expect(source).toContain('downloading: "entryDownloading"')
   })
 
   it('pins the provider stop lifecycle the state machine drives', () => {
@@ -243,11 +245,11 @@ describe('dsh/client.js artifact source pins', () => {
     // the same display the launch phases show), then re-fetches the summary on
     // a fast cadence so the provider's status dot repaints the moment the
     // engine is down, instead of waiting out the host's 5-second cycle. The
-    // stopping throbber label resolves through phaseLabelFor (the shared
-    // status-to-label map), so the entry control and the title bar read the
-    // same label.
+    // stopping label key comes from the machine's LAUNCH_STATE_DISPLAY
+    // mapping, resolved through phaseLabelFor, so the entry control and the
+    // title bar read the same label.
     expect(source).toContain('STOP_POLL_MS')
-    expect(source).toContain('case "stopping"')
+    expect(source).toContain('stopping: "stopping"')
     expect(source).toContain('type: "stopped"')
     expect(source).toContain('stopping: "stopping..."')
     // A provider still running at the 10-second deadline settles to the red

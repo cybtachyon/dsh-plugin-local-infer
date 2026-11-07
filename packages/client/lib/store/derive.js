@@ -13,13 +13,14 @@
  * live download readout. isGettingInFlight is the single source of that
  * condition, shared by the branch and the provider row. formatProgressReadout
  * renders the readout from a GetProgressState, the single source the branch
- * and the provider row share, and phaseLabelFor is the single source of the
- * launch-status to throbber-label map, shared by the branch and the per-entry
- * Launch button. deriveDisplayedLogs, deriveProviderFormMode, and
+ * and the provider row share, and phaseLabelFor resolves the throbber label
+ * from the launch machine's own LAUNCH_STATE_DISPLAY mapping, shared by the
+ * branch and the per-entry Launch button. deriveDisplayedLogs, deriveProviderFormMode, and
  * deriveLaunchDisabled are the remaining render-time projections the card
  * needs.
  * @module dsh-plugin-local-infer/client/store/derive
  */
+import { launchDisplayKeyFor } from "../machine/launch.js";
 import { hasInFlightGet } from "./abort.js";
 import { isLiveRunAttached } from "./run-markers.js";
 /**
@@ -38,32 +39,18 @@ function editingProvider(state) {
 /**
  * phaseLabelFor maps a machine status to the throbber label it renders, or
  * undefined when the status is not a throbber state (idle, running, failed).
- * The model fetch (downloading) shares the download-phase label, so the
- * title bar mirrors the entry's Launch button while the engine fetches files.
- * The 'getting' control branch and the per-entry Launch button
- * (render/ProviderList.tsx) share it, so the phase labels have one source.
+ * It is a thin consumer of the machine's LAUNCH_STATE_DISPLAY mapping: the
+ * machine decides which label key an in-flight state shows, this function
+ * only looks the key up in the active text table. The 'getting' control
+ * branch and the per-entry Launch button (render/ProviderList.tsx) share
+ * it, so the phase labels have one source.
  */
 export function phaseLabelFor(status, t) {
     if (status === undefined) {
         return undefined;
     }
-    switch (status) {
-        case 'prereqs':
-            return t.entryPrereqs;
-        case 'download':
-        case 'downloading':
-            return t.entryDownloading;
-        case 'build':
-            return t.entryBuilding;
-        case 'sudo':
-            return t.entrySudo;
-        case 'launch':
-            return t.entryLaunching;
-        case 'stopping':
-            return t.stopping;
-        default:
-            return undefined;
-    }
+    const key = launchDisplayKeyFor(status);
+    return key === undefined ? undefined : t[key];
 }
 /**
  * deriveLaunchDisabled reports whether the Launch side of the control is

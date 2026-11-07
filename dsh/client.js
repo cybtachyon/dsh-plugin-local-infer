@@ -527,6 +527,19 @@ var LAUNCH_PHASE_STATES = [
 var LAUNCH_HEALTH_DEADLINE_MS = 15e4;
 var STOP_POLL_MS = 1e3;
 var STOP_HEALTH_DEADLINE_MS = 1e4;
+var LAUNCH_STATE_DISPLAY = {
+  prereqs: "entryPrereqs",
+  download: "entryDownloading",
+  downloading: "entryDownloading",
+  build: "entryBuilding",
+  launch: "entryLaunching",
+  sudo: "entrySudo",
+  stopping: "stopping"
+};
+function launchDisplayKeyFor(status) {
+  const display = LAUNCH_STATE_DISPLAY;
+  return display[status];
+}
 function launchIsPhase(state) {
   return LAUNCH_PHASE_STATES.includes(state);
 }
@@ -2362,23 +2375,8 @@ function phaseLabelFor(status, t) {
   if (status === void 0) {
     return void 0;
   }
-  switch (status) {
-    case "prereqs":
-      return t.entryPrereqs;
-    case "download":
-    case "downloading":
-      return t.entryDownloading;
-    case "build":
-      return t.entryBuilding;
-    case "sudo":
-      return t.entrySudo;
-    case "launch":
-      return t.entryLaunching;
-    case "stopping":
-      return t.stopping;
-    default:
-      return void 0;
-  }
+  const key = launchDisplayKeyFor(status);
+  return key === void 0 ? void 0 : t[key];
 }
 function deriveLaunchDisabled(state) {
   return isGettingInFlight(state) || state.deps !== null && state.deps.allSatisfied !== true;

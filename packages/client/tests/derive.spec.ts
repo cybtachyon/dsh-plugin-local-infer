@@ -9,7 +9,13 @@ import {
   formatProgressReadout,
   isGettingInFlight,
   isLiveRunInFlight,
+  phaseLabelFor,
 } from '../src/store/derive.ts'
+import {
+  LAUNCH_STATE_DISPLAY,
+  type LaunchInFlightStatus,
+  type LaunchStatus,
+} from '../src/machine/launch.ts'
 import {
   clearRunMarkers,
   markRunInFlight,
@@ -24,6 +30,11 @@ import {
 import { TEXT, type TextTable } from '../src/text.ts'
 
 const t: TextTable = TEXT.en
+
+// The in-flight states the machine's displayText mapping names; the table,
+// not a test-side copy, drives the label cases so the machine stays the
+// single source of the state-to-label decision.
+const inFlight = Object.keys(LAUNCH_STATE_DISPLAY) as LaunchInFlightStatus[]
 
 // makeProvider builds a provider summary entry the lifecycle tests edit.
 function makeProvider(id: string): ProviderSummaryEntry {
@@ -99,17 +110,31 @@ beforeEach(() => {
 })
 
 describe('client store derive (store/derive.ts)', () => {
+  describe('phaseLabelFor (the machine mapping rendered)', () => {
+    it('returns a non-empty label for every in-flight state under both text tables', () => {
+      for (const table of [TEXT.en, TEXT.zh]) {
+        for (const status of inFlight) {
+          const label = phaseLabelFor(status, table)
+          expect(label).toBe(table[LAUNCH_STATE_DISPLAY[status]])
+          expect(label).not.toBe('')
+        }
+      }
+    })
+
+    it('reads undefined for the states showing no busy label', () => {
+      for (const status of ['idle', 'running', 'failed', undefined] as Array<
+        LaunchStatus | undefined
+      >) {
+        expect(phaseLabelFor(status, TEXT.en)).toBeUndefined()
+      }
+    })
+  })
+
   describe('deriveLifecycleControl', () => {
     describe('phase throbber (the edited provider is mid-lifecycle)', () => {
-      const cases: Array<[LaunchStoreEntry['status'], string]> = [
-        ['prereqs', t.entryPrereqs],
-        ['download', t.entryDownloading],
-        ['downloading', t.entryDownloading],
-        ['build', t.entryBuilding],
-        ['sudo', t.entrySudo],
-        ['launch', t.entryLaunching],
-        ['stopping', t.stopping],
-      ]
+      const cases: Array<[LaunchStoreEntry['status'], string]> = inFlight.map(
+        (status) => [status, t[LAUNCH_STATE_DISPLAY[status]]],
+      )
       for (const [status, label] of cases) {
         it(`renders a busy throbber with the ${status} label`, () => {
           const state = makeState(['p1'], {

@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest'
 import {
   LAUNCH_HEALTH_DEADLINE_MS,
   LAUNCH_PHASE_STATES,
+  LAUNCH_STATE_DISPLAY,
   STOP_HEALTH_DEADLINE_MS,
   STOP_POLL_MS,
+  launchDisplayKeyFor,
   launchIsPhase,
   launchNextState,
+  type LaunchInFlightStatus,
   type LaunchStatus,
 } from '../src/machine/launch.ts'
 
@@ -193,6 +196,46 @@ describe('client launch machine (machine/launch.ts)', () => {
     ] as LaunchStatus[]) {
       expect(launchIsPhase(state)).toBe(false)
     }
+  })
+
+  describe('displayText mapping (LAUNCH_STATE_DISPLAY)', () => {
+    const IN_FLIGHT: LaunchInFlightStatus[] = [
+      'prereqs',
+      'download',
+      'downloading',
+      'build',
+      'launch',
+      'sudo',
+      'stopping',
+    ]
+
+    it('maps exactly the seven in-flight states to their label keys', () => {
+      expect(LAUNCH_STATE_DISPLAY).toEqual({
+        prereqs: 'entryPrereqs',
+        download: 'entryDownloading',
+        downloading: 'entryDownloading',
+        build: 'entryBuilding',
+        launch: 'entryLaunching',
+        sudo: 'entrySudo',
+        stopping: 'stopping',
+      })
+    })
+
+    it('shares one download label between the download phase and the downloading re-poll', () => {
+      expect(LAUNCH_STATE_DISPLAY.download).toBe(LAUNCH_STATE_DISPLAY.downloading)
+    })
+
+    it('launchDisplayKeyFor names a key for every in-flight state', () => {
+      for (const status of IN_FLIGHT) {
+        expect(launchDisplayKeyFor(status)).toBe(LAUNCH_STATE_DISPLAY[status])
+      }
+    })
+
+    it('launchDisplayKeyFor reads undefined for the states showing no busy label', () => {
+      for (const status of ['idle', 'running', 'failed'] as LaunchStatus[]) {
+        expect(launchDisplayKeyFor(status)).toBeUndefined()
+      }
+    })
   })
 
   for (const status of STATES) {

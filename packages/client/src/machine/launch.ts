@@ -29,7 +29,10 @@
  * machine takes the entry ({status, cause}) and returns the next entry,
  * so the cause-aware reset stays in one place. An event that names no
  * legal next state leaves the control where it is, so a late event never
- * corrupts it.
+ * corrupts it. LAUNCH_STATE_DISPLAY is the machine's displayText mapping:
+ * it names the text.ts label key each in-flight state shows, so the
+ * state-to-label decision lives with the machine and the label copy lives
+ * in the text tables.
  * @module dsh-plugin-local-infer/client/machine/launch
  */
 
@@ -95,6 +98,63 @@ export type LaunchEvent =
   | { type: 'stopped' }
   | { type: 'stopFailed' }
   | { type: 'reset' }
+
+/**
+ * LaunchInFlightStatus is the machine's set of in-flight control states:
+ * the four rebuild phases, the model fetch (downloading), the sudo wait,
+ * and a stop in flight. Each one shows a busy label on the control; idle,
+ * running, and failed show none.
+ */
+export type LaunchInFlightStatus = LaunchStep | 'downloading' | 'sudo' | 'stopping'
+
+/**
+ * LaunchDisplayKey names a text.ts label key (not its copy) so the machine
+ * can map a state to its label without holding any label text. The tables
+ * stay the i18n source: every key here carries a label in both the en and
+ * the zh table, and a key the tables drop is a compile error where the key
+ * indexes the table.
+ */
+export type LaunchDisplayKey =
+  | 'entryPrereqs'
+  | 'entryDownloading'
+  | 'entryBuilding'
+  | 'entrySudo'
+  | 'entryLaunching'
+  | 'stopping'
+
+/**
+ * LAUNCH_STATE_DISPLAY is the machine's displayText mapping: it names, in
+ * one place, which label key each in-flight state shows on the control.
+ * The machine names stay logical (download names the rebuild download
+ * phase, downloading the model-fetch re-poll); both read the one download
+ * label so the title bar mirrors the entry's Launch button while the
+ * engine fetches files. Labels stay short and user-friendly in text.ts.
+ */
+export const LAUNCH_STATE_DISPLAY: Record<
+  LaunchInFlightStatus,
+  LaunchDisplayKey
+> = {
+  prereqs: 'entryPrereqs',
+  download: 'entryDownloading',
+  downloading: 'entryDownloading',
+  build: 'entryBuilding',
+  launch: 'entryLaunching',
+  sudo: 'entrySudo',
+  stopping: 'stopping',
+}
+
+/**
+ * launchDisplayKeyFor names the label key an in-flight state displays, or
+ * undefined for a state that shows no busy label (idle, running, failed).
+ * phaseLabelFor (store/derive.ts) is its single consumer.
+ */
+export function launchDisplayKeyFor(
+  status: LaunchStatus,
+): LaunchDisplayKey | undefined {
+  const display: Partial<Record<LaunchStatus, LaunchDisplayKey>> =
+    LAUNCH_STATE_DISPLAY
+  return display[status]
+}
 
 /** launchIsPhase reports whether a state is one of the four rebuild phases. */
 export function launchIsPhase(state: LaunchStatus): state is LaunchStep {
