@@ -9,7 +9,7 @@ import {
 } from '../src/store/useCardStore.ts'
 import { clearInFlightRuns, trackGetAbort } from '../src/store/abort.ts'
 import type { CardDraft } from '../src/store/types.ts'
-import { SUDO_STATE_LABEL_COLOR } from '../src/styles.ts'
+import { PRIMARY_BUTTON, SUDO_STATE_LABEL_COLOR } from '../src/styles.ts'
 import { TEXT } from '../src/text.ts'
 
 const t = TEXT.en
@@ -376,6 +376,27 @@ function jsonAnswer(body: unknown, status = 200): Response {
   })
 }
 
+// launchStream builds a /local-infer/launch answer whose body streams NDJSON
+// lines the test enqueues and closes by hand.
+function launchStream() {
+  let controller: ReadableStreamDefaultController<Uint8Array>
+  const stream = new ReadableStream<Uint8Array>({
+    start(c) {
+      controller = c
+    },
+  })
+  const encoder = new TextEncoder()
+  return {
+    response: (): Response =>
+      new Response(stream, {
+        status: 200,
+        headers: { 'content-type': 'application/x-ndjson' },
+      }),
+    enqueue: (line: string) => controller.enqueue(encoder.encode(line + '\n')),
+    close: () => controller.close(),
+  }
+}
+
 async function flush(times = 20): Promise<void> {
   for (let i = 0; i < times; i++) {
     await Promise.resolve()
@@ -490,6 +511,64 @@ describe('the card composer (src/Card.tsx)', () => {
       expect(launchBtn).toBeDefined()
       ;(launchBtn?.props?.onClick as () => void)()
       expect(store.getSnapshot().actions.launch.status).toBe('pending')
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('routes the edited provider title-bar Launch to its entry machine', async () => {
+    vi.useFakeTimers()
+    try {
+      const summary = fullSummary({
+        providers: [
+          {
+            id: 'p1',
+            engine: 'ninfer',
+            model: 'a-model',
+            status: 'stopped',
+            config: {},
+            platform: {},
+          },
+        ] as unknown as LocalInferSummary['providers'],
+      })
+      const stream = launchStream()
+      const { fetchMock } = routeFetch({
+        '/local-infer/launch': () => stream.response(),
+        '/local-infer/logs': () =>
+          new Response('{"snapshot":"","seq":0,"running":false}\n', {
+            status: 200,
+            headers: { 'content-type': 'application/x-ndjson' },
+          }),
+        '/local-infer/summary': () => jsonAnswer(summary),
+        '/local-infer/deps': () => jsonAnswer({ engineId: 'ninfer' }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const { tree, store } = renderCard({
+        summary,
+        draft: fullDraft(),
+        ui: { editingProviderId: 'p1', providerFormMode: 'editing' },
+      })
+      // The title-bar control is the primary Launch (the provider row's own
+      // Launch control is a ghost). Click it.
+      const launchBtn = find(
+        tree,
+        (e) =>
+          e.type === 'button' &&
+          text(e) === t.launch &&
+          (e.props?.style as Record<string, unknown> | undefined) === PRIMARY_BUTTON,
+      )
+      expect(launchBtn).toBeDefined()
+      ;(launchBtn?.props?.onClick as () => void)()
+      // The edited provider's click rides the entry driver: the machine (the
+      // phase-label source the title-bar control reads) started at prereqs,
+      // and the request names the entry's provider id.
+      expect(store.getSnapshot().launch['p1']?.status).toBe('prereqs')
+      // Settle the run so the launch abort registry and run markers clear.
+      stream.enqueue('{"result":{"healthy":true}}')
+      stream.close()
+      await flush(50)
+      expect(store.getSnapshot().launch['p1']?.status).toBe('running')
     } finally {
       vi.useRealTimers()
       vi.unstubAllGlobals()
@@ -657,6 +736,25 @@ describe('the card composer (src/Card.tsx)', () => {
     expect(text(tree)).toContain(t.hfCliDetected)
     expect(text(tree)).toContain('hf download a-model')
     expect(find(tree, (e) => e.type === 'button' && text(e) === t.download)).toBeDefined()
+  })
+
+  it('paints the model download cell busy with the downloading label', () => {
+    const summary = fullSummary({
+      modelStatus: {
+        present: false,
+        hfCli: true,
+        downloadCommand: 'hf download a-model',
+        url: 'https://hf.co/a-model',
+      },
+    } as unknown as LocalInferSummary)
+    const { store, rerender } = renderCard({ summary, draft: fullDraft() })
+    // The download cell pending (the hf pull in flight): the cell's busy
+    // label names that process.
+    store.dispatch({ type: 'action/start', key: 'download' })
+    const tree = rerender()
+    expect(
+      find(tree, (e) => e.type === 'button' && e.props?.['aria-label'] === t.downloading),
+    ).toBeDefined()
   })
 
   it('renders the model download link without the hf CLI', () => {
