@@ -301,8 +301,9 @@ export function EntryLaunchButton(props: EntryLaunchButtonProps): ReactNode {
   const state = store.getSnapshot()
   const status = state.launch[provider.id]?.status ?? 'idle'
   // A rebuild phase, the model fetch (a busy throbber that reads as in
-  // progress, not a failure: the card re-polls until the engine reports
-  // ready), a sudo wait, or a stop in flight: a disabled control with the
+  // progress, not a failure: the summary ack's summaryStatus fold settles
+  // it as the provider status resolves), a sudo wait, or a stop in
+  // flight: a disabled control with the
   // spinner and the phase label, so the button reads the step that is
   // actually running. The shared phaseLabelFor lookup (the title-bar
   // control's source) reads as undefined for a non-phase status, and the

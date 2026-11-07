@@ -356,6 +356,45 @@ describe('client store derive (store/derive.ts)', () => {
       })
     })
 
+    it('renders a Stop for a running engine with no machine entry (fresh card)', () => {
+      // A DSH restart re-adopts the engine and the card mounts fresh: the
+      // row reads Stop from the provider status and the title bar must
+      // agree. Before the fix it read a plain Launch whose entry click the
+      // stop and launch drivers both guard to a no-op.
+      const state = makeState([], {
+        summary: {
+          providers: [{ ...makeProvider('p1'), status: 'running' }],
+        } as LocalInferSummary,
+        ui: editingUi('p1'),
+      })
+      expect(deriveLifecycleControl(state, t)).toMatchObject({
+        kind: 'launchStop',
+        label: t.stop,
+        variant: 'ghost',
+        disabled: false,
+        target: 'entry',
+        action: 'stop',
+      })
+    })
+
+    it('prices a running summary status over an idle machine entry', () => {
+      // The machine lost (or never learned about) the running engine: the
+      // summary status prices the Stop, matching the row's read.
+      const state = makeState([], {
+        summary: {
+          providers: [{ ...makeProvider('p1'), status: 'running' }],
+        } as LocalInferSummary,
+        launch: { p1: launchEntry('idle') },
+        ui: editingUi('p1'),
+      })
+      expect(deriveLifecycleControl(state, t)).toMatchObject({
+        kind: 'launchStop',
+        label: t.stop,
+        target: 'entry',
+        action: 'stop',
+      })
+    })
+
     it('falls back to the draft when the edited id no longer resolves', () => {
       // editingProviderId names a provider the summary no longer carries.
       const state = makeState(['p1'], { ui: editingUi('gone') })

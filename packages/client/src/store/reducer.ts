@@ -22,6 +22,7 @@ import type {
   CardDraft,
   CardState,
   CardUiState,
+  LaunchStoreEntry,
 } from './types.ts'
 
 /**
@@ -138,7 +139,47 @@ function summaryAck(state: CardState, summary: LocalInferSummary): CardState {
       ? state.ui.logs
       : { ...state.ui.logs, liveLogs: null },
   }
-  return { ...state, summary, summaryNote: '', draft, ui }
+  return { ...state, summary, summaryNote: '', draft, ui, launch: foldDownloading(state.launch, summary) }
+}
+
+/**
+ * foldDownloading settles every launch machine still reading 'downloading'
+ * from the fresh summary: a launch that settled to the health poll's
+ * downloading verdict has no stream left to move it, so the summary's
+ * provider status is the settle source (the machine's summaryStatus fold).
+ * A provider the summary reports running settles to running, a reported-
+ * stopped provider (or one whose entry vanished) lands idle, and an unsure
+ * read holds the throbber for a later summary. Every other machine state is
+ * left untouched, and an untouched map keeps its identity so a summary ack
+ * with nothing to settle never re-renders a bound component.
+ */
+function foldDownloading(
+  launch: CardState['launch'],
+  summary: LocalInferSummary,
+): CardState['launch'] {
+  if (!Object.values(launch).some((entry) => entry.status === 'downloading')) {
+    return launch
+  }
+  const next: Record<string, LaunchStoreEntry> = {}
+  let changed = false
+  for (const [providerId, entry] of Object.entries(launch)) {
+    if (entry.status !== 'downloading') {
+      next[providerId] = entry
+      continue
+    }
+    const provider = summary.providers.find((p) => p.id === providerId)
+    const settled = launchNextState(entry, {
+      type: 'summaryStatus',
+      status: provider?.status ?? 'stopped',
+    })
+    if (settled.status === entry.status) {
+      next[providerId] = entry
+      continue
+    }
+    next[providerId] = { ...settled, startTime: entry.startTime }
+    changed = true
+  }
+  return changed ? next : launch
 }
 
 // draftEdit stores the new draft (the only form-value source), sets dirty, and

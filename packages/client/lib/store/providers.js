@@ -186,7 +186,8 @@ export function openEntryLogs(store, provider) {
  * timer hands the single deadline slot back and the launch step arms the
  * health cap as it always has. A healthy result settles to running (the control
  * becomes Stop), a downloading result settles to downloading (a busy
- * throbber the card re-polls), and a failed result, a stream that ends
+ * throbber, settled later by the summary ack's summaryStatus fold; see
+ * foldDownloading in reducer.ts), and a failed result, a stream that ends
  * without a result, or a fetch failure settles to failed (the control becomes
  * a red Logs). A result re-fetches the summary and deps read models, so the
  * provider's status dot repaints from red to green and the deps panel

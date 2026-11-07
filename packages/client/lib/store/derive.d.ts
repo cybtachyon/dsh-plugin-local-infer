@@ -7,7 +7,10 @@
  * running" sources. It reads the per-provider launch machine (the only
  * lifecycle source) for the provider being edited, and falls back to the
  * draft's action cells for a fresh provider with no machine entry, so the
- * title-bar control and the provider entry's Launch button always agree. A
+ * title-bar control and the provider entry's Launch button always agree. An
+ * edited provider whose machine is idle or absent prices the summary's
+ * provider status into the Stop side (the same read the provider row gives a
+ * running engine with a lost machine). A
  * Get run in flight (the get cell pending, or the in-flight registry true
  * after the idle cap settled the cell) renders a 'getting' throbber with the
  * live download readout. isGettingInFlight is the single source of that
