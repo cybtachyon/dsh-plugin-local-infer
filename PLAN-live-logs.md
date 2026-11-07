@@ -132,7 +132,7 @@ must always match the provider process actually running.
 
 ### Phase 5: Verification
 
-- [ ] [TASK-013-verify-gates](docs/PLAN-live-logs-TASK-013-verify-gates.md)
+- [x] [TASK-013-verify-gates](docs/PLAN-live-logs-TASK-013-verify-gates.md)
   Full repo gates green (build, test, coverage thresholds, lint, prek) and
   the manual GUI observation checklist from the Verification section.
 
