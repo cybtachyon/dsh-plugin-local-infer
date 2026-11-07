@@ -39,6 +39,17 @@ Focus areas from this phase:
 - `packages/ui/src/routes/launch.ts` sits at ~60% branch coverage (the
   broken-launch fallback lines 96-98): add route-level tests for the
   pre-plan failure path.
+- From TASK-011: the machine 'downloading' state has no client settle
+  path (the "re-polls" comment in the port matches no timer in either
+  implementation), so a `downloading` entry stays "Downloading..." until
+  a page reload. Fold the summary provider status (engine up -> running,
+  down -> stays/settles per the machine's stop rules) into the machine or
+  a settle timer for the `downloading` state, with tests.
+- From TASK-011: `deriveLifecycleControl` has no summary-status fallback
+  for a running engine with no machine entry (fresh card): the provider
+  row reads Stop but the title-bar control reads plain Launch whose click
+  no-ops. Price `provider.status === 'running'` into the launchStop
+  branch, with a test for the no-machine running case.
 
 Definition of Done:
 
