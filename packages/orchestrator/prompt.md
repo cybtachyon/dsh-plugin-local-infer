@@ -32,6 +32,8 @@ Review the files touched by the previous {{N}} commits and identify the followin
  - **Shotgun Edits**: Commits with singular changes that touch multiple files.
  - **Feature Envy**: Method where over 50% of the code manipulates a different class.
  - **Magic Numbers**: Literals without context in method bodies.
+ - **Overengineering**: Methods with single lines of code or slim classes.
+
 Then address and resolve each risk.
 ```
 
