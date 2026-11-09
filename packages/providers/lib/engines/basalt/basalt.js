@@ -186,6 +186,15 @@ export const BASALT_PARAMETERS = [
         deploy: { target: 'config', format: 'json', block: 'models[]' },
     },
     {
+        key: 'vram-reserve-mib',
+        label: 'VRAM Reserved',
+        description: 'How much VRAM (in MiB) to reserve for code or system functions. More VRAM gives room for other apps to run.',
+        form: { kind: 'number', min: 256, max: 8000, step: 1, unit: 'MiB' },
+        defaultValue: 700,
+        group: 'Engine',
+        deploy: { target: 'config', format: 'json', block: 'engine' },
+    },
+    {
         key: 'parallel',
         label: 'Parallel requests',
         description: 'How many requests decode at once, 1 to 8. More lanes share the model and cut per-request throughput; the max context is split across the lanes.',
