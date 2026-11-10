@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-local-infer-client",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Browser card for the dsh local-inference plugin: the lazy-CJS module that renders the Local Infer card in the DSH Web GUI",
   "keywords": [
     "dsh",

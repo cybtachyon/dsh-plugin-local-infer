@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-local-infer-orchestrator",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Orchestrator component for the dsh local-inference plugin: an editable Orchestrator Prompt persisted under ~/.dsh/local-infer, defaulted from the shipped prompt.md, injected into the system prompt while the component is enabled",
   "keywords": [
     "dsh",
