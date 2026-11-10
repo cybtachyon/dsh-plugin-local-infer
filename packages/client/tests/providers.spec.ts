@@ -697,6 +697,150 @@ describe('the provider list drivers (store/providers.ts)', () => {
       await flush(50)
     })
 
+    it('sends the draft override through the stored keys with the entry providerId', async () => {
+      // The draft-aware launch (TASK-03): the title bar's Launch while the
+      // form edits this entry runs the draft's engine, config, platform
+      // entry, and Auto Rebuild checkbox through the same top-level keys,
+      // and the launch record still targets the entry.
+      const { store } = makeStore()
+      const provider = providerWith({ autoRebuild: false })
+      store.dispatch({
+        type: 'summary/ack',
+        summary: summaryWith([provider]),
+      })
+      const stream = launchStream()
+      const { calls, fetchMock } = routeFetch({
+        '/local-infer/launch': () => stream.response(),
+        '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
+        '/local-infer/deps': () => jsonAnswer({ engineId: 'hyper-qwen' }),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      performEntryLaunch(store, provider, t, {
+        engine: 'hyper-qwen',
+        config: { model: 'draft-model', ctx: 4096 },
+        platform: {
+          'hyper-qwen': { engineDirectory: '/eng/hq', engineFork: 'https://github.com/a/hq' },
+        },
+        autoRebuild: true,
+      })
+      const launch = calls.find((call) => call.url === '/local-infer/launch')
+      expect(JSON.parse(String(launch?.init?.body))).toEqual({
+        engine: 'hyper-qwen',
+        config: { model: 'draft-model', ctx: 4096 },
+        platform: { engineDirectory: '/eng/hq', engineFork: 'https://github.com/a/hq' },
+        providerId: 'p1',
+        autoRebuild: true,
+      })
+      stream.enqueue('{"result":{"healthy":true}}')
+      stream.close()
+      await flush(50)
+      // The settle re-price prices the engine and config that ran: the
+      // draft's, not the entry's stored ones.
+      const summary = calls.find((call) => call.url.startsWith('/local-infer/summary?'))
+      const query = new URLSearchParams(String(summary?.url).split('?')[1] ?? '')
+      expect(query.get('engine')).toBe('hyper-qwen')
+      expect(JSON.parse(query.get('config') ?? 'null')).toEqual({
+        model: 'draft-model',
+        ctx: 4096,
+      })
+      // Launching never saves: nothing posts to the save route.
+      expect(calls.filter((call) => call.url === '/local-infer/save')).toEqual([])
+    })
+
+    it('reads an absent draft platform entry as no override and autoRebuild as false', async () => {
+      const { store } = makeStore()
+      const provider = providerWith({ autoRebuild: true })
+      store.dispatch({
+        type: 'summary/ack',
+        summary: summaryWith([provider]),
+      })
+      const stream = launchStream()
+      const { calls, fetchMock } = routeFetch({
+        '/local-infer/launch': () => stream.response(),
+        '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      performEntryLaunch(store, provider, t, { engine: 'ninfer', config: { model: 'b-model' } })
+      const launch = calls.find((call) => call.url === '/local-infer/launch')
+      // No platform key: the host falls back to the stored entry. The stored
+      // autoRebuild true does NOT leak in: the draft's absence reads false.
+      expect(JSON.parse(String(launch?.init?.body))).toEqual({
+        engine: 'ninfer',
+        config: { model: 'b-model' },
+        providerId: 'p1',
+        autoRebuild: false,
+      })
+      stream.enqueue('{"result":{"healthy":true}}')
+      stream.close()
+      await flush(50)
+    })
+
+    it('keeps the stored body byte-identical without an override', async () => {
+      const { store } = makeStore()
+      const provider = providerWith()
+      store.dispatch({
+        type: 'summary/ack',
+        summary: summaryWith([provider]),
+      })
+      const stream = launchStream()
+      const { calls, fetchMock } = routeFetch({
+        '/local-infer/launch': () => stream.response(),
+        '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      performEntryLaunch(store, provider, t)
+      const launch = calls.find((call) => call.url === '/local-infer/launch')
+      expect(JSON.parse(String(launch?.init?.body))).toEqual({
+        engine: 'ninfer',
+        config: { model: 'a-model' },
+        platform: { engineDirectory: '/eng/ninfer' },
+        providerId: 'p1',
+        autoRebuild: false,
+      })
+      stream.enqueue('{"result":{"healthy":true}}')
+      stream.close()
+      await flush(50)
+    })
+
+    it('keys the run-log stream and the machine on the entry id with an override', async () => {
+      // The mirrored runLogKey rule reads the request's providerId first, so
+      // the draft's engine never moves the pane off the entry's run, and the
+      // launch machine stays keyed on the entry.
+      const { store, state } = makeStore()
+      const provider = providerWith()
+      const stream = launchStream()
+      const logs = logsStreams()
+      const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+        if (url === '/local-infer/launch') {
+          return stream.response()
+        }
+        if (url.startsWith('/local-infer/logs')) {
+          return logs.answer(url, init)
+        }
+        return jsonAnswer(summaryWith([provider]))
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      setLogsPaneMounted(store, true)
+      store.dispatch({
+        type: 'summary/ack',
+        summary: summaryWith([provider], 'old logs'),
+      })
+      performEntryLaunch(store, provider, t, {
+        engine: 'hyper-qwen',
+        config: { model: 'draft-model' },
+        autoRebuild: false,
+      })
+      await flush()
+      expect(logs.calls.map((call) => call.url)).toEqual(['/local-infer/logs?provider=p1'])
+      stream.enqueue('{"step":"prereqs"}')
+      await flush()
+      expect(state().launch['p1']?.status).toBe('prereqs')
+      stream.enqueue('{"result":{"healthy":true}}')
+      stream.close()
+      await flush(50)
+      expect(state().launch['p1']?.status).toBe('running')
+    })
+
     it('ignores a launch while a rebuild phase is in flight', () => {
       const { store, state } = makeStore()
       const provider = providerWith()

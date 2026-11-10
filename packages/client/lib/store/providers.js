@@ -199,8 +199,18 @@ export function openEntryLogs(store, provider) {
  * launch on the provider id, per the mirrored runLogKey rule), the run's
  * settle detaches it, and the host's "Launching..." seed arrives through
  * that stream (runBegin/snapshot), never a client-side seed.
+ *
+ * With a draftOverride (the open provider form's unsaved draft, submitted by
+ * the title-bar control), the request carries the DRAFT's engine, config,
+ * per-engine platform entry, and Auto Rebuild checkbox through the same
+ * top-level keys while providerId stays this entry's: the launch record
+ * persists on the entry (lifecycle state, not settings), and the launch
+ * never writes the entry's stored values. The run key and the settle
+ * re-price then read the draft's engine and config; the machine, phase
+ * labels, health/sudo deadlines, and abort tracking stay keyed on the
+ * entry's id.
  */
-export function performEntryLaunch(store, provider, t) {
+export function performEntryLaunch(store, provider, t, draftOverride) {
     const prior = store.getSnapshot().launch[provider.id];
     const status = prior?.status ?? 'idle';
     // A launch in flight (a rebuild phase) or a stop in flight is ignored; a
@@ -208,7 +218,21 @@ export function performEntryLaunch(store, provider, t) {
     if (status !== 'idle' && status !== 'failed') {
         return noHandle;
     }
-    const runKey = clientRunLogKey(store.getSnapshot().summary?.providers ?? [], provider.engine, provider.config, provider.id);
+    // The launch context reads the draft while the form's draft is submitted,
+    // else the entry's stored values. An absent draft platform entry reads as
+    // no platform override (the host falls back to the stored entry) and an
+    // absent draft autoRebuild reads as unchecked, the same rules as a stored
+    // entry saved before either key existed.
+    const engine = draftOverride?.engine ?? provider.engine;
+    const config = draftOverride?.config ?? provider.config;
+    const platform = draftOverride === undefined
+        ? provider.platform
+        : draftOverride.platform?.[draftOverride.engine];
+    const autoRebuild = (draftOverride !== undefined ? draftOverride.autoRebuild : provider.autoRebuild) ?? false;
+    // The run key mirrors the host rule on the body it receives: the request's
+    // providerId names the key, so the pane follows this entry's run
+    // regardless of which engine and config the body carries.
+    const runKey = clientRunLogKey(store.getSnapshot().summary?.providers ?? [], engine, config, provider.id);
     beginRun(store, runKey);
     move(store, provider.id, { type: 'start' });
     let settled = false;
@@ -294,16 +318,18 @@ export function performEntryLaunch(store, provider, t) {
         armDeadline('sudo', SUDO_DEADLINE_MS);
     };
     postLaunch({
-        engine: provider.engine,
-        config: provider.config,
+        engine,
+        config,
         // The launch route parses platform as ONE per-engine entry (the host's
-        // parseStoredPlatformConfig), not the save route's engine-keyed record.
-        platform: provider.platform,
+        // parseStoredPlatformConfig), not the save route's engine-keyed
+        // record. exactOptionalPropertyTypes: a draft with no entry omits the
+        // key outright (the host then falls back to the stored entry).
+        ...(platform === undefined ? {} : { platform }),
         providerId: provider.id,
-        // The entry's stored checkbox: an entry without the key launches with
-        // the rebuild steps skipped (an entry saved before the key existed
-        // reads as unchecked, like a newly created one).
-        autoRebuild: provider.autoRebuild ?? false,
+        // The checkbox in effect: the draft's while the form's draft is
+        // submitted, else the entry's stored value; an unchecked run skips the
+        // rebuild steps.
+        autoRebuild,
     }, onStep, controller.signal, onSudo)
         .then((result) => {
         if (settle() !== true) {
@@ -324,8 +350,10 @@ export function performEntryLaunch(store, provider, t) {
         }
         // The provider status dots price the process probe on a summary fetch,
         // so a launch that turned an engine healthy re-fetches the summary and
-        // deps read models to repaint the dot and re-price the deps panel.
-        void repriceAll(store, { engine: provider.engine, config: provider.config });
+        // deps read models to repaint the dot and re-price the deps panel. The
+        // pair prices the engine and config that actually ran: the draft's when
+        // one was submitted.
+        void repriceAll(store, { engine, config });
     })
         .catch(() => {
         if (settle() !== true) {

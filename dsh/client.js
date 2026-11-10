@@ -2719,16 +2719,20 @@ function openEntryLogs(store, provider) {
   editProvider(store, provider);
   move(store, provider.id, { type: "reset" });
 }
-function performEntryLaunch(store, provider, t) {
+function performEntryLaunch(store, provider, t, draftOverride) {
   const prior = store.getSnapshot().launch[provider.id];
   const status = prior?.status ?? "idle";
   if (status !== "idle" && status !== "failed") {
     return noHandle;
   }
+  const engine = draftOverride?.engine ?? provider.engine;
+  const config = draftOverride?.config ?? provider.config;
+  const platform = draftOverride === void 0 ? provider.platform : draftOverride.platform?.[draftOverride.engine];
+  const autoRebuild = (draftOverride !== void 0 ? draftOverride.autoRebuild : provider.autoRebuild) ?? false;
   const runKey = clientRunLogKey(
     store.getSnapshot().summary?.providers ?? [],
-    provider.engine,
-    provider.config,
+    engine,
+    config,
     provider.id
   );
   beginRun(store, runKey);
@@ -2792,16 +2796,18 @@ function performEntryLaunch(store, provider, t) {
   };
   postLaunch(
     {
-      engine: provider.engine,
-      config: provider.config,
+      engine,
+      config,
       // The launch route parses platform as ONE per-engine entry (the host's
-      // parseStoredPlatformConfig), not the save route's engine-keyed record.
-      platform: provider.platform,
+      // parseStoredPlatformConfig), not the save route's engine-keyed
+      // record. exactOptionalPropertyTypes: a draft with no entry omits the
+      // key outright (the host then falls back to the stored entry).
+      ...platform === void 0 ? {} : { platform },
       providerId: provider.id,
-      // The entry's stored checkbox: an entry without the key launches with
-      // the rebuild steps skipped (an entry saved before the key existed
-      // reads as unchecked, like a newly created one).
-      autoRebuild: provider.autoRebuild ?? false
+      // The checkbox in effect: the draft's while the form's draft is
+      // submitted, else the entry's stored value; an unchecked run skips the
+      // rebuild steps.
+      autoRebuild
     },
     onStep,
     controller.signal,
@@ -2819,7 +2825,7 @@ function performEntryLaunch(store, provider, t) {
     } else {
       move(store, provider.id, { type: "failed" });
     }
-    void repriceAll(store, { engine: provider.engine, config: provider.config });
+    void repriceAll(store, { engine, config });
   }).catch(() => {
     if (settle() !== true) {
       return;

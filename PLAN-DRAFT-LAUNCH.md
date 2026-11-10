@@ -47,7 +47,7 @@ per-request override fields (settled below: no new host-side request shape).
   `vram-reserve-mib` param (pre-existing red at HEAD).
 - [x] [TASK-02-client-platform-shape](docs/PLAN-DRAFT-LAUNCH-TASK-02-client-platform-shape.md) -
   Fix the launch-body `platform` shape to the host's single per-engine entry.
-- [ ] [TASK-03-entry-launch-draft](docs/PLAN-DRAFT-LAUNCH-TASK-03-entry-launch-draft.md) -
+- [x] [TASK-03-entry-launch-draft](docs/PLAN-DRAFT-LAUNCH-TASK-03-entry-launch-draft.md) -
   `performEntryLaunch` takes an optional draft override; run key and re-price
   follow it.
 - [ ] [TASK-04-card-routing-tests](docs/PLAN-DRAFT-LAUNCH-TASK-04-card-routing-tests.md) -

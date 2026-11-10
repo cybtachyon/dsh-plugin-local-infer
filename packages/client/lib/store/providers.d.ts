@@ -18,7 +18,7 @@
 import type { ProviderSummaryEntry } from 'dsh-plugin-local-infer/ui';
 import type { TextTable } from '../text.ts';
 import { type CardStore } from './sync.ts';
-import type { CardUiState, ProviderFormMode } from './types.ts';
+import type { CardDraft, CardUiState, ProviderFormMode } from './types.ts';
 /**
  * SUDO_DEADLINE_MS caps the card's wait after a launch stream announces a
  * sudo prompt: the host kills the process at 60 s (core's
@@ -118,8 +118,18 @@ export declare function openEntryLogs(store: CardStore, provider: ProviderSummar
  * launch on the provider id, per the mirrored runLogKey rule), the run's
  * settle detaches it, and the host's "Launching..." seed arrives through
  * that stream (runBegin/snapshot), never a client-side seed.
+ *
+ * With a draftOverride (the open provider form's unsaved draft, submitted by
+ * the title-bar control), the request carries the DRAFT's engine, config,
+ * per-engine platform entry, and Auto Rebuild checkbox through the same
+ * top-level keys while providerId stays this entry's: the launch record
+ * persists on the entry (lifecycle state, not settings), and the launch
+ * never writes the entry's stored values. The run key and the settle
+ * re-price then read the draft's engine and config; the machine, phase
+ * labels, health/sudo deadlines, and abort tracking stay keyed on the
+ * entry's id.
  */
-export declare function performEntryLaunch(store: CardStore, provider: ProviderSummaryEntry, t: TextTable): EntryTimerHandle;
+export declare function performEntryLaunch(store: CardStore, provider: ProviderSummaryEntry, t: TextTable, draftOverride?: CardDraft): EntryTimerHandle;
 /**
  * performEntryStop runs one card entry's own Stop control: it moves the
  * entry's launch machine to stopping (the control shows the throbber,
