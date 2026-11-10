@@ -51,7 +51,8 @@
     - ESBuild bundles to lazy-CJS artifact `dsh/client.js`.
     - **bundle** is the tree-shaken compiled meta-package.
 - **client build pipeline** `pnpm build`:
-  - Runs `tsc -b` (type-checks and emits `packages/client/lib`).
+  - Runs `tsc -b --force` (type-checks and always re-emits every project's
+    `lib`, so stale tsbuildinfo state or emptied outputs cannot survive it).
   - Then `node scripts/build-client.mjs` esbuild-bundles
     `packages/client/src/index.ts` to (`dsh/.build/client.cjs`) and wraps it in
     `window.__ModuleLoader__.load({ id, factory: (require) => ... })` contract.
@@ -94,9 +95,10 @@
   self-link inside a `node_modules` tree, so it fails on local/pnpm installs.
 - Tracked `lib/` outputs land with their `src/` changes. A `git clean` after
   a verification build can delete emitted outputs while the git-ignored
-  `packages/*/tsconfig.tsbuildinfo` survives, and then `tsc -b` reports
-  "up to date" over the missing outputs: delete the stale tsbuildinfo files
-  and rebuild.
+  `packages/*/tsconfig.tsbuildinfo` survives, and then a bare `tsc -b`
+  (or `pnpm typecheck`) reports "up to date" over the missing outputs.
+  `pnpm build` is immune: it forces the emit and `scripts/verify-emit.mjs`
+  fails the build if any expected artifact is missing or emptied.
 - A bundle with a client half needs a bare-package carrier row: a no-op
   `dsh/host.js` module, a root `.` export, and a bundle row named after the
   bare package. The client-module scan keys `dsh.client` on a bare
@@ -178,8 +180,11 @@ Fetch these docs to answer questions about their covered topic.
 
 # Testing Instructions
 
-- Build with `pnpm build` (runs `tsc -b`, then `node scripts/build-client.mjs`
-  to produce the `dsh/client.js` card artifact).
+- Build with `pnpm build` (runs `tsc -b --force`, then
+  `node scripts/build-client.mjs` to produce the `dsh/client.js` card
+  artifact, then `node scripts/build-format.mjs`, then
+  `node scripts/verify-emit.mjs` which fails the build when any expected
+  `lib` artifact is missing or emptied).
 - Run the full test suite with `pnpm test` (runs `vitest run`).
 - Run coverage with `pnpm test:coverage`; the suite must clear the thresholds
   in `vitest.config.ts` (lines 90 / functions 93 / branches 78 / statements 90).

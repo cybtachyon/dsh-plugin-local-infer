@@ -35,6 +35,13 @@ async function processDirectory(dir) {
             if (entry.isFile() && isEmitted) {
                 const content = await fs.readFile(fullPath, 'utf8');
 
+                // Never rewrite a blank artifact: normalizing "" to "\n" is
+                // how a read racing a mid-write emitter persists an emptied
+                // 1-byte file. Leave it for verify-emit.mjs to fail on.
+                if (content.trim() === '') {
+                    return;
+                }
+
                 // Strip per-line trailing whitespace (tsc emits some after
                 // collapsed multi-line calls) and keep the final newline, so
                 // the trailing-whitespace and end-of-file-fixer hooks stay
