@@ -37,7 +37,7 @@ per-request override fields (settled below: no new host-side request shape).
 
 ### Phase 1 - Host: pin the launch override contract (specs only)
 
-- [ ] [TASK-01-host-contract-spec](docs/PLAN-DRAFT-LAUNCH-TASK-01-host-contract-spec.md) -
+- [x] [TASK-01-host-contract-spec](docs/PLAN-DRAFT-LAUNCH-TASK-01-host-contract-spec.md) -
   Spec-pin request-field precedence and launch non-mutation of stored config.
 
 ### Phase 2 - Client: submit the draft on Launch while editing
@@ -67,3 +67,11 @@ per-request override fields (settled below: no new host-side request shape).
   entry in `{ [engine]: entry }` but `parseStoredPlatformConfig` (host) reads
   ONE entry, so unsaved Engine Directory / Engine Fork edits silently never
   reach a launch today. Fixed by TASK-02 (client side).
+- `packages/providers/tests/basalt.spec.ts` red at HEAD (4 tests, verified
+  2026-11-09 with a stashed clean tree): 561b01c added the `vram-reserve-mib`
+  parameter without updating the surface-order and engine-block render
+  expectations. Unrelated to this plan; needs its own fix task (TASK-06's
+  `pnpm test` gate cannot go green over it).
+- Commit ac397c3 shipped a `basaltWindows.ts` src change without its tracked
+  `lib/` emit (stale committed emit at HEAD). Re-synced by the forced rebuild
+  during TASK-01 and committed beside it.

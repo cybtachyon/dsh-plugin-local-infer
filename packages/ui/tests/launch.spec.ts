@@ -2,7 +2,11 @@
  * The launch and stop route helpers over the stub service (plan render,
  * progress phases, log persistence, compose args, sudo, cancel) and the
  * platform config (§3.10) round trip and launch pass-through. (Split from
- * route.spec.ts by describe, TASK-012.)
+ * route.spec.ts by describe, TASK-012.) The draft-aware launch contract
+ * (PLAN-DRAFT-LAUNCH TASK-01) pins that a launch request's engine, config,
+ * platform, and autoRebuild fields drive the plan render and the Get steps
+ * over the stored values, and that the run mutates only the named entry's
+ * launch record and the last-run logs, never the stored config.
  * @module dsh-plugin-local-infer/ui/tests/
  */
 
@@ -10,7 +14,13 @@ import { existsSync, mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import type { DefaultModel, EnginePlatformConfig, LaunchPlan } from 'dsh-plugin-local-infer/core'
+import type {
+  Config,
+  DefaultModel,
+  EngineAdapter,
+  EnginePlatformConfig,
+  LaunchPlan,
+} from 'dsh-plugin-local-infer/core'
 import {
   CHAT_TEMPLATE_FILE,
   DEFAULT_LOG_PATH_TEMPLATE,
@@ -1143,5 +1153,261 @@ describe('platform config (§3.10) round trip and launch pass-through', () => {
     // The resolved default never leaks into storage: the stored platform
     // map stays the clean entry the test wrote.
     expect(readConfig().platform).toEqual({})
+  })
+})
+
+describe('launch request overrides (draft-aware launch contract)', () => {
+  let home: string
+
+  beforeAll(() => {
+    home = mkdtempSync(join(tmpdir(), 'local-infer-request-override-'))
+    pointHomeAt(home)
+  })
+
+  afterAll(() => {
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  // An adapter that renders the request config's port into the plan, so the
+  // plan pins WHICH config the render read (the shared fakeAdapter ignores
+  // the config and always answers the same port).
+  function portAdapter(engineId: string): EngineAdapter {
+    return {
+      ...fakeAdapter(engineId),
+      renderLaunch: (config: Config): LaunchPlan => {
+        const port = typeof config.port === 'number' ? config.port : 18020
+        return { engineId, kind: 'process', port, healthUrl: `http://127.0.0.1:${port}/health` }
+      },
+    } as unknown as EngineAdapter
+  }
+
+  it('renders the plan and runs the Get steps from the request engine, config, platform, and autoRebuild', async () => {
+    // Every stored value disagrees with the request: the stored engine is
+    // ninfer, the stored port 18020, the stored model qwen3-27b (a
+    // registered default), the stored entry's Auto Rebuild true, and the
+    // stored platform entry for the request's engine names another checkout.
+    // The launch must render and run from the request values only.
+    writeConfig(
+      'ninfer',
+      { port: 18020, model: 'qwen3-27b' },
+      false, // Pinned: the trust gate is off, so no dep install reaches the host.
+      { hyperqwen: { engineDirectory: '/stored/dir', engineFork: 'https://example.com/stored/fork' } },
+      true,
+      [
+        {
+          id: 'p1',
+          engine: 'ninfer',
+          config: { port: 18020, model: 'qwen3-27b' },
+          platform: {},
+          autoRebuild: true,
+        },
+      ],
+    )
+    const registrations: EnginePlatformConfig[] = []
+    const service = stubService([], {
+      engines: [fakeAdapter('ninfer'), portAdapter('hyperqwen')],
+      onPlatform: (config: EnginePlatformConfig) => {
+        registrations.push(config)
+      },
+    })
+    let seenPlan: LaunchPlan | undefined
+    let seenOptions: { autoRebuild?: boolean } | undefined
+    service.launch = async (
+      plan: LaunchPlan,
+      options?: { autoRebuild?: boolean },
+    ): Promise<LaunchResult> => {
+      seenPlan = plan
+      seenOptions = options
+      return { plan, healthy: true }
+    }
+    const getHost = stubGetHost()
+    await launchEngine(
+      service,
+      {
+        engine: 'hyperqwen',
+        config: { port: 19020, model: 'draft-model' },
+        platform: {
+          engineDirectory: '/request/dir',
+          engineFork: 'https://example.com/request/fork',
+        },
+        providerId: 'p1',
+        autoRebuild: false,
+      },
+      undefined,
+      getHost.host,
+    )
+    // The plan renders from the request engine (the stored engine is ninfer)
+    // and the request port (the stored config names 18020).
+    expect(seenPlan?.engineId).toBe('hyperqwen')
+    expect(seenPlan?.port).toBe(19020)
+    // The deploy receives the request's Auto Rebuild flag; the stored entry
+    // carries autoRebuild true and never reaches the run.
+    expect(seenOptions?.autoRebuild).toBe(false)
+    // The request platform entry registers under the request engine, once.
+    expect(registrations).toEqual([
+      {
+        engineId: 'hyperqwen',
+        engineDirectory: '/request/dir',
+        engineFork: 'https://example.com/request/fork',
+      },
+    ])
+    const lastLogs = readConfig().lastLogs
+    // The Get run header names the request engine and the request Engine
+    // Directory, not the stored engine or the stored checkout.
+    expect(lastLogs).toContain('get hyperqwen in /request/dir')
+    expect(lastLogs).not.toContain('/stored/dir')
+    // The sync/build step skips on the request flag (an explicit false), and
+    // the run touches no host command at all.
+    expect(lastLogs).toContain('engine sync and build: auto rebuild off, skipped')
+    expect(getHost.state.run).toEqual([])
+    expect(getHost.state.streamed).toEqual([])
+    // The model step reads the request's model; the stored model never
+    // reaches the run.
+    expect(lastLogs).toContain('model download: draft-model has no registered default, skipped')
+    expect(lastLogs).not.toContain('qwen3-27b')
+  })
+
+  it('mutates only the named entry launch record and the last-run logs, never the stored config', async () => {
+    // The same draft request as the sibling test, launched over a stored
+    // config that disagrees with it on every field, with a second entry that
+    // matches the draft's engine and config: the record must land on the
+    // entry the request names, and every other stored byte must stay.
+    writeConfig(
+      'ninfer',
+      { port: 18020, model: 'qwen3-27b' },
+      false,
+      { hyperqwen: { engineDirectory: '/stored/dir', engineFork: 'https://example.com/stored/fork' } },
+      true,
+      [
+        {
+          id: 'p1',
+          engine: 'ninfer',
+          config: { port: 18020, model: 'qwen3-27b' },
+          platform: {},
+          autoRebuild: true,
+        },
+        {
+          id: 'p2',
+          engine: 'hyperqwen',
+          config: { port: 19020, model: 'draft-model' },
+          platform: {},
+        },
+      ],
+      DEFAULT_LOG_PATH_TEMPLATE,
+      'previous run\n',
+    )
+    const service = stubService([], {
+      engines: [fakeAdapter('ninfer'), portAdapter('hyperqwen')],
+    })
+    service.launch = async (plan: LaunchPlan): Promise<LaunchResult> => ({
+      plan,
+      healthy: true,
+      pid: 12345,
+      parentPid: 999,
+    })
+    await launchEngine(
+      service,
+      {
+        engine: 'hyperqwen',
+        config: { port: 19020, model: 'draft-model' },
+        platform: {
+          engineDirectory: '/request/dir',
+          engineFork: 'https://example.com/request/fork',
+        },
+        providerId: 'p1',
+        autoRebuild: false,
+      },
+      undefined,
+      stubGetHost().host,
+    )
+    const stored = readConfig()
+    // The draft never persists: the stored engine, config, trust gate,
+    // platform map, help toggle, and log location read exactly as written,
+    // although the launch ran a different engine, config, and platform.
+    expect(stored.engine).toBe('ninfer')
+    expect(stored.config).toEqual({ port: 18020, model: 'qwen3-27b' })
+    expect(stored.allowRunDeps).toBe(false)
+    expect(stored.platform).toEqual({
+      hyperqwen: { engineDirectory: '/stored/dir', engineFork: 'https://example.com/stored/fork' },
+    })
+    expect(stored.showHelp).toBe(true)
+    expect(stored.logPath).toBe(DEFAULT_LOG_PATH_TEMPLATE)
+    // The launch record lands on the entry the request names and describes
+    // the run the draft drove (the request engine at the request port); the
+    // entry's own fields stay as saved.
+    expect(stored.providers).toHaveLength(2)
+    const target = stored.providers[0]!
+    expect(target.id).toBe('p1')
+    expect(target.engine).toBe('ninfer')
+    expect(target.config).toEqual({ port: 18020, model: 'qwen3-27b' })
+    expect(target.platform).toEqual({})
+    expect(target.autoRebuild).toBe(true)
+    expect(target.launch?.pid).toBe(12345)
+    expect(target.launch?.engineId).toBe('hyperqwen')
+    expect(target.launch?.port).toBe(19020)
+    // The other entry stays byte-identical, no record, even though it
+    // matches the draft's engine and config: the providerId picks the target.
+    expect(stored.providers[1]).toEqual({
+      id: 'p2',
+      engine: 'hyperqwen',
+      config: { port: 19020, model: 'draft-model' },
+      platform: {},
+    })
+    // The last-run logs are the only other field the run changed.
+    expect(stored.lastLogs.startsWith('--- Launching...\n')).toBe(true)
+  })
+
+  it('registers a request platform entry that differs from the stored one in memory only', async () => {
+    writeConfig('ninfer', { port: 18020 }, false, {
+      ninfer: { engineDirectory: '/stored/dir', engineFork: 'https://example.com/stored/fork' },
+    })
+    const registrations: EnginePlatformConfig[] = []
+    const service = stubService([], {
+      engines: [fakeAdapter('ninfer')],
+      onPlatform: (config: EnginePlatformConfig) => {
+        registrations.push(config)
+      },
+    })
+    // An absent checkout takes the clone path, so the request's Engine Fork
+    // and Engine Directory reach the host commands the Get run streams.
+    const getHost = stubGetHost({ exists: false })
+    await launchEngine(
+      service,
+      {
+        engine: 'ninfer',
+        config: { port: 18020 },
+        platform: {
+          engineDirectory: '/request/dir',
+          engineFork: 'https://example.com/request/fork',
+        },
+        autoRebuild: true,
+      },
+      undefined,
+      getHost.host,
+    )
+    // The service registry receives the request entry once (the fallback
+    // directory rule finds the entry already naming the effective directory,
+    // so no second registration rides); the stored entry never registers.
+    expect(registrations).toEqual([
+      {
+        engineId: 'ninfer',
+        engineDirectory: '/request/dir',
+        engineFork: 'https://example.com/request/fork',
+      },
+    ])
+    // The Get run works the request checkout: the probe, the clone of the
+    // request fork, and the build all name /request/dir.
+    expect(readConfig().lastLogs).toContain('get ninfer in /request/dir')
+    expect(getHost.state.run).toEqual(['git -C /request/dir rev-parse --is-inside-work-tree'])
+    expect(getHost.state.streamed).toEqual([
+      'git clone https://example.com/request/fork /request/dir',
+      'cmake -S /request/dir -B /request/dir/build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build /request/dir/build -j',
+    ])
+    // Memory only: the stored platform map keeps the stored entry, and the
+    // stored entry's checkout never appears in the run.
+    expect(readConfig().platform).toEqual({
+      ninfer: { engineDirectory: '/stored/dir', engineFork: 'https://example.com/stored/fork' },
+    })
+    expect(readConfig().lastLogs).not.toContain('/stored/dir')
   })
 })
