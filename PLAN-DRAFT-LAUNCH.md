@@ -50,7 +50,7 @@ per-request override fields (settled below: no new host-side request shape).
 - [x] [TASK-03-entry-launch-draft](docs/PLAN-DRAFT-LAUNCH-TASK-03-entry-launch-draft.md) -
   `performEntryLaunch` takes an optional draft override; run key and re-price
   follow it.
-- [ ] [TASK-04-card-routing-tests](docs/PLAN-DRAFT-LAUNCH-TASK-04-card-routing-tests.md) -
+- [x] [TASK-04-card-routing-tests](docs/PLAN-DRAFT-LAUNCH-TASK-04-card-routing-tests.md) -
   Title-bar click passes the draft when editing; spec coverage.
 - [ ] [TASK-05-refactor-client](docs/PLAN-DRAFT-LAUNCH-TASK-05-refactor-client.md) -
   Refactor pass over the client phase.
@@ -78,3 +78,9 @@ per-request override fields (settled below: no new host-side request shape).
 - Commit ac397c3 shipped a `basaltWindows.ts` src change without its tracked
   `lib/` emit (stale committed emit at HEAD). Re-synced by the forced rebuild
   during TASK-01 and committed beside it.
+- `Card.tsx` `onValue` and `onPlatform` rebuild the draft literal without the
+  `autoRebuild` key, and `draft/edit` replaces the draft wholesale: a field or
+  platform edit after toggling Auto Rebuild silently unchecks the box (and a
+  draft-submitted launch then sends `autoRebuild: false`). Found during
+  TASK-04; not fixed there. Candidate for TASK-05 (spread the current draft
+  in both dispatches; `onEngine`'s reset-on-engine-switch may be intentional).

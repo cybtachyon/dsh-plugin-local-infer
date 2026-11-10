@@ -390,7 +390,12 @@ export function card(_react, localeRef, _primitives) {
                     openEntryLogs(store, editedProvider);
                 }
                 else if (control.action === 'launch') {
-                    performEntryLaunch(store, editedProvider, t);
+                    // The title-bar Launch of an open provider form submits the draft
+                    // (an unedited draft equals the stored values). The store is read
+                    // at click time, not the render's state, so the newest edit lands.
+                    // The launch writes no settings: Save and Discard stay the only
+                    // persistence paths.
+                    performEntryLaunch(store, editedProvider, t, store.getSnapshot().draft ?? undefined);
                 }
             }
             else if (control.target === 'draft') {

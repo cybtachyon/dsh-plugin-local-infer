@@ -411,11 +411,12 @@ function renderCard(opts: {
   }
 }
 
-// routeFetch stubs the global fetch with a per-route answer table.
+// routeFetch stubs the global fetch with a per-route answer table, recording
+// the request init too so a test can read the posted body.
 function routeFetch(routes: Record<string, () => Response>) {
-  const calls: Array<{ url: string }> = []
-  const fetchMock = vi.fn(async (url: string) => {
-    calls.push({ url })
+  const calls: Array<{ url: string; init?: RequestInit }> = []
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    calls.push({ url, init })
     const path = url.split('?')[0]
     const factory = routes[path]
     if (factory === undefined) {
@@ -710,6 +711,168 @@ describe('the card composer (src/Card.tsx)', () => {
       // and the request names the entry's provider id.
       expect(store.getSnapshot().launch['p1']?.status).toBe('prereqs')
       // Settle the run so the launch abort registry and run markers clear.
+      stream.enqueue('{"result":{"healthy":true}}')
+      stream.close()
+      await flush(50)
+      expect(store.getSnapshot().launch['p1']?.status).toBe('running')
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('posts the open draft on the edited provider title-bar Launch, saving nothing', async () => {
+    vi.useFakeTimers()
+    try {
+      // The entry's stored values (flag checked, Auto Rebuild unchecked,
+      // engine directory /eng) differ from every draft value the test edits.
+      const summary = fullSummary({
+        providers: [
+          {
+            id: 'p1',
+            engine: 'ninfer',
+            model: 'a-model',
+            status: 'stopped',
+            config: { flag: true },
+            platform: { engineDirectory: '/eng' },
+            autoRebuild: false,
+          },
+        ] as unknown as LocalInferSummary['providers'],
+      })
+      const stream = launchStream()
+      const { fetchMock } = routeFetch({
+        '/local-infer/launch': () => stream.response(),
+        '/local-infer/logs': () =>
+          new Response('{"snapshot":"","seq":0,"running":false}\n', {
+            status: 200,
+            headers: { 'content-type': 'application/x-ndjson' },
+          }),
+        '/local-infer/summary': () => jsonAnswer(summary),
+        '/local-infer/deps': () => jsonAnswer(depsAnswer()),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const { tree, store, rerender } = renderCard({ summary })
+      // Open p1 for editing: the form loads the stored values.
+      const editBtn = find(tree, (e) => e.type === 'button' && text(e) === t.edit)
+      expect(editBtn).toBeDefined()
+      ;(editBtn?.props?.onClick as () => void)()
+      await flush()
+      expect(store.getSnapshot().ui.editingProviderId).toBe('p1')
+      // Edit three draft values through the form: the Flag field, the
+      // engine-directory platform row, and the Auto Rebuild box.
+      const editing = rerender()
+      clickBox(fieldCheckbox(editing, 'Flag'), false)
+      const engDir = find(
+        editing,
+        (e) => e.type === 'input' && e.props?.value === '/eng',
+      )
+      expect(engDir).toBeDefined()
+      ;(engDir?.props?.onChange as (ev: { target: { value: string } }) => void)({
+        target: { value: '/eng2' },
+      })
+      clickBox(autoRebuildBox(rerender()), true)
+      // Click the title-bar Launch (the primary control).
+      const launchBtn = find(
+        rerender(),
+        (e) =>
+          e.type === 'button' &&
+          text(e) === t.launch &&
+          (e.props?.style as Record<string, unknown> | undefined) === PRIMARY_BUTTON,
+      )
+      expect(launchBtn).toBeDefined()
+      ;(launchBtn?.props?.onClick as () => void)()
+      expect(store.getSnapshot().launch['p1']?.status).toBe('prereqs')
+      // The posted body carries the DRAFT values through the existing
+      // request keys, with the platform as one per-engine entry and the
+      // entry's own providerId.
+      const launchCall = fetchMock.mock.calls.find(([url]) =>
+        String(url).startsWith('/local-infer/launch'),
+      )
+      expect(launchCall).toBeDefined()
+      expect(JSON.parse(String((launchCall?.[1] as RequestInit | undefined)?.body))).toEqual({
+        engine: 'ninfer',
+        config: { flag: false },
+        platform: { engineDirectory: '/eng2' },
+        providerId: 'p1',
+        autoRebuild: true,
+      })
+      // The click saves nothing: no /local-infer/save fires, the draft keeps
+      // its edits (still dirty), and the summary entry keeps its stored
+      // values.
+      expect(
+        fetchMock.mock.calls.some(([url]) => String(url).startsWith('/local-infer/save')),
+      ).toBe(false)
+      expect(store.getSnapshot().dirty).toBe(true)
+      expect(store.getSnapshot().draft?.config.flag).toBe(false)
+      const stored = store.getSnapshot().summary?.providers[0] as
+        | { config: Record<string, unknown>; autoRebuild?: boolean; platform?: Record<string, unknown> }
+        | undefined
+      expect(stored?.config).toEqual({ flag: true })
+      expect(stored?.autoRebuild).toBe(false)
+      // Settle the run so the machine, abort registry, and run markers clear.
+      stream.enqueue('{"result":{"healthy":true}}')
+      stream.close()
+      await flush(50)
+      expect(store.getSnapshot().launch['p1']?.status).toBe('running')
+    } finally {
+      vi.useRealTimers()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('launches a collapsed-list row with the stored entry values, not the draft', async () => {
+    vi.useFakeTimers()
+    try {
+      // No provider form is open (no editingProviderId, a new-mode draft with
+      // different values): the row's Launch button must post the stored entry.
+      const summary = fullSummary({
+        providers: [
+          {
+            id: 'p1',
+            engine: 'ninfer',
+            model: 'a-model',
+            status: 'stopped',
+            config: { flag: true },
+            platform: { engineDirectory: '/eng' },
+          },
+        ] as unknown as LocalInferSummary['providers'],
+      })
+      const stream = launchStream()
+      const { fetchMock } = routeFetch({
+        '/local-infer/launch': () => stream.response(),
+        '/local-infer/logs': () =>
+          new Response('{"snapshot":"","seq":0,"running":false}\n', {
+            status: 200,
+            headers: { 'content-type': 'application/x-ndjson' },
+          }),
+        '/local-infer/summary': () => jsonAnswer(summary),
+        '/local-infer/deps': () => jsonAnswer(depsAnswer()),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      const { tree, store } = renderCard({ summary, draft: fullDraft() })
+      // The row's Launch is the ghost one in the provider list (the title-bar
+      // control is a draft-target Launch: no provider is being edited).
+      const rowLaunch = find(
+        tree,
+        (e) =>
+          e.type === 'button' &&
+          text(e) === t.launch &&
+          (e.props?.style as Record<string, unknown> | undefined) !== PRIMARY_BUTTON,
+      )
+      expect(rowLaunch).toBeDefined()
+      ;(rowLaunch?.props?.onClick as () => void)()
+      expect(store.getSnapshot().launch['p1']?.status).toBe('prereqs')
+      const launchCall = fetchMock.mock.calls.find(([url]) =>
+        String(url).startsWith('/local-infer/launch'),
+      )
+      expect(launchCall).toBeDefined()
+      expect(JSON.parse(String((launchCall?.[1] as RequestInit | undefined)?.body))).toEqual({
+        engine: 'ninfer',
+        config: { flag: true },
+        platform: { engineDirectory: '/eng' },
+        providerId: 'p1',
+        autoRebuild: false,
+      })
       stream.enqueue('{"result":{"healthy":true}}')
       stream.close()
       await flush(50)

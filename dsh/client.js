@@ -3798,7 +3798,7 @@ function card(_react, localeRef, _primitives) {
         } else if (control.action === "logs") {
           openEntryLogs(store, editedProvider);
         } else if (control.action === "launch") {
-          performEntryLaunch(store, editedProvider, t);
+          performEntryLaunch(store, editedProvider, t, store.getSnapshot().draft ?? void 0);
         }
       } else if (control.target === "draft") {
         if (control.action === "launch") {
