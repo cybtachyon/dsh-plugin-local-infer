@@ -42,6 +42,9 @@ per-request override fields (settled below: no new host-side request shape).
 
 ### Phase 2 - Client: submit the draft on Launch while editing
 
+- [ ] [TASK-01b-basalt-spec-fix](docs/PLAN-DRAFT-LAUNCH-TASK-01b-basalt-spec-fix.md) -
+  Unblock the test gate: sync `basalt.spec.ts` expectations with the
+  `vram-reserve-mib` param (pre-existing red at HEAD).
 - [ ] [TASK-02-client-platform-shape](docs/PLAN-DRAFT-LAUNCH-TASK-02-client-platform-shape.md) -
   Fix the launch-body `platform` shape to the host's single per-engine entry.
 - [ ] [TASK-03-entry-launch-draft](docs/PLAN-DRAFT-LAUNCH-TASK-03-entry-launch-draft.md) -
@@ -59,7 +62,7 @@ per-request override fields (settled below: no new host-side request shape).
 
 ## Task dependencies
 
-- TASK-01 -> TASK-02 -> TASK-03 -> TASK-04 -> TASK-05 -> TASK-06
+- TASK-01 -> TASK-01b -> TASK-02 -> TASK-03 -> TASK-04 -> TASK-05 -> TASK-06
 
 ## Discovered pre-existing issues
 
