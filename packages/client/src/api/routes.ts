@@ -79,9 +79,10 @@ export interface RegisterRequest {
 export interface LaunchRequest {
   engine?: string
   config?: Config
-  // The card's unsaved Engine Directory / Engine Fork edits for the engine,
-  // so a launch uses them without a prior save.
-  platform?: Record<string, StoredPlatformConfig>
+  // The card's unsaved Engine Directory / Engine Fork edits for the engine
+  // (the single per-engine entry, the Get route's shape, not the engine-keyed
+  // record the save route takes), so a launch uses them without a prior save.
+  platform?: StoredPlatformConfig
   // The saved provider entry the launch record (or the stop's clear)
   // targets. Absent while the draft is not a provider.
   providerId?: string

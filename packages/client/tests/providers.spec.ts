@@ -667,6 +667,36 @@ describe('the provider list drivers (store/providers.ts)', () => {
       await flush(50)
     })
 
+    it('sends the platform as the single per-engine entry, not an engine-keyed record', async () => {
+      // The host's parseStoredPlatformConfig reads the launch body's
+      // platform as ONE StoredPlatformConfig; an engine-keyed record reads
+      // as absent, so the wrap silently dropped the entry's Engine
+      // Directory / Fork on every launch.
+      const { store } = makeStore()
+      const provider = providerWith({
+        platform: { engineDirectory: '/eng/ninfer', engineFork: 'https://github.com/a/fork' },
+      })
+      store.dispatch({
+        type: 'summary/ack',
+        summary: summaryWith([provider]),
+      })
+      const stream = launchStream()
+      const { calls, fetchMock } = routeFetch({
+        '/local-infer/launch': () => stream.response(),
+        '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      performEntryLaunch(store, provider, t)
+      const launch = calls.find((call) => call.url === '/local-infer/launch')
+      expect(JSON.parse(String(launch?.init?.body)).platform).toEqual({
+        engineDirectory: '/eng/ninfer',
+        engineFork: 'https://github.com/a/fork',
+      })
+      stream.enqueue('{"result":{"healthy":true}}')
+      stream.close()
+      await flush(50)
+    })
+
     it('ignores a launch while a rebuild phase is in flight', () => {
       const { store, state } = makeStore()
       const provider = providerWith()
@@ -1009,6 +1039,27 @@ describe('the provider list drivers (store/providers.ts)', () => {
   })
 
   describe('performEntryStop', () => {
+    it('sends the platform as the single per-engine entry, not an engine-keyed record', () => {
+      // The stop route shares launchRequestFromBody, so the body carries the
+      // same single-entry platform shape as the launch body.
+      const { store } = makeStore()
+      const provider = providerWith({ status: 'running' })
+      store.dispatch({
+        type: 'summary/ack',
+        summary: summaryWith([provider]),
+      })
+      const { calls, fetchMock } = routeFetch({
+        '/local-infer/stop': () => jsonAnswer({ stopped: true }),
+        '/local-infer/summary': () => jsonAnswer(summaryWith([provider])),
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      performEntryStop(store, provider)
+      const stop = calls.find((call) => call.url === '/local-infer/stop')
+      expect(JSON.parse(String(stop?.init?.body)).platform).toEqual({
+        engineDirectory: '/eng/ninfer',
+      })
+    })
+
     it('ignores a stop from a failed launch', () => {
       const { store, state } = makeStore()
       const provider = providerWith()
@@ -1130,6 +1181,33 @@ describe('the provider list drivers (store/providers.ts)', () => {
       await run
       const launch = calls.find((call) => call.url === '/local-infer/launch')
       expect(JSON.parse(String(launch?.init?.body)).autoRebuild).toBe(true)
+    })
+
+    it('sends the draft platform entry directly, not an engine-keyed record', async () => {
+      // draftLaunchBody pulls the draft's per-engine entry out of the
+      // engine-keyed draft map and sends the entry itself: the shape the
+      // host's parseStoredPlatformConfig reads.
+      const provider = providerWith()
+      const { store, stream, calls } = draftLaunchHarness(provider)
+      store.dispatch({
+        type: 'draft/edit',
+        draft: {
+          engine: 'ninfer',
+          config: { model: 'a-model' },
+          platform: {
+            ninfer: { engineDirectory: '/draft/dir', engineFork: 'https://github.com/a/fork' },
+          },
+        },
+      })
+      const run = performDraftLaunch(store, t)
+      stream.enqueue('{"result":{"healthy":true}}')
+      stream.close()
+      await run
+      const launch = calls.find((call) => call.url === '/local-infer/launch')
+      expect(JSON.parse(String(launch?.init?.body)).platform).toEqual({
+        engineDirectory: '/draft/dir',
+        engineFork: 'https://github.com/a/fork',
+      })
     })
 
     it('sends autoRebuild false when the draft carries no checkbox value', async () => {

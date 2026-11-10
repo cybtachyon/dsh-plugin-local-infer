@@ -2794,7 +2794,9 @@ function performEntryLaunch(store, provider, t) {
     {
       engine: provider.engine,
       config: provider.config,
-      platform: { [provider.engine]: provider.platform },
+      // The launch route parses platform as ONE per-engine entry (the host's
+      // parseStoredPlatformConfig), not the save route's engine-keyed record.
+      platform: provider.platform,
       providerId: provider.id,
       // The entry's stored checkbox: an entry without the key launches with
       // the rebuild steps skipped (an entry saved before the key existed
@@ -2889,7 +2891,8 @@ function performEntryStop(store, provider) {
   void postStop({
     engine: provider.engine,
     config: provider.config,
-    platform: { [provider.engine]: provider.platform },
+    // Same single-entry shape as the launch body (shared host parser).
+    platform: provider.platform,
     providerId: provider.id
   }).catch(() => {
   });
@@ -2907,7 +2910,7 @@ function draftLaunchBody(store) {
     body.config = draft.config;
   }
   if (platform !== void 0 && draft !== null) {
-    body.platform = { [draft.engine]: platform };
+    body.platform = platform;
   }
   if (state.ui.editingProviderId !== null) {
     body.providerId = state.ui.editingProviderId;

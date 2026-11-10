@@ -60,7 +60,7 @@ export interface RegisterRequest {
 export interface LaunchRequest {
     engine?: string;
     config?: Config;
-    platform?: Record<string, StoredPlatformConfig>;
+    platform?: StoredPlatformConfig;
     providerId?: string;
     autoRebuild?: boolean;
 }
