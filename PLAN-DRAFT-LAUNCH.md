@@ -57,7 +57,7 @@ per-request override fields (settled below: no new host-side request shape).
 
 ### Phase 3 - Verification
 
-- [ ] [TASK-06-verify](docs/PLAN-DRAFT-LAUNCH-TASK-06-verify.md) -
+- [x] [TASK-06-verify](docs/PLAN-DRAFT-LAUNCH-TASK-06-verify.md) -
   Full build, tests, coverage, lint, prek; commit emit.
 
 ## Task dependencies
