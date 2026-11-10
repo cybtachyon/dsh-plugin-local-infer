@@ -52,7 +52,7 @@ per-request override fields (settled below: no new host-side request shape).
   follow it.
 - [x] [TASK-04-card-routing-tests](docs/PLAN-DRAFT-LAUNCH-TASK-04-card-routing-tests.md) -
   Title-bar click passes the draft when editing; spec coverage.
-- [ ] [TASK-05-refactor-client](docs/PLAN-DRAFT-LAUNCH-TASK-05-refactor-client.md) -
+- [x] [TASK-05-refactor-client](docs/PLAN-DRAFT-LAUNCH-TASK-05-refactor-client.md) -
   Refactor pass over the client phase.
 
 ### Phase 3 - Verification
@@ -78,9 +78,9 @@ per-request override fields (settled below: no new host-side request shape).
 - Commit ac397c3 shipped a `basaltWindows.ts` src change without its tracked
   `lib/` emit (stale committed emit at HEAD). Re-synced by the forced rebuild
   during TASK-01 and committed beside it.
-- `Card.tsx` `onValue` and `onPlatform` rebuild the draft literal without the
+- `Card.tsx` `onValue` and `onPlatform` rebuilt the draft literal without the
   `autoRebuild` key, and `draft/edit` replaces the draft wholesale: a field or
   platform edit after toggling Auto Rebuild silently unchecks the box (and a
   draft-submitted launch then sends `autoRebuild: false`). Found during
-  TASK-04; not fixed there. Candidate for TASK-05 (spread the current draft
-  in both dispatches; `onEngine`'s reset-on-engine-switch may be intentional).
+  TASK-04; fixed in TASK-05 (both dispatches spread the current draft;
+  `onEngine`'s reset-on-engine-switch stays, documented as intentional).
