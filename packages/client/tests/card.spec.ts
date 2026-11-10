@@ -540,6 +540,29 @@ describe('the card composer (src/Card.tsx)', () => {
     expect(autoRebuildBox(rerender()).props?.checked).toBe(false)
   })
 
+  it('keeps the Auto Rebuild draft value through field and platform edits', () => {
+    // The draft/edit reducer replaces the draft wholesale: onValue and
+    // onPlatform must spread the current draft, or their rebuilt literals
+    // silently uncheck the box the user just checked (and a draft-submitted
+    // launch then carries autoRebuild false against the user's intent).
+    const { tree, store, rerender } = renderCard({ summary: fullSummary(), draft: fullDraft() })
+    clickBox(autoRebuildBox(tree), true)
+    expect(store.getSnapshot().draft?.autoRebuild).toBe(true)
+    // A config field edit through onValue keeps the checkbox value.
+    clickBox(fieldCheckbox(rerender(), 'Flag'), false)
+    expect(store.getSnapshot().draft?.config.flag).toBe(false)
+    expect(store.getSnapshot().draft?.autoRebuild).toBe(true)
+    // A platform row edit through onPlatform keeps it too.
+    const engDir = find(rerender(), (e) => e.type === 'input' && e.props?.value === '/eng')
+    expect(engDir).toBeDefined()
+    ;(engDir?.props?.onChange as (ev: { target: { value: string } }) => void)({
+      target: { value: '/eng2' },
+    })
+    expect(store.getSnapshot().draft?.autoRebuild).toBe(true)
+    expect(store.getSnapshot().draft?.platform?.ninfer?.engineDirectory).toBe('/eng2')
+    expect(autoRebuildBox(rerender()).props?.checked).toBe(true)
+  })
+
   it('shows each provider its own stored Auto Rebuild value when opened for editing', async () => {
     vi.useFakeTimers()
     try {
@@ -758,19 +781,20 @@ describe('the card composer (src/Card.tsx)', () => {
       ;(editBtn?.props?.onClick as () => void)()
       await flush()
       expect(store.getSnapshot().ui.editingProviderId).toBe('p1')
-      // Edit three draft values through the form: the Flag field, the
-      // engine-directory platform row, and the Auto Rebuild box.
-      const editing = rerender()
-      clickBox(fieldCheckbox(editing, 'Flag'), false)
+      // Edit three draft values through the form: the Auto Rebuild box
+      // FIRST, then the Flag field and the engine-directory platform row.
+      // The later field edits must keep the checked box (onValue and
+      // onPlatform spread the draft); the posted body below proves it.
+      clickBox(autoRebuildBox(rerender()), true)
+      clickBox(fieldCheckbox(rerender(), 'Flag'), false)
       const engDir = find(
-        editing,
+        rerender(),
         (e) => e.type === 'input' && e.props?.value === '/eng',
       )
       expect(engDir).toBeDefined()
       ;(engDir?.props?.onChange as (ev: { target: { value: string } }) => void)({
         target: { value: '/eng2' },
       })
-      clickBox(autoRebuildBox(rerender()), true)
       // Click the title-bar Launch (the primary control).
       const launchBtn = find(
         rerender(),

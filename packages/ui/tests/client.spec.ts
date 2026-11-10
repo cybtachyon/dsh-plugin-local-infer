@@ -147,8 +147,13 @@ describe('dsh/client.js artifact source pins', () => {
     expect(source).toContain('state.launch')
     expect(source).toContain('performDraftLaunch')
     expect(source).toContain('autoRebuild')
-    expect(source).toContain('autoRebuild: draft?.autoRebuild ?? false')
+    // The checkbox value rides the LaunchContext projections into every
+    // launch/stop body: draftLaunchContext reads the draft (an absent value
+    // launches as unchecked), entryLaunchContext reads the stored provider,
+    // and launchRequestBody is the one body builder both run through.
+    expect(source).toContain('autoRebuild: draft.autoRebuild ?? false')
     expect(source).toContain('autoRebuild: provider.autoRebuild ?? false')
+    expect(source).toContain('...launchRequestBody(context)')
     expect(source).toContain('checked: currentDraft.autoRebuild ?? false')
   })
 

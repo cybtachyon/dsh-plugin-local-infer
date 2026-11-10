@@ -502,10 +502,12 @@ export function card(
       }
       store.dispatch({
         type: 'draft/edit',
+        // Spread the whole draft: draft/edit replaces the draft wholesale,
+        // so a rebuilt literal drops every key the callback does not name
+        // (the Auto Rebuild box used to uncheck itself on each field edit).
         draft: {
-          engine: currentDraft.engine,
+          ...currentDraft,
           config: { ...currentDraft.config, [key]: value },
-          ...(currentDraft.platform !== undefined ? { platform: currentDraft.platform } : {}),
         },
       })
       scheduleReprice()
@@ -518,6 +520,10 @@ export function card(
       }
       store.dispatch({
         type: 'draft/edit',
+        // Deliberately wholesale (unlike onValue and onPlatform): an engine
+        // switch resets the config AND the Auto Rebuild box, which describe
+        // the outgoing engine; only the engine-keyed platform record (edits
+        // for every engine) carries over.
         draft: {
           engine,
           config: {},
@@ -557,9 +563,10 @@ export function card(
       const platform = { ...(currentDraft.platform ?? {}), [currentDraft.engine]: enginePlatform }
       store.dispatch({
         type: 'draft/edit',
+        // Spread the whole draft (the onValue rule): the rebuilt literal
+        // used to drop the Auto Rebuild checkbox on every platform edit.
         draft: {
-          engine: currentDraft.engine,
-          config: currentDraft.config,
+          ...currentDraft,
           platform,
         },
       })

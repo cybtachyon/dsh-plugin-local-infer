@@ -28,7 +28,11 @@ import {
   STOP_POLL_MS,
   type LaunchEvent,
 } from '../machine/launch.ts'
-import type { ProviderSummaryEntry } from 'dsh-plugin-local-infer/ui'
+import type {
+  Config,
+  ProviderSummaryEntry,
+  StoredPlatformConfig,
+} from 'dsh-plugin-local-infer/ui'
 import type { TextTable } from '../text.ts'
 import {
   cancelInFlightRuns,
@@ -228,6 +232,62 @@ export function openEntryLogs(store: CardStore, provider: ProviderSummaryEntry):
 }
 
 /**
+ * LaunchContext is the value object for the four values a launch or stop
+ * body carries: the engine to run, its config, the single per-engine
+ * platform entry, and the Auto Rebuild checkbox. The entry drivers project
+ * it from the stored entry or the submitted draft and draftLaunchBody
+ * projects it from the store's draft, so the request's engine/config/
+ * platform/autoRebuild keys keep one projection and one builder.
+ */
+interface LaunchContext {
+  engine: string
+  config: Config
+  // The draft's per-engine entry, undefined while the draft carries none
+  // (the body then omits the key and the host falls back to the stored
+  // entry). A stored entry always carries its platform.
+  platform: StoredPlatformConfig | undefined
+  autoRebuild: boolean
+}
+
+// draftLaunchContext projects a draft: an absent platform entry reads as no
+// override and an absent autoRebuild as unchecked, the same rules as a
+// stored entry saved before either key existed.
+function draftLaunchContext(draft: CardDraft): LaunchContext {
+  return {
+    engine: draft.engine,
+    config: draft.config,
+    platform: draft.platform?.[draft.engine],
+    autoRebuild: draft.autoRebuild ?? false,
+  }
+}
+
+// entryLaunchContext projects a stored entry: the run that uses the saved
+// settings (no open draft submitted).
+function entryLaunchContext(provider: ProviderSummaryEntry): LaunchContext {
+  return {
+    engine: provider.engine,
+    config: provider.config,
+    platform: provider.platform,
+    autoRebuild: provider.autoRebuild ?? false,
+  }
+}
+
+// launchRequestBody maps a context onto the request's four keys. The launch
+// and stop routes parse platform as ONE per-engine entry (the host's
+// parseStoredPlatformConfig), not the save route's engine-keyed record.
+// exactOptionalPropertyTypes: an undefined platform omits the key outright.
+function launchRequestBody(
+  context: LaunchContext,
+): Pick<LaunchRequest, 'engine' | 'config' | 'platform' | 'autoRebuild'> {
+  return {
+    engine: context.engine,
+    config: context.config,
+    ...(context.platform === undefined ? {} : { platform: context.platform }),
+    autoRebuild: context.autoRebuild,
+  }
+}
+
+/**
  * performEntryLaunch runs one card entry's own Launch control: it starts the
  * entry's launch machine at the prereqs phase and reads the launch stream (a
  * step event as each
@@ -275,26 +335,19 @@ export function performEntryLaunch(
   if (status !== 'idle' && status !== 'failed') {
     return noHandle
   }
-  // The launch context reads the draft while the form's draft is submitted,
-  // else the entry's stored values. An absent draft platform entry reads as
-  // no platform override (the host falls back to the stored entry) and an
-  // absent draft autoRebuild reads as unchecked, the same rules as a stored
-  // entry saved before either key existed.
-  const engine = draftOverride?.engine ?? provider.engine
-  const config = draftOverride?.config ?? provider.config
-  const platform =
+  // The launch context is the draft's while the form's draft is submitted,
+  // else the entry's stored values.
+  const context =
     draftOverride === undefined
-      ? provider.platform
-      : draftOverride.platform?.[draftOverride.engine]
-  const autoRebuild =
-    (draftOverride !== undefined ? draftOverride.autoRebuild : provider.autoRebuild) ?? false
+      ? entryLaunchContext(provider)
+      : draftLaunchContext(draftOverride)
   // The run key mirrors the host rule on the body it receives: the request's
   // providerId names the key, so the pane follows this entry's run
   // regardless of which engine and config the body carries.
   const runKey = clientRunLogKey(
     store.getSnapshot().summary?.providers ?? [],
-    engine,
-    config,
+    context.engine,
+    context.config,
     provider.id,
   )
   beginRun(store, runKey)
@@ -383,18 +436,11 @@ export function performEntryLaunch(
   }
   postLaunch(
     {
-      engine,
-      config,
-      // The launch route parses platform as ONE per-engine entry (the host's
-      // parseStoredPlatformConfig), not the save route's engine-keyed
-      // record. exactOptionalPropertyTypes: a draft with no entry omits the
-      // key outright (the host then falls back to the stored entry).
-      ...(platform === undefined ? {} : { platform }),
+      // The single request-body projection: draft values while one was
+      // submitted, else the entry's stored values (an unchecked run skips
+      // the rebuild steps).
+      ...launchRequestBody(context),
       providerId: provider.id,
-      // The checkbox in effect: the draft's while the form's draft is
-      // submitted, else the entry's stored value; an unchecked run skips the
-      // rebuild steps.
-      autoRebuild,
     },
     onStep,
     controller.signal,
@@ -419,7 +465,7 @@ export function performEntryLaunch(
       // deps read models to repaint the dot and re-price the deps panel. The
       // pair prices the engine and config that actually ran: the draft's when
       // one was submitted.
-      void repriceAll(store, { engine, config })
+      void repriceAll(store, { engine: context.engine, config: context.config })
     })
     .catch(() => {
       if (settle() !== true) {
@@ -460,10 +506,13 @@ export function performEntryStop(
   if (priorStatus === 'failed') {
     return noHandle
   }
+  // A stop always runs the stored entry: no draft override path exists (the
+  // form's Stop is the draft driver's).
+  const context = entryLaunchContext(provider)
   const runKey = clientRunLogKey(
     store.getSnapshot().summary?.providers ?? [],
-    provider.engine,
-    provider.config,
+    context.engine,
+    context.config,
     provider.id,
   )
   beginRun(store, runKey)
@@ -523,10 +572,9 @@ export function performEntryStop(
     move(store, provider.id, { type: 'stopFailed' })
   }, STOP_HEALTH_DEADLINE_MS)
   void postStop({
-    engine: provider.engine,
-    config: provider.config,
-    // Same single-entry shape as the launch body (shared host parser).
-    platform: provider.platform,
+    // The same request-body builder as the launch and the draft drivers
+    // (shared host parser); the stop route ignores the autoRebuild key.
+    ...launchRequestBody(context),
     providerId: provider.id,
   }).catch(() => {
     // A stop that fails leaves the entry in its last state; the fast-poll and
@@ -536,25 +584,16 @@ export function performEntryStop(
 }
 
 // draftLaunchBody builds the launch/stop body the draft-based control sends:
-// the draft's engine, config, and the per-engine platform entry (the unsaved
-// Engine Directory / Fork edits), the draft's Auto Rebuild checkbox (an
-// absent value launches as unchecked), and the provider id the form is
-// editing (the route persists the launch record on that entry).
+// the draft's LaunchContext (engine, config, per-engine platform entry, and
+// Auto Rebuild checkbox, an absent value launching as unchecked) and the
+// provider id the form is editing (the route persists the launch record on
+// that entry). With no draft the request names no engine, config, or
+// platform: the host falls back to the stored values.
 function draftLaunchBody(store: CardStore): LaunchRequest {
   const state = store.getSnapshot()
   const draft = state.draft
-  const platform = draft !== null ? (draft.platform ?? {})[draft.engine] : undefined
-  const body: LaunchRequest = {
-    autoRebuild: draft?.autoRebuild ?? false,
-  }
-  if (draft !== null) {
-    body.engine = draft.engine
-    body.config = draft.config
-  }
-  if (platform !== undefined && draft !== null) {
-    // The route takes the single per-engine entry, not an engine-keyed record.
-    body.platform = platform
-  }
+  const body: LaunchRequest =
+    draft === null ? { autoRebuild: false } : launchRequestBody(draftLaunchContext(draft))
   if (state.ui.editingProviderId !== null) {
     body.providerId = state.ui.editingProviderId
   }

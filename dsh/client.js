@@ -2719,20 +2719,41 @@ function openEntryLogs(store, provider) {
   editProvider(store, provider);
   move(store, provider.id, { type: "reset" });
 }
+function draftLaunchContext(draft) {
+  return {
+    engine: draft.engine,
+    config: draft.config,
+    platform: draft.platform?.[draft.engine],
+    autoRebuild: draft.autoRebuild ?? false
+  };
+}
+function entryLaunchContext(provider) {
+  return {
+    engine: provider.engine,
+    config: provider.config,
+    platform: provider.platform,
+    autoRebuild: provider.autoRebuild ?? false
+  };
+}
+function launchRequestBody(context) {
+  return {
+    engine: context.engine,
+    config: context.config,
+    ...context.platform === void 0 ? {} : { platform: context.platform },
+    autoRebuild: context.autoRebuild
+  };
+}
 function performEntryLaunch(store, provider, t, draftOverride) {
   const prior = store.getSnapshot().launch[provider.id];
   const status = prior?.status ?? "idle";
   if (status !== "idle" && status !== "failed") {
     return noHandle;
   }
-  const engine = draftOverride?.engine ?? provider.engine;
-  const config = draftOverride?.config ?? provider.config;
-  const platform = draftOverride === void 0 ? provider.platform : draftOverride.platform?.[draftOverride.engine];
-  const autoRebuild = (draftOverride !== void 0 ? draftOverride.autoRebuild : provider.autoRebuild) ?? false;
+  const context = draftOverride === void 0 ? entryLaunchContext(provider) : draftLaunchContext(draftOverride);
   const runKey = clientRunLogKey(
     store.getSnapshot().summary?.providers ?? [],
-    engine,
-    config,
+    context.engine,
+    context.config,
     provider.id
   );
   beginRun(store, runKey);
@@ -2796,18 +2817,11 @@ function performEntryLaunch(store, provider, t, draftOverride) {
   };
   postLaunch(
     {
-      engine,
-      config,
-      // The launch route parses platform as ONE per-engine entry (the host's
-      // parseStoredPlatformConfig), not the save route's engine-keyed
-      // record. exactOptionalPropertyTypes: a draft with no entry omits the
-      // key outright (the host then falls back to the stored entry).
-      ...platform === void 0 ? {} : { platform },
-      providerId: provider.id,
-      // The checkbox in effect: the draft's while the form's draft is
-      // submitted, else the entry's stored value; an unchecked run skips the
-      // rebuild steps.
-      autoRebuild
+      // The single request-body projection: draft values while one was
+      // submitted, else the entry's stored values (an unchecked run skips
+      // the rebuild steps).
+      ...launchRequestBody(context),
+      providerId: provider.id
     },
     onStep,
     controller.signal,
@@ -2825,7 +2839,7 @@ function performEntryLaunch(store, provider, t, draftOverride) {
     } else {
       move(store, provider.id, { type: "failed" });
     }
-    void repriceAll(store, { engine, config });
+    void repriceAll(store, { engine: context.engine, config: context.config });
   }).catch(() => {
     if (settle() !== true) {
       return;
@@ -2840,10 +2854,11 @@ function performEntryStop(store, provider) {
   if (priorStatus === "failed") {
     return noHandle;
   }
+  const context = entryLaunchContext(provider);
   const runKey = clientRunLogKey(
     store.getSnapshot().summary?.providers ?? [],
-    provider.engine,
-    provider.config,
+    context.engine,
+    context.config,
     provider.id
   );
   beginRun(store, runKey);
@@ -2895,10 +2910,9 @@ function performEntryStop(store, provider) {
     move(store, provider.id, { type: "stopFailed" });
   }, STOP_HEALTH_DEADLINE_MS);
   void postStop({
-    engine: provider.engine,
-    config: provider.config,
-    // Same single-entry shape as the launch body (shared host parser).
-    platform: provider.platform,
+    // The same request-body builder as the launch and the draft drivers
+    // (shared host parser); the stop route ignores the autoRebuild key.
+    ...launchRequestBody(context),
     providerId: provider.id
   }).catch(() => {
   });
@@ -2907,17 +2921,7 @@ function performEntryStop(store, provider) {
 function draftLaunchBody(store) {
   const state = store.getSnapshot();
   const draft = state.draft;
-  const platform = draft !== null ? (draft.platform ?? {})[draft.engine] : void 0;
-  const body = {
-    autoRebuild: draft?.autoRebuild ?? false
-  };
-  if (draft !== null) {
-    body.engine = draft.engine;
-    body.config = draft.config;
-  }
-  if (platform !== void 0 && draft !== null) {
-    body.platform = platform;
-  }
+  const body = draft === null ? { autoRebuild: false } : launchRequestBody(draftLaunchContext(draft));
   if (state.ui.editingProviderId !== null) {
     body.providerId = state.ui.editingProviderId;
   }
@@ -3734,10 +3738,12 @@ function card(_react, localeRef, _primitives) {
       }
       store.dispatch({
         type: "draft/edit",
+        // Spread the whole draft: draft/edit replaces the draft wholesale,
+        // so a rebuilt literal drops every key the callback does not name
+        // (the Auto Rebuild box used to uncheck itself on each field edit).
         draft: {
-          engine: currentDraft2.engine,
-          config: { ...currentDraft2.config, [key]: value },
-          ...currentDraft2.platform !== void 0 ? { platform: currentDraft2.platform } : {}
+          ...currentDraft2,
+          config: { ...currentDraft2.config, [key]: value }
         }
       });
       scheduleReprice();
@@ -3750,6 +3756,10 @@ function card(_react, localeRef, _primitives) {
       }
       store.dispatch({
         type: "draft/edit",
+        // Deliberately wholesale (unlike onValue and onPlatform): an engine
+        // switch resets the config AND the Auto Rebuild box, which describe
+        // the outgoing engine; only the engine-keyed platform record (edits
+        // for every engine) carries over.
         draft: {
           engine,
           config: {},
@@ -3781,9 +3791,10 @@ function card(_react, localeRef, _primitives) {
       const platform = { ...currentDraft2.platform ?? {}, [currentDraft2.engine]: enginePlatform2 };
       store.dispatch({
         type: "draft/edit",
+        // Spread the whole draft (the onValue rule): the rebuilt literal
+        // used to drop the Auto Rebuild checkbox on every platform edit.
         draft: {
-          engine: currentDraft2.engine,
-          config: currentDraft2.config,
+          ...currentDraft2,
           platform
         }
       });
