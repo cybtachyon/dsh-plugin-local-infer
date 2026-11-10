@@ -1,11 +1,13 @@
 /**
  * The Basalt Windows build profile. The Windows route is the engine's own
  * CMake build with the Ninja generator, run inside the MSVC developer shell:
- * the step calls vcvars64.bat (the Visual Studio 2022 Community C++ toolchain)
+ * the step calls vcvars64.bat (the Visual Studio 18 Community C++ toolchain)
  * to put cl, cmake, and ninja on the path, then configures a Release build
  * into the `build` directory and compiles it. CMake sets the target's
  * RUNTIME_OUTPUT_DIRECTORY to the repo's `bin` folder, so the `basalt.exe`
  * binary lands in `bin/`, not the CMake `build/` tree.
+ *
+ * Build requires compiler 19.50 or newer.
  *
  * The Windows toolchain is the winget route: CMake, Ninja (the -G Ninja
  * generator), the Visual Studio C++ workload (the MSVC C++20 compiler), the
@@ -16,7 +18,7 @@
 import { SYSTEM_DEPS } from "../../systemDeps.js";
 export const BASALT_WINDOWS = {
     buildSteps: [
-        'cmd /c "call "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat" && cmake -S {dir} -B {dir}/build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build {dir}/build -j"',
+        'cmd /c "call "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat" && cmake -S {dir} -B {dir}/build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build {dir}/build -j"',
     ],
     // The CMake target sets RUNTIME_OUTPUT_DIRECTORY to the repo's bin/ folder,
     // so the basalt.exe lands in bin/, not the CMake build/ tree.
