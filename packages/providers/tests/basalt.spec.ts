@@ -57,6 +57,7 @@ describe('Basalt parameter surface', () => {
       'port',
       'host',
       'gpu',
+      'vram-reserve-mib',
       'parallel',
       'vision',
       'model',
@@ -88,6 +89,11 @@ describe('Basalt parameter surface', () => {
     })
     // The shared engine flags nest under `engine`; the multi-word keys name
     // their dash flag spelling in `deploy.key`.
+    expect(byKey['vram-reserve-mib']?.deploy).toEqual({
+      target: 'config',
+      format: 'json',
+      block: 'engine',
+    })
     expect(byKey['kv']?.deploy).toEqual({ target: 'config', format: 'json', block: 'engine' })
     expect(byKey['expertCache']?.deploy).toEqual({
       target: 'config',
@@ -124,6 +130,7 @@ describe('Basalt parameter surface', () => {
       port: 8090,
       host: '127.0.0.1',
       gpu: '0,1',
+      'vram-reserve-mib': 1024,
       parallel: 2,
       vision: 'dynamic',
       model: 'models/Qwen3.8-FN-NVFP4-DQ6_K.basalt',
@@ -155,6 +162,7 @@ describe('Basalt parameter surface', () => {
     // The shared engine flags nest under `engine`, the multi-word keys under
     // their dash flag spellings.
     expect(object.engine).toEqual({
+      'vram-reserve-mib': 1024,
       kv: 'int8',
       'expert-cache': 'auto',
       prefill: 'auto',
@@ -182,6 +190,7 @@ describe('Basalt parameter surface', () => {
       'max-context': 4096,
     })
     expect(object.engine).toEqual({
+      'vram-reserve-mib': 700,
       kv: 'int8',
       'expert-cache': 'auto',
       prefill: 'auto',
@@ -538,6 +547,7 @@ describe('BasaltAdapter.renderLaunch', () => {
       port: 8090,
       host: '127.0.0.1',
       gpu: '0,1',
+      'vram-reserve-mib': 1024,
       parallel: 2,
       vision: 'dynamic',
       model: 'models/Qwen3.8-FN-NVFP4-DQ6_K.basalt',
@@ -600,6 +610,7 @@ describe('BasaltAdapter.renderLaunch', () => {
       },
     ])
     expect(envelope.engine).toEqual({
+      'vram-reserve-mib': 1024,
       kv: 'int8',
       'expert-cache': 'auto',
       prefill: 'auto',

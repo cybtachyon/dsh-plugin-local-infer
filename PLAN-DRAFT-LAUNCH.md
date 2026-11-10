@@ -42,7 +42,7 @@ per-request override fields (settled below: no new host-side request shape).
 
 ### Phase 2 - Client: submit the draft on Launch while editing
 
-- [ ] [TASK-01b-basalt-spec-fix](docs/PLAN-DRAFT-LAUNCH-TASK-01b-basalt-spec-fix.md) -
+- [x] [TASK-01b-basalt-spec-fix](docs/PLAN-DRAFT-LAUNCH-TASK-01b-basalt-spec-fix.md) -
   Unblock the test gate: sync `basalt.spec.ts` expectations with the
   `vram-reserve-mib` param (pre-existing red at HEAD).
 - [ ] [TASK-02-client-platform-shape](docs/PLAN-DRAFT-LAUNCH-TASK-02-client-platform-shape.md) -
@@ -73,8 +73,8 @@ per-request override fields (settled below: no new host-side request shape).
 - `packages/providers/tests/basalt.spec.ts` red at HEAD (4 tests, verified
   2026-11-09 with a stashed clean tree): 561b01c added the `vram-reserve-mib`
   parameter without updating the surface-order and engine-block render
-  expectations. Unrelated to this plan; needs its own fix task (TASK-06's
-  `pnpm test` gate cannot go green over it).
+  expectations. Fixed by TASK-01b (test expectations synced to the source
+  surface; no src change).
 - Commit ac397c3 shipped a `basaltWindows.ts` src change without its tracked
   `lib/` emit (stale committed emit at HEAD). Re-synced by the forced rebuild
   during TASK-01 and committed beside it.
