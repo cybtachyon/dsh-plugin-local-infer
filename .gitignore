@@ -273,3 +273,6 @@ Temporary Items
 
 # esbuild intermediate for the generated dsh/client.js (scripts/build-client.mjs)
 dsh/.build/
+
+# Python bytecode caches (scripts/ holds the tracked hook scripts)
+__pycache__/

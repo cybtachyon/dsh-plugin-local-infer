@@ -204,3 +204,8 @@ Fetch these docs to answer questions about their covered topic.
   ```
 - Run `prek run --files <paths>` before committing (verify pre-commit hooks).
   The installed prek takes `--files`, not `--filename`.
+- A prek `commit-msg` hook (`scripts/check_commit_msg_attribution.py`)
+  rejects commit messages matching the pattern `claude|anthropic`,
+  case-insensitive, because this repo's commits carry no external assistant
+  attribution. A fresh clone must run `prek install --hook-type commit-msg`
+  to get it; `git commit --no-verify` is the documented bypass.
