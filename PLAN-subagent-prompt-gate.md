@@ -71,7 +71,7 @@ sub-agents. All seams, storage, routes, and the settings card stay unchanged.
   `isPrimaryAssembly`, doc comments).
   DoD: `pnpm build` type-checks and emits `lib/`; `apply()` still no-ops
   without `inject`; existing section fields unchanged.
-- [ ] TASK-02 Extend `packages/orchestrator/tests/orchestrator-seam.spec.ts`:
+- [x] TASK-02 Extend `packages/orchestrator/tests/orchestrator-seam.spec.ts`:
   update the inject-request expectation to `[['agents'], ['systemPrompt'],
   ['webServer']]`; add a fake agents seam (`{ agents: { roots: () => [root] } }`);
   add cases: root scope gets the prompt, non-root scope gets `''`, registry
@@ -83,7 +83,11 @@ sub-agents. All seams, storage, routes, and the settings card stay unchanged.
 
 - [ ] TASK-03 Refactor: review the files touched by the previous 2 tasks and
   resolve the code-risk checklist (see the Refactor instruction block in this
-  file below). DoD: no checklist item left unresolved; tests still green.
+  file below). Fold in the pre-existing issue found by TASK-01: the stale
+  "(TASK-003)" and "(TASK-004)" plan references in the
+  `packages/orchestrator/src/index.ts` module doc comment cite plan artifacts
+  that no longer exist; reword them to name the seams instead.
+  DoD: no checklist item left unresolved; tests still green.
 
   ```text
   Review the files touched by the previous 2 commits and identify the following code risks:
@@ -105,6 +109,11 @@ sub-agents. All seams, storage, routes, and the settings card stay unchanged.
   primary agent's system prompt and sub-agents do not receive it. Run
   `pnpm build`, `pnpm test`, `pnpm lint`, `prek run --files <changed paths>`;
   commit `src/` + emitted `lib/` + tests + docs.
+  Note: the working tree currently carries TASK-01's regenerated
+  `packages/orchestrator/lib/*`; the trailing-newline-only diffs on
+  `lib/config*` and `lib/route*` revert under `pnpm build`'s
+  `scripts/build-format.mjs`, leaving only `lib/index*` as the real emit
+  diff. Do not hand-edit lib outputs.
   DoD: all gates green; one commit with the functional change; working tree
   clean.
 

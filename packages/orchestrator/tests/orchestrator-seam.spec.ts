@@ -3,8 +3,12 @@
  * registers nothing and never throws, and a recording systemPrompt service
  * receives exactly one global `orchestrator` section whose text provider
  * follows the effective-prompt holder, so a Save reaches the next assembly
- * without a restart. os.homedir() keys the saved prompt file, so each test
- * points HOME at a scratch dir and never touches the real one.
+ * without a restart. The gate tests pin the primary-agent rule: the section
+ * text lands for an assembly scoped to a live root agent, and an assembly
+ * scoped to anything else lands empty; a registry-free profile and a
+ * zero-arg assembly keep receiving the prompt. os.homedir() keys the saved
+ * prompt file, so each test points HOME at a scratch dir and never touches
+ * the real one.
  */
 
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
@@ -21,7 +25,7 @@ const promptPath = join(packageRoot, 'prompt.md')
 interface RecordedSection {
   name: string
   order: number
-  text: string | (() => string)
+  text: string | ((assembly?: { scope?: object }) => string)
   interpolate?: boolean
 }
 
@@ -65,7 +69,7 @@ function withFakeInject(
 /**
  * fireFor returns an inject impl that runs the callback only for the named
  * seam and leaves every other seam absent, so these specs stay scoped to the
- * systemPrompt half while apply also asks for webServer.
+ * systemPrompt half while apply also asks for agents and webServer.
  */
 function fireFor(seam: string, scope: unknown) {
   return (names: string[], cb: (scope: unknown) => void): void => {
@@ -73,6 +77,59 @@ function fireFor(seam: string, scope: unknown) {
       cb(scope)
     }
   }
+}
+
+/**
+ * makeAgentsScope returns the fake `agents` service backed by the caller's
+ * roots array, so a gate test can flip registry membership between
+ * section.text() calls.
+ */
+function makeAgentsScope(rootAgents: object[]) {
+  return { scope: { agents: { roots: () => rootAgents } }, rootAgents }
+}
+
+/**
+ * fireForAll returns an inject impl that runs the callback with its own
+ * scope for every seam named in `scopes` and leaves every other seam
+ * absent, so a gate test mounts `agents` and `systemPrompt` while
+ * `webServer` stays out of the profile.
+ */
+function fireForAll(scopes: Record<string, unknown>) {
+  return (names: string[], cb: (scope: unknown) => void): void => {
+    const scope = scopes[names[0]]
+    if (scope !== undefined) {
+      cb(scope)
+    }
+  }
+}
+
+/**
+ * textFor calls a recorded section's text provider the way
+ * dsh-system-prompt does: once per assembly, with that assembly's agent
+ * scope object, or with no argument for a global unscoped assembly.
+ */
+function textFor(section: RecordedSection | undefined, scope?: object): string {
+  const text = section?.text
+  if (typeof text !== 'function') {
+    throw new Error('the test profile registered no text provider')
+  }
+  return scope === undefined ? text() : text({ scope })
+}
+
+/**
+ * mountGate mounts the plugin in a gate profile: the `agents` and
+ * `systemPrompt` seams both arrive, `webServer` stays absent, and the
+ * registry roots are the caller's array. Returns the recorded sections and
+ * that mutable roots list.
+ */
+async function mountGate(rootAgents: object[]) {
+  const mod = await loadFresh()
+  const { scope: promptScope, sections } = makeSeamScope()
+  const { scope: agentsScope } = makeAgentsScope(rootAgents)
+  mod.apply(
+    withFakeInject(fireForAll({ agents: agentsScope, systemPrompt: promptScope })),
+  )
+  return { sections, rootAgents }
 }
 
 /**
@@ -108,7 +165,7 @@ describe('systemPrompt seam', () => {
       // The seam is absent in this profile: cordis never runs the callback.
     })
     expect(() => mod.apply(ctx)).not.toThrow()
-    expect(requested).toEqual([['systemPrompt'], ['webServer']])
+    expect(requested).toEqual([['agents'], ['systemPrompt'], ['webServer']])
     expect(sections).toEqual([])
   })
 
@@ -153,5 +210,41 @@ describe('systemPrompt seam', () => {
     ).not.toThrow()
     expect(error).toHaveBeenCalledWith(expect.stringContaining('orchestrator prompt section skipped'))
     error.mockRestore()
+  })
+})
+
+describe('primary-agent gate', () => {
+  const shippedPrompt = readFileSync(promptPath, 'utf8')
+
+  it('returns the prompt for an assembly scoped to a root agent', async () => {
+    const rootAgent = { agent: 'primary' }
+    const { sections } = await mountGate([rootAgent])
+    expect(textFor(sections[0], rootAgent)).toBe(shippedPrompt)
+  })
+
+  it('returns an empty text for an assembly scoped to a sub-agent', async () => {
+    const subAgent = { agent: 'sub' }
+    const { sections } = await mountGate([{ agent: 'primary' }])
+    expect(textFor(sections[0], subAgent)).toBe('')
+  })
+
+  it('keeps injecting for any scope when the agents seam never arrives', async () => {
+    const mod = await loadFresh()
+    const { scope, sections } = makeSeamScope()
+    mod.apply(withFakeInject(fireFor('systemPrompt', scope)))
+    expect(textFor(sections[0], { agent: 'unregistered' })).toBe(shippedPrompt)
+  })
+
+  it('returns the prompt for a zero-arg assembly while the registry is present', async () => {
+    const { sections } = await mountGate([{ agent: 'primary' }])
+    expect(textFor(sections[0])).toBe(shippedPrompt)
+  })
+
+  it('re-reads roots() per assembly instead of caching the first answer', async () => {
+    const lateAgent = { agent: 'late' }
+    const { sections, rootAgents } = await mountGate([])
+    expect(textFor(sections[0], lateAgent)).toBe('')
+    rootAgents.push(lateAgent)
+    expect(textFor(sections[0], lateAgent)).toBe(shippedPrompt)
   })
 })
