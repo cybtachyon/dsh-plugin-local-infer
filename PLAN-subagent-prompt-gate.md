@@ -81,7 +81,7 @@ sub-agents. All seams, storage, routes, and the settings card stay unchanged.
 
 ### Phase 2: Quality
 
-- [ ] TASK-03 Refactor: review the files touched by the previous 2 tasks and
+- [x] TASK-03 Refactor: review the files touched by the previous 2 tasks and
   resolve the code-risk checklist (see the Refactor instruction block in this
   file below). Fold in the pre-existing issue found by TASK-01: the stale
   "(TASK-003)" and "(TASK-004)" plan references in the

@@ -20,6 +20,8 @@ import { Context } from '@deepseek-ai/cordis'
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const promptPath = join(packageRoot, 'prompt.md')
+// Shipped prompt.md text: the single expectation for every un-saved assembly.
+const shippedPrompt = readFileSync(promptPath, 'utf8')
 
 /** One section handed to the recording systemPrompt service. */
 interface RecordedSection {
@@ -67,32 +69,9 @@ function withFakeInject(
 }
 
 /**
- * fireFor returns an inject impl that runs the callback only for the named
- * seam and leaves every other seam absent, so these specs stay scoped to the
- * systemPrompt half while apply also asks for agents and webServer.
- */
-function fireFor(seam: string, scope: unknown) {
-  return (names: string[], cb: (scope: unknown) => void): void => {
-    if (names[0] === seam) {
-      cb(scope)
-    }
-  }
-}
-
-/**
- * makeAgentsScope returns the fake `agents` service backed by the caller's
- * roots array, so a gate test can flip registry membership between
- * section.text() calls.
- */
-function makeAgentsScope(rootAgents: object[]) {
-  return { scope: { agents: { roots: () => rootAgents } }, rootAgents }
-}
-
-/**
- * fireForAll returns an inject impl that runs the callback with its own
- * scope for every seam named in `scopes` and leaves every other seam
- * absent, so a gate test mounts `agents` and `systemPrompt` while
- * `webServer` stays out of the profile.
+ * fireForAll returns an inject impl that runs each seam's callback with the
+ * scope named for it in `scopes` and leaves every seam that `scopes` does
+ * not name absent, so a spec mounts exactly the profile seams it tests.
  */
 function fireForAll(scopes: Record<string, unknown>) {
   return (names: string[], cb: (scope: unknown) => void): void => {
@@ -125,7 +104,9 @@ function textFor(section: RecordedSection | undefined, scope?: object): string {
 async function mountGate(rootAgents: object[]) {
   const mod = await loadFresh()
   const { scope: promptScope, sections } = makeSeamScope()
-  const { scope: agentsScope } = makeAgentsScope(rootAgents)
+  // Fake `agents` service: roots() views the caller's array live, so a gate
+  // test can flip registry membership between section.text() calls.
+  const agentsScope = { agents: { roots: () => rootAgents } }
   mod.apply(
     withFakeInject(fireForAll({ agents: agentsScope, systemPrompt: promptScope })),
   )
@@ -177,7 +158,7 @@ describe('systemPrompt seam', () => {
   it('registers one orchestrator section with the default prompt before any save', async () => {
     const mod = await loadFresh()
     const { scope, sections } = makeSeamScope()
-    mod.apply(withFakeInject(fireFor('systemPrompt', scope)))
+    mod.apply(withFakeInject(fireForAll({ systemPrompt: scope })))
     expect(sections.length).toBe(1)
     const [section] = sections
     expect(section?.name).toBe('orchestrator')
@@ -186,15 +167,15 @@ describe('systemPrompt seam', () => {
     // A provider, evaluated per assembly: before any save it resolves to
     // the shipped prompt.md default.
     expect(typeof section?.text).toBe('function')
-    expect(section?.text()).toBe(readFileSync(promptPath, 'utf8'))
+    expect(section?.text()).toBe(shippedPrompt)
   })
 
   it('follows the holder after a setOrchestratorPrompt update', async () => {
     const mod = await loadFresh()
     const { scope, sections } = makeSeamScope()
-    mod.apply(withFakeInject(fireFor('systemPrompt', scope)))
+    mod.apply(withFakeInject(fireForAll({ systemPrompt: scope })))
     const [section] = sections
-    expect(section?.text()).toBe(readFileSync(promptPath, 'utf8'))
+    expect(section?.text()).toBe(shippedPrompt)
     mod.setOrchestratorPrompt('edited orchestrator prompt')
     expect(section?.text()).toBe('edited orchestrator prompt')
   })
@@ -206,7 +187,7 @@ describe('systemPrompt seam', () => {
     })
     const { scope } = makeSeamScope(true)
     expect(() =>
-      mod.apply(withFakeInject(fireFor('systemPrompt', scope))),
+      mod.apply(withFakeInject(fireForAll({ systemPrompt: scope }))),
     ).not.toThrow()
     expect(error).toHaveBeenCalledWith(expect.stringContaining('orchestrator prompt section skipped'))
     error.mockRestore()
@@ -214,8 +195,6 @@ describe('systemPrompt seam', () => {
 })
 
 describe('primary-agent gate', () => {
-  const shippedPrompt = readFileSync(promptPath, 'utf8')
-
   it('returns the prompt for an assembly scoped to a root agent', async () => {
     const rootAgent = { agent: 'primary' }
     const { sections } = await mountGate([rootAgent])
@@ -231,7 +210,7 @@ describe('primary-agent gate', () => {
   it('keeps injecting for any scope when the agents seam never arrives', async () => {
     const mod = await loadFresh()
     const { scope, sections } = makeSeamScope()
-    mod.apply(withFakeInject(fireFor('systemPrompt', scope)))
+    mod.apply(withFakeInject(fireForAll({ systemPrompt: scope })))
     expect(textFor(sections[0], { agent: 'unregistered' })).toBe(shippedPrompt)
   })
 

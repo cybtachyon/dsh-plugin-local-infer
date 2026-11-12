@@ -8,8 +8,7 @@
  *
  * The prompt store (saved file, shipped default, effective-prompt holder)
  * lives in ./config.js and is re-exported here as the single source of truth
- * the system-prompt seam (TASK-003) and the settings routes (TASK-004) pull
- * from.
+ * the system-prompt seam and the settings routes pull from.
  * @module dsh-plugin-local-infer/orchestrator
  */
 
