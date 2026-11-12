@@ -104,7 +104,7 @@ sub-agents. All seams, storage, routes, and the settings card stay unchanged.
 
 ### Phase 3: Docs + verification + commit
 
-- [ ] TASK-04 Update the "It injects while enabled" bullet in `README.md` and
+- [x] TASK-04 Update the "It injects while enabled" bullet in `README.md` and
   the matching bullet in `docs/zh/README.md` to say the prompt reaches the
   primary agent's system prompt and sub-agents do not receive it. Run
   `pnpm build`, `pnpm test`, `pnpm lint`, `prek run --files <changed paths>`;

@@ -67,7 +67,7 @@ Local models often struggle with agentic workflows and can't "one-shot" prompts 
 
 - **Enable it** on the DeepSeek Harness **Plugins** page: open this plugin's entry and flip the **Orchestrator** component toggle (the component ships disabled). After first enabling the component, restart the host so it loads.
 - **Edit the prompt** on the **Orchestrator** card that then appears: change the **Orchestrator Prompt** field and press **Save**. The default text ships in the plugin's `prompt.md`; clear the field and save to restore it.
-- **It injects while enabled.** With the component enabled, the saved prompt is part of the agent's system prompt for new requests. A Save reaches the next request; no restart is needed after Save.
+- **It injects while enabled.** With the component enabled, the saved prompt is part of the primary (top-level) agent's system prompt for new requests. Sub-agents do not receive it. A Save reaches the next request; no restart is needed after Save.
 
 The saved prompt persists to `~/.dsh/local-infer/orchestrator.json`, beside the engine config.
 
